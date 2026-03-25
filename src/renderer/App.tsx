@@ -256,16 +256,29 @@ export default function App() {
           />
         )}
 
-        {/* Middle: terminals */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          {activeWorkspace ? (
-            <SplitContainer
-              node={activeWorkspace.splitTree}
-              focusedPaneId={focusedPaneId}
-              onRatioChange={handleRatioChange}
-              onPaneFocus={handlePaneFocus}
-            />
-          ) : null}
+        {/* Middle: terminals — ALL workspaces stay mounted, only active is visible */}
+        {/* This keeps PTYs alive when switching sessions (Claude Code etc. keep running) */}
+        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+          {workspaces.map((ws) => (
+            <div
+              key={ws.id}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: ws.id === activeWorkspaceId ? 'block' : 'none',
+              }}
+            >
+              <SplitContainer
+                node={ws.splitTree}
+                focusedPaneId={ws.id === activeWorkspaceId ? focusedPaneId : null}
+                onRatioChange={(left, right, ratio) => {
+                  const newTree = updateRatio(ws.splitTree, left, right, ratio);
+                  updateSplitTree(ws.id, newTree);
+                }}
+                onPaneFocus={handlePaneFocus}
+              />
+            </div>
+          ))}
         </div>
 
         {/* Right: browser panel */}
