@@ -2,6 +2,8 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 import { PtyManager } from './pty-manager';
 import { detectShells } from './shell-detector';
+import { getDefaultTheme, loadBundledThemes } from './theme-loader';
+import { parseWindowsTerminalConfig, parseGhosttyConfig } from './config-loader';
 
 const ptyManager = new PtyManager();
 
@@ -40,6 +42,26 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_SHELLS, async () => {
     return detectShells();
+  });
+
+  // Config / Theme handlers
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET_THEME, async () => {
+    return getDefaultTheme();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET_THEME_LIST, async () => {
+    const bundled = loadBundledThemes();
+    const names = ['Monokai', ...Array.from(bundled.keys())];
+    // Deduplicate in case a bundled theme is also named Monokai
+    return Array.from(new Set(names));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONFIG_IMPORT_WT, async () => {
+    return parseWindowsTerminalConfig();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONFIG_IMPORT_GHOSTTY, async () => {
+    return parseGhosttyConfig();
   });
 }
 
