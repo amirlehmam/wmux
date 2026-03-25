@@ -1,7 +1,7 @@
 # wmux — Windows Terminal Multiplexer for AI Agents
 
 **Date:** 2026-03-25
-**Status:** Approved (v2 — post-review fixes)
+**Status:** Approved (v3 — second review fixes)
 **Based on:** [cmux](https://github.com/manaflow-ai/cmux) (macOS)
 
 ## Overview
@@ -87,6 +87,7 @@ interface WmuxAPI {
     readText(surfaceId: string, options?: { lines?: number }): Promise<string>;
     sendText(surfaceId: string, text: string): void;
     sendKey(surfaceId: string, key: string, modifiers?: string[]): void;
+    triggerFlash(surfaceId: string): void;
   };
   // Split panes
   pane: {
@@ -135,6 +136,18 @@ interface WmuxAPI {
     getThemeList(): Promise<string[]>;
     importWindowsTerminal(): Promise<ThemeConfig>;
     importGhostty(): Promise<ThemeConfig>;
+  };
+  // Sidebar metadata (for external tools)
+  sidebar: {
+    setStatus(workspaceId: string, key: string, value: string): void;
+    setProgress(workspaceId: string, value: number, label?: string): void;
+    log(workspaceId: string, level: 'info' | 'success' | 'warning' | 'error', message: string): void;
+    getState(workspaceId: string): Promise<SidebarMetadata>;
+  };
+  // Markdown
+  markdown: {
+    setContent(surfaceId: string, content: string): void;
+    loadFile(surfaceId: string, filePath: string): void;
   };
   // System
   system: {
@@ -421,6 +434,7 @@ ping
 {"method": "pane.focus", "params": {"id": "..."}}
 {"method": "pane.list", "params": {"workspaceId": "..."}}
 {"method": "pane.create", "params": {"workspaceId": "...", "type": "terminal"}}
+{"method": "pane.zoom", "params": {"id": "..."}}
 ```
 
 **Browser methods:**
@@ -449,12 +463,33 @@ ping
 {"method": "window.close", "params": {"id": "..."}}
 ```
 
+**Sidebar metadata methods:**
+```json
+{"method": "sidebar.set_status", "params": {"workspaceId": "...", "key": "...", "value": "..."}}
+{"method": "sidebar.set_progress", "params": {"workspaceId": "...", "value": 0.5, "label": "..."}}
+{"method": "sidebar.log", "params": {"workspaceId": "...", "level": "info", "message": "..."}}
+{"method": "sidebar.get_state", "params": {"workspaceId": "..."}}
+```
+
+**Markdown methods:**
+```json
+{"method": "markdown.set_content", "params": {"surfaceId": "...", "markdown": "..."}}
+{"method": "markdown.load_file", "params": {"surfaceId": "...", "filePath": "..."}}
+```
+
+**Workspace (additional):**
+```json
+{"method": "workspace.reorder", "params": {"ids": ["ws-1", "ws-3", "ws-2"]}}
+```
+
 **System methods:**
 ```json
 {"method": "system.identify", "params": {}}
 {"method": "system.capabilities", "params": {}}
 {"method": "system.tree", "params": {}}
 ```
+
+> **Convention note:** V2 protocol uses `snake_case` method names. The preload API (Section 1.3) uses `camelCase` equivalents. Surface IDs use the format `surf-<uuid>`, pane IDs `pane-<uuid>`, workspace IDs `ws-<uuid>`.
 
 ### 7.4 CLI (`wmux.exe`)
 
@@ -483,6 +518,7 @@ wmux list-surfaces [--pane <pane-id>]
 wmux split [--right|--down] [--type terminal|browser|markdown]
 wmux close-pane [<id>]
 wmux focus-pane <id>
+wmux zoom-pane [<id>]
 wmux list-panes [--workspace <workspace-id>]
 wmux tree
 ```
@@ -502,6 +538,15 @@ wmux browser snapshot
 wmux browser click <selector>
 wmux browser fill <selector> <value>
 wmux browser evaluate <script>
+wmux browser back
+wmux browser forward
+wmux browser reload
+```
+
+**Markdown commands:**
+```
+wmux markdown set <surface-id> --content <text>
+wmux markdown set <surface-id> --file <path>
 ```
 
 **Notification commands:**
@@ -576,7 +621,9 @@ wmux focus-window <id>
 
 ## 9. Browser Panel
 
-**Electron `WebContentsView`** (Electron 30+) — preferred over deprecated `<webview>` tag. Each browser surface gets its own `WebContentsView` instance managed by the main process and positioned within the pane's bounds. Falls back to `<webview>` tag if `WebContentsView` layout integration proves problematic.
+**Electron `WebContentsView`** (Electron 30+) — preferred over deprecated `<webview>` tag. Each browser surface gets its own `WebContentsView` instance managed by the main process.
+
+**Positioning strategy:** The renderer sends pane bounds (x, y, width, height) to the main process via IPC whenever panes resize, split, or zoom. The main process calls `webContentsView.setBounds()` to position the browser within the window. The React component renders a transparent placeholder div that reserves space in the layout — the actual browser content is overlaid by the main process. This is the same pattern VS Code uses for its webview panels.
 
 **Address bar (omnibar):**
 - Back/Forward/Refresh-Stop buttons
@@ -612,6 +659,8 @@ A dedicated surface type for rendering markdown files in a split pane. Used by A
   - `Ctrl+Alt+M` to open markdown panel
   - Programmatically via V2 protocol: `{"method": "pane.split", "params": {"type": "markdown"}}`
 - Content can be set via V2: `{"method": "markdown.set_content", "params": {"surfaceId": "...", "markdown": "..."}}`
+- Content can be loaded from file: `{"method": "markdown.load_file", "params": {"surfaceId": "...", "filePath": "..."}}`
+- CLI: `wmux split --type markdown --file README.md` opens a pane with file content
 - Styling matches the terminal theme (dark/light background, monospace code blocks)
 
 ---
@@ -683,7 +732,7 @@ cmux `Cmd` → `Ctrl` on Windows. Some shortcuts adjusted to avoid Windows syste
 | Next Workspace | `Ctrl+PageDown` | cmux uses Cmd+Ctrl+]; PageDown is Windows convention |
 | Previous Workspace | `Ctrl+PageUp` | cmux uses Cmd+Ctrl+[; PageUp is Windows convention |
 | Select Workspace 1-9 | `Ctrl+1...9` | |
-| Rename Tab | `Ctrl+R` | |
+| Rename Surface (tab) | `F2` | cmux uses Cmd+R; Ctrl+R conflicts with shell reverse-search |
 | Rename Workspace | `Ctrl+Shift+R` | |
 
 **Panes:**
@@ -695,7 +744,7 @@ cmux `Cmd` → `Ctrl` on Windows. Some shortcuts adjusted to avoid Windows syste
 | Split Browser Down | `Ctrl+Shift+Alt+D` |
 | Toggle Zoom | `Ctrl+Shift+Enter` |
 | Focus Left/Right/Up/Down | `Ctrl+Alt+Arrow` |
-| Close Pane | `Ctrl+W` |
+| Close Active Surface / Pane | `Ctrl+W` | Closes active surface first; if last surface, closes pane |
 
 **Surfaces (tabs within pane):**
 | Action | Shortcut |
@@ -709,7 +758,7 @@ cmux `Cmd` → `Ctrl` on Windows. Some shortcuts adjusted to avoid Windows syste
 | Action | Shortcut |
 |---|---|
 | Jump to Unread | `Ctrl+Shift+U` |
-| Show Notifications | `Ctrl+I` |
+| Show Notifications | `Ctrl+Shift+I` | cmux uses Cmd+I; Ctrl+I sends TAB in terminals, so we add Shift |
 | Flash Focused | `Ctrl+Shift+H` |
 
 **Browser:**
