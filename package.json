@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.node.json && vite build && electron-builder",
     "build:main": "tsc -p tsconfig.node.json",
     "build:renderer": "vite build",
+    "postinstall": "electron-builder install-app-deps",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/"

@@ -2,19 +2,40 @@
   "appId": "com.wmux.app",
   "productName": "wmux",
   "directories": {
-    "output": "release"
+    "output": "release",
+    "buildResources": "resources"
   },
   "files": [
     "dist/**/*",
-    "node_modules/**/*"
+    "node_modules/**/*",
+    "!node_modules/**/build/**/*",
+    "!**/*.ts",
+    "!**/*.tsx",
+    "!src/**/*",
+    "!docs/**/*",
+    "!tests/**/*"
   ],
   "win": {
-    "target": ["nsis", "portable"],
-    "icon": "resources/icons/icon.ico"
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
   },
   "nsis": {
     "oneClick": false,
-    "allowToChangeInstallationDirectory": true
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "wmux"
+  },
+  "portable": {
+    "artifactName": "wmux-${version}-portable.exe"
   },
   "extraResources": [
     { "from": "resources/themes", "to": "themes" },
