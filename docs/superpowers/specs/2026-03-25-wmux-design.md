@@ -1,7 +1,7 @@
 # wmux — Windows Terminal Multiplexer for AI Agents
 
 **Date:** 2026-03-25
-**Status:** Approved
+**Status:** Approved (v2 — post-review fixes)
 **Based on:** [cmux](https://github.com/manaflow-ai/cmux) (macOS)
 
 ## Overview
@@ -10,11 +10,20 @@ wmux is a Windows desktop application that replicates cmux's full feature set �
 
 **Tech stack:** Electron + React + TypeScript + xterm.js + node-pty + Zustand
 
+### Terminology
+
+Consistent naming throughout (matching cmux):
+- **Window**: an OS-level window containing a sidebar and content area
+- **Workspace**: a sidebar entry (also called "tab" in cmux) containing a split tree
+- **Pane**: a region within the split tree that can hold multiple surfaces
+- **Surface**: a single terminal or browser instance within a pane (tab within pane)
+- **Panel**: generic term for either a terminal surface or browser surface
+
 ---
 
 ## 1. Application Architecture
 
-Two-process Electron model:
+### 1.1 Two-Process Electron Model
 
 **Main process (Node.js):**
 - PTY Manager — spawns shells via node-pty (ConPTY on Windows)
@@ -26,39 +35,141 @@ Two-process Electron model:
 - Config Loader — parses Windows Terminal `settings.json` and Ghostty `~/.config/ghostty/config`
 - Theme Loader — 450+ bundled Ghostty color themes
 - Shell Detector — auto-detects available shells (pwsh, powershell, cmd, wsl)
+- Window Manager — manages multiple BrowserWindow instances
 - Auto-Updater — via electron-updater + GitHub Releases
 
-**Renderer process (Chromium):**
+**Renderer process (one per window, Chromium):**
 - React app with Zustand state management
 - xterm.js terminal instances with WebGL addon
 - Split pane layout system (tree-based)
 - Sidebar with live workspace metadata
-- Browser panels via `<webview>` tag
+- Browser panels via `WebContentsView` (Electron 30+)
+- Markdown panel renderer
 - Settings UI
 
-**IPC:** Secure contextBridge API — no `nodeIntegration` in renderer. Typed API contract between main and renderer.
+**IPC:** Secure contextBridge API — no `nodeIntegration` in renderer. See Section 1.3 for the typed preload API contract.
 
-**Data flow:**
+### 1.2 Data Flow
+
 - Terminal input: xterm.js `onData` → IPC → main → `pty.write()`
 - Terminal output: `pty.onData` → IPC → renderer → xterm.js `write()`
 - Metadata: shell integration → named pipe → main process → IPC → Zustand store → React UI
+
+### 1.3 Preload API Contract (contextBridge)
+
+```typescript
+interface WmuxAPI {
+  // PTY
+  pty: {
+    create(options: { shell: string; cwd: string; env: Record<string, string> }): Promise<string>; // returns ptyId
+    write(ptyId: string, data: string): void;
+    resize(ptyId: string, cols: number, rows: number): void;
+    kill(ptyId: string): void;
+    onData(ptyId: string, callback: (data: string) => void): () => void; // returns unsubscribe
+    onExit(ptyId: string, callback: (code: number) => void): () => void;
+  };
+  // Workspace
+  workspace: {
+    create(options?: { title?: string; shell?: string; cwd?: string }): Promise<string>;
+    close(id: string): void;
+    select(id: string): void;
+    rename(id: string, title: string): void;
+    list(): Promise<WorkspaceInfo[]>;
+    reorder(ids: string[]): void;
+    moveToWindow(workspaceId: string, windowId?: string): void; // undefined = new window
+  };
+  // Surface (tabs within panes)
+  surface: {
+    create(paneId: string, type: 'terminal' | 'browser' | 'markdown'): Promise<string>;
+    close(surfaceId: string): void;
+    focus(surfaceId: string): void;
+    list(paneId: string): Promise<SurfaceInfo[]>;
+    readText(surfaceId: string, options?: { lines?: number }): Promise<string>;
+    sendText(surfaceId: string, text: string): void;
+    sendKey(surfaceId: string, key: string, modifiers?: string[]): void;
+  };
+  // Split panes
+  pane: {
+    split(direction: 'right' | 'down', type: 'terminal' | 'browser' | 'markdown'): Promise<string>;
+    close(paneId: string): void;
+    focus(paneId: string): void;
+    zoom(paneId: string): void;
+    list(workspaceId: string): Promise<PaneInfo[]>;
+  };
+  // Browser
+  browser: {
+    navigate(surfaceId: string, url: string): void;
+    back(surfaceId: string): void;
+    forward(surfaceId: string): void;
+    reload(surfaceId: string): void;
+    snapshot(surfaceId: string): Promise<AccessibilityTree>;
+    click(surfaceId: string, selector: string): Promise<void>;
+    fill(surfaceId: string, selector: string, value: string): Promise<void>;
+    evaluate(surfaceId: string, script: string): Promise<unknown>;
+  };
+  // Notifications
+  notification: {
+    list(): Promise<NotificationInfo[]>;
+    clear(id?: string): void;
+    jumpToUnread(): void;
+  };
+  // Settings
+  settings: {
+    get<T>(key: string): Promise<T>;
+    set(key: string, value: unknown): void;
+    onChanged(callback: (key: string, value: unknown) => void): () => void;
+  };
+  // Window management
+  window: {
+    create(): Promise<string>;
+    close(windowId: string): void;
+    focus(windowId: string): void;
+    list(): Promise<WindowInfo[]>;
+    minimize(): void;
+    maximize(): void;
+    isMaximized(): Promise<boolean>;
+  };
+  // Config
+  config: {
+    getTheme(): Promise<ThemeConfig>;
+    getThemeList(): Promise<string[]>;
+    importWindowsTerminal(): Promise<ThemeConfig>;
+    importGhostty(): Promise<ThemeConfig>;
+  };
+  // System
+  system: {
+    platform: 'win32';
+    getShells(): Promise<ShellInfo[]>;
+    openExternal(url: string): void;
+  };
+}
+```
+
+### 1.4 Multi-Window Architecture
+
+- One main process manages all windows. Each `BrowserWindow` gets its own renderer process.
+- The main process is the single source of truth for all state (workspaces, surfaces, notifications).
+- Each renderer syncs a local Zustand store via IPC subscriptions (`settings.onChanged`, workspace events, etc.).
+- The named pipe server runs in the main process — all windows share it.
+- Session persistence saves all windows (bounds, workspaces, active state).
+- Workspaces can be moved between windows via drag-and-drop or context menu → "Move Workspace to Window".
 
 ---
 
 ## 2. Window Layout & Chrome
 
-**Frameless window:**
-- `BrowserWindow` with `frame: false`, `titleBarStyle: 'hidden'`, `titleBarOverlay: true`
-- Native Windows minimize/maximize/close buttons in top-right
+**Window configuration:**
+- `BrowserWindow` with `titleBarStyle: 'hidden'` and `titleBarOverlay: { color: '#1a1a1a', symbolColor: '#cccccc', height: 38 }`
+- This gives native Windows minimize/maximize/close buttons in the top-right while we control the rest
 - Custom drag region across the top bar (`-webkit-app-region: drag`)
 - Toolbar height: 38px
-- Toolbar shows focused pane command/title: 12px system font, medium weight, secondary color
+- Toolbar shows focused surface command/title: 12px system font, medium weight, secondary color
 
 **Layout:**
 - Sidebar (left) + Content area (right)
 - Sidebar default: 200px, min 180px, max 600px or 1/3 window width
 - Resizable via drag handle on right edge
-- Sidebar background: `#000000` at 82% opacity with `backdrop-filter: blur(12px)` — emulates cmux's HUD window material
+- Sidebar background: `#1a1a1a` at 92% opacity (solid fallback), with optional `backdrop-filter: blur(12px)` (configurable, off by default for GPU performance — see sidebar background presets in Settings)
 - Toggle with `Ctrl+B`
 
 **Presentation modes:**
@@ -107,7 +218,7 @@ Each workspace row displays live metadata from shell integration.
 3. Remove Custom Workspace Name
 4. Workspace Color → submenu (16 presets + custom picker)
 5. Move Up / Move Down / Move to Top
-6. Move Workspace to Window → submenu
+6. Move Workspace to Window → submenu (New Window + list of other windows)
 7. Close Workspace / Close Other / Close Above / Close Below
 8. Mark as Read / Mark as Unread
 
@@ -120,7 +231,7 @@ Red `#C0392B`, Crimson `#922B21`, Orange `#A04000`, Amber `#7D6608`, Olive `#4A5
 
 ## 4. Terminal Emulation
 
-**xterm.js per pane:**
+**xterm.js per surface:**
 - WebGL addon for GPU-accelerated rendering
 - FitAddon for auto-resize
 - WebLinksAddon for clickable URLs
@@ -139,7 +250,7 @@ Red `#C0392B`, Crimson `#922B21`, Orange `#A04000`, Amber `#7D6608`, Olive `#4A5
 
 - Default: auto-detect (pwsh → powershell → cmd)
 - Configurable per-workspace
-- Environment injected: `WMUX=1`, `WMUX_PANE_ID`, `WMUX_PIPE`
+- Environment injected: `WMUX=1`, `WMUX_PANE_ID`, `WMUX_WORKSPACE_ID`, `WMUX_SURFACE_ID`, `WMUX_PIPE`
 
 **Theme/config loading (dual source):**
 1. Windows Terminal `settings.json` at `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json`
@@ -148,43 +259,73 @@ Red `#C0392B`, Crimson `#922B21`, Orange `#A04000`, Amber `#7D6608`, Olive `#4A5
 4. Fallback defaults (Monokai): background `#272822`, foreground `#fdfff1`, cursor `#c0c1b5`, selection bg `#57584f`, selection fg `#fdfff1`
 
 **Copy/paste:**
-- `Ctrl+Shift+C` / `Ctrl+Shift+V`
-- `Ctrl+C` copies when selection exists, sends SIGINT when no selection
+- `Ctrl+Shift+C` / `Ctrl+Shift+V` (primary)
+- `Ctrl+C` with active selection: intercepted in xterm.js via `attachCustomKeyEventHandler` before reaching PTY. If selection exists → copy to clipboard. If no selection → write `\x03` to PTY (sends `CTRL_C_EVENT` to the console process via ConPTY). This requires careful handling since ConPTY receives raw bytes, not Unix signals.
 
 ---
 
-## 5. Split Pane System
+## 5. Split Pane & Surface System
 
-Tree-based split layout (equivalent to cmux's Bonsplit library).
+### 5.1 Hierarchy
 
-**Data structure:**
-```typescript
-type SplitNode =
-  | { type: 'leaf'; panelId: string; panelType: 'terminal' | 'browser' }
-  | { type: 'branch'; direction: 'horizontal' | 'vertical';
-      ratio: number; children: [SplitNode, SplitNode] }
+```
+Window → Workspace → Split Tree → Pane → Surface(s)
 ```
 
-**Shortcuts:**
-- Split Right: `Ctrl+D`
-- Split Down: `Ctrl+Shift+D`
-- Split Browser Right: `Ctrl+Alt+D`
-- Split Browser Down: `Ctrl+Shift+Alt+D`
-- Toggle Pane Zoom: `Ctrl+Shift+Enter`
-- Focus Left/Right/Up/Down: `Ctrl+Alt+Arrow`
-- Next/Previous Pane: `Ctrl+Shift+]` / `Ctrl+Shift+[`
+Each pane is a leaf in the split tree. Each pane can contain **multiple surfaces** (tabs), with one active/visible at a time. This matches cmux's surface concept.
 
-**Divider:**
+### 5.2 Split Tree Data Structure
+
+```typescript
+type SplitNode =
+  | { type: 'leaf'; paneId: string; surfaces: SurfaceRef[]; activeSurfaceIndex: number }
+  | { type: 'branch'; direction: 'horizontal' | 'vertical';
+      ratio: number; children: [SplitNode, SplitNode] }
+
+type SurfaceRef = {
+  id: string;
+  type: 'terminal' | 'browser' | 'markdown';
+}
+```
+
+### 5.3 Surface (Tab-Within-Pane) Operations
+
+Each pane shows a small tab bar when it contains multiple surfaces:
+
+| Action | Shortcut |
+|---|---|
+| New Surface (terminal tab in pane) | `Ctrl+T` |
+| Next Surface | `Ctrl+Shift+]` |
+| Previous Surface | `Ctrl+Shift+[` |
+| Select Surface 1-9 | `Alt+1...9` |
+| Close Surface | `Ctrl+W` (closes active surface; if last, closes pane) |
+
+### 5.4 Split Operations
+
+| Action | Shortcut |
+|---|---|
+| Split Right | `Ctrl+D` |
+| Split Down | `Ctrl+Shift+D` |
+| Split Browser Right | `Ctrl+Alt+D` |
+| Split Browser Down | `Ctrl+Shift+Alt+D` |
+| Toggle Pane Zoom | `Ctrl+Shift+Enter` |
+| Focus Pane Left/Right/Up/Down | `Ctrl+Alt+Arrow` |
+
+### 5.5 Divider
+
 - 1px rendered line, 4-6px invisible hit target
 - Color: terminal background darkened 40% (dark) or 8% (light)
+- Configurable via Ghostty `split-divider-color`
 - Cursor: `col-resize` / `row-resize` on hover
 
-**Behavior:**
+### 5.6 Behavior
+
 - Min pane size: 80px in either dimension
-- Resize triggers FitAddon recalculation + `pty.resize()`
+- Resize triggers FitAddon recalculation + `pty.resize()` for all terminal surfaces in the pane
 - Unfocused pane dimming: 30% opacity overlay (configurable, default `unfocused-split-opacity: 0.7`)
 - Zoom: focused pane fills content area, others hidden
 - Pane close: leaf removed, branch collapses if one child remains
+- Last pane close in workspace: workspace closes (configurable)
 
 ---
 
@@ -227,12 +368,15 @@ type SplitNode =
 
 ## 7. Socket Server & CLI
 
-**Named pipe server (main process):**
-- Path: `\\.\pipe\wmux` (default), `\\.\pipe\wmux-<username>` for multi-user
-- Current-user-only security descriptor
-- Multiple simultaneous clients
+### 7.1 Named Pipe Server (Main Process)
 
-**V1 protocol (text, shell integration):**
+- Path: `\\.\pipe\wmux` (default), `\\.\pipe\wmux-<username>` for multi-user
+- Current-user-only security descriptor (Windows named pipe ACLs)
+- Multiple simultaneous clients
+- Hosted in main process, shared across all windows
+
+### 7.2 V1 Protocol (Text, Shell Integration)
+
 ```
 report_pwd <surface_id> <path>
 report_git_branch <surface_id> <branch> [dirty]
@@ -246,32 +390,142 @@ notify <surface_id> <text>
 ping
 ```
 
-**V2 protocol (JSON-RPC, CLI and automation):**
+### 7.3 V2 Protocol (JSON-RPC, CLI and Automation)
+
+**Workspace methods:**
 ```json
 {"method": "workspace.create", "params": {"title": "...", "shell": "pwsh"}}
 {"method": "workspace.select", "params": {"id": "..."}}
 {"method": "workspace.list", "params": {}}
+{"method": "workspace.close", "params": {"id": "..."}}
+{"method": "workspace.rename", "params": {"id": "...", "title": "..."}}
+{"method": "workspace.move_to_window", "params": {"id": "...", "windowId": "..."}}
+```
+
+**Surface methods:**
+```json
+{"method": "surface.create", "params": {"paneId": "...", "type": "terminal"}}
+{"method": "surface.close", "params": {"id": "..."}}
+{"method": "surface.focus", "params": {"id": "..."}}
+{"method": "surface.list", "params": {"paneId": "..."}}
+{"method": "surface.read_text", "params": {"id": "...", "lines": 50}}
+{"method": "surface.send_text", "params": {"id": "...", "text": "..."}}
+{"method": "surface.send_key", "params": {"id": "...", "key": "Enter", "modifiers": ["ctrl"]}}
+{"method": "surface.trigger_flash", "params": {"id": "..."}}
+```
+
+**Pane methods:**
+```json
 {"method": "pane.split", "params": {"direction": "right", "type": "terminal"}}
+{"method": "pane.close", "params": {"id": "..."}}
 {"method": "pane.focus", "params": {"id": "..."}}
-{"method": "browser.navigate", "params": {"url": "..."}}
-{"method": "browser.snapshot", "params": {}}
-{"method": "browser.click", "params": {"selector": "..."}}
-{"method": "browser.fill", "params": {"selector": "...", "value": "..."}}
-{"method": "browser.evaluate", "params": {"script": "..."}}
+{"method": "pane.list", "params": {"workspaceId": "..."}}
+{"method": "pane.create", "params": {"workspaceId": "...", "type": "terminal"}}
+```
+
+**Browser methods:**
+```json
+{"method": "browser.navigate", "params": {"surfaceId": "...", "url": "..."}}
+{"method": "browser.back", "params": {"surfaceId": "..."}}
+{"method": "browser.forward", "params": {"surfaceId": "..."}}
+{"method": "browser.reload", "params": {"surfaceId": "..."}}
+{"method": "browser.snapshot", "params": {"surfaceId": "..."}}
+{"method": "browser.click", "params": {"surfaceId": "...", "selector": "..."}}
+{"method": "browser.fill", "params": {"surfaceId": "...", "selector": "...", "value": "..."}}
+{"method": "browser.evaluate", "params": {"surfaceId": "...", "script": "..."}}
+```
+
+**Notification methods:**
+```json
 {"method": "notification.list", "params": {}}
 {"method": "notification.clear", "params": {"id": "..."}}
 ```
 
-**CLI (`wmux.exe`):**
+**Window methods:**
+```json
+{"method": "window.list", "params": {}}
+{"method": "window.focus", "params": {"id": "..."}}
+{"method": "window.create", "params": {}}
+{"method": "window.close", "params": {"id": "..."}}
 ```
-wmux notify "Build done"
-wmux list
-wmux select <id>
-wmux split --right
+
+**System methods:**
+```json
+{"method": "system.identify", "params": {}}
+{"method": "system.capabilities", "params": {}}
+{"method": "system.tree", "params": {}}
+```
+
+### 7.4 CLI (`wmux.exe`)
+
+Full command set matching cmux:
+
+**Workspace commands:**
+```
+wmux new-workspace [--title <name>] [--shell <shell>] [--cwd <path>]
+wmux close-workspace [<id>]
+wmux select-workspace <id>
+wmux rename-workspace <id> <title>
+wmux list-workspaces
+wmux move-workspace-to-window <workspace-id> [--window <window-id>]
+```
+
+**Surface commands:**
+```
+wmux new-surface [--type terminal|browser|markdown]
+wmux close-surface [<id>]
+wmux focus-surface <id>
+wmux list-surfaces [--pane <pane-id>]
+```
+
+**Pane commands:**
+```
+wmux split [--right|--down] [--type terminal|browser|markdown]
+wmux close-pane [<id>]
+wmux focus-pane <id>
+wmux list-panes [--workspace <workspace-id>]
+wmux tree
+```
+
+**Terminal interaction (essential for AI agents):**
+```
+wmux send <text>                    # send text to focused surface
+wmux send-key <key> [--ctrl] [--shift] [--alt]
+wmux read-screen [--lines <n>]     # read terminal content
+wmux trigger-flash [<surface-id>]
+```
+
+**Browser commands:**
+```
 wmux browser open <url>
-wmux ping
+wmux browser snapshot
+wmux browser click <selector>
+wmux browser fill <selector> <value>
+wmux browser evaluate <script>
+```
+
+**Notification commands:**
+```
+wmux notify [--title <t>] [--body <b>] <text>
 wmux list-notifications
-wmux clear-notifications
+wmux clear-notifications [<id>]
+```
+
+**Sidebar commands:**
+```
+wmux set-status <key> <value>      # set sidebar metadata pill
+wmux set-progress <value> [--label <text>]
+wmux log <level> <message>         # add sidebar log entry
+wmux sidebar-state                 # dump current sidebar metadata
+```
+
+**System commands:**
+```
+wmux ping
+wmux identify
+wmux capabilities
+wmux list-windows
+wmux focus-window <id>
 ```
 
 **Authentication:** Windows named pipe security descriptors (current user only). Optional password file at `%APPDATA%\wmux\socket-password`.
@@ -280,24 +534,26 @@ wmux clear-notifications
 
 ## 8. Shell Integration
 
-**Three integration scripts, auto-injected when wmux spawns a pane:**
+**Three integration scripts, auto-injected when wmux spawns a surface:**
 
 ### PowerShell (`wmux-powershell-integration.ps1`)
 - Overrides `prompt` function
+- Communicates with named pipe via `[System.IO.Pipes.NamedPipeClientStream]` .NET API
 - Reports: CWD (`$PWD`), git branch + dirty, shell state (idle/running)
 - PR polling: background job with `gh pr view` every 45 seconds
 - Port scan kick after command completion
 - Injected via `-NoExit -Command ". 'path\to\integration.ps1'"`
 
 ### CMD (`wmux-cmd-integration.cmd`)
-- CWD reporting via OSC 9 escape sequences in `PROMPT`
-- Git branch via filesystem watcher on `.git/HEAD` (main process fallback)
+- CWD reporting via OSC 9 escape sequences embedded in `PROMPT` variable
+- Git branch detection: main process watches `.git/HEAD` via filesystem watcher (CMD lacks good hook support)
+- Metadata beyond CWD is limited in CMD — the main process compensates by polling git state for CMD panes
 - Injected via `cmd.exe /K "path\to\integration.cmd"`
 
 ### WSL Bash/Zsh (`wmux-bash-integration.sh`)
 - Near-identical to cmux's bash/zsh integration
 - `PROMPT_COMMAND` (bash) or `precmd`/`preexec` (zsh) hooks
-- Communicates via temp file or named pipe through `/mnt/c/` interop
+- Communication: uses `npiperelay` (https://github.com/jstarks/npiperelay) + `socat` to bridge from a WSL Unix socket to the Windows named pipe. The relay is auto-configured by wmux on first WSL pane creation. Fallback: write to a temp file at `/mnt/c/Users/<user>/AppData/Local/Temp/wmux/` that the main process watches.
 - Reports: CWD, git branch, PR status, shell state, port kicks
 - Sourced via `WMUX_INTEGRATION=1` env var detection in `.bashrc`/`.zshrc`
 
@@ -306,9 +562,10 @@ wmux clear-notifications
 | Variable | Value | Purpose |
 |---|---|---|
 | `WMUX` | `1` | Detect running inside wmux |
+| `WMUX_WORKSPACE_ID` | `ws-<uuid>` | Auto-detect calling workspace |
 | `WMUX_PANE_ID` | `pane-<uuid>` | Pane identity |
-| `WMUX_PIPE` | `\\.\pipe\wmux` | Named pipe path |
 | `WMUX_SURFACE_ID` | `<uuid>` | Surface ID for socket protocol |
+| `WMUX_PIPE` | `\\.\pipe\wmux` | Named pipe path |
 
 **Port scanning (main process):**
 - `netstat -ano` parsed output or Win32 `GetExtendedTcpTable` API
@@ -319,7 +576,7 @@ wmux clear-notifications
 
 ## 9. Browser Panel
 
-**Electron `<webview>` tag** — sandboxed Chromium instance per panel.
+**Electron `WebContentsView`** (Electron 30+) — preferred over deprecated `<webview>` tag. Each browser surface gets its own `WebContentsView` instance managed by the main process and positioned within the pane's bounds. Falls back to `<webview>` tag if `WebContentsView` layout integration proves problematic.
 
 **Address bar (omnibar):**
 - Back/Forward/Refresh-Stop buttons
@@ -343,16 +600,30 @@ wmux clear-notifications
 
 ---
 
-## 10. Session Persistence
+## 10. Markdown Panel
+
+A dedicated surface type for rendering markdown files in a split pane. Used by AI agents to display plans, documentation, or reports.
+
+- Renders markdown to HTML using a bundled parser (e.g., `marked` or `markdown-it`)
+- Supports GitHub Flavored Markdown (tables, task lists, fenced code with syntax highlighting)
+- Read-only display — no editing
+- Can be opened via:
+  - `wmux split --type markdown` CLI command
+  - `Ctrl+Alt+M` to open markdown panel
+  - Programmatically via V2 protocol: `{"method": "pane.split", "params": {"type": "markdown"}}`
+- Content can be set via V2: `{"method": "markdown.set_content", "params": {"surfaceId": "...", "markdown": "..."}}`
+- Styling matches the terminal theme (dark/light background, monospace code blocks)
+
+---
+
+## 11. Session Persistence
 
 **Saved to `%APPDATA%\wmux\sessions\session.json`:**
-- Window bounds (position, size)
-- Sidebar width
-- All workspaces: id, title, color, pin state, shell type
-- Split tree per workspace (directions, ratios, panel types)
-- Working directory per terminal pane
-- Browser panel URLs
-- Active workspace and pane
+- All windows: bounds (position, size), sidebar width
+- All workspaces per window: id, title, color, pin state, shell type
+- Split tree per workspace (directions, ratios, pane IDs)
+- Surfaces per pane (type, terminal CWD, browser URL, markdown content path)
+- Active workspace, pane, and surface per window
 - Terminal scrollback (optional, configurable max)
 
 **NOT restored:** running processes, shell state/history, notifications, port state, git/PR state.
@@ -363,7 +634,7 @@ wmux clear-notifications
 
 ---
 
-## 11. Settings & Preferences
+## 12. Settings & Preferences
 
 Settings window via `Ctrl+,`. Stored at `%APPDATA%\wmux\settings.json`.
 
@@ -371,6 +642,7 @@ Settings window via `Ctrl+,`. Stored at `%APPDATA%\wmux\settings.json`.
 - Toggle: git branch, branch icon, branch vertical layout, working directory, PR, SSH, ports, log, progress, status pills, notification message, hide all details
 - Active tab indicator: Left Rail / Solid Fill
 - Background opacity slider, background preset dropdown (6 presets)
+- Blur effect toggle (off by default for GPU performance)
 
 **Workspace tab:**
 - New workspace placement: After Current / Top / End
@@ -389,29 +661,30 @@ Settings window via `Ctrl+,`. Stored at `%APPDATA%\wmux\settings.json`.
 - Search engine, suggestions, DevTools icon, PR links in wmux browser
 
 **Keyboard Shortcuts tab:**
-- All ~30 shortcuts listed, each with record button for rebinding
+- All shortcuts listed, each with record button for rebinding
 - Conflict detection, Reset All button
 - Stored in `%APPDATA%\wmux\keybindings.json`
 
 ---
 
-## 12. Keyboard Shortcuts
+## 13. Keyboard Shortcuts
 
-All cmux `Cmd` shortcuts mapped to `Ctrl` on Windows.
+cmux `Cmd` → `Ctrl` on Windows. Some shortcuts adjusted to avoid Windows system conflicts (noted below).
 
 **Workspace:**
-| Action | Shortcut |
-|---|---|
-| New Workspace | `Ctrl+N` |
-| New Window | `Ctrl+Shift+N` |
-| Close Workspace | `Ctrl+Shift+W` |
-| Close Window | `Ctrl+Alt+W` |
-| Open Folder | `Ctrl+O` |
-| Toggle Sidebar | `Ctrl+B` |
-| Next Workspace | `Ctrl+PageDown` |
-| Previous Workspace | `Ctrl+PageUp` |
-| Select Workspace 1-9 | `Ctrl+1...9` |
-| Rename Workspace | `Ctrl+Shift+R` |
+| Action | Shortcut | Notes |
+|---|---|---|
+| New Workspace | `Ctrl+N` | |
+| New Window | `Ctrl+Shift+N` | |
+| Close Workspace | `Ctrl+Shift+W` | |
+| Close Window | `Ctrl+Alt+W` | cmux uses Cmd+Ctrl+W; Ctrl+Ctrl impossible on Windows |
+| Open Folder | `Ctrl+O` | |
+| Toggle Sidebar | `Ctrl+B` | |
+| Next Workspace | `Ctrl+PageDown` | cmux uses Cmd+Ctrl+]; PageDown is Windows convention |
+| Previous Workspace | `Ctrl+PageUp` | cmux uses Cmd+Ctrl+[; PageUp is Windows convention |
+| Select Workspace 1-9 | `Ctrl+1...9` | |
+| Rename Tab | `Ctrl+R` | |
+| Rename Workspace | `Ctrl+Shift+R` | |
 
 **Panes:**
 | Action | Shortcut |
@@ -422,8 +695,15 @@ All cmux `Cmd` shortcuts mapped to `Ctrl` on Windows.
 | Split Browser Down | `Ctrl+Shift+Alt+D` |
 | Toggle Zoom | `Ctrl+Shift+Enter` |
 | Focus Left/Right/Up/Down | `Ctrl+Alt+Arrow` |
-| Next/Previous Pane | `Ctrl+Shift+]` / `[` |
 | Close Pane | `Ctrl+W` |
+
+**Surfaces (tabs within pane):**
+| Action | Shortcut |
+|---|---|
+| New Surface | `Ctrl+T` |
+| Next Surface | `Ctrl+Shift+]` |
+| Previous Surface | `Ctrl+Shift+[` |
+| Select Surface 1-9 | `Alt+1...9` |
 
 **Notifications:**
 | Action | Shortcut |
@@ -442,19 +722,37 @@ All cmux `Cmd` shortcuts mapped to `Ctrl` on Windows.
 **Terminal:**
 | Action | Shortcut |
 |---|---|
-| Find | `Ctrl+Shift+F` |
+| Find | `Ctrl+F` |
 | Copy Mode | `Ctrl+Shift+M` |
 | Copy | `Ctrl+Shift+C` |
 | Paste | `Ctrl+Shift+V` |
 | Font Size +/- | `Ctrl+=` / `Ctrl+-` |
+| Reset Font Size | `Ctrl+0` |
+
+**General:**
+| Action | Shortcut |
+|---|---|
 | Settings | `Ctrl+,` |
 | Command Palette | `Ctrl+Shift+P` |
+| Open Markdown Panel | `Ctrl+Alt+M` |
 
 All shortcuts fully rebindable.
 
+### Command Palette (`Ctrl+Shift+P`)
+
+A fuzzy-search overlay (similar to VS Code's) that provides quick access to:
+- All keyboard shortcut actions (by name)
+- Workspace switching (type workspace name)
+- Theme switching
+- Shell selection for new workspaces
+- Settings navigation
+- Recent notifications
+
+Rendered as a centered overlay with text input, filtered results list, and keyboard navigation (up/down arrows, Enter to select, Escape to close).
+
 ---
 
-## 13. Project Structure
+## 14. Project Structure
 
 ```
 wmux/
@@ -466,6 +764,7 @@ wmux/
 ├── src/
 │   ├── main/
 │   │   ├── index.ts                # app entry, window creation, menu
+│   │   ├── window-manager.ts       # multi-window lifecycle
 │   │   ├── pty-manager.ts          # node-pty spawning & lifecycle
 │   │   ├── pipe-server.ts          # named pipe server (V1 + V2)
 │   │   ├── port-scanner.ts         # netstat-based port detection
@@ -493,7 +792,8 @@ wmux/
 │   │   │   ├── SplitPane/
 │   │   │   │   ├── SplitContainer.tsx
 │   │   │   │   ├── SplitDivider.tsx
-│   │   │   │   └── PaneWrapper.tsx
+│   │   │   │   ├── PaneWrapper.tsx
+│   │   │   │   └── SurfaceTabBar.tsx   # tab bar for multiple surfaces in a pane
 │   │   │   ├── Terminal/
 │   │   │   │   ├── TerminalPane.tsx
 │   │   │   │   ├── NotificationRing.tsx
@@ -504,8 +804,12 @@ wmux/
 │   │   │   │   ├── BrowserPane.tsx
 │   │   │   │   ├── AddressBar.tsx
 │   │   │   │   └── DevToolsToggle.tsx
+│   │   │   ├── Markdown/
+│   │   │   │   └── MarkdownPane.tsx
 │   │   │   ├── Titlebar/
 │   │   │   │   └── Titlebar.tsx
+│   │   │   ├── CommandPalette/
+│   │   │   │   └── CommandPalette.tsx
 │   │   │   └── Settings/
 │   │   │       ├── SettingsWindow.tsx
 │   │   │       ├── SidebarSettings.tsx
@@ -519,6 +823,7 @@ wmux/
 │   │   │   ├── index.ts
 │   │   │   ├── workspace-slice.ts
 │   │   │   ├── split-slice.ts
+│   │   │   ├── surface-slice.ts        # surface state per pane
 │   │   │   ├── notification-slice.ts
 │   │   │   ├── settings-slice.ts
 │   │   │   └── terminal-slice.ts
@@ -532,6 +837,8 @@ wmux/
 │   │       ├── sidebar.css
 │   │       ├── terminal.css
 │   │       ├── browser.css
+│   │       ├── markdown.css
+│   │       ├── command-palette.css
 │   │       ├── settings.css
 │   │       └── titlebar.css
 │   ├── preload/
@@ -553,4 +860,4 @@ wmux/
 
 **Build tooling:** Vite (renderer), electron-builder (packaging), electron-updater (auto-update)
 
-**Key dependencies:** electron, node-pty, @xterm/xterm, @xterm/addon-webgl, @xterm/addon-fit, @xterm/addon-web-links, @xterm/addon-search, @xterm/addon-unicode11, @xterm/addon-image, react, react-dom, zustand, vite, electron-builder, electron-updater
+**Key dependencies:** electron, node-pty, @xterm/xterm, @xterm/addon-webgl, @xterm/addon-fit, @xterm/addon-web-links, @xterm/addon-search, @xterm/addon-unicode11, @xterm/addon-image, react, react-dom, zustand, vite, electron-builder, electron-updater, marked (markdown rendering)
