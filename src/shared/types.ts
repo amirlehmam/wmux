@@ -76,10 +76,48 @@ export interface NotificationInfo {
   id: string;
   surfaceId: SurfaceId;
   workspaceId: WorkspaceId;
+  paneId?: PaneId;
   text: string;
   title?: string;
   timestamp: number;
   read: boolean;
+}
+
+// Agent system
+export type AgentId = `agent-${string}`;
+
+export interface AgentInfo {
+  agentId: AgentId;
+  surfaceId: SurfaceId;
+  paneId: PaneId;
+  workspaceId: WorkspaceId;
+  label: string;
+  cmd: string;
+  status: 'spawning' | 'running' | 'exited';
+  exitCode?: number;
+  pid?: number;
+  spawnTime: number;
+}
+
+export interface AgentSpawnParams {
+  cmd: string;
+  label: string;
+  cwd?: string;
+  env?: Record<string, string>;
+  paneId?: PaneId;
+  workspaceId?: WorkspaceId;
+}
+
+export interface AgentBatchParams {
+  agents: AgentSpawnParams[];
+  strategy: 'distribute' | 'stack' | 'split';
+  workspaceId?: WorkspaceId;
+}
+
+// CDP Browser API
+export interface CDPSnapshot {
+  tree: string;
+  refCount: number;
 }
 
 // Shell
@@ -165,4 +203,25 @@ export const IPC_CHANNELS = {
   SYSTEM_OPEN_EXTERNAL: 'system:openExternal',
   // Metadata events (main → renderer)
   METADATA_UPDATE: 'metadata:update',
+  // Agent
+  AGENT_SPAWN: 'agent:spawn',
+  AGENT_SPAWN_BATCH: 'agent:spawn-batch',
+  AGENT_STATUS: 'agent:status',
+  AGENT_LIST: 'agent:list',
+  AGENT_KILL: 'agent:kill',
+  AGENT_UPDATE: 'agent:update',
+  // CDP (browser.* pipe methods map to these internal IPC channels)
+  CDP_ATTACH: 'cdp:attach',
+  CDP_DETACH: 'cdp:detach',
+  CDP_NAVIGATE: 'cdp:navigate',
+  CDP_SNAPSHOT: 'cdp:snapshot',
+  CDP_CLICK: 'cdp:click',
+  CDP_TYPE: 'cdp:type',
+  CDP_FILL: 'cdp:fill',
+  CDP_SCREENSHOT: 'cdp:screenshot',
+  CDP_GET_TEXT: 'cdp:get-text',
+  CDP_EVAL: 'cdp:eval',
+  CDP_WAIT: 'cdp:wait',
+  // Active workspace query (renderer → main)
+  GET_ACTIVE_WORKSPACE: 'get-active-workspace',
 } as const;
