@@ -61,7 +61,7 @@ export class PtyManager {
     let args: string[] = [];
     if (shellType === 'powershell') {
       const script = path.join(integrationDir, 'wmux-powershell-integration.ps1');
-      args = ['-NoLogo', '-NoExit', '-Command', `. "${script}"`];
+      args = ['-NoLogo', '-ExecutionPolicy', 'Bypass', '-NoExit', '-Command', `. "${script}"`];
     } else if (shellType === 'cmd') {
       const script = path.join(integrationDir, 'wmux-cmd-integration.cmd');
       args = ['/K', script];
