@@ -1,0 +1,120 @@
+.markdown-pane {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 24px 32px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.markdown-pane__content h1,
+.markdown-pane__content h2,
+.markdown-pane__content h3,
+.markdown-pane__content h4,
+.markdown-pane__content h5,
+.markdown-pane__content h6 {
+  color: #e6e6e6;
+  margin-top: 24px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.markdown-pane__content h1 { font-size: 28px; border-bottom: 1px solid #333; padding-bottom: 8px; }
+.markdown-pane__content h2 { font-size: 22px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+.markdown-pane__content h3 { font-size: 18px; }
+.markdown-pane__content h4 { font-size: 16px; }
+
+.markdown-pane__content p {
+  margin-bottom: 12px;
+}
+
+.markdown-pane__content a {
+  color: #4fc1ff;
+  text-decoration: none;
+}
+
+.markdown-pane__content a:hover {
+  text-decoration: underline;
+}
+
+.markdown-pane__content code {
+  background: #2d2d2d;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 13px;
+  color: #ce9178;
+}
+
+.markdown-pane__content pre {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 16px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.markdown-pane__content pre code {
+  background: none;
+  padding: 0;
+  color: #d4d4d4;
+}
+
+.markdown-pane__content blockquote {
+  border-left: 3px solid #0091FF;
+  margin: 12px 0;
+  padding: 8px 16px;
+  background: rgba(0, 145, 255, 0.05);
+  color: #b0b0b0;
+}
+
+.markdown-pane__content ul, .markdown-pane__content ol {
+  margin-bottom: 12px;
+  padding-left: 24px;
+}
+
+.markdown-pane__content li {
+  margin-bottom: 4px;
+}
+
+.markdown-pane__content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.markdown-pane__content th, .markdown-pane__content td {
+  border: 1px solid #333;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.markdown-pane__content th {
+  background: #2a2a2a;
+  font-weight: 600;
+  color: #e6e6e6;
+}
+
+.markdown-pane__content tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.markdown-pane__content img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.markdown-pane__content hr {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 24px 0;
+}
+
+/* Task list checkboxes (GFM) */
+.markdown-pane__content input[type="checkbox"] {
+  margin-right: 6px;
+}
