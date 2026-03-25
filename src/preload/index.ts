@@ -56,4 +56,13 @@ contextBridge.exposeInMainWorld('wmux', {
   browser: {
     navigate: (surfaceId: string, url: string) => ipcRenderer.send('browser:navigate', surfaceId, url),
   },
+  window: {
+    create: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_CREATE),
+    close: (id: string) => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE, id),
+    focus: (id: string) => ipcRenderer.send(IPC_CHANNELS.WINDOW_FOCUS, id),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_LIST),
+    minimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
+    maximize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
+    isMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
+  },
 });

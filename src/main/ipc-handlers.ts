@@ -1,15 +1,16 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import { IPC_CHANNELS, SurfaceId } from '../shared/types';
+import { IPC_CHANNELS, SurfaceId, WindowId } from '../shared/types';
 import { PtyManager } from './pty-manager';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
 import { getDefaultTheme, loadBundledThemes } from './theme-loader';
 import { parseWindowsTerminalConfig, parseGhosttyConfig } from './config-loader';
+import { WindowManager } from './window-manager';
 
 const ptyManager = new PtyManager();
 const notificationManager = new NotificationManager();
 
-export function registerIpcHandlers(): void {
+export function registerIpcHandlers(windowManager: WindowManager): void {
   ipcMain.handle(IPC_CHANNELS.PTY_CREATE, async (_event, options) => {
     const resolvedOptions = {
       ...options,
@@ -80,6 +81,20 @@ export function registerIpcHandlers(): void {
       notificationManager.flashTaskbar(window);
     }
   });
+
+  // Window management handlers
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CREATE, () => windowManager.createWindow());
+  ipcMain.handle(IPC_CHANNELS.WINDOW_LIST, () => windowManager.listWindows());
+  ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, (_e, id: WindowId) => windowManager.closeWindow(id));
+  ipcMain.on(IPC_CHANNELS.WINDOW_FOCUS, (_e, id: WindowId) => windowManager.focusWindow(id));
+  ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
+  ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (win?.isMaximized()) win.unmaximize(); else win?.maximize();
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, (e) =>
+    BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false
+  );
 }
 
 export { ptyManager };
