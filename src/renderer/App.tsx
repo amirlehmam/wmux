@@ -5,6 +5,7 @@ import SplitContainer from './components/SplitPane/SplitContainer';
 import { updateRatio, getAllPaneIds } from './store/split-utils';
 import Sidebar from './components/Sidebar/Sidebar';
 import Titlebar from './components/Titlebar/Titlebar';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 const DEFAULT_SIDEBAR_WIDTH = 200;
 
@@ -19,9 +20,12 @@ export default function App() {
     reorderWorkspaces,
     updateWorkspaceMetadata,
     updateSplitTree,
+    sidebarVisible,
   } = useStore();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
+
+  useKeyboardShortcuts(focusedPaneId);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
 
   // Create initial workspace on mount
@@ -78,18 +82,20 @@ export default function App() {
       <Titlebar title={titlebarText} />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <Sidebar
-          workspaces={workspaces}
-          activeWorkspaceId={activeWorkspaceId}
-          sidebarWidth={sidebarWidth}
-          onWidthChange={handleSidebarWidthChange}
-          onSelect={selectWorkspace}
-          onClose={closeWorkspace}
-          onCreate={handleCreateWorkspace}
-          onRename={renameWorkspace}
-          onReorder={reorderWorkspaces}
-          onUpdateMetadata={handleUpdateMetadata}
-        />
+        {sidebarVisible && (
+          <Sidebar
+            workspaces={workspaces}
+            activeWorkspaceId={activeWorkspaceId}
+            sidebarWidth={sidebarWidth}
+            onWidthChange={handleSidebarWidthChange}
+            onSelect={selectWorkspace}
+            onClose={closeWorkspace}
+            onCreate={handleCreateWorkspace}
+            onRename={renameWorkspace}
+            onReorder={reorderWorkspaces}
+            onUpdateMetadata={handleUpdateMetadata}
+          />
+        )}
 
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {activeWorkspace ? (
