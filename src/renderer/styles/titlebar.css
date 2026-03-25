@@ -1,0 +1,28 @@
+/* ─── Titlebar ────────────────────────────────────────────────────────────── */
+
+.titlebar {
+  height: 38px;
+  width: 100%;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* Make the entire bar draggable so the window can be moved */
+  -webkit-app-region: drag;
+  /* Prevent text selection while dragging */
+  user-select: none;
+}
+
+.titlebar__title {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Ensure clicks on the text don't interfere with dragging */
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
