@@ -7,10 +7,12 @@ import { getDefaultTheme, loadBundledThemes } from './theme-loader';
 import { parseWindowsTerminalConfig, parseGhosttyConfig } from './config-loader';
 import { WindowManager } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
+import { AgentManager } from './agent-manager';
 
 const ptyManager = new PtyManager();
 const notificationManager = new NotificationManager();
 const cdpBridge = new CDPBridge();
+const agentManager = new AgentManager(ptyManager);
 
 export function registerIpcHandlers(windowManager: WindowManager): void {
   // Toggle DevTools for the renderer window
@@ -116,6 +118,26 @@ export function registerIpcHandlers(windowManager: WindowManager): void {
   ipcMain.on(IPC_CHANNELS.CDP_DETACH, () => {
     cdpBridge.detach();
   });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_LIST, async (_event, workspaceId?: string) => {
+    return agentManager.list(workspaceId as any);
+  });
+  ipcMain.handle(IPC_CHANNELS.AGENT_STATUS, async (_event, agentId: string) => {
+    return agentManager.getStatus(agentId as any);
+  });
 }
 
-export { ptyManager, cdpBridge };
+export function setupAgentPtyForwarding(surfaceId: string, window: BrowserWindow): void {
+  ptyManager.onData(surfaceId as any, (data) => {
+    if (window && !window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.PTY_DATA, surfaceId, data);
+    }
+  });
+  ptyManager.onExit(surfaceId as any, (code) => {
+    if (window && !window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.PTY_EXIT, surfaceId, code);
+    }
+  });
+}
+
+export { ptyManager, cdpBridge, agentManager };

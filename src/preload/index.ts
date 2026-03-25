@@ -57,6 +57,15 @@ contextBridge.exposeInMainWorld('wmux', {
   browser: {
     navigate: (surfaceId: string, url: string) => ipcRenderer.send('browser:navigate', surfaceId, url),
   },
+  agent: {
+    list: (workspaceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_LIST, workspaceId),
+    status: (agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STATUS, agentId),
+    onUpdate: (callback: (agent: any) => void) => {
+      const handler = (_event: any, agent: any) => callback(agent);
+      ipcRenderer.on(IPC_CHANNELS.AGENT_UPDATE, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT_UPDATE, handler);
+    },
+  },
   cdp: {
     attach: (webContentsId: number) => ipcRenderer.send(IPC_CHANNELS.CDP_ATTACH, webContentsId),
     detach: () => ipcRenderer.send(IPC_CHANNELS.CDP_DETACH),

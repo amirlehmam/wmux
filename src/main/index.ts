@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { registerIpcHandlers, cdpBridge } from './ipc-handlers';
+import { registerIpcHandlers, cdpBridge, agentManager, setupAgentPtyForwarding } from './ipc-handlers';
+import { distributeAgents } from './agent-manager';
 import { PipeServer } from './pipe-server';
 import { PortScanner } from './port-scanner';
 import { GitPoller } from './git-poller';
@@ -187,6 +188,99 @@ app.whenReady().then(() => {
         })();
         break;
       }
+      case 'agent.spawn': {
+        (async () => {
+          try {
+            const params = request.params;
+            let workspaceId = params.workspaceId;
+            if (!workspaceId) {
+              const wins = BrowserWindow.getAllWindows();
+              if (wins.length > 0) {
+                workspaceId = await wins[0].webContents.executeJavaScript('window.__wmux_getActiveWorkspaceId?.()');
+              }
+            }
+            if (!workspaceId) { respondError(-32000, 'No active workspace'); return; }
+
+            let paneId = params.paneId;
+            if (!paneId) {
+              const paneLoads = await BrowserWindow.getAllWindows()[0]?.webContents.executeJavaScript('window.__wmux_getPaneLoads?.()');
+              if (paneLoads && paneLoads.length > 0) paneId = distributeAgents(1, paneLoads)[0];
+            }
+            if (!paneId) { respondError(-32000, 'No panes available'); return; }
+
+            const result = agentManager.spawn({ cmd: params.cmd, label: params.label, cwd: params.cwd, env: params.env, paneId, workspaceId });
+
+            const win = BrowserWindow.getAllWindows()[0];
+            if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
+
+            BrowserWindow.getAllWindows().forEach(w => {
+              if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, { type: 'spawned', ...result, paneId, workspaceId, label: params.label });
+            });
+            respond(result);
+          } catch (err: any) { respondError(-32000, err.message); }
+        })();
+        break;
+      }
+
+      case 'agent.spawn_batch': {
+        (async () => {
+          try {
+            const { agents: agentParams, strategy = 'distribute', workspaceId: wsId } = request.params;
+            let workspaceId = wsId;
+            if (!workspaceId) {
+              const wins = BrowserWindow.getAllWindows();
+              if (wins.length > 0) workspaceId = await wins[0].webContents.executeJavaScript('window.__wmux_getActiveWorkspaceId?.()');
+            }
+            if (!workspaceId) { respondError(-32000, 'No active workspace'); return; }
+
+            const paneLoads = await BrowserWindow.getAllWindows()[0]?.webContents.executeJavaScript('window.__wmux_getPaneLoads?.()') || [];
+            if (paneLoads.length === 0) { respondError(-32000, 'No panes available'); return; }
+
+            let assignments: string[];
+            if (strategy === 'distribute') {
+              assignments = distributeAgents(agentParams.length, paneLoads);
+            } else if (strategy === 'stack') {
+              const sorted = [...paneLoads].sort((a: any, b: any) => a.tabCount - b.tabCount);
+              assignments = agentParams.map(() => sorted[0].paneId);
+            } else {
+              console.warn('[wmux] split strategy not yet implemented, falling back to distribute');
+              assignments = distributeAgents(agentParams.length, paneLoads);
+            }
+
+            const win = BrowserWindow.getAllWindows()[0];
+            const results: any[] = [];
+            for (let i = 0; i < agentParams.length; i++) {
+              try {
+                const result = agentManager.spawn({ ...agentParams[i], paneId: assignments[i] as any, workspaceId });
+                if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
+                BrowserWindow.getAllWindows().forEach(w => {
+                  if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, { type: 'spawned', ...result, paneId: assignments[i], workspaceId, label: agentParams[i].label });
+                });
+                results.push(result);
+              } catch (err: any) { results.push({ error: err.message }); }
+            }
+            respond({ agents: results });
+          } catch (err: any) { respondError(-32000, err.message); }
+        })();
+        break;
+      }
+
+      case 'agent.status': {
+        const info = agentManager.getStatus(request.params.agentId);
+        if (!info) { respondError(-32000, 'Agent not found'); break; }
+        respond(info);
+        break;
+      }
+      case 'agent.list':
+        respond({ agents: agentManager.list(request.params.workspaceId) });
+        break;
+      case 'agent.kill': {
+        const killed = agentManager.kill(request.params.agentId);
+        if (!killed) { respondError(-32000, 'Agent not found'); break; }
+        respond({ ok: true });
+        break;
+      }
+
       default:
         respondError(-32601, `Method not found: ${request.method}`);
     }

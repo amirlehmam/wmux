@@ -20,6 +20,11 @@ function getAllSurfaces(tree: SplitNode): string[] {
   return [...getAllSurfaces(tree.children[0]), ...getAllSurfaces(tree.children[1])];
 }
 
+function findLeafFromTree(node: SplitNode, paneId: PaneId): (SplitNode & { type: 'leaf' }) | null {
+  if (node.type === 'leaf') return node.paneId === paneId ? node : null;
+  return findLeafFromTree(node.children[0], paneId) || findLeafFromTree(node.children[1], paneId);
+}
+
 /** Build the default 3-terminal split layout for new workspaces */
 function buildDefaultSplitTree(): SplitNode {
   return {
@@ -73,6 +78,7 @@ export default function App() {
     markRead,
     markAllRead,
     selectSurface,
+    setAgentMeta,
   } = useStore();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
@@ -131,6 +137,50 @@ export default function App() {
       });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Expose helpers for main process queries
+  useEffect(() => {
+    (window as any).__wmux_getActiveWorkspaceId = () => useStore.getState().activeWorkspaceId;
+    (window as any).__wmux_getPaneLoads = () => {
+      const state = useStore.getState();
+      const ws = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+      if (!ws) return [];
+      return getAllPaneIds(ws.splitTree).map((pid) => {
+        const leaf = findLeafFromTree(ws.splitTree, pid);
+        return { paneId: pid, tabCount: leaf ? leaf.surfaces.length : 0 };
+      });
+    };
+    return () => {
+      delete (window as any).__wmux_getActiveWorkspaceId;
+      delete (window as any).__wmux_getPaneLoads;
+    };
+  }, []);
+
+  // Listen for agent spawn events from main process
+  useEffect(() => {
+    if (!window.wmux?.agent?.onUpdate) return;
+    const unsub = window.wmux.agent.onUpdate((event: any) => {
+      if (event.type === 'spawned') {
+        const { surfaceId, paneId, workspaceId, label } = event;
+        const state = useStore.getState();
+        const ws = state.workspaces.find((w) => w.id === workspaceId);
+        if (!ws) return;
+
+        const addSurfaceToLeaf = (node: SplitNode): SplitNode => {
+          if (node.type === 'leaf' && node.paneId === paneId) {
+            return { ...node, surfaces: [...node.surfaces, { id: surfaceId, type: 'terminal' }], activeSurfaceIndex: node.surfaces.length };
+          }
+          if (node.type === 'branch') {
+            return { ...node, children: [addSurfaceToLeaf(node.children[0]), addSurfaceToLeaf(node.children[1])] as [SplitNode, SplitNode] };
+          }
+          return node;
+        };
+        state.updateSplitTree(workspaceId, addSurfaceToLeaf(ws.splitTree));
+        setAgentMeta(surfaceId, { agentId: event.agentId, label, status: 'running' });
+      }
+    });
+    return unsub;
+  }, [setAgentMeta]);
 
   // Listen for real-time metadata updates from shell integration (pipe server → IPC → here)
   useEffect(() => {
