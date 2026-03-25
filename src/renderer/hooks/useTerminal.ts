@@ -23,12 +23,14 @@ interface UseTerminalResult {
   terminalRef: React.RefObject<HTMLDivElement | null>;
   fit: () => void;
   xtermRef: React.RefObject<Terminal | null>;
+  searchAddonRef: React.RefObject<SearchAddon | null>;
 }
 
 export function useTerminal({ shell, cwd }: UseTerminalOptions = {}): UseTerminalResult {
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const ptyIdRef = useRef<string | null>(null);
   const cleanupFnsRef = useRef<Array<() => void>>([]);
 
@@ -72,6 +74,7 @@ export function useTerminal({ shell, cwd }: UseTerminalOptions = {}): UseTermina
     const imageAddon = new ImageAddon();
 
     fitAddonRef.current = fitAddon;
+    searchAddonRef.current = searchAddon;
 
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(webLinksAddon);
@@ -236,5 +239,5 @@ export function useTerminal({ shell, cwd }: UseTerminalOptions = {}): UseTermina
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { terminalRef, fit, xtermRef };
+  return { terminalRef, fit, xtermRef, searchAddonRef };
 }

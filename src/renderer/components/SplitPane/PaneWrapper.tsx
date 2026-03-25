@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { PaneId, SplitNode, SurfaceId } from '../../../shared/types';
 import TerminalPane from '../Terminal/TerminalPane';
 import BrowserPane from '../Browser/BrowserPane';
@@ -25,12 +25,19 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
   const addSurface = useStore((s) => s.addSurface);
   const closeSurface = useStore((s) => s.closeSurface);
   const selectSurface = useStore((s) => s.selectSurface);
+  const shortcuts = useStore((s) => s.shortcuts);
 
   const surfaceIds = surfaces.map((s) => s.id);
 
   const hasUnread = notifications.some(
     (n) => !n.read && surfaceIds.includes(n.surfaceId as SurfaceId),
   );
+
+  // ─── Find bar state ───────────────────────────────────────────────────────
+  const [findBarVisible, setFindBarVisible] = useState(false);
+
+  // ─── Copy mode state ──────────────────────────────────────────────────────
+  const [copyModeActive, setCopyModeActive] = useState(false);
 
   // Track "just fired" state for flash animation
   const [justFired, setJustFired] = useState(false);
@@ -63,11 +70,67 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
 
+  // Keyboard shortcut listeners for find (Ctrl+F) and copy mode (Ctrl+Alt+[)
+  useEffect(() => {
+    if (!isFocused) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      const findBinding = shortcuts.find;
+      const copyModeBinding = shortcuts.copyMode;
+
+      // Match find shortcut (default: Ctrl+F)
+      const matchesFind =
+        e.key === findBinding.key &&
+        !!findBinding.ctrl === e.ctrlKey &&
+        !!findBinding.shift === e.shiftKey &&
+        !!findBinding.alt === e.altKey;
+
+      if (matchesFind) {
+        e.preventDefault();
+        setFindBarVisible((v) => !v);
+        return;
+      }
+
+      // Match copy mode shortcut (default: Ctrl+Alt+[)
+      const matchesCopyMode =
+        e.key === copyModeBinding.key &&
+        !!copyModeBinding.ctrl === e.ctrlKey &&
+        !!copyModeBinding.shift === e.shiftKey &&
+        !!copyModeBinding.alt === e.altKey;
+
+      if (matchesCopyMode) {
+        e.preventDefault();
+        setCopyModeActive((v) => !v);
+        return;
+      }
+
+      // Escape exits copy mode
+      if (e.key === 'Escape' && copyModeActive) {
+        setCopyModeActive(false);
+        return;
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isFocused, shortcuts, copyModeActive]);
+
+  const handleFindBarClose = useCallback(() => {
+    setFindBarVisible(false);
+  }, []);
+
   const renderSurface = () => {
     if (!activeSurface) return null;
     switch (activeSurface.type) {
       case 'terminal':
-        return <TerminalPane focused={isFocused} />;
+        return (
+          <TerminalPane
+            focused={isFocused}
+            showFindBar={findBarVisible && isFocused}
+            onFindBarClose={handleFindBarClose}
+            copyModeActive={copyModeActive && isFocused}
+          />
+        );
       case 'browser':
         return <BrowserPane surfaceId={activeSurface.id} />;
       case 'markdown':

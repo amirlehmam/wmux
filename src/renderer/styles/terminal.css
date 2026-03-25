@@ -15,6 +15,59 @@
   padding: 4px;
 }
 
+.find-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 0 0 0 6px;
+  z-index: 30;
+}
+.find-bar__input {
+  width: 200px;
+  padding: 4px 8px;
+  background: #1a1a1a;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: white;
+  font-size: 12px;
+  outline: none;
+}
+.find-bar__input:focus { border-color: #0091FF; }
+.find-bar__count { font-size: 11px; color: rgba(255,255,255,0.5); margin: 0 4px; }
+.find-bar__btn {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.find-bar__btn:hover { background: rgba(255,255,255,0.1); }
+
+.copy-mode-indicator {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 145, 255, 0.9);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  z-index: 25;
+  pointer-events: none;
+}
+
 .notification-ring {
   position: absolute;
   inset: 2px;
