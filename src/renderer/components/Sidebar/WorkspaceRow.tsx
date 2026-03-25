@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { WorkspaceInfo } from '../../../shared/types';
 import UnreadBadge from './UnreadBadge';
+import PrStatusIcon from './PrStatusIcon';
 
 interface WorkspaceRowProps {
   workspace: WorkspaceInfo;
@@ -15,15 +16,6 @@ interface WorkspaceRowProps {
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   isDragOver?: boolean;
-}
-
-function getPrIcon(status: WorkspaceInfo['prStatus']): string {
-  switch (status) {
-    case 'open': return '⬆';
-    case 'merged': return '⛙';
-    case 'closed': return '✕';
-    default: return '◉';
-  }
 }
 
 export default function WorkspaceRow({
@@ -154,18 +146,21 @@ export default function WorkspaceRow({
         )}
 
         {/* PR info */}
-        {workspace.prNumber != null && (
+        {workspace.prNumber != null && workspace.prStatus != null && (
+          <div
+            className="workspace-row__meta workspace-row__pr"
+            style={{ color: metaColor, display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            <PrStatusIcon status={workspace.prStatus} size={12} />
+            #{workspace.prNumber} {workspace.prStatus}
+          </div>
+        )}
+        {workspace.prNumber != null && workspace.prStatus == null && (
           <div
             className="workspace-row__meta workspace-row__pr"
             style={{ color: metaColor }}
           >
-            <span className="workspace-row__pr-icon">
-              {getPrIcon(workspace.prStatus)}
-            </span>
-            {' '}#{workspace.prNumber}
-            {workspace.prStatus && (
-              <span> · {workspace.prStatus}</span>
-            )}
+            #{workspace.prNumber}
           </div>
         )}
 
