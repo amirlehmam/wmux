@@ -1,4 +1,5 @@
 import React from 'react';
+import logoSrc from '../../assets/logo.png';
 import '../../styles/titlebar.css';
 
 interface TitlebarProps {
@@ -10,8 +11,8 @@ interface TitlebarProps {
 export default function Titlebar({ title, onHelpClick, onDevToolsClick }: TitlebarProps) {
   return (
     <div className="titlebar">
-      {/* Left spacer for sidebar alignment */}
       <div className="titlebar__left">
+        <img src={logoSrc} alt="wmux" className="titlebar__logo" draggable={false} />
         <button
           className="titlebar__btn"
           onClick={onHelpClick}
@@ -28,10 +29,8 @@ export default function Titlebar({ title, onHelpClick, onDevToolsClick }: Titleb
         </button>
       </div>
 
-      {/* Center title */}
       <span className="titlebar__title">{title ?? ''}</span>
 
-      {/* Right spacer — leave room for native Windows controls (~140px) */}
       <div className="titlebar__right" />
     </div>
   );

@@ -13,9 +13,18 @@
 .titlebar__left {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
+}
+
+.titlebar__logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  margin-right: 4px;
+  opacity: 0.8;
+  -webkit-app-region: no-drag;
 }
 
 .titlebar__title {
