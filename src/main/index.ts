@@ -2,10 +2,16 @@ import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import { registerIpcHandlers } from './ipc-handlers';
 import { PipeServer } from './pipe-server';
+import { PortScanner } from './port-scanner';
+import { GitPoller } from './git-poller';
+import { PrPoller } from './pr-poller';
 import { IPC_CHANNELS } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
 const pipeServer = new PipeServer();
+const portScanner = new PortScanner();
+const gitPoller = new GitPoller();
+const prPoller = new PrPoller();
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -47,7 +53,49 @@ app.whenReady().then(() => {
   // Start named pipe server
   pipeServer.start();
 
+  portScanner.onResults((portsByPid) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
+          command: 'ports_update',
+          surfaceId: '',
+          args: [JSON.stringify(Object.fromEntries(portsByPid))],
+        });
+      }
+    });
+  });
+
+  gitPoller.onUpdate((cwd, state) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
+          command: state.branch ? 'report_git_branch' : 'clear_git_branch',
+          surfaceId: '', // will be mapped via cwd → workspace
+          args: state.branch ? [state.branch, state.dirty ? 'dirty' : ''] : [],
+        });
+      }
+    });
+  });
+
+  prPoller.onUpdate((cwd, pr) => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        if (pr) {
+          win.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
+            command: 'report_pr',
+            surfaceId: '',
+            args: [String(pr.number), pr.state, pr.title],
+          });
+        }
+      }
+    });
+  });
+
   pipeServer.on('v1', (cmd) => {
+    // Trigger port scan when requested from shell integration
+    if (cmd.command === 'ports_kick') {
+      portScanner.kick();
+    }
     // Forward metadata updates to all windows
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) {
@@ -76,6 +124,9 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   pipeServer.stop();
+  portScanner.stop();
+  gitPoller.unwatchAll();
+  prPoller.stopAll();
 });
 
 app.on('window-all-closed', () => {
