@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('wmux', {
     platform: 'win32' as const,
     getShells: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_SHELLS),
     openExternal: (url: string) => ipcRenderer.send(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
+    toggleDevTools: () => ipcRenderer.send('toggle-devtools'),
   },
   config: {
     getTheme: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET_THEME),

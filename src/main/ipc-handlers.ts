@@ -11,6 +11,18 @@ const ptyManager = new PtyManager();
 const notificationManager = new NotificationManager();
 
 export function registerIpcHandlers(windowManager: WindowManager): void {
+  // Toggle DevTools for the renderer window
+  ipcMain.on('toggle-devtools', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      if (win.webContents.isDevToolsOpened()) {
+        win.webContents.closeDevTools();
+      } else {
+        win.webContents.openDevTools({ mode: 'detach' });
+      }
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.PTY_CREATE, async (_event, options) => {
     const resolvedOptions = {
       ...options,

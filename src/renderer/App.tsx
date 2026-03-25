@@ -234,7 +234,11 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {tutorialOpen && <Tutorial onClose={handleTutorialClose} />}
       {settingsOpen && <SettingsWindow onClose={() => setSettingsOpen(false)} />}
-      <Titlebar title={titlebarText} onHelpClick={() => setTutorialOpen(true)} />
+      <Titlebar
+        title={titlebarText}
+        onHelpClick={() => setTutorialOpen(true)}
+        onDevToolsClick={() => window.wmux?.system?.toggleDevTools?.()}
+      />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {sidebarVisible && (
