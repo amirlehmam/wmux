@@ -1,6 +1,28 @@
 import * as pty from 'node-pty';
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { SurfaceId } from '../shared/types';
+
+function getShellIntegrationPath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as typeof import('electron');
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'shell-integration');
+    }
+  } catch {
+    // Not running in Electron (e.g., during tests)
+  }
+  return path.join(__dirname, '../../src/shell-integration');
+}
+
+function getShellType(shell: string): 'powershell' | 'cmd' | 'wsl' | 'unknown' {
+  const lower = shell.toLowerCase();
+  if (lower.includes('pwsh') || lower.includes('powershell')) return 'powershell';
+  if (lower.includes('cmd')) return 'cmd';
+  if (lower.includes('wsl')) return 'wsl';
+  return 'unknown';
+}
 
 interface PtyEntry {
   pty: pty.IPty;
@@ -22,12 +44,37 @@ export class PtyManager {
   create(options: CreateOptions): SurfaceId {
     const id: SurfaceId = `surf-${uuidv4()}`;
 
-    const ptyProcess = pty.spawn(options.shell, [], {
+    const shellType = getShellType(options.shell);
+    const integrationDir = getShellIntegrationPath();
+    // Filter out undefined values from process.env before merging
+    const processEnvClean = Object.fromEntries(
+      Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+    );
+    const env: { [key: string]: string } = {
+      ...processEnvClean,
+      ...options.env,
+      WMUX: '1',
+      WMUX_SURFACE_ID: id,
+      WMUX_PIPE: '\\\\.\\pipe\\wmux',
+    };
+
+    let args: string[] = [];
+    if (shellType === 'powershell') {
+      const script = path.join(integrationDir, 'wmux-powershell-integration.ps1');
+      args = ['-NoLogo', '-NoExit', '-Command', `. "${script}"`];
+    } else if (shellType === 'cmd') {
+      const script = path.join(integrationDir, 'wmux-cmd-integration.cmd');
+      args = ['/K', script];
+    } else if (shellType === 'wsl') {
+      env.WMUX_INTEGRATION = '1';
+    }
+
+    const ptyProcess = pty.spawn(options.shell, args, {
       name: 'xterm-256color',
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
       cwd: options.cwd,
-      env: options.env as { [key: string]: string },
+      env,
       useConpty: true,
     });
 
