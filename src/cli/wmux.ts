@@ -121,13 +121,52 @@ async function main() {
         switch (sub) {
           case 'open': console.log(JSON.stringify(await sendV2('browser.navigate', { url: args[2] }), null, 2)); break;
           case 'snapshot': console.log(JSON.stringify(await sendV2('browser.snapshot'), null, 2)); break;
-          case 'click': console.log(JSON.stringify(await sendV2('browser.click', { selector: args[2] }), null, 2)); break;
-          case 'fill': console.log(JSON.stringify(await sendV2('browser.fill', { selector: args[2], value: args[3] }), null, 2)); break;
-          case 'evaluate': console.log(JSON.stringify(await sendV2('browser.evaluate', { script: args.slice(2).join(' ') }), null, 2)); break;
+          case 'click': console.log(JSON.stringify(await sendV2('browser.click', { ref: args[2] }), null, 2)); break;
+          case 'type': console.log(JSON.stringify(await sendV2('browser.type', { ref: args[2], text: args.slice(3).join(' ') }), null, 2)); break;
+          case 'fill': console.log(JSON.stringify(await sendV2('browser.fill', { ref: args[2], value: args.slice(3).join(' ') }), null, 2)); break;
+          case 'screenshot': console.log(JSON.stringify(await sendV2('browser.screenshot', { fullPage: args.includes('--full') }), null, 2)); break;
+          case 'get-text': console.log(JSON.stringify(await sendV2('browser.get_text', { ref: args[2] }), null, 2)); break;
+          case 'eval': console.log(JSON.stringify(await sendV2('browser.eval', { js: args.slice(2).join(' ') }), null, 2)); break;
+          case 'wait': console.log(JSON.stringify(await sendV2('browser.wait', { ref: args[2], timeout: parseInt(args[3]) || undefined }), null, 2)); break;
           case 'back': console.log(JSON.stringify(await sendV2('browser.back'), null, 2)); break;
           case 'forward': console.log(JSON.stringify(await sendV2('browser.forward'), null, 2)); break;
           case 'reload': console.log(JSON.stringify(await sendV2('browser.reload'), null, 2)); break;
           default: console.error(`Unknown browser command: ${sub}`); process.exit(1);
+        }
+        break;
+      }
+
+      // Agent
+      case 'agent': {
+        const sub = args[1];
+        switch (sub) {
+          case 'spawn': {
+            const params: any = {};
+            for (let i = 2; i < args.length; i += 2) {
+              if (args[i] === '--cmd') params.cmd = args[i + 1];
+              if (args[i] === '--label') params.label = args[i + 1];
+              if (args[i] === '--cwd') params.cwd = args[i + 1];
+              if (args[i] === '--pane') params.paneId = args[i + 1];
+              if (args[i] === '--workspace') params.workspaceId = args[i + 1];
+            }
+            if (!params.cmd) { console.error('--cmd is required'); process.exit(1); }
+            if (!params.label) params.label = params.cmd.split(/\s+/)[0];
+            console.log(JSON.stringify(await sendV2('agent.spawn', params), null, 2));
+            break;
+          }
+          case 'spawn-batch': {
+            const jsonIdx = args.indexOf('--json');
+            if (jsonIdx === -1) { console.error('Usage: wmux agent spawn-batch --json \'[...]\''); process.exit(1); }
+            const json = args[jsonIdx + 1];
+            const parsed = JSON.parse(json);
+            const strategy = args.find((a, i) => args[i - 1] === '--strategy') || 'distribute';
+            console.log(JSON.stringify(await sendV2('agent.spawn_batch', { agents: parsed, strategy }), null, 2));
+            break;
+          }
+          case 'status': console.log(JSON.stringify(await sendV2('agent.status', { agentId: args[2] }), null, 2)); break;
+          case 'list': console.log(JSON.stringify(await sendV2('agent.list', { workspaceId: args.find((a, i) => args[i - 1] === '--workspace') }), null, 2)); break;
+          case 'kill': console.log(JSON.stringify(await sendV2('agent.kill', { agentId: args[2] }), null, 2)); break;
+          default: console.error(`Unknown agent command: ${sub}`); process.exit(1);
         }
         break;
       }
@@ -197,7 +236,8 @@ Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, 
 Surface:    new-surface, close-surface, focus-surface, list-surfaces
 Pane:       split, close-pane, focus-pane, zoom-pane, list-panes, tree
 Terminal:   send <text>, send-key <key>, read-screen, trigger-flash
-Browser:    browser open|snapshot|click|fill|evaluate|back|forward|reload
+Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
+Agent:      agent spawn|spawn-batch|status|list|kill
 Markdown:   markdown set <id> --content <text> | --file <path>
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state
