@@ -83,6 +83,45 @@ export function useTerminal({ shell, cwd }: UseTerminalOptions = {}): UseTermina
     // Open terminal in the DOM
     terminal.open(terminalRef.current);
 
+    // Register OSC notification handlers
+    // OSC 9: basic notification (iTerm2 style)
+    terminal.parser.registerOscHandler(9, (data) => {
+      window.wmux.notification.fire({
+        surfaceId: ptyIdRef.current || '',
+        text: data,
+      });
+      return true;
+    });
+
+    // OSC 99: rich notification (kitty style)
+    terminal.parser.registerOscHandler(99, (data) => {
+      // Parse kitty notification format: key=value pairs separated by ;
+      const params: Record<string, string> = {};
+      data.split(';').forEach(part => {
+        const [k, ...v] = part.split('=');
+        if (k && v.length) params[k.trim()] = v.join('=').trim();
+      });
+      window.wmux.notification.fire({
+        surfaceId: ptyIdRef.current || '',
+        text: params.body || params.d || data,
+        title: params.title || params.t,
+      });
+      return true;
+    });
+
+    // OSC 777: rxvt-unicode style (notify;title;body)
+    terminal.parser.registerOscHandler(777, (data) => {
+      const parts = data.split(';');
+      if (parts[0] === 'notify' && parts.length >= 3) {
+        window.wmux.notification.fire({
+          surfaceId: ptyIdRef.current || '',
+          text: parts.slice(2).join(';'),
+          title: parts[1],
+        });
+      }
+      return true;
+    });
+
     // Try WebGL renderer, fall back to canvas
     const webglAddon = new WebglAddon();
     try {

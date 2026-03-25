@@ -14,3 +14,25 @@
   height: 100%;
   padding: 4px;
 }
+
+.notification-ring {
+  position: absolute;
+  inset: 2px;
+  border: 2.5px solid #007AFF;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 20;
+  opacity: 1;
+}
+
+.notification-ring--flashing {
+  animation: notification-flash 0.9s ease-in-out;
+}
+
+@keyframes notification-flash {
+  0%   { opacity: 0; }
+  25%  { opacity: 1; }
+  50%  { opacity: 0; }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
+}

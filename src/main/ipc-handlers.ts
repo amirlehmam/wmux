@@ -1,11 +1,13 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 import { PtyManager } from './pty-manager';
+import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
 import { getDefaultTheme, loadBundledThemes } from './theme-loader';
 import { parseWindowsTerminalConfig, parseGhosttyConfig } from './config-loader';
 
 const ptyManager = new PtyManager();
+const notificationManager = new NotificationManager();
 
 export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.PTY_CREATE, async (_event, options) => {
@@ -62,6 +64,21 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.CONFIG_IMPORT_GHOSTTY, async () => {
     return parseGhosttyConfig();
+  });
+
+  ipcMain.on(IPC_CHANNELS.NOTIFICATION_FIRE, (_event, data: { surfaceId: string; text: string; title?: string }) => {
+    const window = BrowserWindow.fromWebContents(_event.sender);
+    // Show toast
+    notificationManager.showToast(data.title || 'wmux', data.text, () => {
+      if (window && !window.isDestroyed()) {
+        window.focus();
+        window.webContents.send('notification:focus-surface', data.surfaceId);
+      }
+    });
+    // Flash taskbar
+    if (window && !window.isDestroyed()) {
+      notificationManager.flashTaskbar(window);
+    }
   });
 }
 
