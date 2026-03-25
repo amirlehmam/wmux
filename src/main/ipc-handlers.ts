@@ -1,0 +1,46 @@
+import { ipcMain, BrowserWindow } from 'electron';
+import { IPC_CHANNELS, SurfaceId } from '../shared/types';
+import { PtyManager } from './pty-manager';
+import { detectShells } from './shell-detector';
+
+const ptyManager = new PtyManager();
+
+export function registerIpcHandlers(): void {
+  ipcMain.handle(IPC_CHANNELS.PTY_CREATE, async (_event, options) => {
+    const resolvedOptions = {
+      ...options,
+      cwd: options.cwd || process.env.USERPROFILE || 'C:\\',
+    };
+    const id = await ptyManager.create(resolvedOptions);
+    const window = BrowserWindow.fromWebContents(_event.sender);
+    ptyManager.onData(id, (data) => {
+      if (window && !window.isDestroyed()) {
+        window.webContents.send(IPC_CHANNELS.PTY_DATA, id, data);
+      }
+    });
+    ptyManager.onExit(id, (code) => {
+      if (window && !window.isDestroyed()) {
+        window.webContents.send(IPC_CHANNELS.PTY_EXIT, id, code);
+      }
+    });
+    return id;
+  });
+
+  ipcMain.on(IPC_CHANNELS.PTY_WRITE, (_event, id: SurfaceId, data: string) => {
+    ptyManager.write(id, data);
+  });
+
+  ipcMain.on(IPC_CHANNELS.PTY_RESIZE, (_event, id: SurfaceId, cols: number, rows: number) => {
+    ptyManager.resize(id, cols, rows);
+  });
+
+  ipcMain.on(IPC_CHANNELS.PTY_KILL, (_event, id: SurfaceId) => {
+    ptyManager.kill(id);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_SHELLS, async () => {
+    return detectShells();
+  });
+}
+
+export { ptyManager };
