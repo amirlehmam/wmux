@@ -155,6 +155,18 @@ app.whenReady().then(() => {
   });
 });
 
+app.on('before-quit', () => {
+  // Cancel pending auto-save timer
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+  // Ask renderer to push its current state synchronously before quit
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('session:request');
+  }
+});
+
 app.on('will-quit', () => {
   pipeServer.stop();
   portScanner.stop();
