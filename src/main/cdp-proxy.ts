@@ -33,9 +33,12 @@ export class CDPProxy {
 
       if (req.url === '/json/version') {
         res.end(JSON.stringify({
-          Browser: 'wmux/0.4.0',
+          Browser: 'Chrome/133.0.0.0',
           'Protocol-Version': '1.3',
-          webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/page/1`,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+          'V8-Version': '13.3.0',
+          'WebKit-Version': '537.36',
+          webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/browser/1`,
         }));
         return;
       }
@@ -43,12 +46,20 @@ export class CDPProxy {
       if (req.url === '/json/list' || req.url === '/json') {
         const page = this.getPageInfo();
         res.end(JSON.stringify([{
+          description: '',
+          devtoolsFrontendUrl: '',
           id: '1',
           type: 'page',
           title: page.title,
           url: page.url,
           webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/page/1`,
         }]));
+        return;
+      }
+
+      // Chrome DevTools also queries /json/protocol
+      if (req.url === '/json/protocol') {
+        res.end('{}');
         return;
       }
 
