@@ -23,6 +23,7 @@ interface SidebarProps {
   onReorder: (ids: WorkspaceId[]) => void;
   onUpdateMetadata: (id: WorkspaceId, partial: Partial<WorkspaceInfo>) => void;
   hookActivity?: Record<string, { agents: number; tools: number; lastSeen: number }>;
+  claudeActivity?: Record<string, any>;
 }
 
 export default function Sidebar({
@@ -37,6 +38,7 @@ export default function Sidebar({
   onReorder,
   onUpdateMetadata,
   hookActivity,
+  claudeActivity,
 }: SidebarProps) {
   const [draggedId, setDraggedId] = useState<WorkspaceId | null>(null);
   const [dragOverId, setDragOverId] = useState<WorkspaceId | null>(null);
@@ -223,6 +225,7 @@ export default function Sidebar({
             isDragOver={dragOverId === ws.id}
             agentCount={agentCounts[ws.id] || 0}
             hookActivity={hookActivity?.[ws.id]}
+            claudeActivity={claudeActivity}
           />
         ))}
       </div>

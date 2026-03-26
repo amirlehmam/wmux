@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { IPC_CHANNELS, SurfaceId, WindowId } from '../shared/types';
+import { observePtyData } from './claude-observer';
 import { PtyManager } from './pty-manager';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
@@ -42,6 +43,8 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       if (window && !window.isDestroyed()) {
         window.webContents.send(IPC_CHANNELS.PTY_DATA, id, data);
       }
+      // Feed Claude Code observer for sidebar activity display
+      observePtyData(id, data);
     });
     ptyManager.onExit(id, (code) => {
       if (window && !window.isDestroyed()) {

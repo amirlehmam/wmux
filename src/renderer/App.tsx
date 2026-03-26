@@ -91,6 +91,8 @@ export default function App() {
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   // Per-workspace hook activity: workspaceId → { agents: count, tools: count, lastSeen }
   const [hookActivity, setHookActivity] = useState<Record<string, { agents: number; tools: number; lastSeen: number }>>({});
+  // Per-surface Claude activity (parsed from terminal output)
+  const [claudeActivity, setClaudeActivity] = useState<Record<string, any>>({});;
 
   // Global keyboard listener for command palette toggle (Ctrl+Shift+P)
   useEffect(() => {
@@ -293,6 +295,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, [hookActivity]);
 
+  // Listen for Claude Code activity parsed from terminal output
+  useEffect(() => {
+    if (!window.wmux?.claudeActivity?.onUpdate) return;
+    const unsub = window.wmux.claudeActivity.onUpdate((data: any) => {
+      if (!data?.surfaceId || !data?.activity) return;
+      setClaudeActivity(prev => ({ ...prev, [data.surfaceId]: data.activity }));
+    });
+    return unsub;
+  }, []);
+
   // Auto-focus first pane whenever the active workspace changes or gains its first pane
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
 
@@ -414,6 +426,7 @@ export default function App() {
             onReorder={reorderWorkspaces}
             onUpdateMetadata={handleUpdateMetadata}
             hookActivity={hookActivity}
+            claudeActivity={claudeActivity}
           />
         )}
 

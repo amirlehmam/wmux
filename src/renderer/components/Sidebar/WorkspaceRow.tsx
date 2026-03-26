@@ -1,7 +1,12 @@
-import React, { useState, useRef } from 'react';
-import { WorkspaceInfo } from '../../../shared/types';
+import React, { useState, useRef, useMemo } from 'react';
+import { WorkspaceInfo, SplitNode } from '../../../shared/types';
 import UnreadBadge from './UnreadBadge';
 import PrStatusIcon from './PrStatusIcon';
+
+function getAllSurfaceIds(tree: SplitNode): string[] {
+  if (tree.type === 'leaf') return tree.surfaces.map(s => s.id);
+  return [...getAllSurfaceIds(tree.children[0]), ...getAllSurfaceIds(tree.children[1])];
+}
 
 interface WorkspaceRowProps {
   workspace: WorkspaceInfo;
@@ -19,6 +24,7 @@ interface WorkspaceRowProps {
   isDragOver?: boolean;
   agentCount?: number;
   hookActivity?: { agents: number; tools: number; lastSeen: number };
+  claudeActivity?: Record<string, any>;
 }
 
 export default function WorkspaceRow({
@@ -36,6 +42,7 @@ export default function WorkspaceRow({
   isDragOver = false,
   agentCount = 0,
   hookActivity,
+  claudeActivity,
 }: WorkspaceRowProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -48,6 +55,16 @@ export default function WorkspaceRow({
   const customColorTint = workspace.customColor
     ? `${workspace.customColor}0D` // ~5% opacity
     : undefined;
+
+  // Find Claude activity for this workspace's surfaces
+  const wsActivity = useMemo(() => {
+    if (!claudeActivity) return null;
+    const surfaceIds = getAllSurfaceIds(workspace.splitTree);
+    for (const sid of surfaceIds) {
+      if (claudeActivity[sid]) return claudeActivity[sid];
+    }
+    return null;
+  }, [claudeActivity, workspace.splitTree]);
 
   const rowStyle: React.CSSProperties = isActive
     ? { backgroundColor: activeBackground }
@@ -155,7 +172,8 @@ export default function WorkspaceRow({
         workspace.prNumber != null ||
         portsStr ||
         agentCount > 0 ||
-        hookActivity) && (
+        hookActivity ||
+        wsActivity) && (
         <div className="workspace-row__metadata">
           {/* Notification text */}
           {workspace.notificationText && (
@@ -209,14 +227,21 @@ export default function WorkspaceRow({
             </div>
           )}
 
-          {/* Hook activity */}
-          {hookActivity && (
-            <div className="workspace-row__meta-line workspace-row__hook-activity">
-              {Date.now() - hookActivity.lastSeen < 5000
-                ? `${hookActivity.agents > 0 ? hookActivity.agents + ' agent' + (hookActivity.agents > 1 ? 's' : '') + ' · ' : ''}${hookActivity.tools} tool calls`
-                : hookActivity.agents > 0
-                  ? `${hookActivity.agents} agent${hookActivity.agents > 1 ? 's' : ''} done`
-                  : 'Done'}
+          {/* Claude activity (parsed from terminal output) */}
+          {wsActivity && wsActivity.agents && wsActivity.agents.length > 0 && (
+            <div className="workspace-row__claude-activity">
+              {wsActivity.agents.map((agent: any, i: number) => (
+                <div key={i} className="workspace-row__agent-line">
+                  <span className={`workspace-row__agent-dot ${agent.done ? 'workspace-row__agent-dot--done' : 'workspace-row__agent-dot--working'}`} />
+                  <span className="workspace-row__agent-name">{agent.name}</span>
+                  <span className="workspace-row__agent-tokens">{agent.tokens}tok</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {wsActivity?.activeSkill && (
+            <div className="workspace-row__meta-line workspace-row__skill">
+              {wsActivity.activeSkill}
             </div>
           )}
         </div>

@@ -227,4 +227,6 @@ export const IPC_CHANNELS = {
   GET_ACTIVE_WORKSPACE: 'get-active-workspace',
   // Hook events (Claude Code hooks → main → renderer)
   HOOK_EVENT: 'hook:event',
+  // Claude Code activity (parsed from PTY output → renderer)
+  CLAUDE_ACTIVITY: 'claude:activity',
 } as const;
