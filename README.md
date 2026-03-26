@@ -1,11 +1,8 @@
-<p align="center">
-  <img src="./docs/assets/wmux_logo.png" alt="wmux logo" width="120" />
-</p>
 <h1 align="center">wmux</h1>
 <p align="center">A Windows terminal multiplexer with vertical tabs, notification center, scriptable browser, and sub-agent spawning for AI coding agents</p>
 
 <p align="center">
-  Built on Electron + xterm.js. Inspired by <a href="https://github.com/manaflow-ai/cmux">cmux</a>. 
+  Built on Electron + xterm.js. Forked from <a href="https://github.com/manaflow-ai/cmux">cmux</a>. 
 </p>
 
 <p align="center">
