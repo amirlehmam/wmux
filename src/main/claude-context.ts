@@ -115,22 +115,26 @@ export function ensureClaudeHooks(): void {
     if (!settings.hooks) settings.hooks = {};
     if (!Array.isArray(settings.hooks.PostToolUse)) settings.hooks.PostToolUse = [];
 
-    const hooks: any[] = settings.hooks.PostToolUse;
-    const existingIdx = hooks.findIndex((h: any) => h.command?.includes(HOOK_MARKER));
+    const entries: any[] = settings.hooks.PostToolUse;
 
-    const wmuxHook = {
+    // Find existing wmux hook entry by checking nested hooks[].command
+    const existingIdx = entries.findIndex((e: any) =>
+      Array.isArray(e.hooks) && e.hooks.some((h: any) => h.command?.includes(HOOK_MARKER))
+    );
+
+    const wmuxEntry = {
       matcher: '',
-      command: wmuxHookCommand,
+      hooks: [{ type: 'command', command: wmuxHookCommand }],
     };
 
     if (existingIdx === -1) {
-      hooks.push(wmuxHook);
+      entries.push(wmuxEntry);
       console.log('[wmux] Added PostToolUse hook to ~/.claude/settings.json');
-    } else if (hooks[existingIdx].command !== wmuxHookCommand) {
-      hooks[existingIdx] = wmuxHook;
-      console.log('[wmux] Updated PostToolUse hook in ~/.claude/settings.json');
     } else {
-      return;
+      const currentCmd = entries[existingIdx]?.hooks?.[0]?.command;
+      if (currentCmd === wmuxHookCommand) return; // Already up to date
+      entries[existingIdx] = wmuxEntry;
+      console.log('[wmux] Updated PostToolUse hook in ~/.claude/settings.json');
     }
 
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
