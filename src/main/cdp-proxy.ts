@@ -165,7 +165,7 @@ export class CDPProxy {
 
       if (req.url === '/json/version') {
         res.end(JSON.stringify({
-          Browser: 'wmux/0.3.0',
+          Browser: 'wmux/0.4.0',
           'Protocol-Version': '1.3',
           webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/page/1`,
         }));

@@ -121,7 +121,7 @@ app.whenReady().then(() => {
   pipeServer.on('v2', (request, respond, respondError) => {
     switch (request.method) {
       case 'system.identify':
-        respond({ name: 'wmux', version: '0.3.0', platform: 'win32' });
+        respond({ name: 'wmux', version: '0.4.0', platform: 'win32' });
         break;
       case 'system.capabilities':
         respond({ protocols: ['v1', 'v2'], features: ['workspaces', 'splits', 'notifications'] });

@@ -20,8 +20,8 @@
 <table>
 <tr>
 <td width="40%" valign="middle">
-<h3>Claude Code awareness</h3>
-On startup, wmux auto-configures Claude Code so it knows how to use the browser panel and send notifications. Every terminal gets a <code>WMUX_CLI</code> env var — Claude Code can control the browser, spawn agents, and notify the user from any project. Zero setup.
+<h3>Passive Claude Code integration</h3>
+wmux observes Claude Code without changing how it works. A CDP proxy on <code>localhost:9222</code> lets Claude Code's native <code>chrome-devtools-mcp</code> plugin control the wmux browser panel directly. Auto-configured hooks in <code>settings.json</code> report agent and tool activity to the sidebar. Zero setup — everything is auto-injected on startup.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-full.png" alt="Claude Code running inside wmux" width="100%" />
@@ -30,7 +30,7 @@ On startup, wmux auto-configures Claude Code so it knows how to use the browser 
 <tr>
 <td width="40%" valign="middle">
 <h3>Live browser visibility</h3>
-When Claude Code browses the web, the user watches it happen in real-time in the browser panel. Navigate, click, type, fill forms — every action is visible. CDP-powered scriptable API with accessibility tree snapshots (<code>@e1</code>, <code>@e2</code> refs). Ported from <a href="https://github.com/vercel-labs/agent-browser">agent-browser</a>.
+When Claude Code browses the web using its native browser tools (<code>chrome-devtools-mcp</code>), every action is visible in the wmux browser panel in real-time. Navigate, click, type, take screenshots — Claude Code uses its own tools, wmux just shows what's happening. CDP proxy on <code>localhost:9222</code> bridges the connection transparently.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-browser.png" alt="In-app browser panel" width="100%" />
@@ -39,7 +39,7 @@ When Claude Code browses the web, the user watches it happen in real-time in the
 <tr>
 <td width="40%" valign="middle">
 <h3>Live agent visibility</h3>
-When Claude Code spawns sub-agents, each gets its own visible terminal tab with real-time output. <code>wmux agent spawn-batch</code> distributes them across panes with round-robin load balancing. 3 panes, 6 agents = 2 per pane. Agent tabs show a distinct blue icon and label.
+When Claude Code uses its built-in Agent tool, wmux detects it via auto-configured hooks and displays agent activity in the sidebar — how many agents are working, what tools they're using. No changes to Claude Code's behavior. The sidebar also supports explicit <code>wmux agent spawn</code> for visible terminal tabs with round-robin pane distribution.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-terminals.png" alt="Sub-agent terminals distributed across panes" width="100%" />
@@ -101,7 +101,7 @@ Interactive onboarding walks you through workspaces, splits, tabs, browser, and 
 
 ### Download (recommended)
 
-Download [wmux-0.3.0-win-x64.zip](https://github.com/amirlehmam/wmux/releases/latest) from GitHub Releases, extract anywhere, and run `wmux.exe`. No installer, no code signing, no admin required.
+Download [wmux-0.4.0-win-x64.zip](https://github.com/amirlehmam/wmux/releases/latest) from GitHub Releases, extract anywhere, and run `wmux.exe`. No installer, no code signing, no admin required.
 
 ### From source
 
@@ -119,13 +119,13 @@ I run a lot of Claude Code sessions in parallel. On macOS there is [cmux](https:
 
 Windows Terminal has tabs but no notification system. You have to manually check each tab to see if an agent finished or is waiting for input. tmux works in WSL but loses all Windows integration. Electron terminals exist but none focus on the AI agent workflow.
 
-So I built wmux — a visibility layer for AI coding agents. It doesn't replace Claude Code or change how it works. It lets you **see** what Claude Code is doing. When Claude browses the web, you watch it in the browser panel. When Claude spawns sub-agents, each one gets its own visible terminal. When a command finishes or is interrupted, the sidebar dot changes color and you get a notification.
+So I built wmux — a visibility layer for AI coding agents. It doesn't replace Claude Code or change how it works. It passively observes and shows you what's happening. A CDP proxy on `localhost:9222` lets Claude Code's native browser tools control the wmux browser panel — you watch every page load, click, and form fill in real-time. Auto-configured hooks in `settings.json` report tool usage and agent activity to the sidebar. When a command finishes or is interrupted, the sidebar dot changes color and you get a notification.
 
 The sidebar shows exactly what each agent is doing -- the git branch it is on, the PR it opened, the ports it is listening on, how many sub-agents it spawned, and whether it needs your attention. When an agent finishes a task or hits a question, the pane gets a blue notification ring, the sidebar badge increments, and a Windows toast fires.
 
 Shell integration scripts inject themselves into PowerShell, CMD, and WSL sessions. They report CWD changes, git branch switches, shell state, and PR status back to the sidebar via a named pipe in real time.
 
-On first launch, wmux auto-configures Claude Code by injecting instructions into `~/.claude/CLAUDE.md`. Every terminal gets a `WMUX_CLI` env var so Claude Code can use the browser and notifications from any project directory. No API keys needed — everything runs through the user's existing Claude Code session.
+On first launch, wmux auto-configures itself as an observer: it injects a minimal informational block into `~/.claude/CLAUDE.md` (so Claude Code knows the user can see its browser activity), adds a `PostToolUse` hook to `~/.claude/settings.json` (for agent/tool visibility in the sidebar), and starts a CDP proxy on `localhost:9222` (so `chrome-devtools-mcp` controls the wmux browser panel natively). No API keys needed — everything runs through the user's existing Claude Code session. Claude Code's behavior is unchanged.
 
 Everything is automatable through the `wmux` CLI or the named pipe directly. The protocol matches cmux, so tools built for one work with the other.
 
