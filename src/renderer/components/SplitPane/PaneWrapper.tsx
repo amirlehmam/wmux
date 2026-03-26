@@ -126,6 +126,7 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
       case 'terminal':
         return (
           <TerminalPane
+            key={activeSurface.id}
             surfaceId={activeSurface.id}
             focused={isFocused}
             showFindBar={findBarVisible && isFocused}
@@ -134,9 +135,9 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
           />
         );
       case 'browser':
-        return <BrowserPane surfaceId={activeSurface.id} />;
+        return <BrowserPane key={activeSurface.id} surfaceId={activeSurface.id} />;
       case 'markdown':
-        return <MarkdownPane surfaceId={activeSurface.id} />;
+        return <MarkdownPane key={activeSurface.id} surfaceId={activeSurface.id} />;
       default:
         return null;
     }
