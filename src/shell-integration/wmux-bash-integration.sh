@@ -4,6 +4,10 @@
 
 export WMUX=1
 
+# wmux CLI shortcut — Claude Code and users can just type: wmux browser open <url>
+wmux() { node "$WMUX_CLI" "$@"; }
+export -f wmux
+
 _wmux_report() {
     local msg="$1"
     # Write to temp file for main process to pick up

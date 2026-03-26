@@ -3,6 +3,9 @@
 
 $env:WMUX = "1"
 
+# wmux CLI shortcut — Claude Code and users can just type: wmux browser open <url>
+function wmux { node "$env:WMUX_CLI" @args }
+
 # Named pipe client helper
 function Send-WmuxMessage {
     param([string]$Message)
