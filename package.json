@@ -17,6 +17,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "@types/ws": "^8.18.1",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-image": "^0.8.0",
     "@xterm/addon-search": "^0.15.0",
@@ -30,6 +31,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "uuid": "^11.0.0",
+    "ws": "^8.20.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
