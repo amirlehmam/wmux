@@ -70,7 +70,28 @@ Interactive onboarding walks you through workspaces, splits, tabs, browser, and 
 - **Windows Terminal + Ghostty compatible** -- Import your themes, fonts, and colors from Windows Terminal `settings.json` or `~/.config/ghostty/config`. Ships with 450+ bundled Ghostty themes.
 - **GPU-accelerated** -- xterm.js with WebGL rendering for smooth terminal output at any speed.
 
+## What's New in v0.3.0
+
+### Claude Code Awareness
+- **Auto-configured Claude Code**: On startup, wmux injects instructions into `~/.claude/CLAUDE.md` so Claude Code knows how to use the browser panel and send notifications. No setup required.
+- **`WMUX_CLI` env var**: Every terminal gets a `WMUX_CLI` variable pointing to the CLI, so Claude Code can call `node "$WMUX_CLI" browser open https://...` from any project directory.
+- **Browser as visibility layer**: When Claude Code browses the web through wmux, the user watches navigation, clicks, and form fills happen live in the browser panel.
+
+### Live Agent Visibility
+- **Agent tabs show live output**: When sub-agents are spawned via `wmux agent spawn`, each agent gets its own terminal tab with real-time output visible to the user.
+
+### Activity Indicators
+- **3-state sidebar dots**: Orange pulsing = working, Green = done, Red = interrupted (Ctrl+C).
+- **Auto-notifications**: When a command finishes or is interrupted, wmux fires an in-app notification + Windows toast + taskbar flash.
+
+### Clipboard Image Paste
+- **Screenshot paste**: Copy a screenshot (Win+Shift+S, Print Screen, etc.), press Ctrl+V in a wmux terminal, and the image is saved to a temp file with the path injected into the terminal. Claude Code can then read the image.
+
 ## Install
+
+### Download (recommended)
+
+Download [wmux-0.3.0-win-x64.zip](https://github.com/amirlehmam/wmux/releases/latest) from GitHub Releases, extract anywhere, and run `wmux.exe`. No installer, no code signing, no admin required.
 
 ### From source
 
@@ -80,13 +101,6 @@ cd wmux
 npm install
 npm run build:main
 npm run dev
-```
-
-### Portable / Installer
-
-```bash
-npm run build
-# Produces: release/wmux-setup.exe and release/wmux-portable.exe
 ```
 
 ## Why wmux?
@@ -120,6 +134,7 @@ Environment variables available in all shells:
 | Variable | Description |
 |----------|-------------|
 | `WMUX` | Always `1` inside wmux |
+| `WMUX_CLI` | Path to the wmux CLI script (use with `node "$WMUX_CLI"`) |
 | `WMUX_WORKSPACE_ID` | Current workspace ID |
 | `WMUX_PANE_ID` | Current pane ID |
 | `WMUX_SURFACE_ID` | Current surface ID |
@@ -246,7 +261,7 @@ Connect to `\\.\pipe\wmux` for programmatic control. Two protocols supported:
 ```
 report_pwd <surface_id> <path>
 report_git_branch <surface_id> <branch> [dirty]
-report_shell_state <surface_id> idle|running
+report_shell_state <surface_id> idle|running|interrupted
 notify <surface_id> <text>
 ping
 ```
