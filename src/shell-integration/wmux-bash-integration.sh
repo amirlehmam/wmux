@@ -33,9 +33,15 @@ _wmux_report_git() {
 }
 
 _wmux_precmd() {
+    local exit_code=$?
     _wmux_report_cwd
     _wmux_report_git
-    _wmux_report "report_shell_state ${WMUX_SURFACE_ID} idle"
+    # 130 = SIGINT (Ctrl+C), 137 = SIGKILL, 143 = SIGTERM
+    if [ $exit_code -eq 130 ] || [ $exit_code -eq 137 ] || [ $exit_code -eq 143 ]; then
+        _wmux_report "report_shell_state ${WMUX_SURFACE_ID} interrupted"
+    else
+        _wmux_report "report_shell_state ${WMUX_SURFACE_ID} idle"
+    fi
     _wmux_report "ports_kick ${WMUX_SURFACE_ID}"
 }
 

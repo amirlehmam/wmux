@@ -31,7 +31,7 @@ export interface WorkspaceInfo {
   prLabel?: string;
   ports?: number[];
   notificationText?: string;
-  shellState?: 'idle' | 'running';
+  shellState?: 'idle' | 'running' | 'interrupted';
 }
 
 // Surface
@@ -138,7 +138,7 @@ export interface SidebarMetadata {
   prLabel?: string;
   ports?: number[];
   notificationText?: string;
-  shellState?: 'idle' | 'running';
+  shellState?: 'idle' | 'running' | 'interrupted';
   statusEntries?: Record<string, string>;
   progress?: { value: number; label?: string };
   logs?: Array<{ level: string; message: string; timestamp: number }>;

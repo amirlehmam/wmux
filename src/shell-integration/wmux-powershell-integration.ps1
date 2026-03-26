@@ -65,12 +65,17 @@ if (Get-Module -Name PSReadLine -ErrorAction SilentlyContinue) {
     }
 }
 
-# Override prompt (fires AFTER command completes → idle)
+# Override prompt (fires AFTER command completes)
 $_wmux_original_prompt = $function:prompt
 function prompt {
     Report-Cwd
     Report-GitBranch
-    Report-ShellState "idle"
+    # Detect if last command was interrupted (Ctrl+C → exit code -1073741510 on Windows)
+    if ($LASTEXITCODE -eq -1073741510 -or $LASTEXITCODE -eq 130) {
+        Report-ShellState "interrupted"
+    } else {
+        Report-ShellState "idle"
+    }
     Send-WmuxMessage "ports_kick $env:WMUX_SURFACE_ID"
 
     # Call original prompt or default

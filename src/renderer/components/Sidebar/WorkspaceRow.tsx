@@ -84,9 +84,10 @@ export default function WorkspaceRow({
         <span
           className={`workspace-row__state-dot${
             workspace.shellState === 'running' ? ' workspace-row__state-dot--running' :
+            workspace.shellState === 'interrupted' ? ' workspace-row__state-dot--interrupted' :
             workspace.shellState === 'idle' ? ' workspace-row__state-dot--idle' : ''
           }`}
-          title={workspace.shellState === 'running' ? 'Command running' : workspace.shellState === 'idle' ? 'Idle' : ''}
+          title={workspace.shellState === 'running' ? 'Working...' : workspace.shellState === 'interrupted' ? 'Interrupted' : workspace.shellState === 'idle' ? 'Done' : ''}
         />
         {isRenaming ? (
           <input

@@ -447,12 +447,16 @@
 }
 
 .workspace-row__state-dot--running {
-  background: #e53935;
+  background: #ff9800;
   animation: pulse-dot 1.2s ease-in-out infinite;
 }
 
 .workspace-row__state-dot--idle {
   background: #4caf50;
+}
+
+.workspace-row__state-dot--interrupted {
+  background: #e53935;
 }
 
 @keyframes pulse-dot {

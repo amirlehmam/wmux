@@ -4,9 +4,9 @@
 
 You are running inside **wmux**, a terminal multiplexer with an embedded browser panel that the user can see in real-time. The `WMUX=1` environment variable confirms this.
 
-## IMPORTANT: Use the wmux Browser for Web Tasks
+## Browser Panel
 
-wmux has a browser panel on the right side. **For any web browsing task, use the wmux browser commands** so the user can SEE what you're doing in real-time. Do NOT use Firecrawl, WebFetch, WebSearch, or Playwright — they are invisible to the user.
+wmux has a browser panel on the right side. **Prefer using the wmux browser commands** for web tasks so the user can SEE what you're doing in real-time. If the user explicitly asks you to use Firecrawl, Playwright, or another tool, use that instead.
 
 ## wmux CLI
 
