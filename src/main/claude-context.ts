@@ -90,15 +90,27 @@ export function ensureClaudeContext(): void {
   }
 }
 
-const HOOK_MARKER = 'WMUX_CLI';
+const HOOK_MARKER = 'wmux-hook';
 
 function getSettingsPath(): string {
   return path.join(os.homedir(), '.claude', 'settings.json');
 }
 
+function getCliAbsolutePath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as typeof import('electron');
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'cli', 'wmux.js');
+    }
+  } catch {}
+  return path.resolve(path.join(__dirname, '../cli/wmux.js'));
+}
+
 /**
- * Ensures Claude Code's ~/.claude/settings.json has a PostToolUse hook
- * that notifies wmux. Identified by WMUX_CLI in the command string.
+ * Ensures Claude Code's ~/.claude/settings.json has PostToolUse hooks
+ * that notify wmux of tool activity. Uses absolute CLI path (not env var).
+ * Separate matchers for Agent and general tools.
  * Never touches other hook entries.
  */
 export function ensureClaudeHooks(): void {
@@ -110,34 +122,33 @@ export function ensureClaudeHooks(): void {
     let settings: any;
     try { settings = JSON.parse(raw); } catch { return; }
 
-    const wmuxHookCommand = 'node "$WMUX_CLI" hook --event post_tool --tool $CLAUDE_TOOL_USE_NAME 2>/dev/null || true';
+    // Use absolute path to the hook helper script — no env var dependency
+    const hookScript = path.resolve(path.join(__dirname, '../cli/wmux-hook.js')).split(path.sep).join('/');
+
+    const makeHookCmd = (tool: string) =>
+      `node "${hookScript}" ${tool} 2>/dev/null || true`;
 
     if (!settings.hooks) settings.hooks = {};
     if (!Array.isArray(settings.hooks.PostToolUse)) settings.hooks.PostToolUse = [];
 
     const entries: any[] = settings.hooks.PostToolUse;
 
-    // Find existing wmux hook entry by checking nested hooks[].command
-    const existingIdx = entries.findIndex((e: any) =>
-      Array.isArray(e.hooks) && e.hooks.some((h: any) => h.command?.includes(HOOK_MARKER))
-    );
+    // Remove any existing wmux hooks
+    const filtered = entries.filter((e: any) => {
+      if (!Array.isArray(e.hooks)) return true;
+      return !e.hooks.some((h: any) => h.command?.includes('hook.event') && h.command?.includes('wmux'));
+    });
 
-    const wmuxEntry = {
-      matcher: '',
-      hooks: [{ type: 'command', command: wmuxHookCommand }],
-    };
+    // Add fresh wmux hooks
+    const wmuxHooks = [
+      { matcher: 'Agent', hooks: [{ type: 'command', command: makeHookCmd('Agent') }] },
+      { matcher: 'Bash|Read|Write|Edit|Grep|Glob', hooks: [{ type: 'command', command: makeHookCmd('Tool') }] },
+    ];
 
-    if (existingIdx === -1) {
-      entries.push(wmuxEntry);
-      console.log('[wmux] Added PostToolUse hook to ~/.claude/settings.json');
-    } else {
-      const currentCmd = entries[existingIdx]?.hooks?.[0]?.command;
-      if (currentCmd === wmuxHookCommand) return; // Already up to date
-      entries[existingIdx] = wmuxEntry;
-      console.log('[wmux] Updated PostToolUse hook in ~/.claude/settings.json');
-    }
+    settings.hooks.PostToolUse = [...filtered, ...wmuxHooks];
 
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    console.log('[wmux] Configured PostToolUse hooks in ~/.claude/settings.json');
   } catch (err) {
     console.warn('[wmux] Failed to update Claude hooks:', err);
   }
