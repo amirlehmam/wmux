@@ -144,6 +144,21 @@ export interface SidebarMetadata {
   logs?: Array<{ level: string; message: string; timestamp: number }>;
 }
 
+// Saved session (user-named layout snapshot)
+export interface SavedSession {
+  name: string;
+  savedAt: number;
+  workspaces: Array<{
+    title: string;
+    customColor?: string;
+    shell: string;
+    cwd: string;
+    splitTree: SplitNode;
+  }>;
+  browserUrl?: string;
+  sidebarWidth: number;
+}
+
 // IPC channel names
 export const IPC_CHANNELS = {
   // PTY
@@ -229,4 +244,9 @@ export const IPC_CHANNELS = {
   HOOK_EVENT: 'hook:event',
   // Claude Code activity (parsed from PTY output → renderer)
   CLAUDE_ACTIVITY: 'claude:activity',
+  // Named sessions
+  SESSION_SAVE_NAMED: 'session:save-named',
+  SESSION_LOAD_NAMED: 'session:load-named',
+  SESSION_LIST_NAMED: 'session:list-named',
+  SESSION_DELETE_NAMED: 'session:delete-named',
 } as const;
