@@ -88,6 +88,12 @@ contextBridge.exposeInMainWorld('wmux', {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.CLAUDE_ACTIVITY, handler);
     },
   },
+  session: {
+    save: (session: any) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SAVE_NAMED, session),
+    load: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD_NAMED, name),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_NAMED),
+    delete: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE_NAMED, name),
+  },
   cdp: {
     attach: (webContentsId: number) => ipcRenderer.send(IPC_CHANNELS.CDP_ATTACH, webContentsId),
     detach: () => ipcRenderer.send(IPC_CHANNELS.CDP_DETACH),

@@ -13,6 +13,7 @@ import { WindowManager } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
+import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession } from './session-persistence';
 
 const ptyManager = new PtyManager();
 const notificationManager = new NotificationManager();
@@ -148,6 +149,20 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     const filePath = path.join(tmpDir, `screenshot-${Date.now()}.png`);
     fs.writeFileSync(filePath, img.toPNG());
     return filePath;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SESSION_SAVE_NAMED, (_event, session: any) => {
+    saveNamedSession(session);
+    return { ok: true };
+  });
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_NAMED, (_event, name: string) => {
+    return loadNamedSession(name);
+  });
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST_NAMED, () => {
+    return listNamedSessions();
+  });
+  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE_NAMED, (_event, name: string) => {
+    return deleteNamedSession(name);
   });
 }
 
