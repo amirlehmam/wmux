@@ -335,6 +335,19 @@ export default function App() {
     return unsub;
   }, []);
 
+  // Auto-load last saved session on startup
+  useEffect(() => {
+    (async () => {
+      try {
+        const sessions = await window.wmux?.session?.list();
+        if (sessions && sessions.length > 0 && useStore.getState().workspaces.length <= 1) {
+          const latest = sessions[0];
+          handleLoadSession(latest.name);
+        }
+      } catch {}
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-focus first pane whenever the active workspace changes or gains its first pane
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
 
@@ -371,6 +384,36 @@ export default function App() {
     });
     selectWorkspace(newId);
   }, [createWorkspace, selectWorkspace]);
+
+  const handleSaveSession = useCallback(async (name: string) => {
+    const state = useStore.getState();
+    const session = {
+      name,
+      savedAt: Date.now(),
+      workspaces: state.workspaces.map(ws => ({
+        title: ws.title,
+        customColor: ws.customColor,
+        shell: ws.shell,
+        cwd: ws.cwd || '',
+        splitTree: ws.splitTree,
+      })),
+      browserUrl: '',
+      sidebarWidth,
+    };
+    await window.wmux?.session?.save(session);
+    window.wmux?.notification?.fire({ surfaceId: '', text: `Session "${name}" saved`, title: 'wmux' });
+  }, [sidebarWidth]);
+
+  const handleLoadSession = useCallback(async (name: string) => {
+    const session = await window.wmux?.session?.load(name);
+    if (!session) return;
+    const { replaceAllWorkspaces } = useStore.getState();
+    replaceAllWorkspaces(session.workspaces);
+    if (session.sidebarWidth) setSidebarWidth(session.sidebarWidth);
+    if (session.browserUrl) {
+      window.wmux?.browser?.navigate?.('', session.browserUrl);
+    }
+  }, []);
 
   const handleUpdateMetadata = useCallback(
     (id: WorkspaceId, partial: Partial<WorkspaceInfo>) => {
@@ -457,6 +500,8 @@ export default function App() {
             onUpdateMetadata={handleUpdateMetadata}
             hookActivity={hookActivity}
             claudeActivity={claudeActivity}
+            onSaveSession={handleSaveSession}
+            onLoadSession={handleLoadSession}
           />
         )}
 
