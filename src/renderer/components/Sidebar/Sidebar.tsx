@@ -3,6 +3,7 @@ import { WorkspaceInfo, WorkspaceId } from '../../../shared/types';
 import WorkspaceRow from './WorkspaceRow';
 import SidebarResizeHandle from './SidebarResizeHandle';
 import WorkspaceContextMenu from './WorkspaceContextMenu';
+import SessionMenu from './SessionMenu';
 import '../../styles/sidebar.css';
 
 interface ContextMenuState {
@@ -24,6 +25,8 @@ interface SidebarProps {
   onUpdateMetadata: (id: WorkspaceId, partial: Partial<WorkspaceInfo>) => void;
   hookActivity?: Record<string, { agents: number; tools: number; lastSeen: number }>;
   claudeActivity?: Record<string, any>;
+  onSaveSession?: (name: string) => void;
+  onLoadSession?: (name: string) => void;
 }
 
 export default function Sidebar({
@@ -39,11 +42,16 @@ export default function Sidebar({
   onUpdateMetadata,
   hookActivity,
   claudeActivity,
+  onSaveSession,
+  onLoadSession,
 }: SidebarProps) {
   const [draggedId, setDraggedId] = useState<WorkspaceId | null>(null);
   const [dragOverId, setDragOverId] = useState<WorkspaceId | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [saveInputOpen, setSaveInputOpen] = useState(false);
+  const [saveInputValue, setSaveInputValue] = useState('');
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -231,9 +239,42 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar__footer">
-        <button className="sidebar__new-btn" onClick={onCreate} title="New workspace">
-          +
-        </button>
+        {saveInputOpen ? (
+          <input
+            className="sidebar__save-input"
+            placeholder="Session name..."
+            value={saveInputValue}
+            onChange={(e) => setSaveInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && saveInputValue.trim()) {
+                onSaveSession?.(saveInputValue.trim());
+                setSaveInputOpen(false);
+                setSaveInputValue('');
+              }
+              if (e.key === 'Escape') { setSaveInputOpen(false); setSaveInputValue(''); }
+            }}
+            onBlur={() => { setSaveInputOpen(false); setSaveInputValue(''); }}
+            autoFocus
+          />
+        ) : (
+          <>
+            <button className="sidebar__footer-btn" onClick={() => setSaveInputOpen(true)} title="Save session">
+              &#128190;
+            </button>
+            <button className="sidebar__footer-btn" onClick={() => setSessionMenuOpen(!sessionMenuOpen)} title="Load session">
+              &#128194;
+            </button>
+            <button className="sidebar__new-btn" onClick={onCreate} title="New workspace">
+              +
+            </button>
+          </>
+        )}
+        {sessionMenuOpen && (
+          <SessionMenu
+            onLoad={(name) => { onLoadSession?.(name); setSessionMenuOpen(false); }}
+            onClose={() => setSessionMenuOpen(false)}
+          />
+        )}
       </div>
 
       <SidebarResizeHandle onWidthChange={handleResizeDelta} />
