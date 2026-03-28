@@ -30,7 +30,15 @@ export default function Titlebar({
   return (
     <div className="titlebar">
       <div className="titlebar__left">
-        <img src={logoSrc} alt="wmux" className="titlebar__logo" draggable={false} />
+        <img
+          src={logoSrc}
+          alt="wmux"
+          className="titlebar__logo"
+          draggable={false}
+          style={{ cursor: 'pointer' }}
+          onClick={() => window.wmux?.system?.openExternal?.('https://wmux.netlify.app') }
+          title="wmux.netlify.app"
+        />
         <button className="titlebar__btn" onClick={onHelpClick} title="Help / Tutorial">?</button>
         <button className="titlebar__btn" onClick={onDevToolsClick} title="Toggle Developer Tools">&lt;/&gt;</button>
         <NotificationBell
