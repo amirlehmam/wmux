@@ -1,6 +1,6 @@
 {
   "name": "wmux",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "description": "Windows terminal multiplexer for AI agents",
   "main": "dist/main/index.js",
   "bin": {
