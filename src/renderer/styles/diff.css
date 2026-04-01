@@ -1,0 +1,346 @@
+/* ─── Diff Pane ──────────────────────────────────────────────────────────── */
+
+.diff-pane {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: #1a1a1a;
+  color: #d4d4d4;
+  font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ─── Empty state ────────────────────────────────────────────────────────── */
+
+.diff-pane__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  color: #666;
+  font-size: 14px;
+  gap: 8px;
+  user-select: none;
+}
+
+.diff-pane__empty-icon {
+  margin-bottom: 8px;
+}
+
+.diff-pane__empty-hint {
+  font-size: 12px;
+  color: #555;
+}
+
+/* ─── File list sidebar ──────────────────────────────────────────────────── */
+
+.diff-pane__sidebar {
+  width: 240px;
+  min-width: 180px;
+  max-width: 320px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.diff-pane__sidebar-header {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #999;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+
+.diff-pane__sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-pane__sidebar-count {
+  background: rgba(255, 255, 255, 0.1);
+  color: #bbb;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.diff-pane__sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-pane__total-stats {
+  font-size: 10px;
+  display: flex;
+  gap: 4px;
+}
+
+.diff-pane__refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+}
+
+.diff-pane__refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.diff-pane__file-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.diff-pane__no-files {
+  padding: 16px 12px;
+  color: #555;
+  font-size: 12px;
+  text-align: center;
+}
+
+.diff-pane__file {
+  display: flex;
+  align-items: center;
+  padding: 3px 10px;
+  cursor: pointer;
+  gap: 6px;
+  transition: background 0.08s;
+  min-height: 24px;
+}
+
+.diff-pane__file:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.diff-pane__file--selected {
+  background: rgba(0, 145, 255, 0.12) !important;
+}
+
+.diff-pane__file-badge {
+  font-size: 10px;
+  font-weight: 700;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+
+.diff-pane__file-name {
+  font-size: 12px;
+  color: #ddd;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.diff-pane__file-dir {
+  font-size: 11px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.diff-pane__file-stats {
+  font-size: 10px;
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.diff-pane__stat-add { color: #3fb950; }
+.diff-pane__stat-del { color: #f85149; }
+
+/* ─── Diff content area ──────────────────────────────────────────────────── */
+
+.diff-pane__content {
+  flex: 1;
+  overflow: auto;
+  min-width: 0;
+}
+
+.diff-pane__file-header {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  color: #bbb;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  backdrop-filter: blur(8px);
+}
+
+.diff-pane__file-header-path {
+  font-family: inherit;
+}
+
+.diff-pane__end-spacer {
+  height: 40px;
+}
+
+/* ─── Hunk ───────────────────────────────────────────────────────────────── */
+
+.diff-hunk {
+  margin-bottom: 2px;
+}
+
+.diff-hunk__header {
+  padding: 4px 12px;
+  background: rgba(56, 139, 253, 0.08);
+  color: #6cb6ff;
+  font-size: 12px;
+  font-style: italic;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky;
+  top: 30px;
+  z-index: 1;
+}
+
+.diff-hunk__context {
+  color: #8b949e;
+  font-style: normal;
+  margin-left: 8px;
+}
+
+/* ─── Diff lines ─────────────────────────────────────────────────────────── */
+
+.diff-line {
+  display: flex;
+  font-size: 13px;
+  line-height: 20px;
+  min-height: 20px;
+}
+
+.diff-line__gutter {
+  width: 48px;
+  min-width: 48px;
+  text-align: right;
+  padding: 0 8px 0 0;
+  color: #484f58;
+  user-select: none;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.diff-line__prefix {
+  width: 16px;
+  min-width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.diff-line__content {
+  flex: 1;
+  padding: 0 12px 0 0;
+  white-space: pre;
+  overflow-x: visible;
+  margin: 0;
+  font: inherit;
+  min-width: 0;
+  tab-size: 4;
+}
+
+/* ─── Line type: addition ────────────────────────────────────────────────── */
+
+.diff-line--add {
+  background: rgba(35, 134, 54, 0.12);
+}
+
+.diff-line--add .diff-line__content {
+  color: #7ee787;
+}
+
+.diff-line--add .diff-line__prefix {
+  color: #3fb950;
+}
+
+.diff-line--add .diff-line__gutter {
+  color: #3fb950;
+  background: rgba(35, 134, 54, 0.18);
+}
+
+/* ─── Line type: deletion ────────────────────────────────────────────────── */
+
+.diff-line--remove {
+  background: rgba(218, 54, 51, 0.12);
+}
+
+.diff-line--remove .diff-line__content {
+  color: #ffa198;
+}
+
+.diff-line--remove .diff-line__prefix {
+  color: #f85149;
+}
+
+.diff-line--remove .diff-line__gutter {
+  color: #f85149;
+  background: rgba(218, 54, 51, 0.18);
+}
+
+/* ─── Line type: context ─────────────────────────────────────────────────── */
+
+.diff-line--context {
+  background: transparent;
+}
+
+.diff-line--context .diff-line__content {
+  color: #8b949e;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────── */
+
+.diff-pane__content::-webkit-scrollbar,
+.diff-pane__file-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.diff-pane__content::-webkit-scrollbar-track,
+.diff-pane__file-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.diff-pane__content::-webkit-scrollbar-thumb,
+.diff-pane__file-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+.diff-pane__content::-webkit-scrollbar-thumb:hover,
+.diff-pane__file-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.diff-pane__content::-webkit-scrollbar-corner {
+  background: transparent;
+}

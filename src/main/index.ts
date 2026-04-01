@@ -11,6 +11,8 @@ import { loadSession, saveSession, SessionData } from './session-persistence';
 import { WindowManager } from './window-manager';
 import { initAutoUpdater } from './updater';
 import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig } from './claude-context';
+import fs from 'fs';
+import path from 'path';
 
 const windowManager = new WindowManager();
 const pipeServer = new PipeServer();
@@ -18,6 +20,27 @@ const portScanner = new PortScanner();
 const gitPoller = new GitPoller();
 const prPoller = new PrPoller();
 const cdpProxy = new CDPProxy();
+
+// Strip MOTW (Mark of the Web) Zone.Identifier ADS from app directory.
+// Windows blocks taskbar pinning and shows security warnings for downloaded files.
+// Removing the :Zone.Identifier alternate data stream fixes this transparently.
+function stripMotw(): void {
+  if (process.platform !== 'win32') return;
+  const appDir = path.dirname(process.execPath);
+  const stripDir = (dir: string) => {
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stripDir(full);
+      } else if (/\.(exe|dll|node|lnk)$/i.test(entry.name)) {
+        fs.unlink(full + ':Zone.Identifier', () => {});
+      }
+    }
+  };
+  stripDir(appDir);
+}
 
 // Auto-save debounce handle
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -37,6 +60,12 @@ function scheduleAutoSave(): void {
   }, AUTO_SAVE_INTERVAL_MS);
 }
 
+// Set Windows AppUserModelId so taskbar pinning uses the correct icon & identity
+app.setAppUserModelId('com.wmux.app');
+
+// Auto-strip MOTW on startup so users never see security warnings or pinning failures
+stripMotw();
+
 app.whenReady().then(() => {
   // Inject wmux instructions into ~/.claude/CLAUDE.md for Claude Code awareness
   ensureClaudeContext();
@@ -44,7 +73,12 @@ app.whenReady().then(() => {
   ensureChromeDevtoolsConfig();
 
   // IPC: renderer pushes session state (auto-save response or explicit save)
-  ipcMain.on('session:save', (_event, data: SessionData) => {
+  ipcMain.on('session:save', (event, data: SessionData) => {
+    // Augment with actual window bounds (renderer can't know these)
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed() && data.windows?.[0]) {
+      data.windows[0].bounds = win.getBounds();
+    }
     saveSession(data);
     scheduleAutoSave();
   });
@@ -122,7 +156,7 @@ app.whenReady().then(() => {
   pipeServer.on('v2', (request, respond, respondError) => {
     switch (request.method) {
       case 'system.identify':
-        respond({ name: 'wmux', version: '0.4.0', platform: 'win32' });
+        respond({ name: 'wmux', version: '0.5.0', platform: 'win32' });
         break;
       case 'system.capabilities':
         respond({ protocols: ['v1', 'v2'], features: ['workspaces', 'splits', 'notifications'] });
@@ -294,6 +328,25 @@ app.whenReady().then(() => {
       case 'hook.event': {
         BrowserWindow.getAllWindows().forEach(w => {
           if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.HOOK_EVENT, request.params);
+        });
+        // When Edit/Write hooks include a file path, also push diff update.
+        // Delay slightly so the renderer has time to mount the DiffPane
+        // (HOOK_EVENT triggers diff tab creation; DIFF_UPDATE needs to arrive after mount).
+        if (request.params.file && (request.params.tool === 'Edit' || request.params.tool === 'Write')) {
+          setTimeout(() => {
+            BrowserWindow.getAllWindows().forEach(w => {
+              if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.DIFF_UPDATE, { file: request.params.file });
+            });
+          }, 150);
+        }
+        respond({ ok: true });
+        break;
+      }
+
+      case 'diff.refresh': {
+        // CLI can trigger a full diff refresh
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.DIFF_UPDATE, { file: request.params?.file || '' });
         });
         respond({ ok: true });
         break;

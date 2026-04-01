@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow, clipboard, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { IPC_CHANNELS, SurfaceId, WindowId } from '../shared/types';
+import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId } from '../shared/types';
 import { observePtyData } from './claude-observer';
 import { PtyManager } from './pty-manager';
 import { NotificationManager } from './notification-manager';
@@ -14,6 +14,7 @@ import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession } from './session-persistence';
+import { getChangedFiles, getFileDiff } from './diff-provider';
 
 const ptyManager = new PtyManager();
 const notificationManager = new NotificationManager();
@@ -34,28 +35,33 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.handle(IPC_CHANNELS.PTY_CREATE, async (_event, options) => {
-    const resolvedOptions = {
-      ...options,
-      cwd: options.cwd || process.env.USERPROFILE || 'C:\\',
-    };
-    const id = await ptyManager.create(resolvedOptions);
-    const window = BrowserWindow.fromWebContents(_event.sender);
-    const unsubData = ptyManager.onData(id, (data) => {
-      if (window && !window.isDestroyed()) {
-        window.webContents.send(IPC_CHANNELS.PTY_DATA, id, data);
-      }
-      // Feed Claude Code observer for sidebar activity display
-      try { observePtyData(id, data); } catch {}
-    });
-    const unsubExit = ptyManager.onExit(id, (code) => {
-      if (window && !window.isDestroyed()) {
-        window.webContents.send(IPC_CHANNELS.PTY_EXIT, id, code);
-      }
-      // Clean up listeners when PTY exits
-      unsubData();
-      unsubExit();
-    });
-    return id;
+    try {
+      const resolvedOptions = {
+        ...options,
+        cwd: options.cwd || process.env.USERPROFILE || 'C:\\',
+      };
+      const id = ptyManager.create(resolvedOptions);
+      const window = BrowserWindow.fromWebContents(_event.sender);
+      const unsubData = ptyManager.onData(id, (data) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.PTY_DATA, id, data);
+        }
+        // Feed Claude Code observer for sidebar activity display
+        try { observePtyData(id, data); } catch {}
+      });
+      const unsubExit = ptyManager.onExit(id, (code) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.PTY_EXIT, id, code);
+        }
+        // Clean up listeners when PTY exits
+        unsubData();
+        unsubExit();
+      });
+      return id;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to create terminal: ${msg}`);
+    }
   });
 
   ipcMain.on(IPC_CHANNELS.PTY_WRITE, (_event, id: SurfaceId, data: string) => {
@@ -143,10 +149,10 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_LIST, async (_event, workspaceId?: string) => {
-    return agentManager.list(workspaceId as any);
+    return agentManager.list(workspaceId as WorkspaceId | undefined);
   });
   ipcMain.handle(IPC_CHANNELS.AGENT_STATUS, async (_event, agentId: string) => {
-    return agentManager.getStatus(agentId as any);
+    return agentManager.getStatus(agentId as AgentId);
   });
 
   // Clipboard image paste: save clipboard image to temp file, return path
@@ -173,15 +179,29 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE_NAMED, (_event, name: string) => {
     return deleteNamedSession(name);
   });
+
+  // Diff viewer handlers
+  // Fallback: prefer process.cwd() (often the project dir) over USERPROFILE (never a git repo)
+  ipcMain.handle(IPC_CHANNELS.DIFF_GET_FILES, async (_event, cwd: string) => {
+    const resolvedCwd = cwd || process.cwd();
+    const files = await getChangedFiles(resolvedCwd);
+    return { files };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DIFF_GET_DIFF, async (_event, cwd: string, file: string) => {
+    const resolvedCwd = cwd || process.cwd();
+    const diff = await getFileDiff(resolvedCwd, file);
+    return { diff };
+  });
 }
 
 export function setupAgentPtyForwarding(surfaceId: string, window: BrowserWindow): void {
-  const unsubData = ptyManager.onData(surfaceId as any, (data) => {
+  const unsubData = ptyManager.onData(surfaceId as SurfaceId, (data) => {
     if (window && !window.isDestroyed()) {
       window.webContents.send(IPC_CHANNELS.PTY_DATA, surfaceId, data);
     }
   });
-  const unsubExit = ptyManager.onExit(surfaceId as any, (code) => {
+  const unsubExit = ptyManager.onExit(surfaceId as SurfaceId, (code) => {
     if (window && !window.isDestroyed()) {
       window.webContents.send(IPC_CHANNELS.PTY_EXIT, surfaceId, code);
     }

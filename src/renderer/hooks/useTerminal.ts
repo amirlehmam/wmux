@@ -18,6 +18,8 @@ interface UseTerminalOptions {
   surfaceId?: string;
   shell?: string;
   cwd?: string;
+  /** Whether this terminal tab is currently visible (for refit on tab switch) */
+  visible?: boolean;
 }
 
 interface UseTerminalResult {
@@ -27,7 +29,7 @@ interface UseTerminalResult {
   searchAddonRef: React.RefObject<SearchAddon | null>;
 }
 
-export function useTerminal({ surfaceId, shell, cwd }: UseTerminalOptions = {}): UseTerminalResult {
+export function useTerminal({ surfaceId, shell, cwd, visible = true }: UseTerminalOptions = {}): UseTerminalResult {
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -167,6 +169,10 @@ export function useTerminal({ surfaceId, shell, cwd }: UseTerminalOptions = {}):
       }
       // Ctrl+V: paste text from clipboard (or image path if clipboard has image)
       if (event.type === 'keydown' && event.ctrlKey && event.key === 'v') {
+        // Prevent the browser 'paste' event — without this, xterm's built-in
+        // paste handler ALSO writes the clipboard content through onData,
+        // causing the text to appear twice in the terminal.
+        event.preventDefault();
         (async () => {
           // Check for image first
           let handled = false;
@@ -217,21 +223,21 @@ export function useTerminal({ surfaceId, shell, cwd }: UseTerminalOptions = {}):
       }
     };
 
-    // If surfaceId is given AND a PTY already exists for it (agent spawn), attach to it
+    // If surfaceId is given AND a PTY already exists for it (agent spawn or re-mount), attach to it
     if (surfaceId && window.wmux.pty.has) {
       window.wmux.pty.has(surfaceId).then((exists: boolean) => {
         if (exists) {
           attachToPty(surfaceId!);
         } else {
-          // No existing PTY — create a new one
-          window.wmux.pty.create({ shell: shell ?? 'pwsh.exe', cwd: cwd ?? '', env: {} })
+          // No existing PTY — create a new one, passing surfaceId so PTY ID = Surface ID
+          window.wmux.pty.create({ shell: shell || '', cwd: cwd ?? '', env: {}, surfaceId })
             .then(attachToPty)
             .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
         }
       });
     } else {
       // No surfaceId hint — always create new PTY
-      window.wmux.pty.create({ shell: shell ?? 'pwsh.exe', cwd: cwd ?? '', env: {} })
+      window.wmux.pty.create({ shell: shell || '', cwd: cwd ?? '', env: {} })
         .then(attachToPty)
         .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
     }
@@ -282,6 +288,23 @@ export function useTerminal({ surfaceId, shell, cwd }: UseTerminalOptions = {}):
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Refit terminal when it becomes visible again (tab/workspace switch)
+  useEffect(() => {
+    if (visible && fitAddonRef.current && xtermRef.current) {
+      // Double-RAF ensures the browser has fully computed layout after
+      // visibility changes before we measure and fit the terminal
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          fit();
+          const dims = fitAddonRef.current?.proposeDimensions();
+          if (dims && ptyIdRef.current) {
+            window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
+          }
+        });
+      });
+    }
+  }, [visible]);
 
   return { terminalRef, fit, xtermRef, searchAddonRef };
 }

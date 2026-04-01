@@ -5,3 +5,6 @@ release/
 *.log
 .env
 *.asar
+
+# Local Netlify folder
+.netlify

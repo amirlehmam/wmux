@@ -211,6 +211,12 @@ async function main() {
       case 'log': console.log(JSON.stringify(await sendV2('sidebar.log', { level: args[1], message: args.slice(2).join(' ') }), null, 2)); break;
       case 'sidebar-state': console.log(JSON.stringify(await sendV2('sidebar.get_state'), null, 2)); break;
 
+      case 'diff': {
+        const file = args.find((a, i) => args[i - 1] === '--file') || '';
+        console.log(JSON.stringify(await sendV2('diff.refresh', { file }), null, 2));
+        break;
+      }
+
       case 'hook': {
         const params: Record<string, string> = {};
         for (let i = 1; i < args.length; i += 2) {
@@ -250,6 +256,7 @@ Terminal:   send <text>, send-key <key>, read-screen, trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
 Agent:      agent spawn|spawn-batch|status|list|kill
 Markdown:   markdown set <id> --content <text> | --file <path>
+Diff:       diff [--file <path>]
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state
 Hook:       hook --event <type> --tool <name> [--agent <id>]

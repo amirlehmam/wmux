@@ -5,9 +5,10 @@ import '../../styles/browser.css';
 interface BrowserPaneProps {
   initialUrl?: string;
   surfaceId: string;
+  onUrlChange?: (url: string) => void;
 }
 
-export default function BrowserPane({ initialUrl = 'https://github.com/amirlehmam/wmux', surfaceId: _surfaceId }: BrowserPaneProps) {
+export default function BrowserPane({ initialUrl = 'https://github.com/amirlehmam/wmux', surfaceId: _surfaceId, onUrlChange }: BrowserPaneProps) {
   const [url, setUrl] = useState(initialUrl);
   const [currentUrl, setCurrentUrl] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,13 +43,16 @@ export default function BrowserPane({ initialUrl = 'https://github.com/amirlehma
 
     const onNavigate = (e: any) => {
       setCurrentUrl(e.url);
+      onUrlChange?.(e.url);
       setCanGoBack(wv.canGoBack());
       setCanGoForward(wv.canGoForward());
     };
     const onStartLoad = () => setIsLoading(true);
     const onStopLoad = () => {
       setIsLoading(false);
-      setCurrentUrl(wv.getURL());
+      const finalUrl = wv.getURL();
+      setCurrentUrl(finalUrl);
+      onUrlChange?.(finalUrl);
     };
 
     wv.addEventListener('did-navigate', onNavigate);

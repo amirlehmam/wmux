@@ -1,7 +1,55 @@
 import * as pty from 'node-pty';
 import * as path from 'path';
+import * as fs from 'fs';
+import { execFileSync } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
 import { SurfaceId } from '../shared/types';
+
+// ─── Shell resolution ──────────────────────────────────────────────────────
+// Validates that a shell executable exists before spawning.
+// Falls back through: pwsh.exe → powershell.exe → cmd.exe
+
+let cachedDefaultShell: string | null = null;
+
+function isShellAvailable(shell: string): boolean {
+  if (!shell) return false;
+  if (path.isAbsolute(shell)) {
+    return fs.existsSync(shell);
+  }
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    execFileSync(cmd, [shell], { windowsHide: true, timeout: 3000, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getDefaultShell(): string {
+  if (cachedDefaultShell) return cachedDefaultShell;
+  const candidates = process.platform === 'win32'
+    ? ['pwsh.exe', 'powershell.exe', 'cmd.exe']
+    : [process.env.SHELL || '/bin/sh'];
+  for (const cmd of candidates) {
+    if (isShellAvailable(cmd)) {
+      cachedDefaultShell = cmd;
+      return cmd;
+    }
+  }
+  // cmd.exe is always available on Windows
+  cachedDefaultShell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+  return cachedDefaultShell;
+}
+
+function resolveShell(shell: string | undefined): string {
+  if (shell && isShellAvailable(shell)) {
+    return shell;
+  }
+  if (shell) {
+    console.warn(`[wmux] Shell not found: "${shell}", falling back to ${getDefaultShell()}`);
+  }
+  return getDefaultShell();
+}
 
 function getShellIntegrationPath(): string {
   try {
@@ -49,15 +97,19 @@ export interface CreateOptions {
   env: Record<string, string>;
   cols?: number;
   rows?: number;
+  /** When provided, use this as the PTY key instead of generating a new one.
+   *  This keeps Surface IDs and PTY IDs in sync for reliable re-attachment. */
+  surfaceId?: SurfaceId;
 }
 
 export class PtyManager {
   private ptys = new Map<SurfaceId, PtyEntry>();
 
   create(options: CreateOptions): SurfaceId {
-    const id: SurfaceId = `surf-${uuidv4()}`;
+    const id: SurfaceId = options.surfaceId ?? `surf-${uuidv4()}` as SurfaceId;
 
-    const shellType = getShellType(options.shell);
+    const shell = resolveShell(options.shell);
+    const shellType = getShellType(shell);
     const integrationDir = getShellIntegrationPath();
     const cliPath = getCliPath();
     // Filter out undefined values from process.env before merging
@@ -84,7 +136,7 @@ export class PtyManager {
       env.WMUX_INTEGRATION = '1';
     }
 
-    const ptyProcess = pty.spawn(options.shell, args, {
+    const ptyProcess = pty.spawn(shell, args, {
       name: 'xterm-256color',
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,

@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { SplitNode, PaneId } from '../../../shared/types';
+import { SplitNode, PaneId, WorkspaceId } from '../../../shared/types';
 import PaneWrapper from './PaneWrapper';
 import SplitDivider from './SplitDivider';
 import '../../styles/splitpane.css';
@@ -17,6 +17,7 @@ function getFirstPaneId(n: SplitNode): PaneId {
 
 interface SplitContainerProps {
   node: SplitNode;
+  workspaceId: WorkspaceId;
   focusedPaneId: PaneId | null;
   onRatioChange?: (leftPaneId: PaneId, rightPaneId: PaneId, ratio: number) => void;
   onPaneFocus: (paneId: PaneId) => void;
@@ -24,6 +25,7 @@ interface SplitContainerProps {
 
 export default function SplitContainer({
   node,
+  workspaceId,
   focusedPaneId,
   onRatioChange,
   onPaneFocus,
@@ -38,6 +40,7 @@ export default function SplitContainer({
         <PaneWrapper
           key={node.paneId}
           paneId={node.paneId}
+          workspaceId={workspaceId}
           leaf={node}
           isFocused={focusedPaneId === node.paneId}
         />
@@ -70,6 +73,7 @@ export default function SplitContainer({
       <div className="split-child" style={{ flex: ratio }} key={getTreeKey(leftChild)}>
         <SplitContainer
           node={leftChild}
+          workspaceId={workspaceId}
           focusedPaneId={focusedPaneId}
           onRatioChange={onRatioChange}
           onPaneFocus={onPaneFocus}
@@ -85,6 +89,7 @@ export default function SplitContainer({
       <div className="split-child" style={{ flex: 1 - ratio }} key={getTreeKey(rightChild)}>
         <SplitContainer
           node={rightChild}
+          workspaceId={workspaceId}
           focusedPaneId={focusedPaneId}
           onRatioChange={onRatioChange}
           onPaneFocus={onPaneFocus}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 import { useStore } from './store';
 import { PaneId, SurfaceId, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
@@ -23,6 +23,13 @@ function getAllSurfaces(tree: SplitNode): string[] {
 function findLeafFromTree(node: SplitNode, paneId: PaneId): (SplitNode & { type: 'leaf' }) | null {
   if (node.type === 'leaf') return node.paneId === paneId ? node : null;
   return findLeafFromTree(node.children[0], paneId) || findLeafFromTree(node.children[1], paneId);
+}
+
+/** Find the bottom-most pane in the split tree (follows last child of vertical splits) */
+function findBottomPane(node: SplitNode): PaneId | null {
+  if (node.type === 'leaf') return node.paneId;
+  if (node.direction === 'vertical') return findBottomPane(node.children[1]);
+  return findBottomPane(node.children[0]);
 }
 
 /** Build the default 3-terminal split layout for new workspaces */
@@ -80,6 +87,7 @@ export default function App() {
     selectSurface,
     setAgentMeta,
     addNotification,
+    toggleSidebar,
   } = useStore();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
@@ -94,6 +102,9 @@ export default function App() {
   const [hookActivity, setHookActivity] = useState<Record<string, { lastTool: string; toolCount: number; lastSeen: number }>>({});
   // Per-surface Claude activity (parsed from terminal output)
   const [claudeActivity, setClaudeActivity] = useState<Record<string, any>>({});
+  // Track when each workspace entered "running" state (for notification threshold)
+  const runningStartTimes = useRef<Record<string, number>>({});
+  // Browser URL tracking is now per-workspace via WorkspaceInfo.browserUrl
 
   // Global keyboard listener for command palette toggle (Ctrl+Shift+P)
   useEffect(() => {
@@ -134,14 +145,29 @@ export default function App() {
     setTutorialOpen(false);
   }, []);
 
-  // Create first workspace on launch
+  // Initialize workspaces: try loading saved session first, then create default
   useEffect(() => {
-    if (workspaces.length === 0) {
-      createWorkspace({
-        title: 'Session 1',
-        splitTree: buildDefaultSplitTree(),
-      });
-    }
+    (async () => {
+      try {
+        const sessions = await window.wmux?.session?.list();
+        if (sessions && sessions.length > 0) {
+          const session = await window.wmux?.session?.load(sessions[0].name);
+          if (session) {
+            const { replaceAllWorkspaces } = useStore.getState();
+            replaceAllWorkspaces(session.workspaces);
+            if (session.sidebarWidth) setSidebarWidth(session.sidebarWidth);
+            return;
+          }
+        }
+      } catch {}
+      // No saved session — create default workspace
+      if (useStore.getState().workspaces.length === 0) {
+        createWorkspace({
+          title: 'Session 1',
+          splitTree: buildDefaultSplitTree(),
+        });
+      }
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Expose helpers for main process queries
@@ -258,21 +284,35 @@ export default function App() {
               const prevState = ws.shellState;
               updateWorkspaceMetadata(ws.id, { shellState: newState });
 
-              // Auto-notify on state transitions from running
+              // Track when command started running
+              if (newState === 'running') {
+                runningStartTimes.current[ws.id] = Date.now();
+              }
+
+              // Only notify for commands that ran longer than 5 seconds
               if (prevState === 'running' && (newState === 'idle' || newState === 'interrupted')) {
-                const msg = newState === 'interrupted'
-                  ? `Interrupted in ${ws.title}`
-                  : `Finished in ${ws.title}`;
-                addNotification({
-                  surfaceId: cmd.surfaceId as SurfaceId,
-                  workspaceId: ws.id,
-                  text: msg,
-                });
-                window.wmux?.notification?.fire({
-                  surfaceId: cmd.surfaceId,
-                  text: msg,
-                  title: 'wmux',
-                });
+                const startTime = runningStartTimes.current[ws.id];
+                const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
+                delete runningStartTimes.current[ws.id];
+
+                if (elapsed >= 5) {
+                  const duration = elapsed >= 60
+                    ? `${Math.floor(elapsed / 60)}m${Math.round(elapsed % 60)}s`
+                    : `${Math.round(elapsed)}s`;
+                  const msg = newState === 'interrupted'
+                    ? `Interrupted in ${ws.title} (${duration})`
+                    : `Finished in ${ws.title} (${duration})`;
+                  addNotification({
+                    surfaceId: cmd.surfaceId as SurfaceId,
+                    workspaceId: ws.id,
+                    text: msg,
+                  });
+                  window.wmux?.notification?.fire({
+                    surfaceId: cmd.surfaceId,
+                    text: msg,
+                    title: 'wmux',
+                  });
+                }
               }
               break;
             }
@@ -285,12 +325,16 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for Claude Code hook events — tie to active workspace
+  // Also auto-create diff surface when Edit/Write tools fire
   useEffect(() => {
     if (!window.wmux?.hook?.onEvent) return;
     const unsub = window.wmux.hook.onEvent((event: any) => {
       if (!event?.tool) return;
-      const wsId = useStore.getState().activeWorkspaceId;
+      const state = useStore.getState();
+      const wsId = state.activeWorkspaceId;
       if (!wsId) return;
+
+      // Track hook activity for sidebar display
       setHookActivity(prev => {
         const existing = prev[wsId] || { lastTool: '', toolCount: 0, lastSeen: 0 };
         return {
@@ -302,12 +346,28 @@ export default function App() {
           },
         };
       });
+
+      // Auto-open diff tab in the BOTTOM pane when Claude edits/writes files
+      if ((event.tool === 'Edit' || event.tool === 'Write') && event.file) {
+        const ws = state.workspaces.find(w => w.id === wsId);
+        if (ws) {
+          const bottomPaneId = findBottomPane(ws.splitTree);
+          if (bottomPaneId) {
+            const bottomLeaf = findLeafFromTree(ws.splitTree, bottomPaneId);
+            // Only add diff tab if bottom pane doesn't already have one
+            if (bottomLeaf && !bottomLeaf.surfaces.some(s => s.type === 'diff')) {
+              state.addSurface(wsId, bottomPaneId, 'diff');
+            }
+          }
+        }
+      }
     });
     return unsub;
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear stale activity after 10 seconds of no hooks
-  // NOTE: no dependency on hookActivity — that would cause an infinite re-subscribe loop
+  // Clear stale hook activity after 4 seconds of no hooks.
+  // Runs every 2 seconds for responsive cleanup — tool labels disappear
+  // quickly once Claude stops using tools, instead of lingering for 10+ seconds.
   useEffect(() => {
     const timer = setInterval(() => {
       setHookActivity(prev => {
@@ -316,7 +376,7 @@ export default function App() {
         const next: typeof prev = {};
         let changed = false;
         for (const [k, v] of Object.entries(prev)) {
-          if (now - v.lastSeen < 10000) {
+          if (now - v.lastSeen < 4000) {
             next[k] = v;
           } else {
             changed = true;
@@ -324,7 +384,7 @@ export default function App() {
         }
         return changed ? next : prev;
       });
-    }, 3000);
+    }, 2000);
     return () => clearInterval(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -338,18 +398,31 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Auto-load last saved session on startup
+  // Respond to main process auto-save requests (30s timer + on quit)
   useEffect(() => {
-    (async () => {
-      try {
-        const sessions = await window.wmux?.session?.list();
-        if (sessions && sessions.length > 0 && useStore.getState().workspaces.length <= 1) {
-          const latest = sessions[0];
-          handleLoadSession(latest.name);
-        }
-      } catch {}
-    })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!window.wmux?.session?.onAutoSaveRequest) return;
+    const unsub = window.wmux.session.onAutoSaveRequest(() => {
+      const state = useStore.getState();
+      const data = {
+        version: 1,
+        windows: [{
+          bounds: { x: 0, y: 0, width: 0, height: 0 }, // main process fills real bounds
+          sidebarWidth,
+          activeWorkspaceId: state.activeWorkspaceId,
+          workspaces: state.workspaces.map(ws => ({
+            id: ws.id,
+            title: ws.title,
+            customColor: ws.customColor,
+            pinned: ws.pinned,
+            shell: ws.shell,
+            splitTree: ws.splitTree,
+          })),
+        }],
+      };
+      window.wmux.session.pushAutoSave(data);
+    });
+    return unsub;
+  }, [sidebarWidth]);
 
   // Auto-focus first pane whenever the active workspace changes or gains its first pane
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
@@ -399,8 +472,8 @@ export default function App() {
         shell: ws.shell,
         cwd: ws.cwd || '',
         splitTree: ws.splitTree,
+        browserUrl: ws.browserUrl || '',
       })),
-      browserUrl: '',
       sidebarWidth,
     };
     await window.wmux?.session?.save(session);
@@ -413,9 +486,6 @@ export default function App() {
     const { replaceAllWorkspaces } = useStore.getState();
     replaceAllWorkspaces(session.workspaces);
     if (session.sidebarWidth) setSidebarWidth(session.sidebarWidth);
-    if (session.browserUrl) {
-      window.wmux?.browser?.navigate?.('', session.browserUrl);
-    }
   }, []);
 
   const handleUpdateMetadata = useCallback(
@@ -505,6 +575,7 @@ export default function App() {
             claudeActivity={claudeActivity}
             onSaveSession={handleSaveSession}
             onLoadSession={handleLoadSession}
+            onCollapse={toggleSidebar}
           />
         )}
 
@@ -517,11 +588,13 @@ export default function App() {
               style={{
                 position: 'absolute',
                 inset: 0,
-                display: ws.id === activeWorkspaceId ? 'block' : 'none',
+                visibility: ws.id === activeWorkspaceId ? 'visible' : 'hidden',
+                pointerEvents: ws.id === activeWorkspaceId ? 'auto' : 'none',
               }}
             >
               <SplitContainer
                 node={ws.splitTree}
+                workspaceId={ws.id}
                 focusedPaneId={ws.id === activeWorkspaceId ? focusedPaneId : null}
                 onRatioChange={ws.id === activeWorkspaceId ? handleRatioChange : undefined}
                 onPaneFocus={handlePaneFocus}
@@ -575,7 +648,36 @@ export default function App() {
                   cursor: 'col-resize', background: 'transparent',
                 }} />
               )}
-              <BrowserPane surfaceId="browser-main" />
+              {/* Browser close button */}
+              <button
+                onClick={() => setBrowserOpen(false)}
+                style={{
+                  position: 'absolute', top: 6, right: 8, zIndex: 20,
+                  background: 'rgba(0,0,0,0.5)', border: 'none', color: '#999',
+                  cursor: 'pointer', fontSize: 14, padding: '2px 6px', lineHeight: 1,
+                  borderRadius: 3, backdropFilter: 'blur(4px)',
+                }}
+                onMouseEnter={(e) => { (e.target as HTMLElement).style.color = '#fff'; (e.target as HTMLElement).style.background = 'rgba(220,50,50,0.7)'; }}
+                onMouseLeave={(e) => { (e.target as HTMLElement).style.color = '#999'; (e.target as HTMLElement).style.background = 'rgba(0,0,0,0.5)'; }}
+                title="Close browser panel"
+              >×</button>
+              {/* Per-workspace browser — all stay mounted, only active visible */}
+              {workspaces.map((ws) => (
+                <div
+                  key={`browser-${ws.id}`}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: ws.id === activeWorkspaceId ? 'block' : 'none',
+                  }}
+                >
+                  <BrowserPane
+                    surfaceId={`browser-${ws.id}`}
+                    initialUrl={ws.browserUrl}
+                    onUrlChange={(url) => { updateWorkspaceMetadata(ws.id, { browserUrl: url }); }}
+                  />
+                </div>
+              ))}
             </div>
           </>
         )}

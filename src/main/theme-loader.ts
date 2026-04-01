@@ -77,14 +77,22 @@ function normalizeColor(color: string): string {
  * Scans resources/themes/ for Ghostty-format theme files and returns a Map
  * of theme name → ThemeConfig.
  */
+function getThemesDir(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as typeof import('electron');
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'themes');
+    }
+  } catch {
+    // Not running in Electron (e.g., during tests)
+  }
+  return path.join(__dirname, '../../resources/themes');
+}
+
 export function loadBundledThemes(): Map<string, ThemeConfig> {
   const result = new Map<string, ThemeConfig>();
-
-  // Determine the themes directory relative to the app root.
-  // In production, __dirname will be inside dist/main/ — go up two levels.
-  // In development (ts-node / vitest), __dirname is src/main/ — also go up two levels.
-  const appRoot = path.resolve(__dirname, '..', '..');
-  const themesDir = path.join(appRoot, 'resources', 'themes');
+  const themesDir = getThemesDir();
 
   let entries: string[];
   try {

@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeImage } from 'electron';
+import { BrowserWindow, nativeImage, screen } from 'electron';
 import { v4 as uuid } from 'uuid';
 import path from 'path';
 import type { WindowId } from '../shared/types';
@@ -25,6 +25,22 @@ export class WindowManager {
 
   createWindow(bounds?: { x: number; y: number; width: number; height: number }): WindowId {
     const id = `win-${uuid()}` as WindowId;
+
+    // Validate saved bounds: reasonable size + on a visible display
+    if (bounds) {
+      if (bounds.width < 400 || bounds.height < 300) {
+        bounds = undefined;
+      } else {
+        const b = bounds;
+        const displays = screen.getAllDisplays();
+        const isOnScreen = displays.some(d => {
+          const wa = d.workArea;
+          return b.x < wa.x + wa.width && b.x + b.width > wa.x &&
+                 b.y < wa.y + wa.height && b.y + b.height > wa.y;
+        });
+        if (!isOnScreen) bounds = undefined;
+      }
+    }
 
     const win = new BrowserWindow({
       width: bounds?.width ?? 1400,

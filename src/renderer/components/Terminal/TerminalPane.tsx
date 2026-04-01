@@ -9,6 +9,7 @@ interface TerminalPaneProps {
   shell?: string;
   cwd?: string;
   focused?: boolean;
+  visible?: boolean;
   showFindBar?: boolean;
   onFindBarClose?: () => void;
   copyModeActive?: boolean;
@@ -19,11 +20,12 @@ export default function TerminalPane({
   shell,
   cwd,
   focused = true,
+  visible = true,
   showFindBar = false,
   onFindBarClose,
   copyModeActive = false,
 }: TerminalPaneProps) {
-  const { terminalRef, searchAddonRef } = useTerminal({ surfaceId, shell, cwd });
+  const { terminalRef, searchAddonRef } = useTerminal({ surfaceId, shell, cwd, visible });
 
   const [_lastQuery, setLastQuery] = useState('');
 

@@ -31,6 +31,7 @@
     "artifactName": "wmux-${version}-portable.exe"
   },
   "extraResources": [
+    { "from": "resources/icon.png", "to": "icon.png" },
     { "from": "resources/themes", "to": "themes" },
     { "from": "resources/sounds", "to": "sounds" },
     { "from": "resources/claude-instructions.md", "to": "claude-instructions/claude-instructions.md" },

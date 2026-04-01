@@ -32,7 +32,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       id,
       title: options.title ?? `Workspace ${get().workspaces.length + 1}`,
       pinned: options.pinned ?? false,
-      shell: options.shell ?? 'pwsh.exe',
+      shell: options.shell || '',
       splitTree,
       unreadCount: options.unreadCount ?? 0,
       customColor: options.customColor,
@@ -118,11 +118,12 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       id: `ws-${uuid()}` as WorkspaceId,
       title: config.title ?? `Workspace ${i + 1}`,
       pinned: config.pinned ?? false,
-      shell: config.shell ?? 'pwsh.exe',
+      shell: config.shell || '',
       splitTree: config.splitTree ?? createLeaf(),
       unreadCount: 0,
       customColor: config.customColor,
       cwd: config.cwd,
+      browserUrl: config.browserUrl,
     }));
 
     set({

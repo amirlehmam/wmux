@@ -1,11 +1,11 @@
 import { v4 as uuid } from 'uuid';
-import { SplitNode, PaneId, SurfaceId } from '../../shared/types';
+import { SplitNode, PaneId, SurfaceId, SurfaceType } from '../../shared/types';
 
 // ─── Leaf factory ────────────────────────────────────────────────────────────
 
 export function createLeaf(
   paneId?: PaneId,
-  surfaceType: 'terminal' | 'browser' | 'markdown' = 'terminal',
+  surfaceType: SurfaceType = 'terminal',
 ): SplitNode & { type: 'leaf' } {
   const resolvedPaneId: PaneId = paneId ?? (`pane-${uuid()}` as PaneId);
   const surfaceId: SurfaceId = `surf-${uuid()}` as SurfaceId;
@@ -23,7 +23,7 @@ export function splitNode(
   tree: SplitNode,
   targetPaneId: PaneId,
   newPaneId: PaneId,
-  surfaceType: 'terminal' | 'browser' | 'markdown',
+  surfaceType: SurfaceType,
   direction: 'horizontal' | 'vertical',
 ): SplitNode {
   if (tree.type === 'leaf') {

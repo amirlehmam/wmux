@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { WorkspaceId, PaneId, SurfaceId, SurfaceRef } from '../../shared/types';
+import { WorkspaceId, PaneId, SurfaceId, SurfaceRef, SurfaceType } from '../../shared/types';
 import { findLeaf, removeLeaf } from './split-utils';
 import { WorkspaceSlice } from './workspace-slice';
 
@@ -11,7 +11,7 @@ export interface SurfaceSlice {
   addSurface: (
     workspaceId: WorkspaceId,
     paneId: PaneId,
-    type: 'terminal' | 'browser' | 'markdown',
+    type: SurfaceType,
   ) => SurfaceId;
 
   /** Close a surface; if it's the last one in the pane, the pane is removed */

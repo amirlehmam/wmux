@@ -9,9 +9,11 @@ export type SplitNode =
   | { type: 'leaf'; paneId: PaneId; surfaces: SurfaceRef[]; activeSurfaceIndex: number }
   | { type: 'branch'; direction: 'horizontal' | 'vertical'; ratio: number; children: [SplitNode, SplitNode] };
 
+export type SurfaceType = 'terminal' | 'browser' | 'markdown' | 'diff';
+
 export interface SurfaceRef {
   id: SurfaceId;
-  type: 'terminal' | 'browser' | 'markdown';
+  type: SurfaceType;
 }
 
 // Workspace
@@ -32,12 +34,13 @@ export interface WorkspaceInfo {
   ports?: number[];
   notificationText?: string;
   shellState?: 'idle' | 'running' | 'interrupted';
+  browserUrl?: string;
 }
 
 // Surface
 export interface SurfaceInfo {
   id: SurfaceId;
-  type: 'terminal' | 'browser' | 'markdown';
+  type: SurfaceType;
   title?: string;
 }
 
@@ -154,8 +157,8 @@ export interface SavedSession {
     shell: string;
     cwd: string;
     splitTree: SplitNode;
+    browserUrl?: string;
   }>;
-  browserUrl?: string;
   sidebarWidth: number;
 }
 
@@ -249,4 +252,8 @@ export const IPC_CHANNELS = {
   SESSION_LOAD_NAMED: 'session:load-named',
   SESSION_LIST_NAMED: 'session:list-named',
   SESSION_DELETE_NAMED: 'session:delete-named',
+  // Diff viewer
+  DIFF_GET_FILES: 'diff:get-files',
+  DIFF_GET_DIFF: 'diff:get-diff',
+  DIFF_UPDATE: 'diff:update',
 } as const;

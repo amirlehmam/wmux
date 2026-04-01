@@ -27,6 +27,7 @@ interface SidebarProps {
   claudeActivity?: Record<string, any>;
   onSaveSession?: (name: string) => void;
   onLoadSession?: (name: string) => void;
+  onCollapse?: () => void;
 }
 
 export default function Sidebar({
@@ -44,6 +45,7 @@ export default function Sidebar({
   claudeActivity,
   onSaveSession,
   onLoadSession,
+  onCollapse,
 }: SidebarProps) {
   const [draggedId, setDraggedId] = useState<WorkspaceId | null>(null);
   const [dragOverId, setDragOverId] = useState<WorkspaceId | null>(null);
@@ -215,8 +217,20 @@ export default function Sidebar({
 
   return (
     <div className="sidebar" style={{ width: sidebarWidth }}>
-      {/* Spacer for titlebar area */}
-      <div className="sidebar__header" />
+      {/* Spacer for titlebar area + collapse button */}
+      <div className="sidebar__header">
+        {onCollapse && (
+          <button
+            className="sidebar__collapse-btn"
+            onClick={onCollapse}
+            title="Collapse sidebar (Ctrl+B)"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06z"/>
+            </svg>
+          </button>
+        )}
+      </div>
 
       <div className="sidebar__list">
         {workspaces.map((ws) => (

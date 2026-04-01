@@ -9,6 +9,9 @@ interface SurfaceTabBarProps {
   onSelect: (index: number) => void;
   onClose: (surfaceId: SurfaceId) => void;
   onNew: () => void;
+  onClosePane?: () => void;
+  onSplitRight?: () => void;
+  onSplitDown?: () => void;
   onDropSurface?: (sourcePaneId: PaneId, surfaceId: SurfaceId, targetPaneId: PaneId) => void;
 }
 
@@ -18,6 +21,7 @@ function surfaceIcon(type: string, isAgent: boolean): string {
     case 'terminal': return '>';
     case 'browser': return '◎';
     case 'markdown': return '¶';
+    case 'diff': return '±';
     default: return '○';
   }
 }
@@ -28,6 +32,7 @@ function surfaceLabel(surface: SurfaceRef, agentLabel?: string): string {
     case 'terminal': return 'Terminal';
     case 'browser': return 'Browser';
     case 'markdown': return 'Markdown';
+    case 'diff': return 'Diff';
     default: return 'Tab';
   }
 }
@@ -39,6 +44,9 @@ export default function SurfaceTabBar({
   onSelect,
   onClose,
   onNew,
+  onClosePane,
+  onSplitRight,
+  onSplitDown,
   onDropSurface,
 }: SurfaceTabBarProps) {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -126,6 +134,36 @@ export default function SurfaceTabBar({
       >
         +
       </button>
+      {onSplitRight && (
+        <button
+          className="surface-tab-bar__split-btn"
+          onClick={onSplitRight}
+          tabIndex={-1}
+          title="Split right (Ctrl+D)"
+        >
+          ⏐
+        </button>
+      )}
+      {onSplitDown && (
+        <button
+          className="surface-tab-bar__split-btn"
+          onClick={onSplitDown}
+          tabIndex={-1}
+          title="Split down (Ctrl+Shift+D)"
+        >
+          ⎯
+        </button>
+      )}
+      {onClosePane && (
+        <button
+          className="surface-tab-bar__close-pane-btn"
+          onClick={onClosePane}
+          tabIndex={-1}
+          title="Close pane"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { PaneId, SplitNode, SurfaceId } from '../../../shared/types';
+import { PaneId, SplitNode, SurfaceId, WorkspaceId } from '../../../shared/types';
+import { removeLeaf, splitNode } from '../../store/split-utils';
 import TerminalPane from '../Terminal/TerminalPane';
 import BrowserPane from '../Browser/BrowserPane';
 import MarkdownPane from '../Markdown/MarkdownPane';
+import DiffPane from '../Diff/DiffPane';
 import NotificationRing from '../Terminal/NotificationRing';
 import SurfaceTabBar from './SurfaceTabBar';
 import { useStore } from '../../store';
@@ -11,11 +13,12 @@ import '../../styles/terminal.css';
 
 interface PaneWrapperProps {
   paneId: PaneId;
+  workspaceId: WorkspaceId;
   leaf: SplitNode & { type: 'leaf' };
   isFocused: boolean;
 }
 
-export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
+export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrapperProps) {
   const { surfaces, activeSurfaceIndex, paneId } = leaf;
   const activeSurface = surfaces[activeSurfaceIndex];
 
@@ -27,6 +30,7 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
   const selectSurface = useStore((s) => s.selectSurface);
   const moveSurface = useStore((s) => s.moveSurface);
   const shortcuts = useStore((s) => s.shortcuts);
+  const workspace = useStore((s) => s.workspaces.find(w => w.id === workspaceId));
 
   const surfaceIds = useMemo(() => surfaces.map((s) => s.id), [surfaces]);
 
@@ -121,28 +125,39 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
     setFindBarVisible(false);
   }, []);
 
-  const renderSurface = () => {
-    if (!activeSurface) return null;
-    switch (activeSurface.type) {
-      case 'terminal':
-        return (
-          <TerminalPane
-            key={activeSurface.id}
-            surfaceId={activeSurface.id}
-            focused={isFocused}
-            showFindBar={findBarVisible && isFocused}
-            onFindBarClose={handleFindBarClose}
-            copyModeActive={copyModeActive && isFocused}
-          />
-        );
-      case 'browser':
-        return <BrowserPane key={activeSurface.id} surfaceId={activeSurface.id} />;
-      case 'markdown':
-        return <MarkdownPane key={activeSurface.id} surfaceId={activeSurface.id} />;
-      default:
-        return null;
-    }
-  };
+  const isWorkspaceActive = workspaceId === activeWorkspaceId;
+
+  const renderAllSurfaces = () =>
+    surfaces.map((surface, index) => {
+      const isActive = index === activeSurfaceIndex;
+      const isVisible = isActive && isWorkspaceActive;
+      return (
+        <div
+          key={surface.id}
+          className="pane-wrapper__surface-layer"
+          style={{
+            visibility: isActive ? 'visible' : 'hidden',
+            zIndex: isActive ? 1 : 0,
+          }}
+        >
+          {surface.type === 'terminal' && (
+            <TerminalPane
+              surfaceId={surface.id}
+              shell={workspace?.shell}
+              cwd={workspace?.cwd}
+              focused={isFocused && isActive}
+              visible={isVisible}
+              showFindBar={findBarVisible && isFocused && isActive}
+              onFindBarClose={handleFindBarClose}
+              copyModeActive={copyModeActive && isFocused && isActive}
+            />
+          )}
+          {surface.type === 'browser' && <BrowserPane surfaceId={surface.id} />}
+          {surface.type === 'markdown' && <MarkdownPane surfaceId={surface.id} />}
+          {surface.type === 'diff' && <DiffPane surfaceId={surface.id} cwd={workspace?.cwd} />}
+        </div>
+      );
+    });
 
   const handleNewSurface = () => {
     if (activeWorkspaceId) {
@@ -171,6 +186,45 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
     }
   };
 
+  const handleSplitRight = () => {
+    if (!activeWorkspaceId) return;
+    const { workspaces, updateSplitTree } = useStore.getState();
+    const ws = workspaces.find(w => w.id === activeWorkspaceId);
+    if (ws) {
+      const newPaneId = `pane-${crypto.randomUUID()}` as PaneId;
+      const newTree = splitNode(ws.splitTree, paneId, newPaneId, 'terminal', 'horizontal');
+      updateSplitTree(activeWorkspaceId, newTree);
+    }
+  };
+
+  const handleSplitDown = () => {
+    if (!activeWorkspaceId) return;
+    const { workspaces, updateSplitTree } = useStore.getState();
+    const ws = workspaces.find(w => w.id === activeWorkspaceId);
+    if (ws) {
+      const newPaneId = `pane-${crypto.randomUUID()}` as PaneId;
+      const newTree = splitNode(ws.splitTree, paneId, newPaneId, 'terminal', 'vertical');
+      updateSplitTree(activeWorkspaceId, newTree);
+    }
+  };
+
+  const handleClosePane = () => {
+    if (!activeWorkspaceId) return;
+    // Kill all PTYs in this pane first
+    for (const surface of surfaces) {
+      if (surface.type === 'terminal') {
+        window.wmux?.pty?.kill(surface.id);
+      }
+    }
+    // Remove the pane atomically (not surface-by-surface, which corrupts state)
+    const { workspaces, updateSplitTree } = useStore.getState();
+    const ws = workspaces.find(w => w.id === activeWorkspaceId);
+    if (ws) {
+      const newTree = removeLeaf(ws.splitTree, paneId);
+      if (newTree) updateSplitTree(activeWorkspaceId, newTree);
+    }
+  };
+
   return (
     <div className={`pane-wrapper ${isFocused ? 'pane-wrapper--focused' : ''}`}>
       <SurfaceTabBar
@@ -180,10 +234,13 @@ export default function PaneWrapper({ leaf, isFocused }: PaneWrapperProps) {
         onSelect={handleSelectSurface}
         onClose={handleCloseSurface}
         onNew={handleNewSurface}
+        onClosePane={handleClosePane}
+        onSplitRight={handleSplitRight}
+        onSplitDown={handleSplitDown}
         onDropSurface={handleDropSurface}
       />
       <div className="pane-wrapper__content">
-        {renderSurface()}
+        {renderAllSurfaces()}
         <NotificationRing visible={hasUnread} flashing={justFired} />
         <div
           className="pane-wrapper__unfocused-overlay"

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { WorkspaceInfo, SplitNode } from '../../../shared/types';
 import UnreadBadge from './UnreadBadge';
 import PrStatusIcon from './PrStatusIcon';
@@ -69,6 +69,15 @@ export default function WorkspaceRow({
     ? `${workspace.customColor}0D`
     : undefined;
 
+  // Tick counter — forces re-evaluation of time-based memos every 2 seconds.
+  // Without this, useMemo caches stale Date.now() results because the deps
+  // (hookActivity/wsActivity) don't change even though time has passed.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 2000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Find Claude activity for this workspace's surfaces (from PTY observer)
   const wsActivity = useMemo(() => {
     if (!claudeActivity) return null;
@@ -85,27 +94,32 @@ export default function WorkspaceRow({
     ? { backgroundColor: customColorTint }
     : {};
 
+  // How long a tool label persists after the last hook/observer event (ms)
+  const ACTIVITY_TTL = 5000;
+
   // ── Determine if Claude is actively working (recent hook or observer data) ──
   const isClaudeActive = useMemo(() => {
     const now = Date.now();
-    if (hookActivity && now - hookActivity.lastSeen < 15000) return true;
-    if (wsActivity && now - wsActivity.lastUpdate < 15000) return true;
+    if (hookActivity && now - hookActivity.lastSeen < ACTIVITY_TTL) return true;
+    if (wsActivity && now - wsActivity.lastUpdate < ACTIVITY_TTL) return true;
     return false;
-  }, [hookActivity, wsActivity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hookActivity, wsActivity, tick]);
 
   // ── Current tool label (from observer or hooks) ──
   const currentToolLabel = useMemo(() => {
     const now = Date.now();
     // Prefer observer data (more specific — comes from PTY output parsing)
-    if (wsActivity?.lastTool && now - wsActivity.lastUpdate < 15000) {
+    if (wsActivity?.lastTool && now - wsActivity.lastUpdate < ACTIVITY_TTL) {
       return getToolLabel(wsActivity.lastTool);
     }
     // Fall back to hook data
-    if (hookActivity?.lastTool && now - hookActivity.lastSeen < 15000) {
+    if (hookActivity?.lastTool && now - hookActivity.lastSeen < ACTIVITY_TTL) {
       return getToolLabel(hookActivity.lastTool);
     }
     return null;
-  }, [wsActivity, hookActivity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsActivity, hookActivity, tick]);
 
   // ── Status text: tool activity > shell state > default ──
   const statusText = useMemo(() => {

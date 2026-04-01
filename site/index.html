@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wmux — Le terminal concu pour Claude Code</title>
+  <meta name="description" content="Application Windows basee sur Electron. Onglets verticaux, notifications quand les agents ont besoin d'attention, panneaux divises, navigateur integre et une API pipe pour l'automatisation." />
+  <link rel="icon" type="image/png" href="assets/favicon.png" />
+  <link rel="apple-touch-icon" href="assets/favicon.png" />
+
+  <style>
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
+      font-weight: 400; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
+      font-weight: 500; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
+      font-weight: 600; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
+      font-weight: 700; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist Mono';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/GeistMono-Regular.woff2') format('woff2');
+      font-weight: 400; font-style: normal; font-display: swap;
+    }
+  </style>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "wmux",
+    "operatingSystem": "Windows",
+    "applicationCategory": "DeveloperApplication",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "downloadUrl": "https://github.com/amirlehmam/wmux/releases/latest"
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --bg-elevated: #141414;
+      --bg-hover: #1a1a1a;
+      --border: #222;
+      --border-hover: #333;
+      --text: #ededed;
+      --text-secondary: #888;
+      --text-muted: #555;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'Geist Mono', 'Cascadia Code', 'Consolas', monospace;
+      --max-w: 720px;
+      --max-w-wide: 960px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 15px;
+      min-height: 100vh;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      background: var(--bg-elevated);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+
+    a {
+      color: var(--text);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-color: var(--text-muted);
+      transition: color 0.15s, text-decoration-color 0.15s;
+    }
+    a:hover {
+      color: var(--accent-hover);
+      text-decoration-color: var(--accent-hover);
+    }
+
+    /* ═══════════════════════════ HEADER ═══════════════════════════ */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10,10,10,0.85);
+      backdrop-filter: blur(12px) saturate(1.8);
+      -webkit-backdrop-filter: blur(12px) saturate(1.8);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-inner {
+      max-width: var(--max-w-wide);
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .logo-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+    .logo-icon { width: 28px; height: 28px; border-radius: 6px; }
+    nav { display: flex; gap: 20px; }
+    nav a {
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: 14px;
+      transition: color 0.15s;
+    }
+    nav a:hover { color: var(--text); }
+
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .gh-stars {
+      display: flex; align-items: center; gap: 6px;
+      color: var(--text-secondary); font-size: 13px; text-decoration: none;
+    }
+    .gh-stars svg { opacity: 0.7; }
+    .gh-stars:hover { color: var(--text); }
+    .gh-stars:hover svg { opacity: 1; }
+
+    .btn-download-header {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--text); color: var(--bg); border: none; border-radius: 8px;
+      padding: 7px 16px; font-size: 13px; font-weight: 500;
+      font-family: var(--font-sans); cursor: pointer; text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .btn-download-header:hover { opacity: 0.85; color: var(--bg); }
+
+    /* ═══════════════════════════ MAIN ═══════════════════════════ */
+    main { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
+
+    /* ═══════════════════════════ HERO ═══════════════════════════ */
+    .hero { padding-top: 80px; padding-bottom: 48px; }
+    .hero-logo { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
+    .hero-logo img { width: 48px; height: 48px; border-radius: 10px; }
+    .hero-logo span { font-size: 32px; font-weight: 700; letter-spacing: -0.03em; }
+    .hero h1 {
+      font-size: 24px; font-weight: 400; line-height: 1.4;
+      letter-spacing: -0.01em; margin-bottom: 16px;
+    }
+    .hero h1 .rotating-word { color: var(--accent); font-weight: 500; }
+    .hero p {
+      color: var(--text-secondary); font-size: 15px; line-height: 1.7;
+      margin-bottom: 32px; max-width: 560px;
+    }
+    .hero-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--text); color: var(--bg); border: 1px solid var(--text);
+      border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 500;
+      font-family: var(--font-sans); cursor: pointer; text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.85; color: var(--bg); }
+    .btn-secondary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: transparent; color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 500;
+      font-family: var(--font-sans); cursor: pointer; text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .btn-secondary:hover { border-color: var(--border-hover); background: var(--bg-hover); }
+
+    /* ═══════════════════════════ FEATURES ═══════════════════════════ */
+    .features { padding: 24px 0 48px; }
+    .features h2 {
+      font-size: 14px; font-weight: 500; color: var(--text-secondary);
+      margin-bottom: 20px; letter-spacing: 0.02em;
+    }
+    .features ul { list-style: none; padding: 0; }
+    .features li {
+      position: relative; padding-inline-start: 18px; margin-bottom: 14px;
+      color: var(--text-secondary); font-size: 15px; line-height: 1.6;
+    }
+    .features li::before {
+      content: '-'; position: absolute; inset-inline-start: 0; color: var(--text-muted);
+    }
+    .features li strong { color: var(--text); font-weight: 600; }
+
+    /* ═══════════════════════════ SCREENSHOT ═══════════════════════════ */
+    .screenshot-section { padding: 32px 0 64px; }
+    .screenshot-section img {
+      width: 100%; border-radius: 12px; border: 1px solid var(--border);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+    }
+
+    /* ═══════════════════════════ FAQ ═══════════════════════════ */
+    .faq { padding: 48px 0; border-top: 1px solid var(--border); }
+    .faq h2 {
+      font-size: 14px; font-weight: 500; color: var(--text-secondary);
+      margin-bottom: 24px; letter-spacing: 0.02em;
+    }
+    .faq-item { border-bottom: 1px solid var(--border); }
+    .faq-question {
+      width: 100%; background: none; border: none; color: var(--text);
+      font-family: var(--font-sans); font-size: 15px; font-weight: 500;
+      text-align: start; padding: 16px 0; cursor: pointer;
+      display: flex; justify-content: space-between; align-items: center;
+      transition: color 0.15s;
+    }
+    .faq-question:hover { color: var(--accent-hover); }
+    .faq-question .chevron {
+      transition: transform 0.2s; color: var(--text-muted);
+      flex-shrink: 0; margin-inline-start: 16px;
+    }
+    .faq-item.open .chevron { transform: rotate(180deg); }
+    .faq-answer { max-height: 0; overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease; }
+    .faq-item.open .faq-answer { max-height: 300px; padding-bottom: 16px; }
+    .faq-answer p { color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+    .faq-answer a { color: var(--accent); }
+
+    /* ═══════════════════════════ BOTTOM CTA ═══════════════════════════ */
+    .bottom-cta {
+      padding: 48px 0; border-top: 1px solid var(--border);
+      display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+    }
+
+    /* ═══════════════════════════ FOOTER ═══════════════════════════ */
+    footer { border-top: 1px solid var(--border); margin-top: 48px; }
+    .footer-inner {
+      max-width: var(--max-w-wide); margin: 0 auto; padding: 48px 24px 32px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px;
+    }
+    .footer-col h3 {
+      font-size: 13px; font-weight: 500; color: var(--text-secondary);
+      margin-bottom: 14px; letter-spacing: 0.02em;
+    }
+    .footer-col ul { list-style: none; padding: 0; }
+    .footer-col li { margin-bottom: 8px; }
+    .footer-col a {
+      color: var(--text-muted); font-size: 13px; text-decoration: none;
+      transition: color 0.15s;
+    }
+    .footer-col a:hover { color: var(--text); }
+    .footer-bottom {
+      max-width: var(--max-w-wide); margin: 0 auto; padding: 16px 24px 32px;
+      display: flex; justify-content: space-between; align-items: center;
+      border-top: 1px solid var(--border);
+    }
+    .footer-bottom span { color: var(--text-muted); font-size: 12px; }
+
+    /* ═══════════════════════════ ROTATING TEXT ═══════════════════════════ */
+    .rotating-container {
+      display: inline-block; position: relative; overflow: hidden;
+      vertical-align: bottom; height: 1.4em; min-width: 120px;
+    }
+    .rotating-text {
+      display: block; animation: rotateWords 8s ease-in-out infinite;
+      color: var(--accent); font-weight: 500;
+    }
+    @keyframes rotateWords {
+      0%, 20% { transform: translateY(0); opacity: 1; }
+      25%, 45% { transform: translateY(-1.4em); opacity: 1; }
+      50%, 70% { transform: translateY(-2.8em); opacity: 1; }
+      75%, 95% { transform: translateY(-4.2em); opacity: 1; }
+      100% { transform: translateY(-5.6em); opacity: 1; }
+    }
+
+    /* ═══════════════════════════ LANGUAGE SELECTOR ═══════════════════════════ */
+    #lang-selector {
+      position: relative;
+      display: inline-block;
+    }
+    .lang-trigger {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text-secondary); font-family: var(--font-sans); font-size: 12px;
+      padding: 4px 10px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .lang-trigger:hover { border-color: var(--border-hover); color: var(--text); }
+    .lang-dropdown {
+      display: none; position: absolute; bottom: 100%; margin-bottom: 8px;
+      inset-inline-end: 0;
+      background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px; min-width: 180px; max-height: 320px; overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 200;
+    }
+    .lang-dropdown.open { display: block; }
+    .lang-option {
+      display: block; width: 100%; background: none; border: none;
+      color: var(--text-secondary); font-family: var(--font-sans); font-size: 13px;
+      padding: 8px 12px; cursor: pointer; text-align: start; border-radius: 4px;
+      transition: background 0.1s, color 0.1s;
+    }
+    .lang-option:hover { background: var(--bg-hover); color: var(--text); }
+
+    /* scrollbar for dropdown */
+    .lang-dropdown::-webkit-scrollbar { width: 4px; }
+    .lang-dropdown::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ═══════════════════════════ RESPONSIVE ═══════════════════════════ */
+    @media (max-width: 768px) {
+      nav { display: none; }
+      .header-inner { padding: 0 16px; }
+      main { padding: 0 16px; }
+      .hero { padding-top: 48px; }
+      .hero-logo span { font-size: 26px; }
+      .hero h1 { font-size: 20px; }
+      .footer-inner { grid-template-columns: repeat(2, 1fr); gap: 24px; padding: 32px 16px 24px; }
+      .footer-bottom { flex-direction: column; gap: 8px; align-items: flex-start; padding: 16px; }
+    }
+    @media (max-width: 480px) {
+      .hero-buttons { flex-direction: column; }
+      .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
+      .gh-stars span { display: none; }
+    }
+
+    /* ═══════════════════════════ FADE IN ═══════════════════════════ */
+    .fade-in { opacity: 0; transform: translateY(12px); animation: fadeUp 0.6s ease forwards; }
+    .fade-in-d1 { animation-delay: 0.1s; }
+    .fade-in-d2 { animation-delay: 0.2s; }
+    .fade-in-d3 { animation-delay: 0.3s; }
+    .fade-in-d4 { animation-delay: 0.4s; }
+    @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header>
+    <div class="header-inner">
+      <div class="header-left">
+        <a href="/" class="logo-link">
+          <img src="assets/wmux_logo.png" alt="wmux" class="logo-icon" />
+          <span>wmux</span>
+        </a>
+        <nav>
+          <a href="https://github.com/amirlehmam/wmux#readme" data-i18n="nav.docs">Docs</a>
+          <a href="https://github.com/amirlehmam/wmux/releases" data-i18n="nav.changelog">Changelog</a>
+          <a href="https://github.com/amirlehmam/wmux/discussions" data-i18n="nav.community">Communaut&eacute;</a>
+          <a href="https://github.com/amirlehmam/wmux" data-i18n="nav.github">GitHub</a>
+        </nav>
+      </div>
+      <div class="header-right">
+        <a href="https://github.com/amirlehmam/wmux" class="gh-stars" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span>GitHub</span>
+        </a>
+        <a href="https://github.com/amirlehmam/wmux/releases/latest" class="btn-download-header">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>
+          <span data-i18n="header.download">T&eacute;l&eacute;charger pour Windows</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ MAIN ═══════════════════ -->
+  <main>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-logo fade-in">
+        <img src="assets/wmux_logo.png" alt="wmux logo" />
+        <span>wmux</span>
+      </div>
+
+      <h1 class="fade-in fade-in-d1">
+        <span data-i18n="hero.tagline">Le terminal con&ccedil;u pour</span>
+        <span class="rotating-container">
+          <span class="rotating-text" data-i18n="hero.word1">Claude Code</span>
+          <span class="rotating-text" data-i18n="hero.word2">les agents IA</span>
+          <span class="rotating-text" data-i18n="hero.word3">le multitasking</span>
+          <span class="rotating-text" data-i18n="hero.word4">Windows</span>
+        </span>
+      </h1>
+
+      <p class="fade-in fade-in-d2" data-i18n="hero.desc">
+        Application Windows bas&eacute;e sur Electron. Onglets verticaux,
+        notifications quand les agents ont besoin d'attention, panneaux
+        divis&eacute;s, navigateur int&eacute;gr&eacute; et une API pipe pour l'automatisation.
+      </p>
+
+      <div class="hero-buttons fade-in fade-in-d3">
+        <a href="https://github.com/amirlehmam/wmux/releases/latest" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>
+          <span data-i18n="hero.download">T&eacute;l&eacute;charger pour Windows</span>
+        </a>
+        <a href="https://github.com/amirlehmam/wmux" class="btn-secondary" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span data-i18n="hero.github">Voir sur GitHub</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="features fade-in fade-in-d4">
+      <h2 data-i18n="features.title">Fonctionnalit&eacute;s</h2>
+      <ul>
+        <li><strong data-i18n="f1.name">Int&eacute;gration passive Claude Code</strong> : <span data-i18n-html="f1.desc">wmux observe Claude Code sans modifier son comportement. Un proxy CDP sur <code>localhost:9222</code> permet au navigateur int&eacute;gr&eacute; de montrer chaque action en temps r&eacute;el. Les hooks auto-configur&eacute;s rapportent l'activit&eacute; des agents et outils dans la barre lat&eacute;rale. Z&eacute;ro configuration.</span></li>
+        <li><strong data-i18n="f2.name">Navigateur int&eacute;gr&eacute;</strong> : <span data-i18n-html="f2.desc">ouvrez un navigateur &agrave; c&ocirc;t&eacute; de votre terminal avec une API scriptable. Quand Claude Code navigue via <code>chrome-devtools-mcp</code>, chaque page, clic et formulaire est visible dans le panneau navigateur.</span></li>
+        <li><strong data-i18n="f3.name">Anneaux de notification</strong> : <span data-i18n-html="f3.desc">les panneaux s'illuminent en bleu quand les agents ont besoin d'attention. Notification Windows toast, flash barre des t&acirc;ches, et centre de notifications int&eacute;gr&eacute;.</span></li>
+        <li><strong data-i18n="f4.name">Onglets verticaux</strong> : <span data-i18n-html="f4.desc">la barre lat&eacute;rale affiche la branche git, le r&eacute;pertoire de travail, les ports, le nombre d'agents, le statut PR et le texte de notification. Double-clic pour renommer.</span></li>
+        <li><strong data-i18n="f5.name">Panneaux divis&eacute;s</strong> : <span data-i18n-html="f5.desc">divisions horizontales et verticales dans chaque onglet. Ctrl+D pour diviser &agrave; droite, Ctrl+Shift+D pour diviser en bas.</span></li>
+        <li><strong data-i18n="f6.name">Indicateurs d'activit&eacute;</strong> : <span data-i18n-html="f6.desc">orange pulsant = en cours, vert = termin&eacute;, rouge = interrompu. Visible d'un coup d'&oelig;il dans la barre lat&eacute;rale.</span></li>
+        <li><strong data-i18n="f7.name">Sessions sauvegard&eacute;es</strong> : <span data-i18n-html="f7.desc">sauvegardez vos splits, r&eacute;pertoires et URL navigateur. Restauration automatique au d&eacute;marrage.</span></li>
+        <li><strong data-i18n="f8.name">Scriptable</strong> : <span data-i18n-html="f8.desc">CLI et API named pipe (<code>\\.\pipe\wmux</code>) pour l'automatisation et le scripting. Protocole JSON-RPC v2 compatible avec cmux.</span></li>
+        <li><strong data-i18n="f9.name">Natif Windows</strong> : <span data-i18n-html="f9.desc">ConPTY pour l'&eacute;mulation de terminal, notifications toast Windows, flash barre des t&acirc;ches, title bar overlay native.</span></li>
+        <li><strong data-i18n="f10.name">Acc&eacute;l&eacute;ration GPU</strong> : <span data-i18n-html="f10.desc">propuls&eacute; par xterm.js avec rendu WebGL pour un affichage fluide.</span></li>
+        <li><strong data-i18n="f11.name">Th&egrave;mes compatibles</strong> : <span data-i18n-html="f11.desc">importez vos th&egrave;mes depuis Windows Terminal ou Ghostty. 450+ th&egrave;mes Ghostty inclus.</span></li>
+        <li><strong data-i18n="f12.name">Raccourcis clavier</strong> : <span data-i18n-html="f12.desc">raccourcis complets pour les espaces de travail, les divisions, le navigateur et plus.</span></li>
+      </ul>
+    </section>
+
+    <!-- SCREENSHOT -->
+    <section class="screenshot-section">
+      <img src="assets/wmux-full.png" alt="wmux" loading="lazy" />
+    </section>
+
+    <!-- FAQ -->
+    <section class="faq">
+      <h2 data-i18n="faq.title">Questions fr&eacute;quentes</h2>
+
+      <div class="faq-item">
+        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          <span data-i18n="faq1.q">Quelle est la relation entre wmux et cmux ?</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer"><p data-i18n-html="faq1.a">wmux est un fork Windows de <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener">cmux</a>. cmux est une application macOS native (Swift + AppKit + Ghostty). wmux reproduit la m&ecirc;me exp&eacute;rience sur Windows en utilisant Electron + xterm.js + ConPTY. Le protocole CLI/pipe est compatible entre les deux.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          <span data-i18n="faq2.q">Quelles plateformes sont support&eacute;es ?</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer"><p data-i18n-html="faq2.a">Windows 10 et 11 uniquement (x64). Pour macOS, utilisez <a href="https://cmux.com" target="_blank" rel="noopener">cmux</a>.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          <span data-i18n="faq3.q">Quels agents sont compatibles ?</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer"><p data-i18n-html="faq3.a">wmux est optimis&eacute; pour Claude Code avec int&eacute;gration passive automatique (hooks, CDP proxy, CLAUDE.md). Tout agent ou programme en ligne de commande peut &ecirc;tre utilis&eacute; dans les terminaux wmux.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          <span data-i18n="faq4.q">Comment fonctionnent les notifications ?</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer"><p data-i18n-html="faq4.a">Les scripts d'int&eacute;gration shell d&eacute;tectent quand une commande se termine ou est interrompue. Le panneau re&ccedil;oit un anneau bleu, le badge sidebar s'incr&eacute;mente, et une notification Windows toast appara&icirc;t. Supporte OSC 9/99/777, la CLI <code>wmux notify</code>, et la d&eacute;tection d'inactivit&eacute;.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          <span data-i18n="faq5.q">En quoi c'est diff&eacute;rent de Windows Terminal ?</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer"><p data-i18n-html="faq5.a">Windows Terminal est un excellent &eacute;mulateur de terminal, mais il n'a pas de syst&egrave;me de notification, pas de visibilit&eacute; sur l'activit&eacute; des agents, pas de navigateur int&eacute;gr&eacute;, et pas de m&eacute;tadonn&eacute;es live dans les onglets. wmux est con&ccedil;u sp&eacute;cifiquement pour superviser des agents IA.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
+          <span data-i18n="faq6.q">C'est gratuit ?</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-answer"><p data-i18n-html="faq6.a">Oui. wmux est open-source sous licence AGPL-3.0. T&eacute;l&eacute;chargement gratuit sur <a href="https://github.com/amirlehmam/wmux/releases" target="_blank" rel="noopener">GitHub Releases</a>.</p></div>
+      </div>
+    </section>
+
+    <!-- BOTTOM CTA -->
+    <div class="bottom-cta">
+      <a href="https://github.com/amirlehmam/wmux/releases/latest" class="btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>
+        <span data-i18n="cta.download">T&eacute;l&eacute;charger pour Windows</span>
+      </a>
+      <a href="https://github.com/amirlehmam/wmux" class="btn-secondary" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span data-i18n="cta.github">Voir sur GitHub</span>
+      </a>
+    </div>
+
+  </main>
+
+  <!-- ═══════════════════ FOOTER ═══════════════════ -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-col">
+        <h3 data-i18n="footer.product">Produit</h3>
+        <ul>
+          <li><a href="https://github.com/amirlehmam/wmux/releases" data-i18n="footer.changelog">Changelog</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/discussions" data-i18n="footer.community">Communaut&eacute;</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/releases" data-i18n="footer.releases">Releases</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3 data-i18n="footer.resources">Ressources</h3>
+        <ul>
+          <li><a href="https://github.com/amirlehmam/wmux#readme" data-i18n="footer.docs">Documentation</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux#install" data-i18n="footer.install">Installation</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux#keyboard-shortcuts" data-i18n="footer.shortcuts">Raccourcis</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3 data-i18n="footer.legal">L&eacute;gal</h3>
+        <ul>
+          <li><a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE" data-i18n="footer.license">Licence AGPL-3.0</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3 data-i18n="footer.social">Social</h3>
+        <ul>
+          <li><a href="https://github.com/amirlehmam/wmux" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/amirlehmam" target="_blank" rel="noopener">@amirlehmam</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span data-i18n="footer.copyright">&copy; 2026 wmux</span>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <span><span data-i18n="footer.fork">Fork Windows de</span> <a href="https://cmux.com" target="_blank" rel="noopener" style="color:var(--text-muted)">cmux</a></span>
+        <!-- Language selector -->
+        <div id="lang-selector">
+          <button class="lang-trigger">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span id="lang-current">Fran&ccedil;ais</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="i18n.js"></script>
+</body>
+</html>

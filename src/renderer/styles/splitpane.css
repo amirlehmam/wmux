@@ -33,6 +33,10 @@
   overflow: hidden;
   position: relative;
 }
+.pane-wrapper__surface-layer {
+  position: absolute;
+  inset: 0;
+}
 .pane-wrapper__unfocused-overlay {
   position: absolute; inset: 0; background: rgba(0, 0, 0, 0.2);
   pointer-events: none; z-index: 5; transition: opacity 0.15s ease;
@@ -111,6 +115,36 @@
   transition: color 0.1s ease, background 0.1s ease;
 }
 .surface-tab-bar__new-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+.surface-tab-bar__split-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+.surface-tab-bar__split-btn:hover { color: #0091ff; background: rgba(0,145,255,0.1); }
+.surface-tab-bar__close-pane-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+.surface-tab-bar__close-pane-btn:hover { color: #ff6b6b; background: rgba(255,100,100,0.12); }
 
 .surface-tab--agent .surface-tab__icon {
   color: #0091FF;
