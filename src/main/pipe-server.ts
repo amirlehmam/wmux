@@ -86,10 +86,34 @@ export class PipeServer extends EventEmitter {
   }
 
   private handleV1(line: string, socket: net.Socket): void {
-    const parts = line.split(/\s+/);
-    const command = parts[0];
-    const surfaceId = parts[1] || '';
-    const args = parts.slice(2);
+    // Parse command and surfaceId from fixed positions, then handle args
+    // per-command to avoid breaking paths that contain spaces (e.g. OneDrive).
+    const firstSpace = line.indexOf(' ');
+    const command = firstSpace === -1 ? line : line.substring(0, firstSpace);
+    const rest = firstSpace === -1 ? '' : line.substring(firstSpace + 1);
+
+    const secondSpace = rest.indexOf(' ');
+    const surfaceId = secondSpace === -1 ? rest : rest.substring(0, secondSpace);
+    const argsRaw = secondSpace === -1 ? '' : rest.substring(secondSpace + 1).trim();
+
+    let args: string[];
+    switch (command) {
+      case 'report_pwd':
+        // Single path argument — may contain spaces
+        args = argsRaw ? [argsRaw] : [];
+        break;
+      case 'report_pr': {
+        // format: <number> <state> <title...>  — title may contain spaces
+        const prParts = argsRaw.split(/\s+/);
+        args = prParts.length >= 3
+          ? [prParts[0], prParts[1], prParts.slice(2).join(' ')]
+          : prParts;
+        break;
+      }
+      default:
+        args = argsRaw ? argsRaw.split(/\s+/) : [];
+        break;
+    }
 
     const v1Command: V1Command = { command, surfaceId, args };
     this.emit('v1', v1Command);
