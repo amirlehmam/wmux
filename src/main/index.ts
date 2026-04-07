@@ -10,7 +10,7 @@ import { IPC_CHANNELS } from '../shared/types';
 import { loadSession, saveSession, handleVersionChange, SessionData } from './session-persistence';
 import { WindowManager } from './window-manager';
 import { initAutoUpdater } from './updater';
-import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig } from './claude-context';
+import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig, ensureOrchestratorPlugin } from './claude-context';
 import fs from 'fs';
 import path from 'path';
 
@@ -71,6 +71,7 @@ app.whenReady().then(() => {
   ensureClaudeContext();
   ensureClaudeHooks();
   ensureChromeDevtoolsConfig();
+  ensureOrchestratorPlugin();
 
   // IPC: renderer pushes session state (auto-save response or explicit save)
   ipcMain.on('session:save', (event, data: SessionData) => {
