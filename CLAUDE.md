@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 0.5.6
+**Version**: 0.5.8
 
 ---
 
@@ -42,6 +42,7 @@ src/
   shell-integration/  Shell hooks (bash/zsh/PowerShell/cmd)
 
 resources/        Runtime assets (icons, themes, sounds, shell-integration, CLI)
+  wmux-orchestrator/  Claude Code plugin (auto-installed on startup)
 site/             Landing page (static HTML, Netlify)
 tests/            Unit + e2e (Vitest)
 docs/             Planning docs
@@ -51,7 +52,7 @@ docs/             Planning docs
 
 | File | Role |
 |------|------|
-| `index.ts` | Entry point, AppUserModelId, auto-save (30s), pipe server startup |
+| `index.ts` | Entry point, AppUserModelId, auto-save (30s), pipe server startup, V2 pipe handlers (workspace/pane/surface/markdown/sidebar/notification) |
 | `pty-manager.ts` | PTY lifecycle (create with surfaceId, write, resize, kill) |
 | `pipe-server.ts` | Named pipe `\\.\pipe\wmux` — V1 text (shell hooks), V2 JSON-RPC (CLI/agents) |
 | `cdp-bridge.ts` | Browser webview control via Chrome DevTools Protocol |
@@ -59,7 +60,7 @@ docs/             Planning docs
 | `agent-manager.ts` | Agent PTY spawning, round-robin distribution across panes |
 | `window-manager.ts` | Electron BrowserWindow creation/management |
 | `ipc-handlers.ts` | All IPC channel handlers |
-| `claude-context.ts` | Auto-injects wmux instructions into `~/.claude/CLAUDE.md` on startup |
+| `claude-context.ts` | Auto-injects wmux instructions into `~/.claude/CLAUDE.md`, configures hooks, installs wmux-orchestrator plugin |
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
 | `session-persistence.ts` | Auto-save/restore window state |
 | `git-poller.ts` | Git branch/dirty status polling |
@@ -86,6 +87,11 @@ docs/             Planning docs
 **Hooks** (in `hooks/`):
 - `useTerminal.ts` — xterm.js lifecycle, PTY connection, OSC notifications, WebGL renderer
 - `useKeyboardShortcuts.ts` — 51+ shortcut actions, safe interception
+
+**Pipe Bridge** (`pipe-bridge.ts`):
+- Exposes Zustand store operations as `window.__wmux_*` globals
+- Called by main process via `executeJavaScript` to bridge V2 pipe commands to renderer
+- Covers: workspace CRUD, pane split/close/list, surface CRUD, markdown content, notifications
 
 **Store** (Zustand, in `store/`):
 - `workspace-slice.ts` — Workspace CRUD, split tree updates
@@ -133,7 +139,7 @@ The `surfaceId` is passed to `pty.create()` so PTY ID = Surface ID (enables reli
 
 ### Split Tree
 Pane layouts use an immutable binary tree (`SplitNode`). Each leaf = one pane with N surfaces (tabs).
-Mutations go through `patchLeaf()` / `removeLeaf()` in `split-utils.ts`.
+Mutations go through `splitNode()`, `removeLeaf()`, `findLeaf()`, `getAllPaneIds()` in `split-utils.ts`.
 
 ---
 
@@ -181,6 +187,7 @@ cp -r resources/themes ../wmux-release-staging/resources/
 cp -r resources/sounds ../wmux-release-staging/resources/
 cp dist/cli/wmux.js ../wmux-release-staging/resources/cli/
 cp -r src/shell-integration/* ../wmux-release-staging/resources/shell-integration/
+cp -r resources/wmux-orchestrator ../wmux-release-staging/resources/wmux-orchestrator
 
 # 8. Embed icon + metadata in exe (rcedit)
 node -e "
@@ -225,6 +232,7 @@ rm -rf .asar-staging ../wmux-release-staging
 - [ ] Compiled code verified (grep for key changes in dist/)
 - [ ] ASAR packed with `--unpack "**/*.node"`
 - [ ] node-pty native modules present in `app.asar.unpacked`
+- [ ] wmux-orchestrator plugin copied to release staging
 - [ ] rcedit applied (icon + version metadata)
 - [ ] Zip created and uploaded to GitHub release
 - [ ] Mark of the Web: remind user to right-click > Unblock after download
@@ -235,6 +243,55 @@ rm -rf .asar-staging ../wmux-release-staging
 - **MOTW (Mark of the Web)**: Downloaded zips get `Zone.Identifier` NTFS stream. Fix: `powershell "Get-ChildItem -Recurse | Unblock-File"`
 - **Windows taskbar pinning** uses PE `FileDescription` for the shortcut name — ensure rcedit sets it to "wmux"
 - **AppUserModelId** is set to `com.wmux.app` in `src/main/index.ts` for proper taskbar grouping
+
+---
+
+## Named Pipe V2 Handlers
+
+The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the renderer via `executeJavaScript('window.__wmux_*(...)')`. The renderer's `pipe-bridge.ts` exposes Zustand store operations as these globals.
+
+**Fully implemented V2 methods:**
+- `system.identify`, `system.capabilities`, `system.tree`
+- `workspace.create`, `workspace.close`, `workspace.select`, `workspace.rename`, `workspace.list`
+- `pane.split`, `pane.close`, `pane.focus`, `pane.zoom`, `pane.list`
+- `surface.create`, `surface.close`, `surface.focus`, `surface.list`
+- `surface.send_text`, `surface.send_key`, `surface.trigger_flash`
+- `markdown.set_content`, `markdown.load_file`
+- `notification.list`, `notification.clear`
+- `sidebar.set_status`, `sidebar.set_progress`, `sidebar.log`, `sidebar.get_state`
+- `browser.*` (via CDP bridge)
+- `agent.spawn`, `agent.spawn_batch`, `agent.status`, `agent.list`, `agent.kill`
+- `hook.event`, `diff.refresh`
+
+**Partially implemented:** `surface.read_text` (stub — needs xterm serializer addon)
+
+---
+
+## wmux-orchestrator Plugin
+
+Claude Code plugin bundled in `resources/wmux-orchestrator/`. Auto-installed into `~/.claude/plugins/cache/` on startup by `ensureOrchestratorPlugin()` in `claude-context.ts`. Also published standalone: `github.com/amirlehmam/wmux-orchestrator`.
+
+**What it does:** Decomposes complex dev tasks into parallel Claude Code agents coordinated through dependency-aware waves with automated review. With wmux: each agent in its own visible terminal pane. Without wmux: falls back to native subagents.
+
+**Plugin structure:**
+```
+resources/wmux-orchestrator/
+  .claude-plugin/plugin.json    Manifest (name, version, author)
+  commands/orchestrate.md       /wmux:orchestrate slash command
+  skills/orchestrate/SKILL.md   Core: codebase analysis, wave planning, agent spawning
+  skills/reviewer/SKILL.md      Post-orchestration review and auto-fix
+  skills/wmux-detect/SKILL.md   Detects wmux availability for degraded mode
+  agents/wmux-worker.md         Worker template with file zone enforcement
+  hooks/hooks.json              PostToolUse, SubagentStop, Stop, SessionStart
+  scripts/json-tool.js          Node.js JSON helper (replaces jq)
+  scripts/orchestration-state.sh  State file management library
+  scripts/spawn-agents.sh       Creates panes + launches Claude Code agents
+  scripts/on-agent-stop.sh      Wave transition driver (core orchestration)
+  scripts/check-status.sh       Markdown dashboard generator
+  scripts/*.sh                  Other utilities (cleanup, collect-results, etc.)
+```
+
+**Key design:** Skills handle intelligence (prompts), hooks handle reactivity (events), scripts handle wmux operations (CLI). State shared via JSON file in TMPDIR. No daemon.
 
 ---
 
