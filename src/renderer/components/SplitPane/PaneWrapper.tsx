@@ -29,6 +29,8 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
   const closeSurface = useStore((s) => s.closeSurface);
   const selectSurface = useStore((s) => s.selectSurface);
   const moveSurface = useStore((s) => s.moveSurface);
+  const splitAndMoveSurface = useStore((s) => s.splitAndMoveSurface);
+  const reorderSurface = useStore((s) => s.reorderSurface);
   const shortcuts = useStore((s) => s.shortcuts);
   const workspace = useStore((s) => s.workspaces.find(w => w.id === workspaceId));
 
@@ -44,6 +46,9 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
 
   // ─── Copy mode state ──────────────────────────────────────────────────────
   const [copyModeActive, setCopyModeActive] = useState(false);
+
+  // ─── Drag active state ────────────────────────────────────────────────────
+  const [dragActive, setDragActive] = useState(false);
 
   // Track "just fired" state for flash animation
   const [justFired, setJustFired] = useState(false);
@@ -120,6 +125,26 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isFocused, shortcuts, copyModeActive]);
+
+  // ─── Global drag tracking ─────────────────────────────────────────────────
+  useEffect(() => {
+    const handleDragStart = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('application/wmux-surface')) {
+        setDragActive(true);
+      }
+    };
+    const handleDragEnd = () => setDragActive(false);
+    const handleDrop = () => setDragActive(false);
+
+    document.addEventListener('dragstart', handleDragStart);
+    document.addEventListener('dragend', handleDragEnd);
+    document.addEventListener('drop', handleDrop);
+    return () => {
+      document.removeEventListener('dragstart', handleDragStart);
+      document.removeEventListener('dragend', handleDragEnd);
+      document.removeEventListener('drop', handleDrop);
+    };
+  }, []);
 
   const handleFindBarClose = useCallback(() => {
     setFindBarVisible(false);
@@ -225,8 +250,48 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
     }
   };
 
+  const handleEdgeDrop = (e: React.DragEvent, direction: 'left' | 'right' | 'up' | 'down') => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    document.body.classList.remove('wmux-dragging');
+    const data = e.dataTransfer.getData('application/wmux-surface');
+    if (!data || !activeWorkspaceId) return;
+    try {
+      const { sourcePaneId, surfaceId } = JSON.parse(data);
+      splitAndMoveSurface(activeWorkspaceId, paneId, sourcePaneId as PaneId, surfaceId as SurfaceId, direction);
+    } catch {}
+  };
+
+  const handleCenterDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    document.body.classList.remove('wmux-dragging');
+    const data = e.dataTransfer.getData('application/wmux-surface');
+    if (!data || !activeWorkspaceId) return;
+    try {
+      const { sourcePaneId, surfaceId } = JSON.parse(data);
+      if (sourcePaneId !== paneId) {
+        moveSurface(activeWorkspaceId, sourcePaneId as PaneId, surfaceId as SurfaceId, paneId);
+      }
+    } catch {}
+  };
+
+  const preventDragDefault = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleReorderSurface = (surfaceId: SurfaceId, newIndex: number) => {
+    if (activeWorkspaceId) {
+      reorderSurface(activeWorkspaceId, paneId, surfaceId, newIndex);
+    }
+  };
+
   return (
-    <div className={`pane-wrapper ${isFocused ? 'pane-wrapper--focused' : ''}`}>
+    <div className={`pane-wrapper ${isFocused ? 'pane-wrapper--focused' : ''} ${dragActive ? 'pane-wrapper--drag-active' : ''}`}>
       <SurfaceTabBar
         paneId={paneId}
         surfaces={surfaces}
@@ -238,6 +303,8 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
         onSplitRight={handleSplitRight}
         onSplitDown={handleSplitDown}
         onDropSurface={handleDropSurface}
+        onReorderSurface={handleReorderSurface}
+        isDragActive={dragActive}
       />
       <div className="pane-wrapper__content">
         {renderAllSurfaces()}
@@ -246,6 +313,13 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
           className="pane-wrapper__unfocused-overlay"
           style={{ opacity: isFocused ? 0 : 1 }}
         />
+        <div className="pane-wrapper__drop-zones">
+          <div className="pane-drop-zone pane-drop-zone--left" onDragOver={preventDragDefault} onDrop={(e) => handleEdgeDrop(e, 'left')} />
+          <div className="pane-drop-zone pane-drop-zone--right" onDragOver={preventDragDefault} onDrop={(e) => handleEdgeDrop(e, 'right')} />
+          <div className="pane-drop-zone pane-drop-zone--top" onDragOver={preventDragDefault} onDrop={(e) => handleEdgeDrop(e, 'up')} />
+          <div className="pane-drop-zone pane-drop-zone--bottom" onDragOver={preventDragDefault} onDrop={(e) => handleEdgeDrop(e, 'down')} />
+          <div className="pane-drop-zone pane-drop-zone--center" onDragOver={preventDragDefault} onDrop={handleCenterDrop} />
+        </div>
       </div>
     </div>
   );
