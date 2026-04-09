@@ -46,11 +46,10 @@ if [ "$WMUX_AVAILABLE" = "true" ]; then
     fi
 
     # Interactive mode: full TUI visible in pane, user can watch and intervene
-    # --system-prompt-file sets the mission context
-    # --allowedTools auto-approves tools so the agent works autonomously
-    # Positional arg "Execute..." is the initial user message that triggers work
+    # Step 1: spawn claude with system prompt + auto-approved tools (no initial message)
+    # Step 2: after claude TUI starts, send the trigger message via wmux send
     SPAWN_RESULT=$(wmux agent spawn \
-      --cmd "claude --system-prompt-file \"$PROMPT_FILE\" --allowedTools \"Read Write Edit Grep Glob Bash\" \"Execute your mission. Read the relevant files, implement all changes, then write your result file.\"" \
+      --cmd "claude --system-prompt-file \"$PROMPT_FILE\" --allowedTools \"Read,Write,Edit,Grep,Glob,Bash\"" \
       --label "$AGENT_LABEL" \
       --cwd "$CWD" \
       --pane "$PANE_ID" 2>&1)
@@ -63,7 +62,7 @@ if [ "$WMUX_AVAILABLE" = "true" ]; then
       continue
     fi
 
-    echo "Spawned agent $AGENT_ID (wmux=$SPAWNED_AGENT_ID) in pane $PANE_ID"
+    echo "Spawned agent $AGENT_ID (wmux=$SPAWNED_AGENT_ID) in pane $PANE_ID surface=$SPAWNED_SURFACE_ID"
 
     NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     update_agent "$ORCH_DIR" "$AGENT_ID" \
@@ -73,6 +72,23 @@ if [ "$WMUX_AVAILABLE" = "true" ]; then
       "startedAt=$NOW"
 
     PANE_IDX=$((PANE_IDX + 1))
+  done
+
+  # Wait for all Claude TUIs to start, then send trigger messages
+  echo "Waiting for Claude TUI to initialize..."
+  sleep 5
+
+  node "$JSON_TOOL" query "$ORCH_DIR/state.json" wave-agents-each "$WAVE_IDX" | while IFS= read -r agent; do
+    [ -z "$agent" ] && continue
+    AGENT_ID=$(parse_json "$agent" '.id')
+    SURFACE_ID=$(parse_json "$agent" '.surfaceId')
+    RESULT_FILE=$(parse_json "$agent" '.resultFile')
+    [ -z "$SURFACE_ID" ] || [ "$SURFACE_ID" = "null" ] && continue
+
+    wmux send "Execute your mission. Read the relevant files, implement all changes, then write your result file at $RESULT_FILE" --surface "$SURFACE_ID" 2>&1
+    sleep 1
+    wmux send-key enter --surface "$SURFACE_ID" 2>&1
+    echo "Sent trigger to agent $AGENT_ID on surface $SURFACE_ID"
   done
 else
   echo "wmux unavailable — writing pending spawn file for degraded mode" >&2

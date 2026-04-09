@@ -216,16 +216,17 @@ Use this format:
 
 ### 6d. Create wmux layout (if available)
 
-If wmux is detected:
-```bash
-# Create dedicated workspace
-wmux new-workspace --title "Orchestration: [short task name]"
+If wmux is detected, create panes **in the current workspace** (do NOT create a new workspace — that hides everything from the user):
 
-# Create dashboard pane (markdown type)
-wmux split --down --type markdown
+```bash
+# Split panes for agents in the CURRENT workspace
+# For 2 agents: split right, then split the right pane down
+# For 3 agents: split right, split right-top down, split right-bottom down
+wmux split --right --type terminal   # Agent pane 1
+wmux split --down --type terminal    # Agent pane 2 (splits the focused pane)
 ```
 
-Capture the surfaceId from the split result and update state.json's `dashboardSurfaceId`.
+Capture the paneId from each split result. These are where agents will be spawned.
 
 ### 6e. Spawn Wave 1 agents
 
@@ -245,11 +246,21 @@ After spawning, verify agents are running:
 wmux agent list
 ```
 
-You should see agents with `"status": "running"`. If any agent failed to spawn (missing from the list or status is not "running"), retry that agent's spawn manually:
+You should see agents with `"status": "running"`. If any agent failed to spawn, retry manually:
 ```bash
+# 1. Create pane
 PANE_RESULT=$(wmux split --right --type terminal)
 PANE_ID=$(echo "$PANE_RESULT" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).paneId))")
-wmux agent spawn --cmd "claude --system-prompt-file \"[orch-dir]/agent-[id]-prompt.md\" --allowedTools \"Read Write Edit Grep Glob Bash\" \"Execute your mission. Read the relevant files, implement all changes, then write your result file.\"" --label "[label]" --cwd "[cwd]" --pane "$PANE_ID"
+
+# 2. Spawn claude (interactive, no initial message)
+SPAWN=$(wmux agent spawn --cmd "claude --system-prompt-file \"[orch-dir]/agent-[id]-prompt.md\" --allowedTools \"Read,Write,Edit,Grep,Glob,Bash\"" --label "[label]" --cwd "[cwd]" --pane "$PANE_ID")
+SURFACE_ID=$(echo "$SPAWN" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).surfaceId))")
+
+# 3. Wait for TUI, then send trigger
+sleep 4
+wmux send "Execute your mission. Read the relevant files, implement all changes, then write your result file." --surface "$SURFACE_ID"
+sleep 1
+wmux send-key enter --surface "$SURFACE_ID"
 ```
 
 **If wmux is NOT available (degraded mode only):**
