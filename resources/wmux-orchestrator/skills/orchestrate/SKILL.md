@@ -216,21 +216,13 @@ Use this format:
 
 ### 6d. Create wmux layout (if available)
 
-If wmux is detected, create panes **in the current workspace** (do NOT create a new workspace — that hides everything from the user):
+**IMPORTANT: Work in the CURRENT workspace. Do NOT create or close workspaces — that hides agent panes from the user.**
 
-```bash
-# Split panes for agents in the CURRENT workspace
-# For 2 agents: split right, then split the right pane down
-# For 3 agents: split right, split right-top down, split right-bottom down
-wmux split --right --type terminal   # Agent pane 1
-wmux split --down --type terminal    # Agent pane 2 (splits the focused pane)
-```
-
-Capture the paneId from each split result. These are where agents will be spawned.
+The spawn script (`spawn-agents.sh`) automatically creates panes via `wmux split`.
 
 ### 6e. Spawn Wave 1 agents
 
-**CRITICAL RULE: When wmux is available, you MUST use `wmux agent spawn` to create agents in visible terminal panes. Do NOT use Claude Code's `Agent` tool when wmux is available — the Agent tool creates invisible subagents that the user cannot see, which defeats the entire purpose of wmux. The `Agent` tool is ONLY for degraded mode (no wmux).**
+**CRITICAL RULE: When wmux is available, you MUST use `wmux agent spawn` to create agents in visible terminal panes. Do NOT use Claude Code's `Agent` tool when wmux is available — the Agent tool creates invisible subagents that the user cannot see. The `Agent` tool is ONLY for degraded mode (no wmux).**
 
 **If wmux IS available:**
 
@@ -239,29 +231,19 @@ Spawn agents using the spawn script:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/spawn-agents.sh" "[orch-dir]" 0
 ```
 
-This creates a wmux pane for each agent and runs `claude --prompt-file` in it. Each agent appears as a visible terminal tab the user can watch in real-time.
+This script:
+1. Creates a pane per agent via `wmux split`
+2. Runs `node launch-agent.js <prompt-file>` in each pane
+3. `launch-agent.js` uses `execFileSync` with `'--'` separator to pass the full prompt as a positional argument — this bypasses all shell quoting issues
+4. Claude starts in **interactive mode with full TUI** — the prompt auto-submits and Claude begins working immediately
+5. The user can watch agents in real-time by clicking their pane tabs, and can type into any agent to intervene
 
 After spawning, verify agents are running:
 ```bash
 wmux agent list
 ```
 
-You should see agents with `"status": "running"`. If any agent failed to spawn, retry manually:
-```bash
-# 1. Create pane
-PANE_RESULT=$(wmux split --right --type terminal)
-PANE_ID=$(echo "$PANE_RESULT" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).paneId))")
-
-# 2. Spawn claude (interactive, no initial message)
-SPAWN=$(wmux agent spawn --cmd "claude --system-prompt-file \"[orch-dir]/agent-[id]-prompt.md\" --allowedTools \"Read,Write,Edit,Grep,Glob,Bash\"" --label "[label]" --cwd "[cwd]" --pane "$PANE_ID")
-SURFACE_ID=$(echo "$SPAWN" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).surfaceId))")
-
-# 3. Wait for TUI, then send trigger
-sleep 4
-wmux send "Execute your mission. Read the relevant files, implement all changes, then write your result file." --surface "$SURFACE_ID"
-sleep 1
-wmux send-key enter --surface "$SURFACE_ID"
-```
+You should see agents with `"status": "running"`.
 
 **If wmux is NOT available (degraded mode only):**
 
@@ -271,41 +253,39 @@ Spawn each agent using Claude Code's native Agent tool:
 - Use `description: "[agent label]"` for tracking
 - Wait for all agents to complete before proceeding to next wave
 
-## Phase 7: Monitor and Transition
+## Phase 7: Monitor and Transition (Orchestrator Loop)
+
+**You are the orchestrator.** Your job is to monitor agent progress and coordinate wave transitions. This is where the real orchestration happens.
 
 ### With wmux (poll-based monitoring):
 
-**Important:** SubagentStop hooks do NOT fire for wmux-spawned agents (they are independent processes, not Claude Code subagents). You must poll for completion.
-
-After spawning Wave N agents, monitor their status by polling:
+After spawning Wave N agents, enter a monitoring loop. Poll every 15-20 seconds:
 
 ```bash
 wmux agent list
 ```
 
-Check every 15 seconds. For each agent, look at the `"status"` field:
+For each agent, check the `"status"` field:
 - `"running"` → agent is still working
 - `"exited"` → agent has finished (check `"exitCode"`: 0 = success, non-zero = failure)
 
-When ALL agents in the current wave show `"status": "exited"`:
+**While agents are running, report status to the user:**
+- Tell the user which agents are still working and which have finished
+- Example: "Wave 1: Agent A (HTML+CSS) still running, Agent B (i18n) finished (exit 0)"
 
-1. Read each agent's result file:
+**When ALL agents in the current wave show `"status": "exited"`:**
+
+1. Read each agent's result file (if they created one):
    ```
    [orch-dir]/agent-[id]-result.md
    ```
-2. Update state.json: set the wave's status to "completed"
+2. Report results to the user: which agents succeeded, which failed, what they produced
 3. If there are more waves:
    a. Generate prompt files for Wave N+1 (inject previous wave results into the "Previous Wave Results" section)
-   b. Set Wave N+1 status to "running" in state.json
-   c. Spawn Wave N+1 agents: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/spawn-agents.sh" "[orch-dir]" [N+1]`
-   d. Verify agents spawned with `wmux agent list`
+   b. Spawn Wave N+1 agents: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/spawn-agents.sh" "[orch-dir]" [N+1]`
+   c. Verify agents spawned with `wmux agent list`
+   d. Continue monitoring loop
 4. If all waves are done, proceed to Phase 8
-
-Update the dashboard pane after each wave transition:
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/check-status.sh" "[orch-dir]" > "[orch-dir]/dashboard.md"
-wmux markdown set "[dashboardSurfaceId]" --file "[orch-dir]/dashboard.md"
-```
 
 ### Without wmux (degraded mode — Agent tool returns):
 1. Wait for all Wave N agents to complete (their Agent tool calls return)

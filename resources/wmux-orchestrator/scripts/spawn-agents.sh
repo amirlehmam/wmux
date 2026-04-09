@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # spawn-agents.sh <orch-dir> <wave-index>
 # Creates wmux panes and spawns Claude Code agents for a wave.
+# Each agent runs in interactive mode with full TUI via launch-agent.js.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/orchestration-state.sh"
 
 ORCH_DIR="$1"
 WAVE_IDX="$2"
+LAUNCHER="$SCRIPT_DIR/launch-agent.js"
 
 [ -z "$ORCH_DIR" ] || [ -z "$WAVE_IDX" ] && { echo "Usage: spawn-agents.sh <orch-dir> <wave-index>"; exit 1; }
 
@@ -45,11 +47,10 @@ if [ "$WMUX_AVAILABLE" = "true" ]; then
       continue
     fi
 
-    # Interactive mode: full TUI visible in pane, user can watch and intervene
-    # Step 1: spawn claude with system prompt + auto-approved tools (no initial message)
-    # Step 2: after claude TUI starts, send the trigger message via wmux send
+    # launch-agent.js uses execFileSync with '--' separator to pass the prompt
+    # as a positional arg — full interactive TUI, user can watch and intervene
     SPAWN_RESULT=$(wmux agent spawn \
-      --cmd "claude --system-prompt-file \"$PROMPT_FILE\" --allowedTools \"Read,Write,Edit,Grep,Glob,Bash\"" \
+      --cmd "node \"$LAUNCHER\" \"$PROMPT_FILE\"" \
       --label "$AGENT_LABEL" \
       --cwd "$CWD" \
       --pane "$PANE_ID" 2>&1)
@@ -58,11 +59,11 @@ if [ "$WMUX_AVAILABLE" = "true" ]; then
     SPAWNED_SURFACE_ID=$(parse_json "$SPAWN_RESULT" '.surfaceId')
 
     if [ -z "$SPAWNED_AGENT_ID" ] || [ "$SPAWNED_AGENT_ID" = "null" ]; then
-      echo "ERROR: Failed to spawn agent $AGENT_ID in pane $PANE_ID. wmux agent spawn returned: $SPAWN_RESULT" >&2
+      echo "ERROR: Failed to spawn agent $AGENT_ID in pane $PANE_ID. Result: $SPAWN_RESULT" >&2
       continue
     fi
 
-    echo "Spawned agent $AGENT_ID (wmux=$SPAWNED_AGENT_ID) in pane $PANE_ID surface=$SPAWNED_SURFACE_ID"
+    echo "Spawned $AGENT_ID ($AGENT_LABEL) in pane $PANE_ID"
 
     NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     update_agent "$ORCH_DIR" "$AGENT_ID" \
@@ -72,23 +73,6 @@ if [ "$WMUX_AVAILABLE" = "true" ]; then
       "startedAt=$NOW"
 
     PANE_IDX=$((PANE_IDX + 1))
-  done
-
-  # Wait for all Claude TUIs to start, then send trigger messages
-  echo "Waiting for Claude TUI to initialize..."
-  sleep 5
-
-  node "$JSON_TOOL" query "$ORCH_DIR/state.json" wave-agents-each "$WAVE_IDX" | while IFS= read -r agent; do
-    [ -z "$agent" ] && continue
-    AGENT_ID=$(parse_json "$agent" '.id')
-    SURFACE_ID=$(parse_json "$agent" '.surfaceId')
-    RESULT_FILE=$(parse_json "$agent" '.resultFile')
-    [ -z "$SURFACE_ID" ] || [ "$SURFACE_ID" = "null" ] && continue
-
-    wmux send "Execute your mission. Read the relevant files, implement all changes, then write your result file at $RESULT_FILE" --surface "$SURFACE_ID" 2>&1
-    sleep 1
-    wmux send-key enter --surface "$SURFACE_ID" 2>&1
-    echo "Sent trigger to agent $AGENT_ID on surface $SURFACE_ID"
   done
 else
   echo "wmux unavailable — writing pending spawn file for degraded mode" >&2
