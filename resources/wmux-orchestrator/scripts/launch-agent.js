@@ -23,8 +23,11 @@ if (!fs.existsSync(promptFile)) {
 const prompt = fs.readFileSync(promptFile, 'utf8');
 
 try {
+  // --dangerously-skip-permissions: auto-approve all tools (interactive mode)
+  // '--' stops Commander.js variadic flags from consuming the prompt
+  // NOTE: do NOT use --bare — it skips keychain/OAuth and causes "Not logged in"
   execFileSync('claude', [
-    '--allowedTools', 'Read,Write,Edit,Grep,Glob,Bash',
+    '--dangerously-skip-permissions',
     '--',
     prompt
   ], { stdio: 'inherit' });
