@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentation wmux — guide complet pour débutants</title>
+  <meta name="description" content="Documentation complète de wmux : installation, concepts, raccourcis clavier, intégration Claude Code, plugin wmux-orchestrator. Un guide pour commencer à zéro." />
+  <meta name="author" content="amirlehmam" />
+  <meta name="theme-color" content="#0a0a0a" />
+
+  <meta property="og:title" content="Documentation wmux — guide complet" />
+  <meta property="og:description" content="Tout ce qu'il faut savoir pour utiliser wmux : de l'installation au plugin Claude Code." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://wmux.org/docs" />
+  <meta property="og:site_name" content="wmux" />
+
+  <link rel="icon" type="image/png" href="../assets/wmux_logo.png" />
+  <link rel="canonical" href="https://wmux.org/docs" />
+
+  <style>
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
+      font-weight: 400; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
+      font-weight: 500; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
+      font-weight: 600; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
+      font-weight: 700; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist Mono';
+      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/GeistMono-Regular.woff2') format('woff2');
+      font-weight: 400; font-style: normal; font-display: swap;
+    }
+
+    :root {
+      --bg: #0a0a0a;
+      --bg-elevated: #141414;
+      --bg-hover: #1a1a1a;
+      --bg-code: #0f0f10;
+      --border: #222;
+      --border-hover: #333;
+      --text: #ededed;
+      --text-secondary: #888;
+      --text-muted: #555;
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --accent-dim: #1e3a8a;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'Geist Mono', 'Cascadia Code', 'Consolas', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; scroll-padding-top: 80px; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    a { color: var(--accent); text-decoration: none; transition: color 0.15s; }
+    a:hover { color: var(--accent-hover); }
+
+    code {
+      font-family: var(--font-mono);
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    pre {
+      font-family: var(--font-mono);
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-size: 13px;
+      line-height: 1.65;
+      overflow-x: auto;
+      margin: 16px 0;
+      color: var(--text);
+    }
+    pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+
+    /* HEADER */
+    header.doc-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(10, 10, 10, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+    }
+    .doc-header-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .doc-header-left {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .doc-header .logo-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-weight: 600;
+      font-size: 16px;
+    }
+    .doc-header .logo-link img {
+      width: 22px;
+      height: 22px;
+    }
+    .doc-header .crumb {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-left: 4px;
+    }
+    .doc-header nav a {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-left: 20px;
+    }
+    .doc-header nav a:hover { color: var(--text); }
+
+    /* LAYOUT */
+    .doc-container {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 48px;
+      padding: 40px 24px 80px;
+    }
+
+    /* SIDEBAR TOC */
+    aside.doc-toc {
+      position: sticky;
+      top: 80px;
+      align-self: start;
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
+      padding-right: 12px;
+    }
+    .doc-toc__title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      padding-left: 10px;
+    }
+    .doc-toc ul { list-style: none; }
+    .doc-toc li { margin-bottom: 2px; }
+    .doc-toc a {
+      display: block;
+      color: var(--text-secondary);
+      font-size: 13px;
+      padding: 6px 10px;
+      border-left: 2px solid transparent;
+      border-radius: 0 4px 4px 0;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .doc-toc a:hover {
+      color: var(--text);
+      background: var(--bg-elevated);
+    }
+    .doc-toc a.is-active {
+      color: var(--accent);
+      border-left-color: var(--accent);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    /* MAIN */
+    main.doc-main {
+      max-width: 760px;
+      min-width: 0;
+    }
+    main.doc-main h1 {
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+    main.doc-main > p.lead {
+      font-size: 18px;
+      color: var(--text-secondary);
+      margin-bottom: 48px;
+      line-height: 1.6;
+    }
+    main.doc-main h2 {
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-top: 56px;
+      margin-bottom: 16px;
+      padding-top: 8px;
+      scroll-margin-top: 80px;
+    }
+    main.doc-main h2:first-of-type { margin-top: 0; }
+    main.doc-main h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-top: 32px;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+    main.doc-main p { margin-bottom: 16px; color: var(--text); }
+    main.doc-main ul, main.doc-main ol {
+      margin-bottom: 16px;
+      padding-left: 24px;
+      color: var(--text);
+    }
+    main.doc-main li { margin-bottom: 8px; }
+    main.doc-main strong { color: var(--text); font-weight: 600; }
+
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: rgba(59, 130, 246, 0.06);
+      padding: 14px 18px;
+      border-radius: 0 6px 6px 0;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+    .callout strong { color: var(--accent-hover); }
+    .callout.warning {
+      border-left-color: var(--warning);
+      background: rgba(245, 158, 11, 0.06);
+    }
+    .callout.warning strong { color: var(--warning); }
+    .callout.tip {
+      border-left-color: var(--success);
+      background: rgba(34, 197, 94, 0.06);
+    }
+    .callout.tip strong { color: var(--success); }
+
+    .kbd-list {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 10px 24px;
+      margin: 20px 0;
+      padding: 16px 20px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    kbd {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--bg-code);
+      border: 1px solid var(--border-hover);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      padding: 2px 7px;
+      color: var(--text);
+    }
+
+    .grid-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin: 20px 0;
+    }
+    .grid-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      background: var(--bg-elevated);
+      transition: border-color 0.15s;
+    }
+    .grid-card:hover { border-color: var(--border-hover); }
+    .grid-card h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .grid-card p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    .btn-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: white !important;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .btn-link:hover { background: var(--accent-hover); color: white !important; }
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border-hover);
+      color: var(--text) !important;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .btn-outline:hover { border-color: var(--text-secondary); background: var(--bg-elevated); }
+
+    /* FOOTER */
+    footer.doc-footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    footer.doc-footer a { color: var(--text-secondary); }
+    footer.doc-footer a:hover { color: var(--text); }
+
+    /* RESPONSIVE */
+    @media (max-width: 960px) {
+      .doc-container {
+        grid-template-columns: 1fr;
+        gap: 0;
+      }
+      aside.doc-toc {
+        display: none;
+      }
+      main.doc-main {
+        max-width: 100%;
+      }
+      main.doc-main h1 { font-size: 32px; }
+      main.doc-main h2 { font-size: 22px; }
+      .grid-cards { grid-template-columns: 1fr; }
+      .kbd-list { grid-template-columns: 1fr; gap: 6px; }
+      .kbd-list kbd { margin-right: 6px; }
+      .doc-header nav a { margin-left: 12px; font-size: 12px; }
+    }
+
+    @media (max-width: 600px) {
+      .doc-header-inner { padding: 12px 16px; }
+      .doc-container { padding: 24px 16px 48px; }
+      main.doc-main h1 { font-size: 28px; }
+    }
+
+    ::selection { background: var(--accent-dim); color: var(--text); }
+  </style>
+</head>
+<body>
+  <header class="doc-header">
+    <div class="doc-header-inner">
+      <div class="doc-header-left">
+        <a href="/" class="logo-link">
+          <img src="../assets/wmux_logo.png" alt="wmux" />
+          <span>wmux</span>
+        </a>
+        <span class="crumb">/ docs</span>
+      </div>
+      <nav>
+        <a href="/">Accueil</a>
+        <a href="https://plugin.wmux.org">Plugin</a>
+        <a href="https://github.com/amirlehmam/wmux">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="doc-container">
+    <aside class="doc-toc">
+      <p class="doc-toc__title">Sur cette page</p>
+      <ul>
+        <li><a href="#quest-ce-que-wmux">Qu'est-ce que wmux ?</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#premier-lancement">Premier lancement</a></li>
+        <li><a href="#concepts">Les concepts de base</a></li>
+        <li><a href="#raccourcis">Raccourcis clavier</a></li>
+        <li><a href="#claude-code">Travailler avec Claude Code</a></li>
+        <li><a href="#split-panes">Diviser un panneau</a></li>
+        <li><a href="#navigateur">Le navigateur intégré</a></li>
+        <li><a href="#notifications">Notifications</a></li>
+        <li><a href="#sessions">Sauvegarder une session</a></li>
+        <li><a href="#themes">Thèmes</a></li>
+        <li><a href="#shell">Intégration shell</a></li>
+        <li><a href="#cli">Le CLI <code>wmux</code></a></li>
+        <li><a href="#plugin-orchestrator">Plugin orchestrator</a></li>
+        <li><a href="#faq">Problèmes courants</a></li>
+        <li><a href="#ressources">Ressources</a></li>
+      </ul>
+    </aside>
+
+    <main class="doc-main">
+      <h1>Documentation wmux</h1>
+      <p class="lead">
+        Tout ce qu'il faut savoir pour commencer avec wmux, même si tu n'as jamais utilisé un multiplexeur de terminal de ta vie. Ce guide t'emmène de zéro à la maîtrise étape par étape.
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="quest-ce-que-wmux">Qu'est-ce que wmux ?</h2>
+      <p>
+        <strong>wmux</strong> est une application de bureau pour Windows qui te permet d'avoir plusieurs terminaux ouverts en même temps, organisés en onglets verticaux, avec la possibilité de diviser chaque onglet en plusieurs panneaux. C'est l'équivalent Windows d'outils comme tmux (Linux/macOS), Ghostty, ou Warp — mais pensé spécifiquement pour travailler avec des agents IA comme Claude Code.
+      </p>
+      <p>
+        Concrètement, quand tu lances wmux, tu obtiens :
+      </p>
+      <ul>
+        <li>Une <strong>fenêtre unique</strong> qui peut contenir autant de terminaux que tu veux</li>
+        <li>Une <strong>barre latérale</strong> qui liste tous tes espaces de travail, avec la branche git, le répertoire courant, les ports actifs, le statut des PR GitHub, et les notifications</li>
+        <li>Un <strong>navigateur web intégré</strong> (à droite) qui peut afficher ce que ton agent Claude Code est en train de faire en temps réel</li>
+        <li>Des <strong>notifications visuelles et sonores</strong> quand un agent a fini une tâche ou attend une réponse</li>
+        <li>L'<strong>intégration automatique</strong> avec Claude Code, sans avoir à configurer quoi que ce soit</li>
+      </ul>
+      <p>
+        <strong>À qui c'est destiné ?</strong> À toute personne qui veut lancer plusieurs agents IA en parallèle sur Windows et garder un œil sur ce qu'ils font. Si tu utilises déjà Claude Code et que tu en as marre de jongler entre plusieurs fenêtres de terminal, wmux est fait pour toi.
+      </p>
+
+      <div class="callout">
+        <strong>Le problème que wmux résout.</strong> Les agents IA comme Claude Code travaillent par bursts — parfois 30 secondes, parfois 10 minutes. Pendant qu'un agent tourne, tu pourrais en lancer un autre. Sans wmux, tu dois ouvrir plusieurs fenêtres de terminal, les organiser à la main, et tu rates les notifications quand tu es sur un autre écran. Avec wmux, tout est dans une seule fenêtre, chaque agent a sa place, et les notifications te trouvent où que tu sois.
+      </div>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="installation">Installation</h2>
+      <p>
+        wmux est distribué comme une <strong>archive zip portable</strong>. Il n'y a pas d'installateur : tu télécharges, tu décompresses, et tu lances. Voici les étapes précises :
+      </p>
+
+      <h3>1. Télécharger la dernière version</h3>
+      <p>
+        Va sur la page des <a href="https://github.com/amirlehmam/wmux/releases/latest" target="_blank" rel="noopener">releases GitHub</a> et télécharge le fichier <code>wmux-X.Y.Z-win-x64.zip</code> (où <code>X.Y.Z</code> est la version la plus récente). Le zip fait environ 150 Mo.
+      </p>
+
+      <h3>2. Décompresser le zip</h3>
+      <p>
+        Fais un clic droit sur le fichier téléchargé, choisis <em>Extraire tout</em>, et sélectionne un dossier de destination. Je te recommande <code>C:\Users\TonNom\wmux</code> pour que ce soit facile à retrouver. Évite <code>Program Files</code> si tu n'es pas administrateur.
+      </p>
+
+      <div class="callout warning">
+        <strong>Attention — Mark of the Web.</strong> Windows ajoute une étiquette "provient d'Internet" aux fichiers téléchargés via un navigateur. Cette étiquette empêche wmux de charger certains modules. Pour l'enlever, ouvre PowerShell dans le dossier où tu as extrait wmux et tape :
+        <pre><code>Get-ChildItem -Recurse | Unblock-File</code></pre>
+        Tu peux aussi faire clic droit sur le zip <em>avant</em> de le décompresser → <em>Propriétés</em> → cocher <em>Débloquer</em> en bas, puis <em>OK</em>. Plus simple.
+      </div>
+
+      <h3>3. Lancer wmux</h3>
+      <p>
+        Dans le dossier où tu as extrait wmux, double-clique sur <code>wmux.exe</code>. La première fois, Windows SmartScreen va afficher un écran bleu avec "Windows a protégé votre PC". C'est normal — wmux n'est pas encore signé avec un certificat Authenticode coûteux. Clique sur <em>Informations complémentaires</em>, puis sur <em>Exécuter quand même</em>.
+      </p>
+      <p>
+        wmux s'ouvre avec une fenêtre noire et un terminal PowerShell par défaut. Bienvenue.
+      </p>
+
+      <div class="callout tip">
+        <strong>Astuce — épingle wmux à la barre des tâches.</strong> Fais clic droit sur l'icône wmux dans la barre des tâches et choisis <em>Épingler à la barre des tâches</em>. Maintenant tu peux lancer wmux d'un clic à tout moment.
+      </div>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="premier-lancement">Premier lancement</h2>
+      <p>
+        Quand tu ouvres wmux pour la première fois, voici ce que tu vois :
+      </p>
+      <ul>
+        <li><strong>À gauche</strong> : la <em>barre latérale</em> avec un seul espace de travail appelé quelque chose comme <code>ws-1</code>. C'est ton "onglet" actuel.</li>
+        <li><strong>Au centre</strong> : un terminal PowerShell prêt à recevoir des commandes.</li>
+        <li><strong>À droite</strong> : potentiellement un panneau navigateur vide (tu peux le fermer avec <kbd>Ctrl+Shift+B</kbd> si tu n'en as pas besoin).</li>
+        <li><strong>En haut</strong> : une barre de titre avec le nom de wmux, une cloche de notifications, et les boutons fenêtre classiques.</li>
+      </ul>
+      <p>
+        Double-clique sur l'espace de travail dans la barre latérale pour le renommer. Je te recommande de nommer tes workspaces par projet — par exemple <code>mon-site</code>, <code>api-backend</code>, etc.
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="concepts">Les concepts de base</h2>
+      <p>
+        wmux organise ton travail en quatre couches. Comprendre ces quatre mots te fera gagner beaucoup de temps.
+      </p>
+
+      <h3>Workspace (espace de travail)</h3>
+      <p>
+        Un <strong>workspace</strong> est un gros conteneur. Pense à une "session" complète pour un projet : un workspace peut contenir plusieurs panneaux, et chaque panneau plusieurs onglets. Tu passes d'un workspace à l'autre via la barre latérale ou avec <kbd>Ctrl+1</kbd>, <kbd>Ctrl+2</kbd>, etc.
+      </p>
+
+      <h3>Pane (panneau)</h3>
+      <p>
+        Un <strong>pane</strong> est un bloc visuel à l'intérieur du workspace. Quand tu divises ton écran en deux pour avoir un terminal à gauche et un autre à droite, tu crées deux panes. Chaque pane peut afficher un terminal, un navigateur, ou un document markdown.
+      </p>
+
+      <h3>Surface (onglet)</h3>
+      <p>
+        Une <strong>surface</strong> est un onglet à l'intérieur d'un pane. Dans un seul pane, tu peux avoir plusieurs onglets ouverts en même temps (par exemple 3 terminaux différents) et basculer de l'un à l'autre avec <kbd>Ctrl+Tab</kbd>. C'est comme les onglets d'un navigateur, mais pour tes terminaux.
+      </p>
+
+      <h3>Sidebar (barre latérale)</h3>
+      <p>
+        La <strong>sidebar</strong> à gauche liste tous tes workspaces. Pour chacun, elle affiche en temps réel : la branche git, si le répertoire a des modifications non commitées, le répertoire courant, les ports ouverts (utile pour les dev servers), le nombre d'agents qui tournent, le statut des pull requests GitHub, et les notifications non lues.
+      </p>
+
+      <div class="grid-cards">
+        <div class="grid-card">
+          <h4>Workspace</h4>
+          <p>Le conteneur global. Un workspace = un projet.</p>
+        </div>
+        <div class="grid-card">
+          <h4>Pane</h4>
+          <p>Un bloc visuel. Peut contenir terminal, navigateur, ou markdown.</p>
+        </div>
+        <div class="grid-card">
+          <h4>Surface</h4>
+          <p>Un onglet à l'intérieur d'un pane. Plusieurs terminaux dans un même pane.</p>
+        </div>
+        <div class="grid-card">
+          <h4>Sidebar</h4>
+          <p>La barre latérale gauche. Affiche git, ports, notifications en temps réel.</p>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="raccourcis">Raccourcis clavier essentiels</h2>
+      <p>
+        wmux a plus de 50 raccourcis, mais tu n'as vraiment besoin que d'une dizaine au quotidien. Apprends ceux-ci et tu seras opérationnel :
+      </p>
+
+      <div class="kbd-list">
+        <div><kbd>Ctrl</kbd>+<kbd>T</kbd></div>
+        <div>Nouvel onglet (surface) dans le pane courant</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>D</kbd></div>
+        <div>Diviser le pane horizontalement (nouveau terminal à droite)</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></div>
+        <div>Diviser le pane verticalement (nouveau terminal en bas)</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>W</kbd></div>
+        <div>Fermer l'onglet (surface) courant</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>Tab</kbd></div>
+        <div>Onglet suivant dans le même pane</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>N</kbd></div>
+        <div>Nouveau workspace</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>1</kbd>..<kbd>9</kbd></div>
+        <div>Basculer vers le workspace numéro 1 à 9</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></div>
+        <div>Ouvrir la palette de commandes (recherche floue de toutes les actions)</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></div>
+        <div>Rechercher dans le terminal courant</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></div>
+        <div>Ouvrir/fermer le navigateur intégré</div>
+
+        <div><kbd>F11</kbd></div>
+        <div>Plein écran</div>
+
+        <div><kbd>Ctrl</kbd>+<kbd>,</kbd></div>
+        <div>Ouvrir les paramètres</div>
+      </div>
+
+      <p>
+        Tu peux personnaliser n'importe quel raccourci dans les paramètres → <em>Raccourcis clavier</em>. Si tu viens de tmux ou Ghostty, il existe des presets pour reproduire tes habitudes.
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="claude-code">Travailler avec Claude Code</h2>
+      <p>
+        C'est ici que wmux devient intéressant. wmux détecte automatiquement Claude Code et configure son intégration sans que tu aies à faire quoi que ce soit. Quand tu lances <code>claude</code> dans un terminal wmux, les choses suivantes se passent en arrière-plan :
+      </p>
+      <ul>
+        <li>wmux injecte ses instructions dans <code>~/.claude/CLAUDE.md</code> (lecture seule, surgical, non-intrusif) pour que Claude Code sache qu'il tourne dans wmux et utilise le navigateur intégré au lieu d'ouvrir Playwright.</li>
+        <li>Les <strong>hooks Claude Code</strong> (<code>SessionStart</code>, <code>PostToolUse</code>, <code>SubagentStop</code>, <code>Stop</code>) sont auto-enregistrés. Ils rapportent en temps réel dans la barre latérale l'activité de l'agent : quels outils il utilise, combien, s'il est en pause, s'il attend une réponse.</li>
+        <li>Un <strong>proxy CDP</strong> sur <code>localhost:9222</code> expose le navigateur intégré à Claude Code via <code>chrome-devtools-mcp</code>. Chaque page, clic, formulaire que l'agent visite est affiché dans ton panneau navigateur.</li>
+      </ul>
+      <p>
+        Résultat concret : tu lances <code>claude</code>, tu lui demandes "navigue sur github.com et cherche le repo wmux", et tu vois en temps réel dans le panneau navigateur ce qu'il fait. Pas besoin de Playwright, pas de fenêtres invisibles, pas de configuration.
+      </p>
+
+      <h3>Le plugin wmux-orchestrator</h3>
+      <p>
+        Pour aller plus loin avec Claude Code, wmux embarque un plugin appelé <strong>wmux-orchestrator</strong>. Il te permet de lancer plusieurs agents Claude Code en parallèle pour une même tâche, chacun dans son propre pane visible. Le plugin analyse ta codebase, découpe la tâche en sous-tâches, et coordonne tout.
+      </p>
+      <p>
+        Tout est expliqué en détail sur <a href="https://plugin.wmux.org" target="_blank" rel="noopener">plugin.wmux.org</a> avec un simulateur interactif.
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="split-panes">Diviser un panneau (split panes)</h2>
+      <p>
+        Avoir plusieurs terminaux côte à côte, c'est souvent ce qui te fait gagner le plus de temps. wmux rend ça trivial.
+      </p>
+
+      <h3>Diviser horizontalement</h3>
+      <p>
+        Appuie sur <kbd>Ctrl</kbd>+<kbd>D</kbd>. Le pane courant se divise en deux : le pane original à gauche, un nouveau terminal vide à droite. Le focus se met automatiquement sur le nouveau pane.
+      </p>
+
+      <h3>Diviser verticalement</h3>
+      <p>
+        Appuie sur <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>. Le pane se divise horizontalement en deux : l'original en haut, le nouveau en bas.
+      </p>
+
+      <h3>Redimensionner</h3>
+      <p>
+        Attrape la barre de séparation entre deux panes avec la souris et tire. Le redimensionnement est fluide. Si tu veux un ratio précis, passe par les paramètres.
+      </p>
+
+      <h3>Fermer un pane</h3>
+      <p>
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd> ferme le pane courant. Si le pane contient plusieurs onglets (surfaces), ils sont tous fermés. Le pane voisin reprend automatiquement l'espace libéré.
+      </p>
+
+      <div class="callout tip">
+        <strong>Astuce — le zoom de pane.</strong> Appuie sur <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> pour agrandir temporairement le pane courant en plein workspace. Appuie à nouveau pour revenir à la disposition normale. C'est parfait quand tu as besoin de lire un long log sans perdre ta disposition.
+      </div>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="navigateur">Le navigateur intégré</h2>
+      <p>
+        wmux embarque un vrai navigateur Chromium (pas une webview basique) que tu peux ouvrir à côté de n'importe quel terminal. Il sert à deux choses :
+      </p>
+      <ol>
+        <li><strong>Voir en direct ce que Claude Code fait</strong> quand il navigue sur le web via <code>chrome-devtools-mcp</code>. Chaque action de l'agent est visible en temps réel, comme si tu regardais par-dessus son épaule.</li>
+        <li><strong>Consulter la documentation d'une librairie, vérifier un dashboard, ouvrir Stack Overflow</strong> sans quitter wmux.</li>
+      </ol>
+      <p>
+        Pour ouvrir un navigateur, utilise <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>. Un pane navigateur s'ouvre à droite. Tape une URL dans la barre d'adresse, ou clique sur le bouton "nouvelle surface" pour avoir plusieurs onglets navigateur dans le même pane.
+      </p>
+      <p>
+        Le navigateur supporte les DevTools complets (clic droit → <em>Inspecter</em>), l'extension des shortcuts Chrome, et la navigation avec <kbd>Alt</kbd>+<kbd>←</kbd> et <kbd>Alt</kbd>+<kbd>→</kbd>.
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="notifications">Comprendre les notifications</h2>
+      <p>
+        Quand un agent finit une tâche ou a besoin de ton attention, wmux t'alerte de plusieurs façons simultanément :
+      </p>
+      <ul>
+        <li><strong>Le pane clignote en bleu</strong> (un anneau de lumière bleue autour du terminal concerné). C'est le signal visuel principal dans la fenêtre active.</li>
+        <li><strong>La barre latérale affiche un badge</strong> à côté du workspace concerné, avec le nombre de notifications non lues.</li>
+        <li><strong>L'icône wmux dans la barre des tâches Windows flashe</strong>. C'est le signal quand tu es sur une autre application.</li>
+        <li><strong>Une notification Windows toast</strong> apparaît en bas à droite avec le titre du workspace et le message.</li>
+        <li><strong>Un son</strong> peut être joué (désactivé par défaut, à activer dans les paramètres).</li>
+      </ul>
+      <p>
+        Les notifications sont déclenchées automatiquement par les <a href="#shell">scripts d'intégration shell</a> qui détectent quand une commande finit ou est interrompue. Pour les déclencher manuellement depuis un script, utilise <code>wmux notify "Mon message"</code>.
+      </p>
+
+      <h3>Indicateurs d'activité</h3>
+      <p>
+        Dans la sidebar, chaque surface affiche un petit rond coloré :
+      </p>
+      <ul>
+        <li><strong>Orange pulsant</strong> : une commande tourne (agent actif, build en cours, etc.)</li>
+        <li><strong>Vert</strong> : la dernière commande s'est terminée avec succès</li>
+        <li><strong>Rouge</strong> : la dernière commande a échoué ou a été interrompue</li>
+        <li><strong>Gris</strong> : prompt en attente, shell idle</li>
+      </ul>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="sessions">Sauvegarder et restaurer une session</h2>
+      <p>
+        wmux sauvegarde automatiquement l'état de ta fenêtre toutes les 30 secondes : workspaces, panes, onglets, répertoires courants, URLs du navigateur. Quand tu ferme wmux et que tu le relance, tu retrouves exactement la même disposition.
+      </p>
+      <p>
+        Tu peux aussi sauvegarder manuellement une session avec un nom spécifique pour y revenir plus tard :
+      </p>
+      <pre><code>wmux session save "avant-refacto"
+wmux session list
+wmux session load "avant-refacto"</code></pre>
+      <p>
+        Les sessions sont stockées dans <code>%APPDATA%\wmux\sessions\</code> sous forme de fichiers JSON.
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="themes">Thèmes</h2>
+      <p>
+        wmux inclut 450+ thèmes prêts à l'emploi importés du projet Ghostty, plus la possibilité d'importer tes propres thèmes depuis Windows Terminal.
+      </p>
+
+      <h3>Changer de thème</h3>
+      <p>
+        Ouvre les paramètres avec <kbd>Ctrl</kbd>+<kbd>,</kbd>, va dans <em>Apparence</em>, puis dans <em>Thème</em>. Tu peux prévisualiser chaque thème en survolant son nom. Le changement est appliqué instantanément à tous les terminaux ouverts.
+      </p>
+
+      <h3>Importer un thème Windows Terminal</h3>
+      <p>
+        Si tu as déjà configuré ton Windows Terminal avec un thème que tu aimes, wmux peut le lire directement :
+      </p>
+      <pre><code>wmux config import-wt</code></pre>
+      <p>
+        Ça importe toutes les <code>colorSchemes</code> de ton <code>settings.json</code> de Windows Terminal et les rend disponibles dans wmux.
+      </p>
+
+      <h3>Importer un thème Ghostty</h3>
+      <p>
+        Même principe avec un fichier de config Ghostty :
+      </p>
+      <pre><code>wmux config import-ghostty ~/.config/ghostty/config</code></pre>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="shell">Intégration shell</h2>
+      <p>
+        Pour que wmux sache ce qui se passe dans chaque terminal (branche git courante, répertoire, exit code de la dernière commande, ports actifs), il injecte des scripts d'intégration dans ton shell au démarrage. Trois shells sont supportés :
+      </p>
+      <ul>
+        <li><strong>PowerShell</strong> (Windows PowerShell + PowerShell 7+) — intégration complète incluant le polling PR GitHub toutes les 45 secondes</li>
+        <li><strong>Bash</strong> (Git Bash, WSL) — branche git, dirty state, répertoire, ports</li>
+        <li><strong>cmd.exe</strong> — séquences d'échappement OSC 9 basiques pour les notifications</li>
+      </ul>
+      <p>
+        L'intégration est <strong>automatique</strong> : tu n'as rien à faire. wmux détecte ton shell par défaut, injecte le script au lancement du terminal, et ça marche.
+      </p>
+      <p>
+        Si tu veux voir ce qui est injecté, regarde dans <code>%APPDATA%\wmux\shell-integration\</code>. Les scripts sont documentés et tu peux les modifier si tu veux personnaliser l'affichage dans la sidebar.
+      </p>
+
+      <div class="callout">
+        <strong>Variables d'environnement injectées.</strong> Dans tout terminal lancé par wmux, les variables suivantes sont disponibles : <code>WMUX=1</code> (pour détecter qu'on est dans wmux), <code>WMUX_SURFACE_ID</code> (l'ID unique de l'onglet), <code>WMUX_PIPE</code> (le chemin du named pipe pour le CLI), <code>WMUX_CLI</code> (le chemin de l'exécutable <code>wmux.exe</code>). Utile si tu veux écrire tes propres scripts qui interagissent avec wmux.
+      </div>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="cli">Le CLI <code>wmux</code></h2>
+      <p>
+        wmux est scriptable. Quand tu lances l'application, elle démarre un named pipe (<code>\\.\pipe\wmux</code>) qui accepte des commandes JSON-RPC v2. L'exécutable <code>wmux.exe</code> est aussi un client de ce pipe : tu peux l'utiliser depuis n'importe quel shell pour piloter wmux depuis une commande.
+      </p>
+
+      <h3>Quelques exemples utiles</h3>
+      <pre><code># Créer un nouveau workspace nommé
+wmux new-workspace --title "mon-projet" --cwd C:\Users\me\dev\projet
+
+# Diviser le pane courant et lancer une commande dedans
+wmux split --down
+wmux send "npm run dev"
+
+# Lister tous les workspaces
+wmux list-workspaces
+
+# Ouvrir une URL dans le navigateur intégré
+wmux browser open https://github.com/amirlehmam/wmux
+
+# Déclencher une notification
+wmux notify "Build terminé avec succès"
+
+# Récupérer l'arbre complet de la fenêtre (JSON)
+wmux tree</code></pre>
+
+      <p>
+        La liste complète des commandes est disponible via <code>wmux --help</code> dans n'importe quel terminal. Le CLI est ce qui permet à Claude Code et à tout autre outil d'automatisation d'interagir avec wmux.
+      </p>
+
+      <div class="callout tip">
+        <strong>Pourquoi pas MCP ?</strong> wmux n'expose pas de serveur MCP, volontairement. Le CLI via named pipe est plus simple, plus fiable, et s'intègre mieux avec les workflows existants. Claude Code peut appeler <code>wmux</code> directement via <code>Bash</code> sans avoir besoin d'une couche d'abstraction supplémentaire.
+      </div>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="plugin-orchestrator">Le plugin wmux-orchestrator</h2>
+      <p>
+        wmux embarque un plugin Claude Code appelé <strong>wmux-orchestrator</strong> qui transforme une seule tâche complexe en plusieurs agents travaillant en parallèle, chacun dans son propre pane visible.
+      </p>
+      <p>
+        Par exemple, si tu demandes "refactorer l'authentification pour utiliser JWT", l'orchestrateur va :
+      </p>
+      <ol>
+        <li>Analyser la codebase et identifier tous les fichiers concernés</li>
+        <li>Découper la tâche en sous-tâches (types partagés, service, middleware, tests)</li>
+        <li>Organiser les sous-tâches en vagues selon leurs dépendances</li>
+        <li>Spawner un agent Claude Code par sous-tâche, chacun dans son propre pane wmux</li>
+        <li>Coordonner les transitions de vagues automatiquement</li>
+        <li>Lancer un agent reviewer à la fin pour vérifier la cohérence</li>
+      </ol>
+      <p>
+        Le plugin est déjà installé avec wmux (il est copié dans <code>~/.claude/plugins/cache/</code> au premier démarrage). Tu peux l'utiliser directement avec :
+      </p>
+      <pre><code>/wmux-orchestrator:orchestrate "refactorer l'auth en JWT"</code></pre>
+      <p>
+        Pour une explication complète avec un simulateur interactif, une démo en direct, l'architecture détaillée et un guide d'utilisation étape par étape, visite <a href="https://plugin.wmux.org" target="_blank" rel="noopener">plugin.wmux.org</a>.
+      </p>
+
+      <p style="margin-top: 24px;">
+        <a href="https://plugin.wmux.org" target="_blank" rel="noopener" class="btn-link">
+          Voir plugin.wmux.org
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>
+        </a>
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="faq">Problèmes courants</h2>
+
+      <h3>wmux ne démarre pas, j'ai une erreur à propos de <code>node-pty</code></h3>
+      <p>
+        C'est presque toujours le Mark of the Web qui bloque le chargement des modules natifs. Dans PowerShell, va dans le dossier wmux et tape <code>Get-ChildItem -Recurse | Unblock-File</code>, puis relance. Si ça ne marche toujours pas, re-télécharge le zip et décoche <em>Débloquer</em> dans les propriétés AVANT de l'extraire.
+      </p>
+
+      <h3>Les raccourcis clavier ne marchent pas</h3>
+      <p>
+        Vérifie que ton antivirus ou un logiciel comme AutoHotkey n'intercepte pas les combinaisons. Windows Defender et la plupart des antivirus grand public n'interfèrent pas, mais certains outils de productivité le font. Teste dans les paramètres → <em>Raccourcis clavier</em> avec le bouton "tester".
+      </p>
+
+      <h3>Claude Code ne reconnaît pas wmux</h3>
+      <p>
+        Quand tu lances <code>claude</code> dans un terminal wmux, vérifie que les variables d'environnement sont injectées : tape <code>echo $env:WMUX</code> (PowerShell) ou <code>echo $WMUX</code> (bash). Tu devrais voir <code>1</code>. Si tu vois vide, c'est que le shell d'intégration ne s'est pas chargé — redémarre le shell ou relance wmux.
+      </p>
+      <p>
+        Vérifie aussi que <code>~/.claude/CLAUDE.md</code> contient bien une section commençant par <code># wmux</code>. Si elle manque, c'est que l'auto-injection a échoué. Relance wmux depuis un terminal admin et regarde les logs.
+      </p>
+
+      <h3>Le navigateur intégré est lent ou noir</h3>
+      <p>
+        Active l'accélération GPU dans les paramètres → <em>Avancé</em> → <em>Hardware acceleration</em>. Sur les machines plus anciennes sans GPU dédié, ça peut faire une grosse différence. Si tu es sur un GPU très ancien ou une VM, désactive plutôt l'accélération — elle peut produire des artefacts.
+      </p>
+
+      <h3>Comment mettre à jour wmux ?</h3>
+      <p>
+        wmux a un auto-updater intégré qui vérifie les nouvelles versions au démarrage. Quand une mise à jour est disponible, tu vois une petite notification. Clique dessus et wmux se met à jour tout seul. Tu peux aussi forcer une vérification via le menu <em>Aide</em> → <em>Vérifier les mises à jour</em>, ou télécharger manuellement la dernière release depuis GitHub et remplacer ton installation.
+      </p>
+
+      <h3>Puis-je utiliser wmux sur macOS ou Linux ?</h3>
+      <p>
+        Non. wmux est spécifiquement conçu pour Windows (il utilise ConPTY, des APIs Win32 natives, et des optimisations Electron pour Windows). Pour macOS, utilise <a href="https://cmux.com" target="_blank" rel="noopener">cmux</a>, qui est le projet parent écrit en Swift/AppKit. Pour Linux, il y a tmux, Ghostty, ou Warp — mais tu n'auras pas le plugin wmux-orchestrator.
+      </p>
+
+      <!-- ─────────────────────────────────────────────────────── -->
+      <h2 id="ressources">Ressources</h2>
+      <p>
+        Pour aller plus loin, voici où chercher :
+      </p>
+      <ul>
+        <li><strong>GitHub</strong> — <a href="https://github.com/amirlehmam/wmux" target="_blank" rel="noopener">github.com/amirlehmam/wmux</a> : le code source, les releases, les issues</li>
+        <li><strong>Releases</strong> — <a href="https://github.com/amirlehmam/wmux/releases" target="_blank" rel="noopener">Toutes les versions</a> avec changelog</li>
+        <li><strong>Discussions</strong> — <a href="https://github.com/amirlehmam/wmux/discussions" target="_blank" rel="noopener">GitHub Discussions</a> pour poser des questions</li>
+        <li><strong>Issues</strong> — <a href="https://github.com/amirlehmam/wmux/issues" target="_blank" rel="noopener">Rapporter un bug</a></li>
+        <li><strong>Plugin orchestrator</strong> — <a href="https://plugin.wmux.org" target="_blank" rel="noopener">plugin.wmux.org</a> : documentation complète du plugin avec simulateur interactif</li>
+        <li><strong>cmux (macOS)</strong> — <a href="https://cmux.com" target="_blank" rel="noopener">cmux.com</a> : la version macOS dont wmux est le fork Windows</li>
+      </ul>
+
+      <p style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;">
+        <a href="/" class="btn-outline">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+          Retour à wmux.org
+        </a>
+        <a href="https://github.com/amirlehmam/wmux/releases/latest" target="_blank" rel="noopener" class="btn-link">
+          Télécharger wmux
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        </a>
+      </p>
+    </main>
+  </div>
+
+  <footer class="doc-footer">
+    <p>
+      © 2026 wmux · <a href="https://github.com/amirlehmam/wmux">GitHub</a> · <a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE">Licence AGPL-3.0</a> · Fork Windows de <a href="https://cmux.com">cmux</a>
+    </p>
+  </footer>
+
+  <script>
+    // Highlight active TOC item as sections scroll by
+    const sections = document.querySelectorAll('main.doc-main h2[id]');
+    const tocLinks = document.querySelectorAll('aside.doc-toc a[href^="#"]');
+    const linkByHash = {};
+    tocLinks.forEach(a => { linkByHash[a.getAttribute('href').slice(1)] = a; });
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          const id = e.target.id;
+          tocLinks.forEach(a => a.classList.remove('is-active'));
+          if (linkByHash[id]) linkByHash[id].classList.add('is-active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
+
+    sections.forEach(s => io.observe(s));
+  </script>
+</body>
+</html>

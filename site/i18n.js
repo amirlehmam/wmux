@@ -115,6 +115,11 @@ const T = {
     "footer.social": "Social",
     "footer.copyright": "© 2026 wmux",
     "footer.fork": "Windows fork of",
+    "plugin.badge": "Claude Code Plugin",
+    "plugin.desc": "Launch multiple Claude Code agents in parallel from a single command. The plugin analyzes your codebase, splits the task into independent subtasks, and distributes them in waves with dependency management, isolated file zones and automatic review at the end of each cycle.",
+    "plugin.install_label": "Install",
+    "plugin.view_github": "View on GitHub",
+    "plugin.docs": "Documentation",
   },
 
   // ═══════════════════════════ FRENCH ═══════════════════════════
@@ -204,6 +209,11 @@ const T = {
     "footer.social": "Social",
     "footer.copyright": "© 2026 wmux",
     "footer.fork": "Fork Windows de",
+    "plugin.badge": "Plugin Claude Code",
+    "plugin.desc": "Lancez plusieurs agents Claude Code en parallèle depuis une seule commande. Le plugin analyse votre codebase, découpe la tâche en sous-tâches indépendantes, et les distribue en vagues avec gestion des dépendances, zones de fichiers isolées et revue automatique en fin de cycle.",
+    "plugin.install_label": "Installation",
+    "plugin.view_github": "Voir sur GitHub",
+    "plugin.docs": "Documentation",
   },
 
   // ═══════════════════════════ SPANISH ═══════════════════════════
@@ -293,6 +303,11 @@ const T = {
     "footer.social": "Social",
     "footer.copyright": "© 2026 wmux",
     "footer.fork": "Fork Windows de",
+    "plugin.badge": "Plugin Claude Code",
+    "plugin.desc": "Ejecuta múltiples agentes Claude Code en paralelo con un solo comando. El plugin analiza tu código, divide la tarea en subtareas independientes y las distribuye en oleadas con gestión de dependencias, zonas de archivos aisladas y revisión automática al final de cada ciclo.",
+    "plugin.install_label": "Instalación",
+    "plugin.view_github": "Ver en GitHub",
+    "plugin.docs": "Documentación",
   },
 
   // ═══════════════════════════ GERMAN ═══════════════════════════
@@ -382,6 +397,11 @@ const T = {
     "footer.social": "Social",
     "footer.copyright": "© 2026 wmux",
     "footer.fork": "Windows-Fork von",
+    "plugin.badge": "Claude Code Plugin",
+    "plugin.desc": "Starten Sie mehrere Claude Code-Agenten parallel mit einem einzigen Befehl. Das Plugin analysiert Ihre Codebasis, teilt die Aufgabe in unabhängige Teilaufgaben auf und verteilt sie in Wellen mit Abhängigkeitsmanagement, isolierten Dateizonen und automatischer Überprüfung am Ende jedes Zyklus.",
+    "plugin.install_label": "Installation",
+    "plugin.view_github": "Auf GitHub ansehen",
+    "plugin.docs": "Dokumentation",
   },
 
   // ═══════════════════════════ PORTUGUESE ═══════════════════════════
@@ -453,6 +473,11 @@ const T = {
     "footer.social": "Social",
     "footer.copyright": "© 2026 wmux",
     "footer.fork": "Fork Windows de",
+    "plugin.badge": "Plugin Claude Code",
+    "plugin.desc": "Execute vários agentes Claude Code em paralelo com um único comando. O plugin analisa sua base de código, divide a tarefa em subtarefas independentes e as distribui em ondas com gerenciamento de dependências, zonas de arquivo isoladas e revisão automática ao final de cada ciclo.",
+    "plugin.install_label": "Instalação",
+    "plugin.view_github": "Ver no GitHub",
+    "plugin.docs": "Documentação",
   },
 
   // ═══════════════════════════ ITALIAN ═══════════════════════════
@@ -523,6 +548,11 @@ const T = {
     "footer.social": "Social",
     "footer.copyright": "© 2026 wmux",
     "footer.fork": "Fork Windows di",
+    "plugin.badge": "Plugin Claude Code",
+    "plugin.desc": "Avvia più agenti Claude Code in parallelo con un singolo comando. Il plugin analizza il tuo codice, suddivide il compito in sotto-attività indipendenti e le distribuisce a ondate con gestione delle dipendenze, zone di file isolate e revisione automatica alla fine di ogni ciclo.",
+    "plugin.install_label": "Installazione",
+    "plugin.view_github": "Vedi su GitHub",
+    "plugin.docs": "Documentazione",
   },
 
   // ═══════════════════════════ DUTCH ═══════════════════════════
@@ -555,7 +585,7 @@ const T = {
     "cta.download": "Downloaden voor Windows", "cta.github": "Bekijk op GitHub",
     "footer.product": "Product", "footer.changelog": "Changelog", "footer.community": "Community", "footer.releases": "Releases",
     "footer.resources": "Bronnen", "footer.docs": "Documentatie", "footer.install": "Installatie", "footer.shortcuts": "Sneltoetsen",
-    "footer.legal": "Juridisch", "footer.license": "AGPL-3.0-licentie", "footer.social": "Social", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows-fork van",
+    "footer.legal": "Juridisch", "footer.license": "AGPL-3.0-licentie", "footer.social": "Social", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows-fork van", "plugin.badge": "Claude Code Plugin", "plugin.desc": "Start meerdere Claude Code-agenten parallel vanuit één commando. De plugin analyseert je codebase, splitst de taak in onafhankelijke deeltaken en verdeelt ze in golven met afhankelijkheidsbeheer, geïsoleerde bestandszones en automatische review aan het einde van elke cyclus.", "plugin.install_label": "Installatie", "plugin.view_github": "Bekijk op GitHub", "plugin.docs": "Documentatie",
   },
 
   // ═══════════════════════════ POLISH ═══════════════════════════
@@ -588,7 +618,7 @@ const T = {
     "cta.download": "Pobierz dla Windows", "cta.github": "Zobacz na GitHub",
     "footer.product": "Produkt", "footer.changelog": "Zmiany", "footer.community": "Społeczność", "footer.releases": "Wydania",
     "footer.resources": "Zasoby", "footer.docs": "Dokumentacja", "footer.install": "Instalacja", "footer.shortcuts": "Skróty",
-    "footer.legal": "Prawne", "footer.license": "Licencja AGPL-3.0", "footer.social": "Social", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows projektu",
+    "footer.legal": "Prawne", "footer.license": "Licencja AGPL-3.0", "footer.social": "Social", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows projektu", "plugin.badge": "Plugin Claude Code", "plugin.desc": "Uruchom wielu agentów Claude Code równolegle jednym poleceniem. Plugin analizuje bazę kodu, dzieli zadanie na niezależne podzadania i rozdziela je falami z zarządzaniem zależnościami, izolowanymi strefami plików i automatycznym przeglądem na końcu każdego cyklu.", "plugin.install_label": "Instalacja", "plugin.view_github": "Zobacz na GitHub", "plugin.docs": "Dokumentacja",
   },
 
   // ═══════════════════════════ TURKISH ═══════════════════════════
@@ -621,7 +651,7 @@ const T = {
     "cta.download": "Windows için indir", "cta.github": "GitHub'da görüntüle",
     "footer.product": "Ürün", "footer.changelog": "Değişiklikler", "footer.community": "Topluluk", "footer.releases": "Sürümler",
     "footer.resources": "Kaynaklar", "footer.docs": "Belgeler", "footer.install": "Kurulum", "footer.shortcuts": "Kısayollar",
-    "footer.legal": "Hukuki", "footer.license": "AGPL-3.0 Lisansı", "footer.social": "Sosyal", "footer.copyright": "© 2026 wmux", "footer.fork": "Şunun Windows fork'u:",
+    "footer.legal": "Hukuki", "footer.license": "AGPL-3.0 Lisansı", "footer.social": "Sosyal", "footer.copyright": "© 2026 wmux", "footer.fork": "Şunun Windows fork'u:", "plugin.badge": "Claude Code Eklentisi", "plugin.desc": "Tek bir komutla birden fazla Claude Code ajanını paralel olarak başlatın. Eklenti kod tabanınızı analiz eder, görevi bağımsız alt görevlere böler ve bunları bağımlılık yönetimi, izole dosya bölgeleri ve her döngü sonunda otomatik inceleme ile dalgalar halinde dağıtır.", "plugin.install_label": "Kurulum", "plugin.view_github": "GitHub'da Görüntüle", "plugin.docs": "Dokümantasyon",
   },
 
   // ═══════════════════════════ RUSSIAN ═══════════════════════════
@@ -654,7 +684,7 @@ const T = {
     "cta.download": "Скачать для Windows", "cta.github": "Смотреть на GitHub",
     "footer.product": "Продукт", "footer.changelog": "Изменения", "footer.community": "Сообщество", "footer.releases": "Релизы",
     "footer.resources": "Ресурсы", "footer.docs": "Документация", "footer.install": "Установка", "footer.shortcuts": "Горячие клавиши",
-    "footer.legal": "Правовая информация", "footer.license": "Лицензия AGPL-3.0", "footer.social": "Социальные сети", "footer.copyright": "© 2026 wmux", "footer.fork": "Форк Windows проекта",
+    "footer.legal": "Правовая информация", "footer.license": "Лицензия AGPL-3.0", "footer.social": "Социальные сети", "footer.copyright": "© 2026 wmux", "footer.fork": "Форк Windows проекта", "plugin.badge": "Плагин Claude Code", "plugin.desc": "Запускайте несколько агентов Claude Code параллельно одной командой. Плагин анализирует кодовую базу, разбивает задачу на независимые подзадачи и распределяет их волнами с управлением зависимостями, изолированными файловыми зонами и автоматической проверкой в конце каждого цикла.", "plugin.install_label": "Установка", "plugin.view_github": "Смотреть на GitHub", "plugin.docs": "Документация",
   },
 
   // ═══════════════════════════ UKRAINIAN ═══════════════════════════
@@ -687,7 +717,7 @@ const T = {
     "cta.download": "Завантажити для Windows", "cta.github": "Дивитися на GitHub",
     "footer.product": "Продукт", "footer.changelog": "Зміни", "footer.community": "Спільнота", "footer.releases": "Релізи",
     "footer.resources": "Ресурси", "footer.docs": "Документація", "footer.install": "Встановлення", "footer.shortcuts": "Гарячі клавіші",
-    "footer.legal": "Правова інформація", "footer.license": "Ліцензія AGPL-3.0", "footer.social": "Соціальні мережі", "footer.copyright": "© 2026 wmux", "footer.fork": "Форк Windows проєкту",
+    "footer.legal": "Правова інформація", "footer.license": "Ліцензія AGPL-3.0", "footer.social": "Соціальні мережі", "footer.copyright": "© 2026 wmux", "footer.fork": "Форк Windows проєкту", "plugin.badge": "Плагін Claude Code", "plugin.desc": "Запускайте кілька агентів Claude Code паралельно однією командою. Плагін аналізує кодову базу, розбиває завдання на незалежні підзавдання та розподіляє їх хвилями з управлінням залежностями, ізольованими файловими зонами та автоматичною перевіркою наприкінці кожного циклу.", "plugin.install_label": "Встановлення", "plugin.view_github": "Переглянути на GitHub", "plugin.docs": "Документація",
   },
 
   // ═══════════════════════════ ARABIC ═══════════════════════════
@@ -720,7 +750,7 @@ const T = {
     "cta.download": "تحميل لـ Windows", "cta.github": "عرض على GitHub",
     "footer.product": "المنتج", "footer.changelog": "سجل التغييرات", "footer.community": "المجتمع", "footer.releases": "الإصدارات",
     "footer.resources": "الموارد", "footer.docs": "التوثيق", "footer.install": "التثبيت", "footer.shortcuts": "الاختصارات",
-    "footer.legal": "قانوني", "footer.license": "رخصة AGPL-3.0", "footer.social": "التواصل", "footer.copyright": "© 2026 wmux", "footer.fork": "فرع Windows من",
+    "footer.legal": "قانوني", "footer.license": "رخصة AGPL-3.0", "footer.social": "التواصل", "footer.copyright": "© 2026 wmux", "footer.fork": "فرع Windows من", "plugin.badge": "إضافة Claude Code", "plugin.desc": "شغّل عدة وكلاء Claude Code بالتوازي بأمر واحد. تحلل الإضافة قاعدة الشيفرة وتقسّم المهمة إلى مهام فرعية مستقلة وتوزعها على موجات مع إدارة التبعيات ومناطق ملفات معزولة ومراجعة تلقائية في نهاية كل دورة.", "plugin.install_label": "التثبيت", "plugin.view_github": "عرض على GitHub", "plugin.docs": "التوثيق",
   },
 
   // ═══════════════════════════ CHINESE SIMPLIFIED ═══════════════════════════
@@ -753,7 +783,7 @@ const T = {
     "cta.download": "下载 Windows 版", "cta.github": "在 GitHub 上查看",
     "footer.product": "产品", "footer.changelog": "更新日志", "footer.community": "社区", "footer.releases": "发布",
     "footer.resources": "资源", "footer.docs": "文档", "footer.install": "安装", "footer.shortcuts": "快捷键",
-    "footer.legal": "法律", "footer.license": "AGPL-3.0 许可证", "footer.social": "社交", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows 分支自",
+    "footer.legal": "法律", "footer.license": "AGPL-3.0 许可证", "footer.social": "社交", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows 分支自", "plugin.badge": "Claude Code 插件", "plugin.desc": "通过一条命令并行启动多个 Claude Code 代理。插件会分析代码库，将任务拆分为独立的子任务，并以波次方式分配，支持依赖管理、隔离文件区域和每轮结束时的自动审查。", "plugin.install_label": "安装", "plugin.view_github": "在 GitHub 上查看", "plugin.docs": "文档",
   },
 
   // ═══════════════════════════ CHINESE TRADITIONAL ═══════════════════════════
@@ -786,7 +816,7 @@ const T = {
     "cta.download": "下載 Windows 版", "cta.github": "在 GitHub 上查看",
     "footer.product": "產品", "footer.changelog": "更新日誌", "footer.community": "社群", "footer.releases": "發布",
     "footer.resources": "資源", "footer.docs": "文件", "footer.install": "安裝", "footer.shortcuts": "快速鍵",
-    "footer.legal": "法律", "footer.license": "AGPL-3.0 授權", "footer.social": "社群", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows 分支自",
+    "footer.legal": "法律", "footer.license": "AGPL-3.0 授權", "footer.social": "社群", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows 分支自", "plugin.badge": "Claude Code 外掛", "plugin.desc": "透過一條指令並行啟動多個 Claude Code 代理。外掛會分析程式碼庫，將任務拆分為獨立的子任務，並以波次方式分配，支援依賴管理、隔離檔案區域和每輪結束時的自動審查。", "plugin.install_label": "安裝", "plugin.view_github": "在 GitHub 上查看", "plugin.docs": "文件",
   },
 
   // ═══════════════════════════ JAPANESE ═══════════════════════════
@@ -819,7 +849,7 @@ const T = {
     "cta.download": "Windows版をダウンロード", "cta.github": "GitHubで見る",
     "footer.product": "製品", "footer.changelog": "変更履歴", "footer.community": "コミュニティ", "footer.releases": "リリース",
     "footer.resources": "リソース", "footer.docs": "ドキュメント", "footer.install": "インストール", "footer.shortcuts": "ショートカット",
-    "footer.legal": "法的情報", "footer.license": "AGPL-3.0ライセンス", "footer.social": "ソーシャル", "footer.copyright": "© 2026 wmux", "footer.fork": "Windowsフォーク元：",
+    "footer.legal": "法的情報", "footer.license": "AGPL-3.0ライセンス", "footer.social": "ソーシャル", "footer.copyright": "© 2026 wmux", "footer.fork": "Windowsフォーク元：", "plugin.badge": "Claude Code プラグイン", "plugin.desc": "1つのコマンドで複数のClaude Codeエージェントを並列起動。プラグインがコードベースを分析し、タスクを独立したサブタスクに分割、依存関係管理・ファイルゾーン分離・サイクル終了時の自動レビューを備えたウェーブで配分します。", "plugin.install_label": "インストール", "plugin.view_github": "GitHubで見る", "plugin.docs": "ドキュメント",
   },
 
   // ═══════════════════════════ KOREAN ═══════════════════════════
@@ -852,7 +882,7 @@ const T = {
     "cta.download": "Windows용 다운로드", "cta.github": "GitHub에서 보기",
     "footer.product": "제품", "footer.changelog": "변경 이력", "footer.community": "커뮤니티", "footer.releases": "릴리스",
     "footer.resources": "리소스", "footer.docs": "문서", "footer.install": "설치", "footer.shortcuts": "단축키",
-    "footer.legal": "법적 정보", "footer.license": "AGPL-3.0 라이선스", "footer.social": "소셜", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows 포크 원본:",
+    "footer.legal": "법적 정보", "footer.license": "AGPL-3.0 라이선스", "footer.social": "소셜", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows 포크 원본:", "plugin.badge": "Claude Code 플러그인", "plugin.desc": "하나의 명령으로 여러 Claude Code 에이전트를 병렬 실행합니다. 플러그인이 코드베이스를 분석하고 작업을 독립적인 하위 작업으로 분할한 뒤 의존성 관리, 격리된 파일 영역, 매 사이클 종료 시 자동 리뷰를 갖춘 웨이브로 배분합니다.", "plugin.install_label": "설치", "plugin.view_github": "GitHub에서 보기", "plugin.docs": "문서",
   },
 
   // ═══════════════════════════ HINDI ═══════════════════════════
@@ -885,7 +915,7 @@ const T = {
     "cta.download": "Windows के लिए डाउनलोड करें", "cta.github": "GitHub पर देखें",
     "footer.product": "उत्पाद", "footer.changelog": "बदलाव", "footer.community": "समुदाय", "footer.releases": "रिलीज़",
     "footer.resources": "संसाधन", "footer.docs": "दस्तावेज़ीकरण", "footer.install": "स्थापना", "footer.shortcuts": "शॉर्टकट",
-    "footer.legal": "कानूनी", "footer.license": "AGPL-3.0 लाइसेंस", "footer.social": "सोशल", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows फ़ॉर्क:",
+    "footer.legal": "कानूनी", "footer.license": "AGPL-3.0 लाइसेंस", "footer.social": "सोशल", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows फ़ॉर्क:", "plugin.badge": "Claude Code प्लगइन", "plugin.desc": "एक ही कमांड से कई Claude Code एजेंट समानांतर में लॉन्च करें। प्लगइन आपके कोडबेस का विश्लेषण करता है, कार्य को स्वतंत्र उप-कार्यों में विभाजित करता है और उन्हें निर्भरता प्रबंधन, पृथक फ़ाइल ज़ोन और प्रत्येक चक्र के अंत में स्वचालित समीक्षा के साथ तरंगों में वितरित करता है।", "plugin.install_label": "इंस्टॉल", "plugin.view_github": "GitHub पर देखें", "plugin.docs": "प्रलेखन",
   },
 
   // ═══════════════════════════ VIETNAMESE ═══════════════════════════
@@ -918,7 +948,7 @@ const T = {
     "cta.download": "Tải cho Windows", "cta.github": "Xem trên GitHub",
     "footer.product": "Sản phẩm", "footer.changelog": "Nhật ký", "footer.community": "Cộng đồng", "footer.releases": "Phát hành",
     "footer.resources": "Tài nguyên", "footer.docs": "Tài liệu", "footer.install": "Cài đặt", "footer.shortcuts": "Phím tắt",
-    "footer.legal": "Pháp lý", "footer.license": "Giấy phép AGPL-3.0", "footer.social": "Mạng xã hội", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows của",
+    "footer.legal": "Pháp lý", "footer.license": "Giấy phép AGPL-3.0", "footer.social": "Mạng xã hội", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows của", "plugin.badge": "Plugin Claude Code", "plugin.desc": "Chạy nhiều agent Claude Code song song chỉ với một lệnh. Plugin phân tích mã nguồn, chia tác vụ thành các tác vụ con độc lập và phân phối chúng theo đợt với quản lý phụ thuộc, vùng tệp cô lập và đánh giá tự động cuối mỗi chu kỳ.", "plugin.install_label": "Cài đặt", "plugin.view_github": "Xem trên GitHub", "plugin.docs": "Tài liệu",
   },
 
   // ═══════════════════════════ THAI ═══════════════════════════
@@ -951,7 +981,7 @@ const T = {
     "cta.download": "ดาวน์โหลดสำหรับ Windows", "cta.github": "ดูบน GitHub",
     "footer.product": "ผลิตภัณฑ์", "footer.changelog": "บันทึก", "footer.community": "ชุมชน", "footer.releases": "รุ่น",
     "footer.resources": "ทรัพยากร", "footer.docs": "เอกสาร", "footer.install": "การติดตั้ง", "footer.shortcuts": "ปุ่มลัด",
-    "footer.legal": "กฎหมาย", "footer.license": "สัญญาอนุญาต AGPL-3.0", "footer.social": "โซเชียล", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows ของ",
+    "footer.legal": "กฎหมาย", "footer.license": "สัญญาอนุญาต AGPL-3.0", "footer.social": "โซเชียล", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows ของ", "plugin.badge": "ปลั๊กอิน Claude Code", "plugin.desc": "เรียกใช้ตัวแทน Claude Code หลายตัวพร้อมกันด้วยคำสั่งเดียว ปลั๊กอินวิเคราะห์โค้ดเบส แบ่งงานเป็นงานย่อยอิสระ และกระจายเป็นคลื่นพร้อมจัดการการพึ่งพา โซนไฟล์แยก และตรวจสอบอัตโนมัติเมื่อสิ้นสุดรอบ", "plugin.install_label": "ติดตั้ง", "plugin.view_github": "ดูบน GitHub", "plugin.docs": "เอกสาร",
   },
 
   // ═══════════════════════════ INDONESIAN ═══════════════════════════
@@ -984,7 +1014,7 @@ const T = {
     "cta.download": "Unduh untuk Windows", "cta.github": "Lihat di GitHub",
     "footer.product": "Produk", "footer.changelog": "Perubahan", "footer.community": "Komunitas", "footer.releases": "Rilis",
     "footer.resources": "Sumber daya", "footer.docs": "Dokumentasi", "footer.install": "Instalasi", "footer.shortcuts": "Pintasan",
-    "footer.legal": "Hukum", "footer.license": "Lisensi AGPL-3.0", "footer.social": "Sosial", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows dari",
+    "footer.legal": "Hukum", "footer.license": "Lisensi AGPL-3.0", "footer.social": "Sosial", "footer.copyright": "© 2026 wmux", "footer.fork": "Fork Windows dari", "plugin.badge": "Plugin Claude Code", "plugin.desc": "Jalankan beberapa agen Claude Code secara paralel dengan satu perintah. Plugin menganalisis basis kode, membagi tugas menjadi sub-tugas independen, dan mendistribusikannya dalam gelombang dengan manajemen dependensi, zona file terisolasi, dan tinjauan otomatis di akhir setiap siklus.", "plugin.install_label": "Instalasi", "plugin.view_github": "Lihat di GitHub", "plugin.docs": "Dokumentasi",
   },
 
   // ═══════════════════════════ SWEDISH ═══════════════════════════
@@ -1017,7 +1047,7 @@ const T = {
     "cta.download": "Ladda ner för Windows", "cta.github": "Visa på GitHub",
     "footer.product": "Produkt", "footer.changelog": "Ändringar", "footer.community": "Community", "footer.releases": "Utgåvor",
     "footer.resources": "Resurser", "footer.docs": "Dokumentation", "footer.install": "Installation", "footer.shortcuts": "Genvägar",
-    "footer.legal": "Juridiskt", "footer.license": "AGPL-3.0-licens", "footer.social": "Socialt", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows-fork av",
+    "footer.legal": "Juridiskt", "footer.license": "AGPL-3.0-licens", "footer.social": "Socialt", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows-fork av", "plugin.badge": "Claude Code-plugin", "plugin.desc": "Starta flera Claude Code-agenter parallellt med ett enda kommando. Pluginet analyserar din kodbas, delar upp uppgiften i oberoende deluppgifter och fördelar dem i vågor med beroendehantering, isolerade filzoner och automatisk granskning i slutet av varje cykel.", "plugin.install_label": "Installation", "plugin.view_github": "Visa på GitHub", "plugin.docs": "Dokumentation",
   },
 
   // ═══════════════════════════ CZECH ═══════════════════════════
@@ -1050,7 +1080,7 @@ const T = {
     "cta.download": "Stáhnout pro Windows", "cta.github": "Zobrazit na GitHubu",
     "footer.product": "Produkt", "footer.changelog": "Změny", "footer.community": "Komunita", "footer.releases": "Vydání",
     "footer.resources": "Zdroje", "footer.docs": "Dokumentace", "footer.install": "Instalace", "footer.shortcuts": "Zkratky",
-    "footer.legal": "Právní", "footer.license": "Licence AGPL-3.0", "footer.social": "Sociální sítě", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows fork projektu",
+    "footer.legal": "Právní", "footer.license": "Licence AGPL-3.0", "footer.social": "Sociální sítě", "footer.copyright": "© 2026 wmux", "footer.fork": "Windows fork projektu", "plugin.badge": "Plugin Claude Code", "plugin.desc": "Spusťte více agentů Claude Code paralelně jedním příkazem. Plugin analyzuje kódovou základnu, rozdělí úkol na nezávislé podúkoly a distribuuje je ve vlnách se správou závislostí, izolovanými souborovými zónami a automatickou kontrolou na konci každého cyklu.", "plugin.install_label": "Instalace", "plugin.view_github": "Zobrazit na GitHubu", "plugin.docs": "Dokumentace",
   },
 };
 

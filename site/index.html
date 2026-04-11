@@ -199,6 +199,148 @@
     }
     .btn-secondary:hover { border-color: var(--border-hover); background: var(--bg-hover); }
 
+    /* ═══════════════════════════ PLUGIN HIGHLIGHT ═══════════════════════════ */
+    .plugin-highlight {
+      padding: 8px 0 48px;
+    }
+    .plugin-card {
+      position: relative;
+      border-radius: 16px;
+      padding: 2px;
+      background: linear-gradient(135deg, #6366f1, #3b82f6, #8b5cf6, #6366f1);
+      background-size: 300% 300%;
+      animation: gradientShift 6s ease infinite;
+    }
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    .plugin-card-inner {
+      background: var(--bg);
+      border-radius: 14px;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .plugin-card-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .plugin-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .plugin-badge svg { flex-shrink: 0; }
+    .plugin-name {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .plugin-desc {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 600px;
+    }
+    .plugin-install {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .plugin-install-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .plugin-install-cmd {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-secondary);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .plugin-install-cmd code {
+      background: none;
+      padding: 0;
+      color: var(--text);
+      flex: 1;
+      user-select: all;
+    }
+    .plugin-install-cmd .cmd-prefix {
+      color: var(--text-muted);
+      user-select: none;
+    }
+    .plugin-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .btn-plugin {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .btn-plugin:hover { opacity: 0.85; color: #fff; }
+    .btn-plugin-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .btn-plugin-secondary:hover { border-color: var(--border-hover); background: var(--bg-hover); }
+
+    @media (max-width: 480px) {
+      .plugin-card-inner { padding: 24px 20px; }
+      .plugin-name { font-size: 17px; }
+      .plugin-actions { flex-direction: column; }
+      .btn-plugin, .btn-plugin-secondary { width: 100%; justify-content: center; }
+    }
+
     /* ═══════════════════════════ FEATURES ═══════════════════════════ */
     .features { padding: 24px 0 48px; }
     .features h2 {
@@ -363,7 +505,7 @@
           <span>wmux</span>
         </a>
         <nav>
-          <a href="https://github.com/amirlehmam/wmux#readme" data-i18n="nav.docs">Docs</a>
+          <a href="/docs" data-i18n="nav.docs">Docs</a>
           <a href="https://github.com/amirlehmam/wmux/releases" data-i18n="nav.changelog">Changelog</a>
           <a href="https://github.com/amirlehmam/wmux/discussions" data-i18n="nav.community">Communaut&eacute;</a>
           <a href="https://github.com/amirlehmam/wmux" data-i18n="nav.github">GitHub</a>
@@ -417,6 +559,44 @@
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           <span data-i18n="hero.github">Voir sur GitHub</span>
         </a>
+      </div>
+    </section>
+
+    <!-- PLUGIN HIGHLIGHT -->
+    <section class="plugin-highlight fade-in fade-in-d4">
+      <div class="plugin-card">
+        <div class="plugin-card-inner">
+          <div class="plugin-card-top">
+            <span class="plugin-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span data-i18n="plugin.badge">Claude Code Plugin</span>
+            </span>
+          </div>
+          <div class="plugin-name">wmux-orchestrator</div>
+          <p class="plugin-desc" data-i18n="plugin.desc">
+            Lancez plusieurs agents Claude Code en parall&egrave;le depuis une seule commande.
+            Le plugin analyse votre codebase, d&eacute;coupe la t&acirc;che en sous-t&acirc;ches ind&eacute;pendantes,
+            et les distribue en vagues avec gestion des d&eacute;pendances, zones de fichiers isol&eacute;es
+            et revue automatique en fin de cycle.
+          </p>
+          <div class="plugin-install">
+            <span class="plugin-install-label" data-i18n="plugin.install_label">Installation</span>
+            <div class="plugin-install-cmd">
+              <span class="cmd-prefix">$</span>
+              <code>claude plugin install wmux-orchestrator@wmux-orchestrator</code>
+            </div>
+          </div>
+          <div class="plugin-actions">
+            <a href="https://github.com/amirlehmam/wmux-orchestrator" class="btn-plugin" target="_blank" rel="noopener">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+              <span data-i18n="plugin.view_github">Voir sur GitHub</span>
+            </a>
+            <a href="https://plugin.wmux.org/" class="btn-plugin-secondary" target="_blank" rel="noopener">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+              <span data-i18n="plugin.docs">Documentation</span>
+            </a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -520,9 +700,9 @@
       <div class="footer-col">
         <h3 data-i18n="footer.resources">Ressources</h3>
         <ul>
-          <li><a href="https://github.com/amirlehmam/wmux#readme" data-i18n="footer.docs">Documentation</a></li>
-          <li><a href="https://github.com/amirlehmam/wmux#install" data-i18n="footer.install">Installation</a></li>
-          <li><a href="https://github.com/amirlehmam/wmux#keyboard-shortcuts" data-i18n="footer.shortcuts">Raccourcis</a></li>
+          <li><a href="/docs" data-i18n="footer.docs">Documentation</a></li>
+          <li><a href="/docs#installation" data-i18n="footer.install">Installation</a></li>
+          <li><a href="/docs#raccourcis" data-i18n="footer.shortcuts">Raccourcis</a></li>
         </ul>
       </div>
       <div class="footer-col">
