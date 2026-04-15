@@ -31,11 +31,12 @@ export class AgentManager {
 
   spawn(params: AgentSpawnParams & { paneId: PaneId; workspaceId: WorkspaceId }): { agentId: AgentId; surfaceId: SurfaceId } {
     const agentId: AgentId = `agent-${uuid()}`;
-    const surfaceId = this.ptyManager.create({
+    const created = this.ptyManager.create({
       shell: '',  // Use default shell (resolves to pwsh/powershell/bash, not hardcoded cmd.exe)
       cwd: params.cwd || process.env.USERPROFILE || 'C:\\',
       env: { ...(params.env || {}), WMUX_AGENT_ID: agentId, WMUX_AGENT_LABEL: params.label },
     });
+    const surfaceId = created.id;
 
     setTimeout(() => {
       if (this.ptyManager.has(surfaceId)) {

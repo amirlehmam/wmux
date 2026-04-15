@@ -15,6 +15,7 @@ export interface SurfaceRef {
   id: SurfaceId;
   type: SurfaceType;
   customTitle?: string;
+  shell?: string;
 }
 
 // Workspace

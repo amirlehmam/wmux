@@ -6,6 +6,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { ImageAddon } from '@xterm/addon-image';
+import { useStore } from '../store';
+import { SplitNode } from '../../shared/types';
 import '@xterm/xterm/css/xterm.css';
 
 declare global {
@@ -27,6 +29,30 @@ interface UseTerminalResult {
   fit: () => void;
   xtermRef: React.RefObject<Terminal | null>;
   searchAddonRef: React.RefObject<SearchAddon | null>;
+}
+
+function treeHasSurface(node: SplitNode, surfaceId: string): boolean {
+  if (node.type === 'leaf') return node.surfaces.some((surface) => surface.id === surfaceId);
+  return treeHasSurface(node.children[0], surfaceId) || treeHasSurface(node.children[1], surfaceId);
+}
+
+function findSurfaceLocation(node: SplitNode, surfaceId: string): { paneId: string } | null {
+  if (node.type === 'leaf') {
+    return node.surfaces.some((surface) => surface.id === surfaceId)
+      ? { paneId: node.paneId }
+      : null;
+  }
+  return findSurfaceLocation(node.children[0], surfaceId) || findSurfaceLocation(node.children[1], surfaceId);
+}
+
+function setResolvedShellForSurface(surfaceId: string | undefined, resolvedShell: string): void {
+  if (!surfaceId || !resolvedShell) return;
+  const state = useStore.getState();
+  const workspace = state.workspaces.find((ws) => treeHasSurface(ws.splitTree, surfaceId));
+  if (!workspace) return;
+  const location = findSurfaceLocation(workspace.splitTree, surfaceId);
+  if (!location) return;
+  state.updateSurface(workspace.id, location.paneId as any, surfaceId as any, { shell: resolvedShell });
 }
 
 export function useTerminal({ surfaceId, shell, cwd, visible = true }: UseTerminalOptions = {}): UseTerminalResult {
@@ -263,14 +289,20 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true }: UseTermin
         } else {
           // No existing PTY — create a new one, passing surfaceId so PTY ID = Surface ID
           window.wmux.pty.create({ shell: shell || '', cwd: cwd ?? '', env: {}, surfaceId })
-            .then(attachToPty)
+            .then((created: { id: string; shell: string }) => {
+              setResolvedShellForSurface(surfaceId, created.shell);
+              attachToPty(created.id);
+            })
             .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
         }
       });
     } else {
       // No surfaceId hint — always create new PTY
       window.wmux.pty.create({ shell: shell || '', cwd: cwd ?? '', env: {} })
-        .then(attachToPty)
+        .then((created: { id: string; shell: string }) => {
+          setResolvedShellForSurface(surfaceId, created.shell);
+          attachToPty(created.id);
+        })
         .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
     }
 

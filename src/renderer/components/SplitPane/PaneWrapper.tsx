@@ -294,6 +294,7 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
     <div className={`pane-wrapper ${isFocused ? 'pane-wrapper--focused' : ''} ${dragActive ? 'pane-wrapper--drag-active' : ''}`}>
       <SurfaceTabBar
         paneId={paneId}
+        workspaceShell={workspace?.shell}
         surfaces={surfaces}
         activeSurfaceIndex={activeSurfaceIndex}
         onSelect={handleSelectSurface}

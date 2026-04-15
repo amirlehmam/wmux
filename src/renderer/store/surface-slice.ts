@@ -35,6 +35,9 @@ export interface SurfaceSlice {
   /** Rename a surface (set custom tab title) */
   renameSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId, customTitle: string) => void;
 
+  /** Update a surface without moving it */
+  updateSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId, patch: Partial<SurfaceRef>) => void;
+
   /** Split a pane and move a surface into the new pane (drag to edge) */
   splitAndMoveSurface: (
     workspaceId: WorkspaceId,
@@ -223,6 +226,19 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     const newSurfaces = leaf.surfaces.map((s) =>
       s.id === surfaceId ? { ...s, customTitle: customTitle || undefined } : s,
     );
+    const updatedTree = patchLeaf(ws.splitTree, paneId, { surfaces: newSurfaces });
+    updateSplitTree(workspaceId, updatedTree);
+  },
+
+  updateSurface(workspaceId, paneId, surfaceId, patch) {
+    const { workspaces, updateSplitTree } = get();
+    const ws = workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return;
+
+    const leaf = findLeaf(ws.splitTree, paneId);
+    if (!leaf) return;
+
+    const newSurfaces = leaf.surfaces.map((s) => (s.id === surfaceId ? { ...s, ...patch } : s));
     const updatedTree = patchLeaf(ws.splitTree, paneId, { surfaces: newSurfaces });
     updateSplitTree(workspaceId, updatedTree);
   },
