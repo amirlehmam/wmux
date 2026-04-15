@@ -6,6 +6,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { ImageAddon } from '@xterm/addon-image';
+import { useStore } from '../store';
+import { SplitNode } from '../../shared/types';
 import '@xterm/xterm/css/xterm.css';
 
 declare global {
@@ -27,6 +29,35 @@ interface UseTerminalResult {
   fit: () => void;
   xtermRef: React.RefObject<Terminal | null>;
   searchAddonRef: React.RefObject<SearchAddon | null>;
+}
+
+function treeHasSurface(node: SplitNode, surfaceId: string): boolean {
+  if (node.type === 'leaf') return node.surfaces.some((surface) => surface.id === surfaceId);
+  return treeHasSurface(node.children[0], surfaceId) || treeHasSurface(node.children[1], surfaceId);
+}
+
+function getWorkspaceForSurface(surfaceId?: string) {
+  if (!surfaceId) return null;
+  const { workspaces } = useStore.getState();
+  return workspaces.find((ws) => treeHasSurface(ws.splitTree, surfaceId)) ?? null;
+}
+
+const LINK_HINT = 'Click to open in wmux browser. Ctrl+Click opens your default browser.';
+
+function openLinkForSurface(uri: string, surfaceId?: string, openExternal = false): void {
+  const state = useStore.getState();
+  const workspace = getWorkspaceForSurface(surfaceId);
+
+  if (openExternal || !workspace || !workspace.browserOpen) {
+    window.wmux?.system?.openExternal?.(uri);
+    return;
+  }
+
+  state.updateWorkspaceMetadata(workspace.id, {
+    browserOpen: true,
+    browserUrl: uri,
+  });
+  window.wmux?.browser?.navigate?.(`browser-${workspace.id}`, uri);
 }
 
 export function useTerminal({ surfaceId, shell, cwd, visible = true }: UseTerminalOptions = {}): UseTerminalResult {
@@ -72,17 +103,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true }: UseTermin
 
     // Create and load addons
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon((_event, uri) => {
-      // Intercept localhost URLs → open in browser panel instead of system browser
-      try {
-        const url = new URL(uri);
-        if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '0.0.0.0') {
-          window.wmux?.browser?.navigate?.('', uri);
-          return;
-        }
-      } catch {}
-      // Non-localhost URLs → open in system browser
-      window.wmux?.system?.openExternal?.(uri);
+    const webLinksAddon = new WebLinksAddon((event, uri) => {
+      const openExternal = !!event?.ctrlKey || !!event?.metaKey;
+      openLinkForSurface(uri, surfaceId, openExternal);
     });
     const searchAddon = new SearchAddon();
     const unicode11Addon = new Unicode11Addon();
@@ -100,6 +123,14 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true }: UseTermin
 
     // Open terminal in the DOM
     terminal.open(terminalRef.current);
+
+    const handleLinkHover = (event: MouseEvent) => {
+      const anchor = (event.target as HTMLElement | null)?.closest?.('a') as HTMLAnchorElement | null;
+      if (anchor?.href) {
+        anchor.title = LINK_HINT;
+      }
+    };
+    terminalRef.current.addEventListener('mouseover', handleLinkHover);
 
     // Korean/CJK IME reliability fix.
     // xterm.js 5.5's CompositionHelper._finalizeComposition defers reading the
@@ -299,6 +330,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true }: UseTermin
 
     // Cleanup
     return () => {
+      terminalRef.current?.removeEventListener('mouseover', handleLinkHover);
       resizeObserver.disconnect();
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       dataDisposable.dispose();
