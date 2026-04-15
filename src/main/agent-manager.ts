@@ -38,11 +38,40 @@ export class AgentManager {
     });
     const surfaceId = created.id;
 
-    setTimeout(() => {
-      if (this.ptyManager.has(surfaceId)) {
-        this.ptyManager.write(surfaceId, params.cmd + '\r');
+    // Wait for shell readiness before sending the agent command.
+    // PowerShell with integration scripts takes 1-3s to reach a prompt;
+    // a blind 800ms timeout was causing commands to be lost.
+    let commandSent = false;
+    let promptDebounce: ReturnType<typeof setTimeout> | null = null;
+
+    const sendOnce = () => {
+      if (commandSent) return;
+      commandSent = true;
+      if (removeDataListener) removeDataListener();
+      clearTimeout(fallbackTimer);
+      if (promptDebounce) clearTimeout(promptDebounce);
+      // Brief pause after prompt detection to let the shell fully settle
+      setTimeout(() => {
+        if (this.ptyManager.has(surfaceId)) {
+          this.ptyManager.write(surfaceId, params.cmd + '\r');
+        }
+      }, 150);
+    };
+
+    // Listen for PTY output to detect when the shell prompt appears
+    const removeDataListener = this.ptyManager.onData(surfaceId, (data) => {
+      if (commandSent) return;
+      // Prompt patterns: "PS C:\path>" (PowerShell), "$ " (bash), "> " (generic)
+      if (/(?:PS\s.*>|[$#%>])\s*$/m.test(data)) {
+        sendOnce();
+      } else if (!promptDebounce) {
+        // Got output but no prompt yet — shell is loading; wait a bit more
+        promptDebounce = setTimeout(sendOnce, 1500);
       }
-    }, 800);
+    });
+
+    // Absolute fallback: if shell produces no recognizable prompt after 5s, send anyway
+    const fallbackTimer = setTimeout(sendOnce, 5000);
 
     const info: AgentInfo = {
       agentId, surfaceId, paneId: params.paneId, workspaceId: params.workspaceId,
