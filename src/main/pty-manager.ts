@@ -105,7 +105,7 @@ export interface CreateOptions {
 export class PtyManager {
   private ptys = new Map<SurfaceId, PtyEntry>();
 
-  create(options: CreateOptions): SurfaceId {
+  create(options: CreateOptions): { id: SurfaceId; shell: string } {
     const id: SurfaceId = options.surfaceId ?? `surf-${uuidv4()}` as SurfaceId;
 
     const shell = resolveShell(options.shell);
@@ -165,7 +165,7 @@ export class PtyManager {
     });
 
     this.ptys.set(id, entry);
-    return id;
+    return { id, shell };
   }
 
   write(id: SurfaceId, data: string): void {

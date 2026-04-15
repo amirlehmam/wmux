@@ -40,7 +40,8 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         ...options,
         cwd: options.cwd || process.env.USERPROFILE || 'C:\\',
       };
-      const id = ptyManager.create(resolvedOptions);
+      const created = ptyManager.create(resolvedOptions);
+      const id = created.id;
       const window = BrowserWindow.fromWebContents(_event.sender);
       const unsubData = ptyManager.onData(id, (data) => {
         if (window && !window.isDestroyed()) {
@@ -57,7 +58,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         unsubData();
         unsubExit();
       });
-      return id;
+      return created;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to create terminal: ${msg}`);
