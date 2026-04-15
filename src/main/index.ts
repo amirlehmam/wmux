@@ -15,6 +15,29 @@ import { startOrchestrationWatcher } from './orchestration-watcher';
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * Auto-create a browser panel if none exists, then wait for CDP to attach.
+ * Returns true if CDP is ready, false if timeout (5s).
+ */
+async function ensureBrowserPanel(): Promise<boolean> {
+  if (cdpBridge.isAttached) return true;
+
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win || win.isDestroyed()) return false;
+
+  // Split a new pane to the right with a browser surface
+  await win.webContents.executeJavaScript(
+    `window.__wmux_splitPane?.({ direction: 'horizontal', type: 'browser' })`
+  );
+
+  // Poll until CDP attaches (webview dom-ready → cdp.attach is async)
+  const deadline = Date.now() + 5000;
+  while (!cdpBridge.isAttached && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return cdpBridge.isAttached;
+}
+
 const windowManager = new WindowManager();
 const pipeServer = new PipeServer();
 const portScanner = new PortScanner();
@@ -59,6 +82,78 @@ function scheduleAutoSave(): void {
       }
     });
   }, AUTO_SAVE_INTERVAL_MS);
+}
+
+// ─── PTY surface resolution + named-key translation (V2 send_text / send_key) ──
+// When no surfaceId is provided, the active surface from the renderer can point
+// at a pane without a PTY (markdown / browser). Writing into that silently drops
+// the input. Return a clear error instead so callers can react.
+async function resolvePtySurface(
+  id: string | undefined
+): Promise<{ ok: true; id: `surf-${string}` } | { ok: false; error: string }> {
+  let surfaceId = id;
+  if (!surfaceId) {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win || win.isDestroyed()) return { ok: false, error: 'No window' };
+    try {
+      surfaceId = await win.webContents.executeJavaScript(
+        `window.__wmux_getActiveSurfaceId?.()`
+      );
+    } catch (err: any) {
+      return { ok: false, error: `Could not resolve active surface: ${err.message}` };
+    }
+    if (!surfaceId) return { ok: false, error: 'No active surface' };
+  }
+  const branded = surfaceId as `surf-${string}`;
+  if (!ptyManager.has(branded)) {
+    return {
+      ok: false,
+      error: `surface ${surfaceId} has no PTY (pane is markdown/browser, or surface was closed). Pass an explicit surfaceId pointing at a terminal surface.`,
+    };
+  }
+  return { ok: true, id: branded };
+}
+
+// Named-key → raw PTY input translation. Fallback rules:
+//   - length === 1            → literal character (covers Ctrl+letter flow).
+//   - known multi-char name   → translated to real control/escape bytes.
+//   - unknown multi-char name → null (caller returns -32602 invalid params).
+const PTY_KEY_MAP: Record<string, string> = {
+  enter: '\r',
+  return: '\r',
+  tab: '\t',
+  esc: '\x1b',
+  escape: '\x1b',
+  backspace: '\x7f',
+  delete: '\x1b[3~',
+  space: ' ',
+  'ctrl-c': '\x03',
+  'ctrl-d': '\x04',
+  'ctrl-u': '\x15',
+  'ctrl-l': '\x0c',
+  'ctrl-a': '\x01',
+  'ctrl-e': '\x05',
+  'ctrl-k': '\x0b',
+  'ctrl-w': '\x17',
+  'ctrl-r': '\x12',
+  'ctrl-z': '\x1a',
+  up: '\x1b[A',
+  down: '\x1b[B',
+  right: '\x1b[C',
+  left: '\x1b[D',
+  home: '\x1b[H',
+  end: '\x1b[F',
+  pageup: '\x1b[5~',
+  pagedown: '\x1b[6~',
+  f1: '\x1bOP', f2: '\x1bOQ', f3: '\x1bOR', f4: '\x1bOS',
+  f5: '\x1b[15~', f6: '\x1b[17~', f7: '\x1b[18~', f8: '\x1b[19~',
+  f9: '\x1b[20~', f10: '\x1b[21~', f11: '\x1b[23~', f12: '\x1b[24~',
+};
+function translateKeyName(key: string, shift: boolean): string | null {
+  if (key.length === 1) return shift ? key.toUpperCase() : key;
+  const normalized = key.toLowerCase();
+  if (normalized in PTY_KEY_MAP) return PTY_KEY_MAP[normalized];
+  return null;
 }
 
 // Set Windows AppUserModelId so taskbar pinning uses the correct icon & identity
@@ -394,19 +489,9 @@ app.whenReady().then(() => {
       case 'surface.send_text': {
         (async () => {
           try {
-            const surfaceId = request.params?.surfaceId || request.params?.id;
-            if (!surfaceId) {
-              // Use active surface if none specified
-              const win = BrowserWindow.getAllWindows()[0];
-              if (!win || win.isDestroyed()) { respondError(-32000, 'No window'); return; }
-              const activeId = await win.webContents.executeJavaScript(
-                `window.__wmux_getActiveSurfaceId?.()`
-              );
-              if (!activeId) { respondError(-32000, 'No active surface'); return; }
-              ptyManager.write(activeId, request.params?.text || '');
-            } else {
-              ptyManager.write(surfaceId, request.params?.text || '');
-            }
+            const surfaceId = await resolvePtySurface(request.params?.surfaceId || request.params?.id);
+            if (!surfaceId.ok) { respondError(-32000, surfaceId.error); return; }
+            ptyManager.write(surfaceId.id, request.params?.text || '');
             respond({ ok: true });
           } catch (err: any) { respondError(-32000, err.message); }
         })();
@@ -415,29 +500,31 @@ app.whenReady().then(() => {
       case 'surface.send_key': {
         (async () => {
           try {
-            const surfaceId = request.params?.surfaceId || request.params?.id;
             let key = request.params?.key || '';
-            // Apply modifiers (support both array format and boolean format)
             const mods: string[] = request.params?.modifiers || [];
             const hasCtrl = mods.includes('ctrl') || request.params?.ctrl;
             const hasAlt = mods.includes('alt') || request.params?.alt;
+            const hasShift = mods.includes('shift') || request.params?.shift;
+
+            // Translate named keys to control bytes / ANSI escape sequences.
+            // Fallback: length-1 key is treated as literal (Ctrl+letter stays); unknown multi-char → error.
+            const translated = translateKeyName(key, hasShift);
+            if (translated === null) {
+              respondError(-32602, `unknown key name: "${key}" (use one of: enter, tab, esc, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1..f12, or a single character)`);
+              return;
+            }
+            key = translated;
+
             if (hasCtrl && key.length === 1) {
-              const code = key.toUpperCase().charCodeAt(0) - 64;
+              const upper = key.toUpperCase();
+              const code = upper.charCodeAt(0) - 64;
               if (code > 0 && code < 27) key = String.fromCharCode(code);
             }
             if (hasAlt) key = '\x1b' + key;
 
-            if (!surfaceId) {
-              const win = BrowserWindow.getAllWindows()[0];
-              if (!win || win.isDestroyed()) { respondError(-32000, 'No window'); return; }
-              const activeId = await win.webContents.executeJavaScript(
-                `window.__wmux_getActiveSurfaceId?.()`
-              );
-              if (!activeId) { respondError(-32000, 'No active surface'); return; }
-              ptyManager.write(activeId, key);
-            } else {
-              ptyManager.write(surfaceId, key);
-            }
+            const surfaceId = await resolvePtySurface(request.params?.surfaceId || request.params?.id);
+            if (!surfaceId.ok) { respondError(-32000, surfaceId.error); return; }
+            ptyManager.write(surfaceId.id, key);
             respond({ ok: true });
           } catch (err: any) { respondError(-32000, err.message); }
         })();
@@ -584,47 +671,65 @@ app.whenReady().then(() => {
       }
 
       case 'browser.navigate':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.navigate(request.params.url, request.params.timeout)
-          .then(() => respond({ ok: true }))
-          .catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.navigate(request.params.url, request.params.timeout)
+            .then(() => respond({ ok: true }))
+            .catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.snapshot':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.snapshot().then((snap) => respond(snap)).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.snapshot().then((snap) => respond(snap)).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.click':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.click(request.params.ref).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.click(request.params.ref).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.type':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.type(request.params.ref, request.params.text).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.type(request.params.ref, request.params.text).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.fill':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.fill(request.params.ref, request.params.value).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.fill(request.params.ref, request.params.value).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.screenshot':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.screenshot(request.params.fullPage).then((data) => respond({ data })).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.screenshot(request.params.fullPage).then((data) => respond({ data })).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.get_text':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.getText(request.params.ref).then((text) => respond({ text })).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.getText(request.params.ref).then((text) => respond({ text })).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.eval':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.evaluate(request.params.js).then((result) => respond({ result })).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.evaluate(request.params.js).then((result) => respond({ result })).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.wait':
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        cdpBridge.wait(request.params.ref, request.params.timeout).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          cdpBridge.wait(request.params.ref, request.params.timeout).then(() => respond({ ok: true })).catch((err) => respondError(-32000, err.message));
+        })();
         break;
       case 'browser.batch': {
-        if (!cdpBridge.isAttached) { respondError(-32000, 'Browser panel is not open'); break; }
-        const results: any[] = [];
         (async () => {
+          if (!await ensureBrowserPanel()) { respondError(-32000, 'Could not open browser panel'); return; }
+          const results: any[] = [];
           for (const cmd of request.params.commands || []) {
             try {
               const handlers: Record<string, () => Promise<any>> = {

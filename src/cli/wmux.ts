@@ -40,6 +40,20 @@ function sendV2(method: string, params: Record<string, any> = {}): Promise<any> 
   });
 }
 
+// Simple flag helpers shared across commands.
+function getFlag(args: string[], name: string): string | undefined {
+  const i = args.indexOf(name);
+  if (i < 0 || i === args.length - 1) return undefined;
+  return args[i + 1];
+}
+function stripFlag(args: string[], name: string): string[] {
+  const i = args.indexOf(name);
+  if (i < 0) return args;
+  const copy = args.slice();
+  copy.splice(i, i === args.length - 1 ? 1 : 2);
+  return copy;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -122,14 +136,25 @@ async function main() {
       }
 
       // Terminal interaction
-      case 'send': console.log(JSON.stringify(await sendV2('surface.send_text', { text: args.slice(1).join(' ') }), null, 2)); break;
+      case 'send': {
+        // Drop --surface <id> (and its value) from the free-form text args.
+        const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+        const textArgs = stripFlag(args.slice(1), '--surface');
+        const payload: Record<string, any> = { text: textArgs.join(' ') };
+        if (surfaceId) payload.surfaceId = surfaceId;
+        console.log(JSON.stringify(await sendV2('surface.send_text', payload), null, 2));
+        break;
+      }
       case 'send-key': {
         const key = args[1];
         const modifiers: string[] = [];
         if (args.includes('--ctrl')) modifiers.push('ctrl');
         if (args.includes('--shift')) modifiers.push('shift');
         if (args.includes('--alt')) modifiers.push('alt');
-        console.log(JSON.stringify(await sendV2('surface.send_key', { key, modifiers }), null, 2));
+        const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+        const payload: Record<string, any> = { key, modifiers };
+        if (surfaceId) payload.surfaceId = surfaceId;
+        console.log(JSON.stringify(await sendV2('surface.send_key', payload), null, 2));
         break;
       }
       case 'read-screen': {
