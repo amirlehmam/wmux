@@ -47,7 +47,7 @@ export function initPipeBridge(): void {
 
   // ─── Pane ───────────────────────────────────────────────────────────────────
 
-  w.__wmux_splitPane = (params?: { direction?: string; type?: string; workspaceId?: string }) => {
+  w.__wmux_splitPane = (params?: { direction?: string; type?: string; workspaceId?: string; colorScheme?: string }) => {
     const store = useStore.getState();
     const wsId = (params?.workspaceId || store.activeWorkspaceId) as WorkspaceId;
     if (!wsId) return null;
@@ -68,6 +68,12 @@ export function initPipeBridge(): void {
 
     const newLeaf = findLeaf(newTree, newPaneId);
     const surfaceId = newLeaf?.surfaces?.[0]?.id || null;
+
+    // Apply a per-pane color scheme override to the freshly-created surface
+    // so `wmux split --color-scheme prod` takes effect immediately.
+    if (params?.colorScheme && surfaceId && newLeaf) {
+      store.updateSurface(wsId, newPaneId, surfaceId as SurfaceId, { colorScheme: params.colorScheme });
+    }
 
     return { paneId: newPaneId, surfaceId };
   };
@@ -149,7 +155,7 @@ export function initPipeBridge(): void {
 
   // ─── Surface ────────────────────────────────────────────────────────────────
 
-  w.__wmux_createSurface = (params?: { type?: string; paneId?: string; workspaceId?: string }) => {
+  w.__wmux_createSurface = (params?: { type?: string; paneId?: string; workspaceId?: string; colorScheme?: string }) => {
     const store = useStore.getState();
     const wsId = (params?.workspaceId || store.activeWorkspaceId) as WorkspaceId;
     if (!wsId) return null;
@@ -164,8 +170,29 @@ export function initPipeBridge(): void {
     if (!paneId) return null;
 
     const type = (params?.type || 'terminal') as SurfaceType;
-    const surfaceId = store.addSurface(wsId, paneId, type);
+    const surfaceId = store.addSurface(wsId, paneId, type, { colorScheme: params?.colorScheme });
     return { surfaceId, paneId };
+  };
+
+  /**
+   * Update an existing surface's color scheme. Lets users switch a running
+   * pane to "prod" mid-session via `wmux surface set-color-scheme <id> prod`.
+   */
+  w.__wmux_setSurfaceColorScheme = (surfaceId: string, colorScheme: string | null) => {
+    const store = useStore.getState();
+    for (const ws of store.workspaces) {
+      const paneIds = getAllPaneIds(ws.splitTree);
+      for (const pid of paneIds) {
+        const leaf = findLeaf(ws.splitTree, pid);
+        if (leaf?.surfaces?.some(s => s.id === surfaceId)) {
+          store.updateSurface(ws.id, pid, surfaceId as SurfaceId, {
+            colorScheme: colorScheme || undefined,
+          });
+          return { ok: true };
+        }
+      }
+    }
+    return { ok: false, error: 'Surface not found' };
   };
 
   w.__wmux_closeSurface = (surfaceId: string, workspaceId?: string) => {

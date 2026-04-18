@@ -129,6 +129,24 @@ export function loadBundledThemes(): Map<string, ThemeConfig> {
 }
 
 /**
+ * Resolve a theme by name. Tries bundled themes first, then falls back to
+ * the built-in Monokai default. Name lookup is case-insensitive.
+ */
+export function getThemeByName(name: string | undefined | null): ThemeConfig {
+  if (!name) return getDefaultTheme();
+  const bundled = loadBundledThemes();
+  // Exact match
+  const direct = bundled.get(name);
+  if (direct) return direct;
+  // Case-insensitive match
+  const target = name.toLowerCase();
+  for (const [key, theme] of bundled) {
+    if (key.toLowerCase() === target) return theme;
+  }
+  return getDefaultTheme();
+}
+
+/**
  * Returns the built-in Monokai default theme.
  */
 export function getDefaultTheme(): ThemeConfig {

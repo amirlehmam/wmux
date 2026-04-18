@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('wmux', {
     toggleDevTools: () => ipcRenderer.send('toggle-devtools'),
   },
   config: {
-    getTheme: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET_THEME),
+    getTheme: (name?: string) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET_THEME, name),
     getThemeList: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET_THEME_LIST),
     importWindowsTerminal: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_IMPORT_WT),
     importGhostty: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_IMPORT_GHOSTTY),

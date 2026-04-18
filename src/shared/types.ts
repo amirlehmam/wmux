@@ -16,6 +16,8 @@ export interface SurfaceRef {
   type: SurfaceType;
   customTitle?: string;
   shell?: string;
+  /** Per-surface color scheme override (bundled theme name or user-defined scheme name). */
+  colorScheme?: string;
 }
 
 // Workspace

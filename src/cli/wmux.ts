@@ -90,25 +90,77 @@ async function main() {
 
       // Surface
       case 'new-surface': {
-        const type = args.find((a, i) => args[i - 1] === '--type') || 'terminal';
-        console.log(JSON.stringify(await sendV2('surface.create', { type }), null, 2));
+        const type = getFlag(args, '--type') || 'terminal';
+        const colorScheme = getFlag(args, '--color-scheme');
+        console.log(JSON.stringify(await sendV2('surface.create', { type, ...(colorScheme ? { colorScheme } : {}) }), null, 2));
         break;
       }
       case 'close-surface': console.log(JSON.stringify(await sendV2('surface.close', { id: args[1] }), null, 2)); break;
       case 'focus-surface': console.log(JSON.stringify(await sendV2('surface.focus', { id: args[1] }), null, 2)); break;
-      case 'list-surfaces': console.log(JSON.stringify(await sendV2('surface.list', { paneId: args.find((a, i) => args[i - 1] === '--pane') }), null, 2)); break;
+      case 'list-surfaces': console.log(JSON.stringify(await sendV2('surface.list', { paneId: getFlag(args, '--pane') }), null, 2)); break;
+
+      // Surface: per-pane color scheme override (issue #4)
+      case 'set-color-scheme': {
+        // Two forms:
+        //   wmux set-color-scheme <scheme>            → apply to current surface
+        //   wmux set-color-scheme <surfaceId> <scheme> → apply to a specific surface
+        let surfaceId = args[1];
+        let scheme = args[2];
+        if (!scheme) {
+          scheme = surfaceId;
+          surfaceId = process.env.WMUX_SURFACE_ID || '';
+        }
+        if (!surfaceId) { console.error('No surface id. Pass one as argument or run inside a wmux pane.'); process.exit(1); }
+        if (!scheme)    { console.error('Usage: wmux set-color-scheme [surfaceId] <scheme>'); process.exit(1); }
+        console.log(JSON.stringify(await sendV2('surface.set_color_scheme', { surfaceId, colorScheme: scheme }), null, 2));
+        break;
+      }
+      case 'clear-color-scheme': {
+        const surfaceId = args[1] || process.env.WMUX_SURFACE_ID || '';
+        if (!surfaceId) { console.error('No surface id. Pass one as argument or run inside a wmux pane.'); process.exit(1); }
+        console.log(JSON.stringify(await sendV2('surface.set_color_scheme', { surfaceId, colorScheme: null }), null, 2));
+        break;
+      }
+      case 'list-themes':
+      case 'themes': {
+        // Discovery for users writing scripts: what names are valid for --color-scheme?
+        console.log(JSON.stringify(await sendV2('theme.list'), null, 2));
+        break;
+      }
 
       // Pane
       case 'split': {
         const direction = args.includes('--down') ? 'down' : 'right';
-        const type = args.find((a, i) => args[i - 1] === '--type') || 'terminal';
-        console.log(JSON.stringify(await sendV2('pane.split', { direction, type }), null, 2));
+        const type = getFlag(args, '--type') || 'terminal';
+        const colorScheme = getFlag(args, '--color-scheme');
+        console.log(JSON.stringify(await sendV2('pane.split', { direction, type, ...(colorScheme ? { colorScheme } : {}) }), null, 2));
+        break;
+      }
+      // "pane <sub>" verb form — mirrors the syntax from the issue example.
+      case 'pane': {
+        const sub = args[1];
+        if (sub === 'new' || sub === 'split') {
+          const rest = args.slice(2);
+          const direction = rest.includes('--down') ? 'down' : 'right';
+          const type = getFlag(rest, '--type') || 'terminal';
+          const colorScheme = getFlag(rest, '--color-scheme');
+          console.log(JSON.stringify(await sendV2('pane.split', { direction, type, ...(colorScheme ? { colorScheme } : {}) }), null, 2));
+        } else if (sub === 'close') {
+          console.log(JSON.stringify(await sendV2('pane.close', { id: args[2] }), null, 2));
+        } else if (sub === 'focus') {
+          console.log(JSON.stringify(await sendV2('pane.focus', { id: args[2] }), null, 2));
+        } else if (sub === 'list') {
+          console.log(JSON.stringify(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') }), null, 2));
+        } else {
+          console.error(`Unknown pane subcommand: ${sub}`);
+          process.exit(1);
+        }
         break;
       }
       case 'close-pane': console.log(JSON.stringify(await sendV2('pane.close', { id: args[1] }), null, 2)); break;
       case 'focus-pane': console.log(JSON.stringify(await sendV2('pane.focus', { id: args[1] }), null, 2)); break;
       case 'zoom-pane': console.log(JSON.stringify(await sendV2('pane.zoom', { id: args[1] }), null, 2)); break;
-      case 'list-panes': console.log(JSON.stringify(await sendV2('pane.list', { workspaceId: args.find((a, i) => args[i - 1] === '--workspace') }), null, 2)); break;
+      case 'list-panes': console.log(JSON.stringify(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') }), null, 2)); break;
       case 'tree': console.log(JSON.stringify(await sendV2('system.tree'), null, 2)); break;
 
       // Layout
@@ -299,8 +351,10 @@ Usage: wmux <command> [options]
 
 System:     ping, identify, capabilities, list-windows, focus-window <id>
 Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, list-workspaces
-Surface:    new-surface, close-surface, focus-surface, list-surfaces
-Pane:       split, close-pane, focus-pane, zoom-pane, list-panes, tree
+Surface:    new-surface [--type T] [--color-scheme NAME], close-surface, focus-surface, list-surfaces
+            set-color-scheme [surfaceId] <scheme>, clear-color-scheme [surfaceId], list-themes
+Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-pane, zoom-pane, list-panes, tree
+            pane new|close|focus|list   (verb form, mirrors issue #4 example)
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
 Terminal:   send <text>, send-key <key>, read-screen, trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload

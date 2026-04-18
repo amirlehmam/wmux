@@ -1,0 +1,22 @@
+# Staging Amber — warm amber tint for staging shells (issue #4)
+background = #2b1c05
+foreground = #ffe8b3
+cursor-color = #ffcf5a
+selection-background = #5a3b12
+selection-foreground = #fff2cc
+palette = 0=#1c1203
+palette = 1=#ff8b5a
+palette = 2=#b7d86a
+palette = 3=#ffcf5a
+palette = 4=#82b3ff
+palette = 5=#c48dff
+palette = 6=#94e2d5
+palette = 7=#ffe8b3
+palette = 8=#8a6d3b
+palette = 9=#ffa071
+palette = 10=#d7ef87
+palette = 11=#ffea00
+palette = 12=#a0c3ff
+palette = 13=#d7a9ff
+palette = 14=#a4ffff
+palette = 15=#ffffff

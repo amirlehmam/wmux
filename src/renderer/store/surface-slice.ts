@@ -12,6 +12,7 @@ export interface SurfaceSlice {
     workspaceId: WorkspaceId,
     paneId: PaneId,
     type: SurfaceType,
+    options?: { colorScheme?: string; customTitle?: string },
   ) => SurfaceId;
 
   /** Close a surface; if it's the last one in the pane, the pane is removed */
@@ -55,7 +56,7 @@ type SliceState = SurfaceSlice & WorkspaceSlice;
 // ─── Slice creator ───────────────────────────────────────────────────────────
 
 export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> = (_set, get) => ({
-  addSurface(workspaceId, paneId, type) {
+  addSurface(workspaceId, paneId, type, options) {
     const surfaceId: SurfaceId = `surf-${uuid()}` as SurfaceId;
 
     const { workspaces, updateSplitTree } = get();
@@ -65,7 +66,12 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     const leaf = findLeaf(ws.splitTree, paneId);
     if (!leaf) return surfaceId;
 
-    const newSurface: SurfaceRef = { id: surfaceId, type };
+    const newSurface: SurfaceRef = {
+      id: surfaceId,
+      type,
+      ...(options?.colorScheme ? { colorScheme: options.colorScheme } : {}),
+      ...(options?.customTitle ? { customTitle: options.customTitle } : {}),
+    };
     const newSurfaces = [...leaf.surfaces, newSurface];
     const newActiveSurfaceIndex = newSurfaces.length - 1;
 

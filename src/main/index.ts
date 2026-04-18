@@ -484,6 +484,36 @@ app.whenReady().then(() => {
         })();
         break;
       }
+      case 'surface.set_color_scheme': {
+        // Per-pane color scheme override (issue #4). Pass `scheme: null` to clear.
+        (async () => {
+          try {
+            const win = BrowserWindow.getAllWindows()[0];
+            if (!win || win.isDestroyed()) { respondError(-32000, 'No window'); return; }
+            const surfaceId = request.params?.surfaceId || request.params?.id;
+            const scheme = request.params?.colorScheme ?? request.params?.scheme ?? null;
+            if (!surfaceId) { respondError(-32602, 'surfaceId required'); return; }
+            const result = await win.webContents.executeJavaScript(
+              `window.__wmux_setSurfaceColorScheme?.(${JSON.stringify(surfaceId)}, ${JSON.stringify(scheme)})`
+            );
+            respond(result || { ok: true });
+          } catch (err: any) { respondError(-32000, err.message); }
+        })();
+        break;
+      }
+      case 'theme.list': {
+        // Report available color schemes so the CLI / external tools can discover
+        // valid `--color-scheme` values without touching the filesystem.
+        (async () => {
+          try {
+            const { loadBundledThemes } = await import('./theme-loader');
+            const bundled = loadBundledThemes();
+            const names = ['Monokai', ...Array.from(bundled.keys())];
+            respond({ themes: Array.from(new Set(names)).sort((a, b) => a.localeCompare(b)) });
+          } catch (err: any) { respondError(-32000, err.message); }
+        })();
+        break;
+      }
 
       // ─── Terminal I/O V2 handlers ─────────────────────────────────────────
       case 'surface.send_text': {

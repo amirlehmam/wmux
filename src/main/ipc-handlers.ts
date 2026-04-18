@@ -7,7 +7,7 @@ import { observePtyData } from './claude-observer';
 import { PtyManager } from './pty-manager';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
-import { getDefaultTheme, loadBundledThemes } from './theme-loader';
+import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-loader';
 import { parseWindowsTerminalConfig, parseGhosttyConfig } from './config-loader';
 import { WindowManager } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
@@ -92,15 +92,15 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   // Config / Theme handlers
-  ipcMain.handle(IPC_CHANNELS.CONFIG_GET_THEME, async () => {
-    return getDefaultTheme();
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET_THEME, async (_event, name?: string) => {
+    // Passing a name resolves a specific bundled theme; no name returns the default.
+    return name ? getThemeByName(name) : getDefaultTheme();
   });
 
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET_THEME_LIST, async () => {
     const bundled = loadBundledThemes();
     const names = ['Monokai', ...Array.from(bundled.keys())];
-    // Deduplicate in case a bundled theme is also named Monokai
-    return Array.from(new Set(names));
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
   });
 
   ipcMain.handle(IPC_CHANNELS.CONFIG_IMPORT_WT, async () => {

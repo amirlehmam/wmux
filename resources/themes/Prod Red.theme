@@ -1,0 +1,22 @@
+# Prod Red — high-contrast red tint for production shells (issue #4)
+background = #2b0b0b
+foreground = #ffdddd
+cursor-color = #ff5555
+selection-background = #5a1a1a
+selection-foreground = #ffeaea
+palette = 0=#1a0404
+palette = 1=#ff5555
+palette = 2=#8ac58a
+palette = 3=#ffcf5a
+palette = 4=#7ab3ff
+palette = 5=#ff79c6
+palette = 6=#8be9fd
+palette = 7=#ffdddd
+palette = 8=#ff8a8a
+palette = 9=#ff6e6e
+palette = 10=#a6e22e
+palette = 11=#ffea00
+palette = 12=#9ac1ff
+palette = 13=#ff92df
+palette = 14=#a4ffff
+palette = 15=#ffffff

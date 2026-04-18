@@ -134,13 +134,31 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
 
 // ─── Terminal settings ────────────────────────────────────────────────────────
 
+/**
+ * A user-defined color scheme. Partial: only specified fields override the
+ * base theme (so users can tweak just `background` + `foreground` if they want).
+ * Mirrors the shape requested in issue #4.
+ */
+export interface UserColorScheme {
+  background?: string;
+  foreground?: string;
+  cursor?: string;
+  cursorText?: string;
+  selectionBackground?: string;
+  selectionForeground?: string;
+  palette?: string[]; // up to 16 ANSI entries
+}
+
 export interface TerminalPrefs {
   fontFamily: string;
   fontSize: number;
+  /** Global default color scheme name (bundled theme or userColorSchemes key). */
   theme: string;
   cursorStyle: 'block' | 'underline' | 'bar';
   cursorBlink: boolean;
   scrollbackLines: number;
+  /** User-defined color schemes, addressable by name in per-pane overrides. */
+  userColorSchemes: Record<string, UserColorScheme>;
 }
 
 export const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
@@ -150,6 +168,7 @@ export const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   cursorStyle: 'block',
   cursorBlink: true,
   scrollbackLines: 5000,
+  userColorSchemes: {},
 };
 
 // ─── Notification settings ────────────────────────────────────────────────────

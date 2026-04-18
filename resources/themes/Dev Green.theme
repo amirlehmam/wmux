@@ -1,0 +1,22 @@
+# Dev Green — cool green tint for dev/local shells (issue #4)
+background = #0c2113
+foreground = #d8ffd8
+cursor-color = #50fa7b
+selection-background = #1b4025
+selection-foreground = #eaffea
+palette = 0=#061406
+palette = 1=#ff5a5a
+palette = 2=#50fa7b
+palette = 3=#f1fa8c
+palette = 4=#82b3ff
+palette = 5=#ff79c6
+palette = 6=#8be9fd
+palette = 7=#d8ffd8
+palette = 8=#567c62
+palette = 9=#ff7a7a
+palette = 10=#7fff9e
+palette = 11=#ffffa5
+palette = 12=#a0c3ff
+palette = 13=#ff92df
+palette = 14=#a4ffff
+palette = 15=#ffffff
