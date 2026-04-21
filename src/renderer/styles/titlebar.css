@@ -19,11 +19,11 @@
 }
 
 .titlebar__logo {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  margin-right: 4px;
-  opacity: 0.8;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  margin-right: 6px;
+  opacity: 0.95;
   -webkit-app-region: no-drag;
 }
 

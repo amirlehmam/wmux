@@ -164,6 +164,24 @@ export interface SavedSession {
     browserUrl?: string;
   }>;
   sidebarWidth: number;
+  // Optional for backward-compat with pre-0.7.6 sessions.
+  terminalPrefs?: {
+    fontFamily: string;
+    fontSize: number;
+    theme: string;
+    cursorStyle: 'block' | 'underline' | 'bar';
+    cursorBlink: boolean;
+    scrollbackLines: number;
+    userColorSchemes: Record<string, {
+      background?: string;
+      foreground?: string;
+      cursor?: string;
+      cursorText?: string;
+      selectionBackground?: string;
+      selectionForeground?: string;
+      palette?: string[];
+    }>;
+  };
 }
 
 // IPC channel names

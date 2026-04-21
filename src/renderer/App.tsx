@@ -493,6 +493,7 @@ export default function App() {
         browserUrl: ws.browserUrl || '',
       })),
       sidebarWidth,
+      terminalPrefs: { ...state.terminalPrefs },
     };
     await window.wmux?.session?.save(session);
     window.wmux?.notification?.fire({ surfaceId: '', text: `Session "${name}" saved`, title: 'wmux' });
@@ -501,9 +502,10 @@ export default function App() {
   const handleLoadSession = useCallback(async (name: string) => {
     const session = await window.wmux?.session?.load(name);
     if (!session) return;
-    const { replaceAllWorkspaces } = useStore.getState();
+    const { replaceAllWorkspaces, setTerminalPrefs } = useStore.getState();
     replaceAllWorkspaces(session.workspaces);
     if (session.sidebarWidth) setSidebarWidth(session.sidebarWidth);
+    if (session.terminalPrefs) setTerminalPrefs(session.terminalPrefs);
   }, []);
 
   const handleUpdateMetadata = useCallback(
