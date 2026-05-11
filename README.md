@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./docs/assets/wmux-full.png" alt="wmux — terminal multiplexer with live browser panel" width="900" />
+  <img src="https://wmux.org/assets/wmux-full.png" alt="wmux — terminal multiplexer with live browser panel" width="900" />
 </p>
 
 ## Features
