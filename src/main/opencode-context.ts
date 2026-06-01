@@ -73,6 +73,7 @@ export function pluginNeedsUpdate(src: string, target: string | null): boolean {
   if (target === null) return true;
   const s = src.match(VERSION_RE)?.[1];
   const t = target.match(VERSION_RE)?.[1];
+  if (s === undefined) return true; // fail safe: unversioned source → always reinstall
   return s !== t;
 }
 

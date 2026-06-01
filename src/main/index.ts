@@ -954,8 +954,8 @@ app.whenReady().then(() => {
         const surfaceId = p.surfaceId as SurfaceId;
         if (!surfaceId) { respondError(-32602, 'surfaceId required'); break; }
         applyExternalActivity(surfaceId, {
-          lastTool: p.tool ?? undefined,
-          activeSkill: p.skill ?? undefined,
+          lastTool: p.tool || undefined,
+          activeSkill: p.skill || undefined,
           isDone: typeof p.done === 'boolean' ? p.done : undefined,
         });
         respond({ ok: true });

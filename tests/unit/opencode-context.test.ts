@@ -49,4 +49,7 @@ describe('pluginNeedsUpdate', () => {
   it('true when version markers differ', () => {
     expect(pluginNeedsUpdate(srcV2, '// wmux-plugin-version: 1\ncode')).toBe(true);
   });
+  it('true (fail-safe) when source has no version marker', () => {
+    expect(pluginNeedsUpdate('no marker here', '// wmux-plugin-version: 2\ncode')).toBe(true);
+  });
 });
