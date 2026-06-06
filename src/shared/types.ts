@@ -39,6 +39,7 @@ export interface WorkspaceInfo {
   notificationText?: string;
   shellState?: 'idle' | 'running' | 'interrupted';
   browserUrl?: string;
+  browserWidth?: number;
 }
 
 // Surface

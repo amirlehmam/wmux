@@ -124,6 +124,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       customColor: config.customColor,
       cwd: config.cwd,
       browserUrl: config.browserUrl,
+      browserWidth: config.browserWidth,
     }));
 
     // IDs are regenerated above, so a saved activeWorkspaceId is meaningless —

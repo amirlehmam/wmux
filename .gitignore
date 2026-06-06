@@ -8,3 +8,6 @@ release/
 
 # Local Netlify folder
 .netlify
+
+# Local Claude Code settings
+.claude/settings.local.json
