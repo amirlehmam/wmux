@@ -451,6 +451,8 @@ export default function App() {
             shell: ws.shell,
             cwd: ws.cwd, // issue #20 — restore so new terminals reopen in the workspace folder
             splitTree: ws.splitTree,
+            browserUrl: ws.browserUrl,
+            browserWidth: ws.browserWidth,
           })),
         }],
       };
@@ -461,6 +463,9 @@ export default function App() {
 
   // Auto-focus first pane whenever the active workspace changes or gains its first pane
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
+  // During drag use live browserWidth state; otherwise use the persisted value from the
+  // workspace (falls back to browserWidth for workspaces that have never been resized).
+  const displayBrowserWidth = isResizingBrowser ? browserWidth : (activeWorkspace?.browserWidth ?? browserWidth);
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -508,6 +513,7 @@ export default function App() {
         cwd: ws.cwd || '',
         splitTree: ws.splitTree,
         browserUrl: ws.browserUrl || '',
+        browserWidth: ws.browserWidth,
       })),
       sidebarWidth,
       terminalPrefs: { ...state.terminalPrefs },
@@ -700,15 +706,19 @@ export default function App() {
                 e.preventDefault();
                 setIsResizingBrowser(true);
                 const startX = e.clientX;
-                const startWidth = browserWidth;
+                const startWidth = activeWorkspace?.browserWidth ?? browserWidth;
+                setBrowserWidth(startWidth);
+                let finalWidth = startWidth;
                 const onMove = (ev: MouseEvent) => {
                   const delta = startX - ev.clientX;
-                  setBrowserWidth(Math.max(250, Math.min(window.innerWidth - 400, startWidth + delta)));
+                  finalWidth = Math.max(250, Math.min(window.innerWidth - 400, startWidth + delta));
+                  setBrowserWidth(finalWidth);
                 };
                 const onUp = () => {
                   setIsResizingBrowser(false);
                   document.removeEventListener('mousemove', onMove);
                   document.removeEventListener('mouseup', onUp);
+                  if (activeWorkspaceId) updateWorkspaceMetadata(activeWorkspaceId as any, { browserWidth: finalWidth });
                 };
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
@@ -724,7 +734,7 @@ export default function App() {
                 transform: 'translateX(-50%)',
               }} />
             </div>
-            <div style={{ width: browserWidth, flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+            <div style={{ width: displayBrowserWidth, flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
               {isResizingBrowser && (
                 <div style={{
                   position: 'absolute', inset: 0, zIndex: 10,
