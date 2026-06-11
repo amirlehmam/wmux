@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/amirlehmam-wmux-badge.png)](https://mseep.ai/app/amirlehmam-wmux)
+
 <h1 align="center">wmux</h1>
 <p align="center">A visibility layer for Claude Code on Windows — see what your AI agent does in real-time</p>
 
