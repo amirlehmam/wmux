@@ -237,6 +237,46 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       wheelHost.removeEventListener('wheel', onWheelCapture, { capture: true } as any);
     });
 
+    // File drag-and-drop → insert the dropped path(s) into the terminal.
+    // Windows Terminal and macOS Terminal both do this (issue #33). The browser's
+    // DEFAULT drop action is to navigate the window to file:///… which would unload
+    // the whole app, so we preventDefault on BOTH dragover (to mark a valid drop
+    // target) and drop. Electron 33 removed File.path, so paths come from the
+    // preload-exposed webUtils bridge (window.wmux.shell.getPathForFile). Paths
+    // are routed through terminal.paste() so bracketed-paste mode is honored,
+    // matching the Ctrl+V / image-paste handlers below.
+    const dropHost = terminalRef.current;
+    const onDragOver = (ev: DragEvent) => {
+      if (ev.dataTransfer?.types?.includes('Files')) {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'copy';
+      }
+    };
+    const onDrop = (ev: DragEvent) => {
+      const files = ev.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const getPath = window.wmux?.shell?.getPathForFile;
+      if (!getPath) return;
+      const parts: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const p = getPath(files[i]);
+        // Quote paths containing spaces so they survive as a single shell token.
+        if (p) parts.push(/\s/.test(p) ? `"${p}"` : p);
+      }
+      if (parts.length > 0 && ptyIdRef.current) {
+        terminal.paste(parts.join(' '));
+        try { terminal.focus(); } catch { /* no-op */ }
+      }
+    };
+    dropHost.addEventListener('dragover', onDragOver);
+    dropHost.addEventListener('drop', onDrop);
+    cleanupFnsRef.current.push(() => {
+      dropHost.removeEventListener('dragover', onDragOver);
+      dropHost.removeEventListener('drop', onDrop);
+    });
+
     // Korean/CJK IME reliability fix.
     // xterm.js 5.5's CompositionHelper._finalizeComposition defers reading the
     // textarea via setTimeout(0), which races against fast Hangul composition
@@ -314,11 +354,15 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     terminal.parser.registerOscHandler(52, (data) => {
       const semi = data.indexOf(';');
       const b64 = semi >= 0 ? data.slice(semi + 1) : data;
-      if (!b64 || b64 === '?') return true; // ignore read requests
-      try {
-        const text = atob(b64);
-        if (text) window.wmux?.clipboard?.writeText?.(text);
-      } catch {}
+      // Ignore read requests (b64 === '?') and empty payloads; otherwise decode
+      // and route to Electron's clipboard via IPC. The sequence is consumed
+      // (handled) either way.
+      if (b64 && b64 !== '?') {
+        try {
+          const text = atob(b64);
+          if (text) window.wmux?.clipboard?.writeText?.(text);
+        } catch {}
+      }
       return true;
     });
 
@@ -380,10 +424,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     });
 
     // Connect to PTY — either attach to existing (agent-spawned) or create new
-    let ptyId: string | null = null;
-
     const attachToPty = (id: string) => {
-      ptyId = id;
       ptyIdRef.current = id;
 
       // Wire PTY data → xterm

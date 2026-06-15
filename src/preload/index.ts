@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC_CHANNELS } from '../shared/types';
 
 contextBridge.exposeInMainWorld('wmux', {
@@ -89,6 +89,19 @@ contextBridge.exposeInMainWorld('wmux', {
   clipboard: {
     pasteImage: () => ipcRenderer.invoke('clipboard:paste-image'),
     writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
+  },
+  shell: {
+    // Resolve a dropped File to its real filesystem path. Electron 33 removed
+    // File.path, so the renderer can no longer read it directly — webUtils
+    // (preload-only) is the supported replacement. Used by terminal drag-and-drop
+    // (issue #33).
+    getPathForFile: (file: File): string => {
+      try {
+        return webUtils.getPathForFile(file);
+      } catch {
+        return '';
+      }
+    },
   },
   settings: {
     // Synchronous read so the renderer store can hydrate at module-load time.
