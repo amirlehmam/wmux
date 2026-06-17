@@ -176,6 +176,15 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     xtermRef.current = terminal;
 
+    // Set true by the cleanup below. React StrictMode (dev) double-invokes
+    // effects as setup → cleanup → setup, so the terminal can be disposed while
+    // async work is still in flight (a late `pty.create().then()`, a buffered
+    // `terminal.write()`, a queued requestAnimationFrame). Touching xterm after
+    // dispose hits a render service whose renderer is gone and throws
+    // "Cannot read properties of undefined (reading 'dimensions')" from deep in
+    // Viewport.syncScrollArea. Every async callback checks this flag first.
+    let disposed = false;
+
     // Create and load addons
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon((event, uri) => {
@@ -195,6 +204,23 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     terminal.loadAddon(unicode11Addon);
     terminal.loadAddon(imageAddon);
     terminal.unicode.activeVersion = '11';
+
+    // Suppress xterm's automatic Primary Device Attributes (DA1) reply — the
+    // main process answers DA1 instead (see DA1_QUERY in pty-manager.ts).
+    //
+    // xterm would otherwise answer a DA1 query (`\x1b[c` / `\x1b[0c`) by emitting
+    // a reply through onData that we forward to the PTY. With the image addon
+    // loaded that reply is `\x1b[?62;4;9;22c`. Because the PTY↔renderer hop is
+    // multi-process, that reply arrives too late: it lands after the shell has
+    // drawn its prompt, so oh-my-posh/PSReadLine echo it as a typed line (the
+    // `[?62;4;9;22c` junk) and re-render. The main process now answers the same
+    // probe in-process (instant), so we must stop xterm sending its slow
+    // duplicate — otherwise the late reply leaks again.
+    //
+    // Registered AFTER the image addon so it wins precedence: xterm runs CSI
+    // handlers newest-first and stops at the first returning true, so neither the
+    // image addon's DA1 override nor xterm's built-in reply runs.
+    terminal.parser.registerCsiHandler({ final: 'c' }, () => true);
 
     // Open terminal in the DOM
     terminal.open(terminalRef.current);
@@ -429,6 +455,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
       // Wire PTY data → xterm
       const unsubData = window.wmux.pty.onData(id, (data: string) => {
+        if (disposed) return;
         terminal.write(data);
       });
 
@@ -447,12 +474,16 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       }
     };
 
-    // Run a quick-launch profile's startup commands once, after the shell has had
-    // a moment to load its integration script and print a prompt. ConPTY buffers
-    // input, so the short delay just avoids the commands echoing before the
-    // banner; it doesn't gate correctness. Only fresh PTYs run these — re-mounting
-    // a keep-alive tab attaches to an existing PTY and skips this path.
-    const runStartupCommands = (id: string) => {
+    // Fallback path for quick-launch startup commands on shells where the main
+    // process couldn't bake them into the shell's own init (anything other than
+    // PowerShell — see PtyManager.create). PowerShell runs them via the
+    // integration script before the first prompt, which avoids a keystroke race
+    // against the shell's init-time terminal queries (a ConPTY DA1 response
+    // leaking onto the prompt as `\x1b[?62;4;9;22c` and merging with an injected
+    // `<cmd>\r` into a bogus line like `62;4;9;22ccls`). When `consumed` is true
+    // we MUST NOT also inject, or the commands would run twice.
+    const runStartupCommands = (id: string, consumed: boolean) => {
+      if (consumed) return;
       const cmds = startupCommandsRef.current;
       if (!cmds || cmds.length === 0) return;
       setTimeout(() => {
@@ -468,6 +499,23 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Read prefs at spawn time so changing the default later doesn't re-spawn live PTYs.
     const effectiveShell = shell || useStore.getState().workspacePrefs.defaultShell || '';
 
+    // Spawn the PTY at the already-measured terminal size. Otherwise it starts at
+    // the 80x24 default and our follow-up resize triggers a window-size-change in
+    // the shell, which makes PSReadLine/oh-my-posh redraw the prompt — the doubled
+    // prompt users saw. A hidden/unmeasured tab yields no dims and falls back to
+    // the default, then resizes correctly when first shown (that redraw isn't
+    // visible). proposeDimensions needs the element laid out, which it is after
+    // terminal.open() above.
+    let initialCols: number | undefined;
+    let initialRows: number | undefined;
+    try {
+      const dims = fitAddon.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.rows > 0) {
+        initialCols = dims.cols;
+        initialRows = dims.rows;
+      }
+    } catch { /* element not measurable yet — fall back to PTY default */ }
+
     // If surfaceId is given AND a PTY already exists for it (agent spawn or re-mount), attach to it
     if (surfaceId && window.wmux.pty.has) {
       window.wmux.pty.has(surfaceId).then((exists: boolean) => {
@@ -475,22 +523,25 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           attachToPty(surfaceId!);
         } else {
           // No existing PTY — create a new one, passing surfaceId so PTY ID = Surface ID
-          window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {}, surfaceId })
-            .then((created: { id: string; shell: string }) => {
+          window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {}, surfaceId, startupCommands: startupCommandsRef.current, cols: initialCols, rows: initialRows })
+            .then((created: { id: string; shell: string; startupCommandsConsumed?: boolean }) => {
+              // PTY persists (keep-alive); a remount re-attaches via pty.has.
+              if (disposed) return;
               setResolvedShellForSurface(surfaceId, created.shell);
               attachToPty(created.id);
-              runStartupCommands(created.id);
+              runStartupCommands(created.id, !!created.startupCommandsConsumed);
             })
             .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
         }
       });
     } else {
       // No surfaceId hint — always create new PTY
-      window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {} })
-        .then((created: { id: string; shell: string }) => {
+      window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {}, startupCommands: startupCommandsRef.current, cols: initialCols, rows: initialRows })
+        .then((created: { id: string; shell: string; startupCommandsConsumed?: boolean }) => {
+          if (disposed) return;
           setResolvedShellForSurface(surfaceId, created.shell);
           attachToPty(created.id);
-          runStartupCommands(created.id);
+          runStartupCommands(created.id, !!created.startupCommandsConsumed);
         })
         .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
     }
@@ -520,6 +571,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Cleanup
     return () => {
+      // Mark disposed FIRST so any async callback that fires during/after
+      // teardown (late pty.create().then, buffered write, queued rAF) bails out
+      // before touching the soon-to-be-disposed terminal.
+      disposed = true;
       resizeObserver.disconnect();
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       dataDisposable.dispose();
@@ -574,6 +629,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   // sessions keystrokes still target the previously-focused (now hidden)
   // terminal and the new session looks frozen.
   useEffect(() => {
+    // Track the nested rAFs so they can be cancelled if the terminal is hidden
+    // or unmounted before they fire. Otherwise (notably under StrictMode's
+    // double-mount) they run fit()/resize/refresh on a disposed terminal and
+    // throw from Viewport.syncScrollArea ("...reading 'dimensions'").
+    let raf1: number | null = null;
+    let raf2: number | null = null;
     if (visible && fitAddonRef.current && xtermRef.current) {
       const term = xtermRef.current;
       // Attach the GPU renderer on show (WebGL → Canvas → DOM). A Canvas/DOM
@@ -582,8 +643,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (!rendererRef.current) {
         rendererRef.current = attachVisibleRenderer(term);
       }
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          // The terminal may have been disposed between scheduling and firing.
+          if (!xtermRef.current) return;
           fit();
           const dims = fitAddonRef.current?.proposeDimensions();
           if (dims && ptyIdRef.current) {
@@ -601,6 +664,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       rendererRef.current.dispose();
       rendererRef.current = null;
     }
+    return () => {
+      if (raf1 !== null) cancelAnimationFrame(raf1);
+      if (raf2 !== null) cancelAnimationFrame(raf2);
+    };
   }, [visible, focused]);
 
   return { terminalRef, fit, xtermRef, searchAddonRef };

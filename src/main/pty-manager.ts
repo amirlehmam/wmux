@@ -95,6 +95,15 @@ interface PtyEntry {
   writeChain: Promise<void>;
   pendingChunks: number;
   alive: boolean;
+  // Last applied size. Used to drop redundant same-size resizes, which would
+  // otherwise make the shell (PSReadLine/oh-my-posh) redraw the prompt for no
+  // reason — a cause of the doubled prompt on startup.
+  cols: number;
+  rows: number;
+  // Resolved shell + whether startup commands were baked in — returned verbatim
+  // when create() is called again for the same surfaceId (idempotent reuse).
+  shell: string;
+  startupConsumed: boolean;
 }
 
 export interface CreateOptions {
@@ -106,7 +115,32 @@ export interface CreateOptions {
   /** When provided, use this as the PTY key instead of generating a new one.
    *  This keeps Surface IDs and PTY IDs in sync for reliable re-attachment. */
   surfaceId?: SurfaceId;
+  /** Quick-launch profile commands (issue #32). When the shell type supports it
+   *  they are baked into the shell's own startup (see `startupCommandsConsumed`
+   *  in the return value) rather than injected later as keystrokes. */
+  startupCommands?: string[];
 }
+
+// Primary Device Attributes (DA1). oh-my-posh / PSReadLine probe the terminal
+// with a DA1 query and block briefly for the reply before drawing the prompt.
+//
+// xterm answers DA1 too, but its reply travels a slow multi-process round-trip
+// (main → renderer → xterm → renderer → main → pty). That latency is the cause
+// of three symptoms users saw: the reply arriving after the prompt was drawn and
+// leaking onto the command line as `\x1b[?62;4;9;22c`; and, once xterm's reply
+// was suppressed to stop that leak, the probe getting no reply at all — so the
+// prompt stalled ~3-5s on the probe's timeout and re-rendered (a doubled prompt).
+//
+// Answering here, in the same process as the PTY, is effectively instant, so the
+// probe is satisfied before the prompt draws: one clean prompt, no junk, no
+// stall. xterm's own DA1 reply is suppressed in useTerminal so this is the only
+// one. The query is `\x1b[c` or `\x1b[<n>c` (no `?`/`>`/`=` prefix — those are
+// the reply / DA2 / DA3 forms, which this deliberately does not match). The
+// reply advertises the same attributes xterm-with-image did (62=VT220, 4=Sixel,
+// 9, 22=ANSI color) so image-capable apps still detect support.
+// eslint-disable-next-line no-control-regex -- ESC is intentional: this matches the DA1 query byte-for-byte
+const DA1_QUERY = /\x1b\[\d*c/;
+const DA1_REPLY = '\x1b[?62;4;9;22c';
 
 export class PtyManager {
   private ptys = new Map<SurfaceId, PtyEntry>();
@@ -118,8 +152,26 @@ export class PtyManager {
   private static readonly CHUNK_THRESHOLD = 1024;
   private static readonly CHUNK_SIZE = 1024;
 
-  create(options: CreateOptions): { id: SurfaceId; shell: string } {
+  create(options: CreateOptions): { id: SurfaceId; shell: string; startupCommandsConsumed: boolean; reused: boolean } {
     const id: SurfaceId = options.surfaceId ?? `surf-${uuidv4()}` as SurfaceId;
+
+    // Idempotent per surfaceId. React StrictMode (dev) double-mounts the terminal
+    // component, and the renderer's `pty.has()` check is async — so create() can
+    // fire twice for the same surface before the first spawn registers. Without
+    // this guard the second call spawns a SECOND PowerShell process under the
+    // same id: both stream to the renderer (doubled prompt + every keystroke
+    // echoed twice) and the first leaks as an orphan. Reuse the live PTY instead.
+    if (options.surfaceId) {
+      const existing = this.ptys.get(options.surfaceId);
+      if (existing && existing.alive) {
+        return {
+          id: options.surfaceId,
+          shell: existing.shell,
+          startupCommandsConsumed: existing.startupConsumed,
+          reused: true,
+        };
+      }
+    }
 
     const shell = resolveShell(options.shell);
     const shellType = getShellType(shell);
@@ -155,6 +207,30 @@ export class PtyManager {
       env.WMUX_INTEGRATION = '1';
     }
 
+    // Quick-launch startup commands (issue #32). Run them as part of the shell's
+    // own initialization — BEFORE the first interactive prompt — instead of
+    // injecting them later as keystrokes (`pty.write('<cmd>\r')`).
+    //
+    // The keystroke approach raced the shell's init-time terminal queries: with
+    // oh-my-posh/PSReadLine, ConPTY answers a Device Attributes query (DA1) by
+    // writing `\x1b[?62;4;9;22c` onto the shell's stdin. If that response landed
+    // on the prompt the same instant our injected `<cmd>\r` arrived, PSReadLine
+    // merged them into one bogus executed line (e.g. `62;4;9;22ccls`). Baking the
+    // commands into the integration script (via WMUX_STARTUP_COMMANDS) removes
+    // the race: they run during init and the first prompt render — the only one
+    // that triggers the leaky query — happens afterward, exactly as it does for a
+    // plain terminal that shows no junk.
+    const startupCommands = (options.startupCommands ?? []).filter(
+      (cmd): cmd is string => typeof cmd === 'string' && cmd.trim().length > 0,
+    );
+    let startupCommandsConsumed = false;
+    if (startupCommands.length > 0 && shellType === 'powershell' && env.WMUX_PS1_SCRIPT) {
+      // Newlines survive the env block; the integration script trims each line
+      // (so a stray CR is harmless) and runs it via Invoke-Expression.
+      env.WMUX_STARTUP_COMMANDS = startupCommands.join('\n');
+      startupCommandsConsumed = true;
+    }
+
     const spawnOptions: pty.IWindowsPtyForkOptions = {
       name: 'xterm-256color',
       cols: options.cols ?? 80,
@@ -183,9 +259,19 @@ export class PtyManager {
       writeChain: Promise.resolve(),
       pendingChunks: 0,
       alive: true,
+      cols: spawnOptions.cols ?? 80,
+      rows: spawnOptions.rows ?? 24,
+      shell,
+      startupConsumed: startupCommandsConsumed,
     };
 
     ptyProcess.onData((data) => {
+      // Answer DA1 probes in-process so the prompt never stalls or leaks the
+      // reply (see DA1_QUERY note above). Only the escape character is common
+      // enough to warrant the cheap guard before the regex scan.
+      if (entry.alive && data.indexOf('\x1b[') !== -1 && DA1_QUERY.test(data)) {
+        try { ptyProcess.write(DA1_REPLY); } catch { /* pty disposed between events */ }
+      }
       for (const listener of entry.dataListeners) {
         listener(data);
       }
@@ -200,7 +286,7 @@ export class PtyManager {
     });
 
     this.ptys.set(id, entry);
-    return { id, shell };
+    return { id, shell, startupCommandsConsumed, reused: false };
   }
 
   write(id: SurfaceId, data: string): void {
@@ -253,9 +339,13 @@ export class PtyManager {
 
   resize(id: SurfaceId, cols: number, rows: number): void {
     const entry = this.ptys.get(id);
-    if (entry) {
-      entry.pty.resize(cols, rows);
-    }
+    if (!entry) return;
+    // Drop no-op resizes: a same-size resize still makes the shell redraw its
+    // prompt (doubled-prompt cause). Only forward genuine size changes.
+    if (cols === entry.cols && rows === entry.rows) return;
+    entry.cols = cols;
+    entry.rows = rows;
+    entry.pty.resize(cols, rows);
   }
 
   kill(id: SurfaceId): void {
