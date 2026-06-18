@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('wmux', {
   clipboard: {
     pasteImage: () => ipcRenderer.invoke('clipboard:paste-image'),
     writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
+    readText: () => ipcRenderer.invoke('clipboard:read-text') as Promise<string>,
   },
   shell: {
     // Resolve a dropped File to its real filesystem path. Electron 33 removed
