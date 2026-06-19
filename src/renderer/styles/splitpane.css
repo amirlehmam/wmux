@@ -147,10 +147,7 @@
 }
 .surface-tab-bar__new-caret:hover { color: #fff; background: rgba(255,255,255,0.08); }
 .surface-tab-bar__new-menu {
-  position: absolute;
-  top: 30px;
-  left: 0;
-  z-index: 50;
+  z-index: 9999;
   min-width: 150px;
   padding: 4px;
   background: #1c1c1c;

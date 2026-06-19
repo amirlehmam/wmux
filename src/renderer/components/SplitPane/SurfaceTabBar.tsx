@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { SurfaceRef, SurfaceId, PaneId, WorkspaceId, QuickLaunchProfile } from '../../../shared/types';
 import { useStore } from '../../store';
 
@@ -83,8 +84,10 @@ export default function SurfaceTabBar({
   const [renamingId, setRenamingId] = useState<SurfaceId | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const newMenuRef = useRef<HTMLDivElement>(null);
+  const caretRef = useRef<HTMLButtonElement>(null);
   const agentMeta = useStore((state) => state.agentMeta);
   const activeWorkspaceId = useStore((state) => state.activeWorkspaceId);
   const renameSurface = useStore((state) => state.renameSurface);
@@ -129,11 +132,15 @@ export default function SurfaceTabBar({
     }
   }, [renamingId]);
 
-  // Close the "new surface" menu on outside click or Escape
+  // Close the "new surface" menu on outside click or Escape.
+  // Exclude both the dropdown portal and the caret button — the caret's own
+  // click handler toggles the menu, so a mousedown there must not also close it.
   useEffect(() => {
     if (!newMenuOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) setNewMenuOpen(false);
+      const inMenu = newMenuRef.current?.contains(e.target as Node);
+      const inCaret = caretRef.current?.contains(e.target as Node);
+      if (!inMenu && !inCaret) setNewMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNewMenuOpen(false); };
     document.addEventListener('mousedown', onDown);
@@ -282,8 +289,15 @@ export default function SurfaceTabBar({
       {onNewTyped && (
         <div className="surface-tab-bar__new-menu-wrap" ref={newMenuRef}>
           <button
+            ref={caretRef}
             className="surface-tab-bar__new-caret"
-            onClick={() => setNewMenuOpen((v) => !v)}
+            onClick={() => {
+              if (!newMenuOpen && caretRef.current) {
+                const rect = caretRef.current.getBoundingClientRect();
+                setMenuPos({ top: rect.bottom, left: rect.left });
+              }
+              setNewMenuOpen((v) => !v);
+            }}
             tabIndex={-1}
             aria-haspopup="menu"
             aria-expanded={newMenuOpen}
@@ -291,42 +305,48 @@ export default function SurfaceTabBar({
           >
             ▾
           </button>
-          {newMenuOpen && (
-            <div className="surface-tab-bar__new-menu" role="menu">
-              <button role="menuitem" onClick={() => pickNew('terminal')}>
-                <span className="surface-tab-bar__new-menu-icon">{surfaceIcon('terminal', false)}</span> Terminal
-              </button>
-              <button role="menuitem" onClick={() => pickNew('browser')}>
-                <span className="surface-tab-bar__new-menu-icon">{surfaceIcon('browser', false)}</span> Browser
-              </button>
-              <button role="menuitem" onClick={() => pickNew('markdown')}>
-                <span className="surface-tab-bar__new-menu-icon">{surfaceIcon('markdown', false)}</span> Markdown
-              </button>
-              {profiles && profiles.length > 0 && (
-                <>
-                  <div className="surface-tab-bar__new-menu-sep" role="separator" />
-                  {profiles.map((profile) => (
-                    <button
-                      key={profile.id}
-                      role="menuitem"
-                      className="surface-tab-bar__new-menu-profile"
-                      onClick={() => pickProfile(profile)}
-                      title={profile.source === 'project' ? 'Project profile (.wmux.json)' : 'Global profile'}
-                    >
-                      <span className="surface-tab-bar__new-menu-icon">
-                        {profile.icon || surfaceIcon(profile.type, false)}
-                      </span>
-                      <span className="surface-tab-bar__new-menu-profile-name">{profile.name}</span>
-                      {profile.source === 'project' && (
-                        <span className="surface-tab-bar__new-menu-badge">project</span>
-                      )}
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
         </div>
+      )}
+      {newMenuOpen && menuPos && onNewTyped && createPortal(
+        <div
+          ref={newMenuRef}
+          className="surface-tab-bar__new-menu"
+          role="menu"
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+        >
+          <button role="menuitem" onClick={() => pickNew('terminal')}>
+            <span className="surface-tab-bar__new-menu-icon">{surfaceIcon('terminal', false)}</span> Terminal
+          </button>
+          <button role="menuitem" onClick={() => pickNew('browser')}>
+            <span className="surface-tab-bar__new-menu-icon">{surfaceIcon('browser', false)}</span> Browser
+          </button>
+          <button role="menuitem" onClick={() => pickNew('markdown')}>
+            <span className="surface-tab-bar__new-menu-icon">{surfaceIcon('markdown', false)}</span> Markdown
+          </button>
+          {profiles && profiles.length > 0 && (
+            <>
+              <div className="surface-tab-bar__new-menu-sep" role="separator" />
+              {profiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  role="menuitem"
+                  className="surface-tab-bar__new-menu-profile"
+                  onClick={() => pickProfile(profile)}
+                  title={profile.source === 'project' ? 'Project profile (.wmux.json)' : 'Global profile'}
+                >
+                  <span className="surface-tab-bar__new-menu-icon">
+                    {profile.icon || surfaceIcon(profile.type, false)}
+                  </span>
+                  <span className="surface-tab-bar__new-menu-profile-name">{profile.name}</span>
+                  {profile.source === 'project' && (
+                    <span className="surface-tab-bar__new-menu-badge">project</span>
+                  )}
+                </button>
+              ))}
+            </>
+          )}
+        </div>,
+        document.body
       )}
       {onSplitRight && (
         <button
