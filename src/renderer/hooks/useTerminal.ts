@@ -105,6 +105,137 @@ function buildXtermTheme(base: ThemeConfig, override?: UserColorScheme): ITheme 
 }
 
 const themeCache = new Map<string, ThemeConfig>();
+
+// Tracks whether mouse reporting is active for a given surface. Survives React
+// remounts so the wheel handler can distinguish tmux (mouse-enabled) from a
+// plain shell even when xterm's buffer.active.type is reset after remount.
+const surfaceMouseEnabled = new Map<string, boolean>();
+
+// Convert a wheel delta to a line count (sign preserved, magnitude ≥ 1).
+function wheelDeltaToLines(ev: WheelEvent, rows: number): number {
+  let amount: number;
+  if (ev.deltaMode === 1 /* DOM_DELTA_LINE */) amount = ev.deltaY;
+  else if (ev.deltaMode === 2 /* DOM_DELTA_PAGE */) amount = ev.deltaY * (rows || 24);
+  else amount = ev.deltaY / 17;
+  return Math.sign(amount) * Math.max(1, Math.round(Math.abs(amount)));
+}
+
+// Approximate the terminal cell (1-based col/row) under the mouse pointer so
+// SGR wheel reports carry a sensible origin; falls back to the screen centre
+// when geometry is unavailable.
+function pointerCell(
+  ev: WheelEvent,
+  terminal: Terminal,
+  host: HTMLElement | null,
+): { col: number; row: number } {
+  const rect = host?.getBoundingClientRect();
+  if (!rect) return { col: Math.ceil(terminal.cols / 2), row: Math.ceil(terminal.rows / 2) };
+  const cellW = terminal.cols > 0 ? rect.width / terminal.cols : 0;
+  const cellH = terminal.rows > 0 ? rect.height / terminal.rows : 0;
+  const col = cellW > 0
+    ? Math.max(1, Math.min(terminal.cols, Math.ceil((ev.clientX - rect.left) / cellW)))
+    : Math.ceil(terminal.cols / 2);
+  const row = cellH > 0
+    ? Math.max(1, Math.min(terminal.rows, Math.ceil((ev.clientY - rect.top) / cellH)))
+    : Math.ceil(terminal.rows / 2);
+  return { col, row };
+}
+
+// Forward a wheel scroll to the PTY for an app that owns the screen (alt buffer
+// or mouse-tracking): SGR wheel reports (button 64=up/65=down) at the pointer
+// cell when mouse tracking is on, else arrow keys (matching xterm's native
+// _handlePassiveWheel fallback for non-mouse pagers like less/man).
+function writeWheelToPty(
+  ev: WheelEvent,
+  terminal: Terminal,
+  host: HTMLElement | null,
+  ptyId: string,
+  count: number,
+  mouseTracking: boolean,
+): void {
+  let seq: string;
+  if (mouseTracking) {
+    const { col, row } = pointerCell(ev, terminal, host);
+    const btn = count < 0 ? 64 : 65; // 64 = wheel-up, 65 = wheel-down
+    seq = `\x1b[<${btn};${col};${row}M`;
+  } else {
+    seq = count < 0 ? '\x1b[A' : '\x1b[B'; // arrow keys for non-mouse pagers
+  }
+  for (let i = 0; i < Math.abs(count); i++) window.wmux.pty.write(ptyId, seq);
+}
+
+// Capture-phase wheel handler. We always take ownership (xterm's own forwarding
+// is unreliable after the WebGL context swap, #41, and an adjacent <webview>
+// compositor otherwise steals un-prevented wheel events, #47):
+//   normal buffer + plain shell     → scroll wmux's own scrollback
+//   alt buffer OR mouse-tracking app → forward to the PTY
+// surfaceMouseEnabled (survives remounts) is the reliable mouse-active signal,
+// since tmux doesn't re-send its DECSET enables on SIGWINCH after a remount.
+function handleTerminalWheel(
+  ev: WheelEvent,
+  terminal: Terminal,
+  host: HTMLElement | null,
+  ptyId: string | null,
+  surfaceId: string | undefined,
+): void {
+  if (ev.deltaY === 0) return;
+  const isAltBuffer = terminal.buffer.active.type !== 'normal';
+  const isMouseEnabled = !!(surfaceId && surfaceMouseEnabled.get(surfaceId));
+
+  if (!isAltBuffer && !isMouseEnabled) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const lines = wheelDeltaToLines(ev, terminal.rows);
+    if (lines !== 0) terminal.scrollLines(lines);
+    return;
+  }
+
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (!ptyId) return;
+  const count = wheelDeltaToLines(ev, terminal.rows);
+  if (count !== 0) writeWheelToPty(ev, terminal, host, ptyId, count, isMouseEnabled);
+}
+
+// Initial PTY resize after attach, retried via rAF until xterm's renderer has
+// laid out and proposeDimensions() returns non-null (it can be null briefly
+// after open()). Without a successful resize tmux never gets SIGWINCH and won't
+// redraw into the new xterm instance. Module-level to avoid deep function nesting.
+function scheduleInitialResize(
+  ptyId: string,
+  fit: () => void,
+  fitAddon: FitAddon,
+  ptyIdRef: { current: string | null },
+  attempt = 0,
+): void {
+  fit();
+  const dims = fitAddon.proposeDimensions();
+  if (dims) {
+    window.wmux.pty.resize(ptyId, dims.cols, dims.rows);
+  } else if (attempt < 8) {
+    requestAnimationFrame(() => {
+      if (ptyIdRef.current === ptyId) scheduleInitialResize(ptyId, fit, fitAddon, ptyIdRef, attempt + 1);
+    });
+  }
+}
+
+// Deferred visual safety-net: the initial resize already sent the correct PTY
+// dimensions, but this ensures the renderer actually paints — refresh() marks
+// rows dirty and scrollToBottom() flushes a pending paint regardless of renderer.
+// No fit()/resize() here: a second resize at 300ms can return slightly different
+// col/row counts (sub-pixel rounding) and clear the viewport just before paint.
+// Returns the timer id so the caller can clear it on teardown.
+function scheduleDeferredRepaint(terminal: Terminal): ReturnType<typeof setTimeout> {
+  return setTimeout(() => {
+    requestAnimationFrame(() => {
+      try {
+        terminal.scrollToBottom();
+        terminal.refresh(0, terminal.rows - 1);
+      } catch {}
+    });
+  }, 300);
+}
+
 async function fetchTheme(name: string): Promise<ThemeConfig> {
   const cached = themeCache.get(name);
   if (cached) return cached;
@@ -225,95 +356,21 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Open terminal in the DOM
     terminal.open(terminalRef.current);
 
-    // Always scroll wmux's buffer on wheel — never forward to the app.
-    // Without this, when a TUI (Claude Code, vim, tmux…) enables mouse
-    // tracking via DECSET 1000/1002/1003/1006, xterm.js sends wheel
-    // events to the app instead of scrolling the buffer (see
-    // @xterm/xterm Terminal.ts wheel handler: `if (requestedEvents.wheel) return`).
-    // That has two visible effects: scrollback is dead, AND the app paints
-    // a cell highlight that tracks the mouse cursor. We intercept on the
-    // capture phase before xterm's listener runs.
+    // Wheel handling — we always take ownership on the capture phase (xterm's
+    // own forwarding is unreliable after the WebGL context swap, #41, and an
+    // adjacent <webview> compositor otherwise steals un-prevented wheel events,
+    // #47). Two outcomes, decided per surface:
+    //   normal buffer + plain shell      → scroll wmux's own scrollback
+    //   alt buffer OR mouse-tracking app  → forward to the PTY (SGR wheel reports
+    //                                        if mouse tracking is on, else arrows)
+    //
+    // Buffer type alone is unreliable: after a React remount tmux doesn't re-send
+    // \x1b[?1049h on SIGWINCH (only on a fresh client attach), so
+    // xterm's buffer.active.type stays 'normal' even though tmux is drawn there.
+    // surfaceMouseEnabled (module-level, survives remounts) is the reliable signal.
     const wheelHost = terminalRef.current;
-    const onWheelCapture = (ev: WheelEvent) => {
-      if (ev.deltaY === 0) return;
-
-      if (terminal.buffer.active.type !== 'normal') {
-        // Alternate screen (Claude Code, vim, less, htop…): there is no scrollback
-        // buffer, so terminal.scrollLines() is a no-op. We must forward wheel events
-        // to the PTY application ourselves.
-        //
-        // xterm's own forwarding (_handleWheel / _handlePassiveWheel) is unreliable
-        // here because: (a) the wheel listener is only registered when the app has
-        // explicitly requested wheel mouse events via DECSET; (b) _consumeWheelEvent
-        // silently returns 0 when render-service cell dimensions are temporarily
-        // unavailable (e.g. after the WebGL context swap introduced in v0.8.4),
-        // causing _sendEvent to drop the event with no feedback. Taking ownership
-        // here avoids both failure modes. (#41 regression from v0.8.4+)
-        ev.preventDefault();
-        ev.stopPropagation();
-        const id = ptyIdRef.current;
-        if (!id) return;
-
-        // Compute scroll count (same heuristic as normal-buffer path).
-        let amount: number;
-        if (ev.deltaMode === 1 /* DOM_DELTA_LINE */) {
-          amount = ev.deltaY;
-        } else if (ev.deltaMode === 2 /* DOM_DELTA_PAGE */) {
-          amount = ev.deltaY * (terminal.rows || 24);
-        } else {
-          amount = ev.deltaY / 17;
-        }
-        const count = Math.sign(amount) * Math.max(1, Math.round(Math.abs(amount)));
-        if (count === 0) return;
-
-        // xterm adds .enable-mouse-events to the screen element when the app has
-        // enabled any mouse protocol (DECSET 1000/1002/1003). In that case we send
-        // SGR mouse-wheel sequences (button 64=up, 65=down) which all modern TUIs
-        // understand. Without mouse tracking we fall back to up/down arrow keys,
-        // which is what xterm's _handlePassiveWheel does natively.
-        const hasMouseTracking = !!(terminalRef.current?.querySelector('.enable-mouse-events'));
-
-        if (hasMouseTracking) {
-          // Compute approximate terminal column/row from mouse pixel position so
-          // apps that care about scroll origin (e.g. split-pane TUIs) work correctly.
-          const rect = terminalRef.current?.getBoundingClientRect();
-          const cellW = rect && terminal.cols > 0 ? rect.width / terminal.cols : 0;
-          const cellH = rect && terminal.rows > 0 ? rect.height / terminal.rows : 0;
-          const col = rect && cellW > 0
-            ? Math.max(1, Math.min(terminal.cols, Math.ceil((ev.clientX - rect.left) / cellW)))
-            : Math.ceil(terminal.cols / 2);
-          const row = rect && cellH > 0
-            ? Math.max(1, Math.min(terminal.rows, Math.ceil((ev.clientY - rect.top) / cellH)))
-            : Math.ceil(terminal.rows / 2);
-          const btn = count < 0 ? 64 : 65; // 64 = wheel-up, 65 = wheel-down
-          const seq = `\x1b[<${btn};${col};${row}M`;
-          for (let i = 0; i < Math.abs(count); i++) {
-            window.wmux.pty.write(id, seq);
-          }
-        } else {
-          // No mouse tracking: send arrow keys (up/down) as a line-by-line scroll.
-          const seq = count < 0 ? '\x1b[A' : '\x1b[B';
-          for (let i = 0; i < Math.abs(count); i++) {
-            window.wmux.pty.write(id, seq);
-          }
-        }
-        return;
-      }
-
-      // Normal buffer: scroll wmux's own scrollback.
-      ev.preventDefault();
-      ev.stopPropagation();
-      let amount: number;
-      if (ev.deltaMode === 1 /* DOM_DELTA_LINE */) {
-        amount = ev.deltaY;
-      } else if (ev.deltaMode === 2 /* DOM_DELTA_PAGE */) {
-        amount = ev.deltaY * (terminal.rows || 24);
-      } else {
-        amount = ev.deltaY / 17;
-      }
-      const lines = Math.sign(amount) * Math.max(1, Math.round(Math.abs(amount)));
-      if (lines !== 0) terminal.scrollLines(lines);
-    };
+    const onWheelCapture = (ev: WheelEvent) =>
+      handleTerminalWheel(ev, terminal, terminalRef.current, ptyIdRef.current, surfaceId);
     wheelHost.addEventListener('wheel', onWheelCapture, { capture: true, passive: false });
     cleanupFnsRef.current.push(() => {
       wheelHost.removeEventListener('wheel', onWheelCapture, { capture: true } as any);
@@ -506,12 +563,24 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     });
 
     // Connect to PTY — either attach to existing (agent-spawned) or create new
+
+    // Pending resize dims captured by ResizeObserver before PTY is attached.
+    // When ResizeObserver fires before the IPC for pty.create/has resolves,
+    // ptyIdRef.current is null and the resize would be silently dropped. We
+    // stash the last observed dims and flush them in attachToPty instead.
+    let pendingResizeDims: { cols: number; rows: number } | null = null;
+
     const attachToPty = (id: string) => {
       ptyIdRef.current = id;
 
       // Wire PTY data → xterm
       const unsubData = window.wmux.pty.onData(id, (data: string) => {
         if (disposed) return;
+        // Track SGR/button mouse enable (?1006h, ?1000h, ?1002h, ?1003h) and disable
+        // so the wheel handler can distinguish tmux from a plain shell after remount.
+        // Mirror the enable pattern for disable so any of the four modes clears the flag.
+        if (/\x1b\[\?100[0236]h/.test(data)) surfaceMouseEnabled.set(id, true);
+        else if (/\x1b\[\?100[0236]l/.test(data)) surfaceMouseEnabled.set(id, false);
         terminal.write(data);
       });
 
@@ -522,12 +591,18 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
       cleanupFnsRef.current.push(unsubData, unsubExit);
 
-      // Initial resize after PTY is ready
-      fit();
-      const dims = fitAddon.proposeDimensions();
-      if (dims) {
-        window.wmux.pty.resize(id, dims.cols, dims.rows);
+      // Flush any resize that arrived before this PTY was ready
+      if (pendingResizeDims) {
+        window.wmux.pty.resize(id, pendingResizeDims.cols, pendingResizeDims.rows);
+        pendingResizeDims = null;
+      } else {
+        // Initial resize, retried until the renderer has laid out (see helper).
+        scheduleInitialResize(id, fit, fitAddon, ptyIdRef);
       }
+
+      // Deferred visual safety-net (see scheduleDeferredRepaint).
+      const deferredResizeId = scheduleDeferredRepaint(terminal);
+      cleanupFnsRef.current.push(() => clearTimeout(deferredResizeId));
     };
 
     // Fallback path for quick-launch startup commands on shells where the main
@@ -617,8 +692,23 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         resizeRaf = null;
         fit();
         const dims = fitAddon.proposeDimensions();
-        if (dims && ptyIdRef.current) {
-          window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
+        if (dims) {
+          if (ptyIdRef.current) {
+            window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
+          } else {
+            // PTY not attached yet — stash so attachToPty can flush it
+            pendingResizeDims = { cols: dims.cols, rows: dims.rows };
+          }
+        }
+        // Mark rows dirty after layout change for plain shells. fit() updates
+        // xterm's dimensions but doesn't schedule a repaint, so the renderer
+        // won't update until the next keypress — leaving the terminal visually
+        // frozen after an adjacent pane is closed/resized.
+        // Skip for mouse-enabled apps (tmux, vim…): they receive SIGWINCH from the
+        // pty.resize() call above and redraw themselves. A premature refresh here
+        // would paint stale/clipped buffer content before their redraw arrives.
+        if (!surfaceId || !surfaceMouseEnabled.get(surfaceId)) {
+          try { terminal.refresh(0, terminal.rows - 1); } catch {}
         }
       });
     });
