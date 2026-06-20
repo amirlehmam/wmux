@@ -208,6 +208,10 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     clipboard.writeText(text);
   });
 
+  // Use Electron's clipboard for reads too — navigator.clipboard.readText() can
+  // return garbled text on Windows when the source app wrote a non-UTF-8 format.
+  ipcMain.handle('clipboard:read-text', () => clipboard.readText());
+
   // Clipboard image paste: save clipboard image to temp file, return path
   ipcMain.handle('clipboard:paste-image', async () => {
     const img = clipboard.readImage();

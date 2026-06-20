@@ -398,17 +398,23 @@ export function useKeyboardShortcuts(
         }
 
         case 'paste': {
-          navigator.clipboard.readText().then((text) => {
-            if (!text || !focusedPaneId || !activeWorkspaceId) return;
-            const ws = useStore.getState().workspaces.find((w) => w.id === activeWorkspaceId);
-            if (!ws) return;
-            const leaf = findLeaf(ws.splitTree, focusedPaneId);
-            if (!leaf) return;
-            const activeSurf = leaf.surfaces[leaf.activeSurfaceIndex];
-            if (activeSurf?.type === 'terminal') {
-              window.wmux?.pty?.write(activeSurf.id, text);
-            }
-          });
+          if (!focusedPaneId || !activeWorkspaceId) break;
+          const ws = useStore.getState().workspaces.find((w) => w.id === activeWorkspaceId);
+          if (!ws) break;
+          const leaf = findLeaf(ws.splitTree, focusedPaneId);
+          if (!leaf) break;
+          const activeSurf = leaf.surfaces[leaf.activeSurfaceIndex];
+          if (activeSurf?.type === 'terminal') {
+            // Delegate to the focused terminal instead of reading the clipboard
+            // here: navigator.clipboard.readText() garbles non-UTF-8 Windows
+            // clipboard formats (em dash → "â"), and a raw pty.write strips
+            // bracketed-paste markers (breaking multi-line paste in Claude Code).
+            // The terminal's handler reads via Electron's clipboard and uses
+            // terminal.paste(), matching the Ctrl+V path.
+            document.dispatchEvent(
+              new CustomEvent('wmux:paste-terminal', { detail: { surfaceId: activeSurf.id } }),
+            );
+          }
           break;
         }
 

@@ -498,7 +498,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // (handled) either way.
       if (b64 && b64 !== '?') {
         try {
-          const text = atob(b64);
+          // atob() yields a binary (Latin-1) string — one code point per byte.
+          // OSC 52 payloads are UTF-8, so decode the bytes as UTF-8; otherwise
+          // multi-byte chars (em dash E2 80 94) become mojibake (â€").
+          const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+          const text = new TextDecoder('utf-8').decode(bytes);
           if (text) window.wmux?.clipboard?.writeText?.(text);
         } catch {}
       }
@@ -545,14 +549,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
               handled = true;
             }
           }
-          // If no image, paste text
+          // If no image, paste text via Electron's clipboard API — navigator.clipboard
+          // can return garbled bytes on Windows when the source wrote a non-UTF-8 format.
           if (!handled && ptyIdRef.current) {
             try {
-              const text = await navigator.clipboard.readText();
-              // Use terminal.paste() — it honors bracketed-paste mode and emits
-              // the data through onData (already wired to PTY). Writing raw to
-              // pty.write strips the \x1b[200~/\x1b[201~ wrappers, so apps like
-              // Claude Code see each \n as Enter and only the first line lands.
+              const text = await window.wmux.clipboard.readText();
               if (text) terminal.paste(text);
             } catch {}
           }
@@ -746,6 +747,26 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Paste delegated from the keyboard-shortcut handler (e.g. Ctrl+Shift+V).
+  // Routed here so it shares the Ctrl+V path's correctness: Electron's
+  // clipboard.readText() (navigator.clipboard garbles non-UTF-8 Windows
+  // formats — em dash → "â") and terminal.paste() (honors bracketed-paste
+  // mode, so multi-line paste into Claude Code doesn't submit on the first \n).
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.surfaceId !== surfaceId) return;
+      const term = xtermRef.current;
+      if (!term || !ptyIdRef.current) return;
+      try {
+        const text = await window.wmux.clipboard.readText();
+        if (text) term.paste(text);
+      } catch {}
+    };
+    document.addEventListener('wmux:paste-terminal', handler);
+    return () => document.removeEventListener('wmux:paste-terminal', handler);
+  }, [surfaceId]);
 
   // Apply theme + font whenever the resolved scheme or prefs change.
   // Keeps terminals reactive: changing the global theme in Settings, or
