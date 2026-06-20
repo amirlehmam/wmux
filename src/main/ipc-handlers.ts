@@ -44,6 +44,12 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       };
       const created = ptyManager.create(resolvedOptions);
       const id = created.id;
+      // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
+      // the original create already wired data/exit forwarding. Re-wiring here
+      // would forward every chunk twice and double everything in the renderer.
+      if (created.reused) {
+        return created;
+      }
       const window = BrowserWindow.fromWebContents(_event.sender);
       const unsubData = ptyManager.onData(id, (data) => {
         if (window && !window.isDestroyed()) {
