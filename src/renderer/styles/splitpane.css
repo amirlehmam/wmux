@@ -115,79 +115,91 @@
 .surface-tab:hover .surface-tab__close,
 .surface-tab--active .surface-tab__close { display: flex; }
 .surface-tab__close:hover { background: rgba(255,255,255,0.15); color: #fff; }
-.surface-tab-bar__new-btn {
+/* ─── Control cluster (New / Layout / Close) — issue #34 ─────────────────── */
+.surface-tab-bar__cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+/* split-button: main icon + attached caret share one rounded hover pill */
+.surface-tab-bar__group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  border-radius: 5px;
+}
+.surface-tab-bar__ctl {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  height: 24px;
+  min-width: 26px;
   flex-shrink: 0;
   border: none;
   background: transparent;
-  color: #888;
-  font-size: 18px;
+  color: #a8a8a8;
   cursor: pointer;
+  border-radius: 5px;
   transition: color 0.1s ease, background 0.1s ease;
 }
-.surface-tab-bar__new-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
-.surface-tab-bar__new-menu-wrap { position: relative; flex-shrink: 0; }
-.surface-tab-bar__new-caret {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 28px;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: #888;
-  font-size: 10px;
-  cursor: pointer;
-  transition: color 0.1s ease, background 0.1s ease;
-}
-.surface-tab-bar__new-caret:hover { color: #fff; background: rgba(255,255,255,0.08); }
-.surface-tab-bar__new-menu {
-  position: absolute;
-  top: 30px;
-  left: 0;
-  z-index: 50;
-  min-width: 150px;
-  padding: 4px;
+.surface-tab-bar__caret { min-width: 16px; }
+.surface-tab-bar__ctl:hover { background: rgba(255,255,255,0.10); color: #fff; }
+/* per-control accent colors */
+.surface-tab-bar__ctl--new:hover { color: #5fb85f; background: rgba(95,184,95,0.12); }
+.surface-tab-bar__ctl--layout:hover { color: #0091ff; background: rgba(0,145,255,0.12); }
+.surface-tab-bar__ctl--close:hover { color: #ff6b6b; background: rgba(255,100,100,0.14); }
+
+/* ─── Control-cluster dropdowns (portalled to document.body) ─────────────── */
+.surface-tab-menu {
+  z-index: 200;
+  min-width: 180px;
+  padding: 5px;
   background: #1c1c1c;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
   display: flex;
   flex-direction: column;
 }
-.surface-tab-bar__new-menu button {
+.surface-tab-menu button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 7px 10px;
   border: none;
   background: transparent;
   color: #ccc;
   font-size: 13px;
   text-align: left;
-  border-radius: 4px;
+  border-radius: 5px;
   cursor: pointer;
 }
-.surface-tab-bar__new-menu button:hover { background: rgba(0,145,255,0.18); color: #fff; }
-.surface-tab-bar__new-menu-icon { display: inline-block; width: 14px; text-align: center; color: #888; }
-.surface-tab-bar__new-menu-sep {
+.surface-tab-menu button:hover { background: rgba(0,145,255,0.18); color: #fff; }
+.surface-tab-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  text-align: center;
+  color: #888;
+}
+.surface-tab-menu button:hover .surface-tab-menu__icon { color: #fff; }
+.surface-tab-menu__kbd { margin-left: auto; font-size: 10px; color: #666; }
+.surface-tab-menu__sep {
   height: 1px;
   margin: 4px 2px;
   background: rgba(255,255,255,0.10);
 }
-.surface-tab-bar__new-menu-profile-name {
+.surface-tab-menu__profile-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.surface-tab-bar__new-menu-badge {
+.surface-tab-menu__badge {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -197,36 +209,6 @@
   padding: 0 4px;
   line-height: 14px;
 }
-.surface-tab-bar__split-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 28px;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: #666;
-  font-size: 13px;
-  cursor: pointer;
-  transition: color 0.1s ease, background 0.1s ease;
-}
-.surface-tab-bar__split-btn:hover { color: #0091ff; background: rgba(0,145,255,0.1); }
-.surface-tab-bar__close-pane-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: #666;
-  font-size: 16px;
-  cursor: pointer;
-  transition: color 0.1s ease, background 0.1s ease;
-}
-.surface-tab-bar__close-pane-btn:hover { color: #ff6b6b; background: rgba(255,100,100,0.12); }
 
 .surface-tab--agent .surface-tab__icon {
   color: #0091FF;
