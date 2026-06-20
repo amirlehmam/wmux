@@ -1016,6 +1016,10 @@ app.on('before-quit', () => {
 });
 
 app.on('will-quit', () => {
+  // Kill all PTYs before anything else tears down. Without this, node-pty's
+  // libuv async handles (batons) are still pending when the process exits,
+  // triggering the "Assertion failed: remove_pty_baton" MSVC runtime error.
+  ptyManager.killAll();
   pipeServer.stop();
   cdpProxy.stop();
   portScanner.stop();
