@@ -319,14 +319,32 @@ async function main() {
       case 'markdown': {
         const sub = args[1];
         if (sub === 'set') {
+          // Existing behaviour: target an existing surface by id.
           const surfaceId = args[2];
           const contentFlag = args.indexOf('--content');
           const fileFlag = args.indexOf('--file');
           if (contentFlag !== -1) {
             console.log(JSON.stringify(await sendV2('markdown.set_content', { surfaceId, markdown: args.slice(contentFlag + 1).join(' ') }), null, 2));
           } else if (fileFlag !== -1) {
-            console.log(JSON.stringify(await sendV2('markdown.load_file', { surfaceId, filePath: args[fileFlag + 1] }), null, 2));
+            // Resolve against the terminal's cwd — the main-process cwd differs.
+            const filePath = path.resolve(process.cwd(), args[fileFlag + 1] || '');
+            console.log(JSON.stringify(await sendV2('markdown.load_file', { surfaceId, filePath }), null, 2));
+          } else {
+            console.error('Usage: wmux markdown set <id> --content <text> | --file <path>');
+            process.exit(1);
           }
+        } else if (sub) {
+          // One-shot: `wmux markdown <file>` — create a markdown surface and
+          // load the file into it. Relative paths resolve against the caller's
+          // cwd (resolved here in the CLI, not in the Electron main process).
+          const filePath = path.resolve(process.cwd(), sub);
+          const created = await sendV2('surface.create', { type: 'markdown' });
+          const surfaceId = created?.surfaceId;
+          if (!surfaceId) { console.error('Failed to create markdown surface'); process.exit(1); }
+          console.log(JSON.stringify(await sendV2('markdown.load_file', { surfaceId, filePath }), null, 2));
+        } else {
+          console.error('Usage: wmux markdown <file>  |  wmux markdown set <id> --content <text> | --file <path>');
+          process.exit(1);
         }
         break;
       }
@@ -414,7 +432,8 @@ Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
 Terminal:   send <text>, send-key <key>, read-screen, trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
 Agent:      agent spawn|spawn-batch|status|list|kill
-Markdown:   markdown set <id> --content <text> | --file <path>
+Markdown:   markdown <file>   (open a file in a new markdown view)
+            markdown set <id> --content <text> | --file <path>
 Diff:       diff [--file <path>]
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state

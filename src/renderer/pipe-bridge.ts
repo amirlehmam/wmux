@@ -271,9 +271,11 @@ export function initPipeBridge(): void {
   // ─── Markdown ───────────────────────────────────────────────────────────────
 
   w.__wmux_setMarkdownContent = (surfaceId: string, markdown: string) => {
-    window.dispatchEvent(new CustomEvent('wmux:markdown-update', {
-      detail: { surfaceId, markdown },
-    }));
+    // Persist into the store so MarkdownPane (re)renders the content. The old
+    // `wmux:markdown-update` CustomEvent had no listener, so content never
+    // displayed (issue #54).
+    useStore.getState().setMarkdownContent(surfaceId as SurfaceId, markdown ?? '');
+    return { ok: true };
   };
 
   // ─── Notifications ──────────────────────────────────────────────────────────

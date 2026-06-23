@@ -208,7 +208,7 @@ export default function PaneWrapper({ leaf, workspaceId, isFocused }: PaneWrappe
               }}
             />
           )}
-          {surface.type === 'markdown' && <MarkdownPane surfaceId={surface.id} />}
+          {surface.type === 'markdown' && <MarkdownPane surfaceId={surface.id} content={surface.markdownContent} />}
           {surface.type === 'diff' && <DiffPane surfaceId={surface.id} cwd={workspace?.cwd} />}
         </div>
       );

@@ -1,7 +1,7 @@
 import { StateCreator } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { WorkspaceId, PaneId, SurfaceId, SurfaceRef, SurfaceType } from '../../shared/types';
-import { findLeaf, removeLeaf, splitNode } from './split-utils';
+import { findLeaf, removeLeaf, splitNode, getAllPaneIds } from './split-utils';
 import { WorkspaceSlice } from './workspace-slice';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -45,6 +45,13 @@ export interface SurfaceSlice {
 
   /** Update a surface without moving it */
   updateSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId, patch: Partial<SurfaceRef>) => void;
+
+  /**
+   * Set rendered markdown content on a surface, found by id across all
+   * workspaces/panes (issue #54). Callers from the pipe bridge only know the
+   * surfaceId, so this locates the owning pane itself.
+   */
+  setMarkdownContent: (surfaceId: SurfaceId, content: string) => void;
 
   /** Split a pane and move a surface into the new pane (drag to edge) */
   splitAndMoveSurface: (
@@ -258,6 +265,19 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     const newSurfaces = leaf.surfaces.map((s) => (s.id === surfaceId ? { ...s, ...patch } : s));
     const updatedTree = patchLeaf(ws.splitTree, paneId, { surfaces: newSurfaces });
     updateSplitTree(workspaceId, updatedTree);
+  },
+
+  setMarkdownContent(surfaceId, content) {
+    const { workspaces, updateSurface } = get();
+    for (const ws of workspaces) {
+      for (const paneId of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, paneId);
+        if (leaf?.surfaces.some((s) => s.id === surfaceId)) {
+          updateSurface(ws.id, paneId, surfaceId, { markdownContent: content });
+          return;
+        }
+      }
+    }
   },
 
   splitAndMoveSurface(workspaceId, targetPaneId, sourcePaneId, surfaceId, direction) {

@@ -24,6 +24,9 @@ export interface SurfaceRef {
   startupCommands?: string[];
   /** Initial URL for a browser surface created from a quick-launch profile (issue #32). */
   url?: string;
+  /** Rendered markdown content for a `markdown` surface (issue #54). Persisted so
+   *  the content survives split-tree restructures that remount the pane. */
+  markdownContent?: string;
 }
 
 /**
@@ -314,6 +317,8 @@ export const IPC_CHANNELS = {
   DIFF_GET_FILES: 'diff:get-files',
   DIFF_GET_DIFF: 'diff:get-diff',
   DIFF_UPDATE: 'diff:update',
+  // Markdown viewer (issue #54) — file picker for the manual "open markdown" UI
+  MARKDOWN_OPEN_FILE: 'markdown:open-file',
   // Orchestration (wmux-orchestrator plugin state broadcast)
   ORCHESTRATION_UPDATE: 'orchestration:update',
   ORCHESTRATION_CLEAR: 'orchestration:clear',

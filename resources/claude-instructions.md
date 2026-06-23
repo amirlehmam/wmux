@@ -26,4 +26,16 @@ Workflow: `browser open <url>` → `browser snapshot` → read tree → `browser
 
 Refs (`@e1`, `@e2`...) expire after page changes — always re-snapshot.
 
+## Markdown
+
+To let the user review a markdown document — your plan-mode plan, a spec, a design doc, a README — open it in a read-only markdown view (like the diff view) instead of dumping it into the terminal:
+
+```bash
+wmux markdown <file>             # open a .md/.markdown/.mdx/.txt/.rst file in a new markdown view
+wmux markdown set <id> --content "# Title\n..."   # set content of an existing markdown surface
+wmux markdown set <id> --file <path>              # load a file into an existing markdown surface
+```
+
+Relative paths resolve against your current working directory. Only text/markdown files up to 5 MB are accepted. Prefer this over pasting long markdown into the terminal so the user can read it comfortably in a pane.
+
 <!-- wmux:end -->

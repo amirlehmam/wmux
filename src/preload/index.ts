@@ -163,6 +163,11 @@ contextBridge.exposeInMainWorld('wmux', {
     },
     pushAutoSave: (data: any) => ipcRenderer.send('session:save', data),
   },
+  markdown: {
+    // Manual "open markdown file" entry point (issue #54): native file picker +
+    // guarded read in the main process. Returns { filePath, content } | { canceled } | { error }.
+    openFile: () => ipcRenderer.invoke(IPC_CHANNELS.MARKDOWN_OPEN_FILE),
+  },
   diff: {
     getFiles: (cwd: string) => ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_FILES, cwd),
     getFileDiff: (cwd: string, file: string) => ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_DIFF, cwd, file),

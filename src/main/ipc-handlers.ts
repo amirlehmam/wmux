@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, clipboard, shell } from 'electron';
+import { ipcMain, BrowserWindow, clipboard, shell, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -276,6 +276,43 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     const resolvedCwd = cwd || process.cwd();
     const diff = await getFileDiff(resolvedCwd, file);
     return { diff };
+  });
+
+  // Markdown viewer (issue #54): manual "open markdown file" entry point.
+  // Shows a native file picker filtered to the allowed extensions, then reads
+  // the file applying the SAME guards as the markdown.load_file pipe handler
+  // (extension whitelist + 5 MB cap) so the manual path can't slurp secrets.
+  ipcMain.handle(IPC_CHANNELS.MARKDOWN_OPEN_FILE, async (event) => {
+    const ALLOWED_MD_EXT = new Set(['.md', '.markdown', '.mdx', '.txt', '.text', '.rst']);
+    const MAX_MD_BYTES = 5 * 1024 * 1024;
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = await dialog.showOpenDialog(win as BrowserWindow, {
+      title: 'Open Markdown File',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Markdown / Text', extensions: ['md', 'markdown', 'mdx', 'txt', 'text', 'rst'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    const filePath = result.filePaths[0];
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ALLOWED_MD_EXT.has(ext)) {
+      return { error: `Unsupported file type: ${ext || '(none)'}` };
+    }
+    let stat: fs.Stats;
+    try { stat = fs.statSync(filePath); } catch { return { error: 'File not found' }; }
+    if (!stat.isFile() || stat.size > MAX_MD_BYTES) {
+      return { error: 'File is not a regular file or exceeds 5MB limit' };
+    }
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      return { filePath, content };
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to read file' };
+    }
   });
 }
 

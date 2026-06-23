@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useStore } from '../../store';
+import { SurfaceId } from '../../../shared/types';
 import { ShortcutAction, ShortcutBinding, DEFAULT_SHORTCUTS } from '../../store/settings-slice';
 import '../../styles/command-palette.css';
 
@@ -76,6 +77,31 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
         action: () => onAction(action),
       });
     }
+
+    // Category: Commands — one-off actions not bound to a shortcut.
+    // "Open Markdown File…" picks a file via a native dialog and renders it in a
+    // new markdown view (issue #54) — the manual counterpart to `wmux markdown <file>`.
+    items.push({
+      id: 'command:open-markdown-file',
+      label: 'Open Markdown File…',
+      category: 'Commands',
+      action: () => {
+        onClose();
+        void (async () => {
+          try {
+            const res = await (window as any).wmux?.markdown?.openFile?.();
+            if (!res || res.canceled || res.error || !res.content) return;
+            const created = (window as any).__wmux_createSurface?.({ type: 'markdown' });
+            const surfaceId = created?.surfaceId as string | undefined;
+            if (surfaceId) {
+              useStore.getState().setMarkdownContent(surfaceId as SurfaceId, res.content);
+            }
+          } catch {
+            // Dialog/read failures are surfaced via the returned { error }; ignore here.
+          }
+        })();
+      },
+    });
 
     // Category: Workspaces — switch to each workspace by name
     for (const ws of workspaces) {
