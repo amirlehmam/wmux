@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, clipboard, shell, dialog } from 'electron';
+import { ipcMain, BrowserWindow, clipboard, shell, dialog, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -98,6 +98,8 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       shell.openExternal(url);
     }
   });
+
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_VERSION, () => app.getVersion());
 
   // Config / Theme handlers
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET_THEME, async (_event, name?: string) => {
