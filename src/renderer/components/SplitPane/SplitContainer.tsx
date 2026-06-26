@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { SplitNode, PaneId, WorkspaceId } from '../../../shared/types';
 import PaneWrapper from './PaneWrapper';
 import SplitDivider from './SplitDivider';
+import type { SurfaceDragCommitOptions, SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import '../../styles/splitpane.css';
 
 /** Get all pane IDs from a subtree — used as stable React key */
@@ -21,6 +22,12 @@ interface SplitContainerProps {
   focusedPaneId: PaneId | null;
   onRatioChange?: (leftPaneId: PaneId, rightPaneId: PaneId, ratio: number) => void;
   onPaneFocus: (paneId: PaneId) => void;
+  surfaceDrag: SurfaceDragPayload | null;
+  onSurfaceDragStart: (payload: SurfaceDragPayload) => void;
+  onSurfaceDragEnd: () => void;
+  onSurfaceDragPreviewTarget: (targetPaneId: PaneId, target: SurfaceDragPreviewTarget) => void;
+  onClearSurfaceDragPreview: () => void;
+  onSurfaceDragCommit: (options?: SurfaceDragCommitOptions) => void;
 }
 
 export default function SplitContainer({
@@ -29,6 +36,12 @@ export default function SplitContainer({
   focusedPaneId,
   onRatioChange,
   onPaneFocus,
+  surfaceDrag,
+  onSurfaceDragStart,
+  onSurfaceDragEnd,
+  onSurfaceDragPreviewTarget,
+  onClearSurfaceDragPreview,
+  onSurfaceDragCommit,
 }: SplitContainerProps) {
   if (node.type === 'leaf') {
     return (
@@ -43,6 +56,12 @@ export default function SplitContainer({
           workspaceId={workspaceId}
           leaf={node}
           isFocused={focusedPaneId === node.paneId}
+          surfaceDrag={surfaceDrag}
+          onSurfaceDragStart={onSurfaceDragStart}
+          onSurfaceDragEnd={onSurfaceDragEnd}
+          onSurfaceDragPreviewTarget={onSurfaceDragPreviewTarget}
+          onClearSurfaceDragPreview={onClearSurfaceDragPreview}
+          onSurfaceDragCommit={onSurfaceDragCommit}
         />
       </div>
     );
@@ -77,6 +96,12 @@ export default function SplitContainer({
           focusedPaneId={focusedPaneId}
           onRatioChange={onRatioChange}
           onPaneFocus={onPaneFocus}
+          surfaceDrag={surfaceDrag}
+          onSurfaceDragStart={onSurfaceDragStart}
+          onSurfaceDragEnd={onSurfaceDragEnd}
+          onSurfaceDragPreviewTarget={onSurfaceDragPreviewTarget}
+          onClearSurfaceDragPreview={onClearSurfaceDragPreview}
+          onSurfaceDragCommit={onSurfaceDragCommit}
         />
       </div>
 
@@ -93,6 +118,12 @@ export default function SplitContainer({
           focusedPaneId={focusedPaneId}
           onRatioChange={onRatioChange}
           onPaneFocus={onPaneFocus}
+          surfaceDrag={surfaceDrag}
+          onSurfaceDragStart={onSurfaceDragStart}
+          onSurfaceDragEnd={onSurfaceDragEnd}
+          onSurfaceDragPreviewTarget={onSurfaceDragPreviewTarget}
+          onClearSurfaceDragPreview={onClearSurfaceDragPreview}
+          onSurfaceDragCommit={onSurfaceDragCommit}
         />
       </div>
     </div>

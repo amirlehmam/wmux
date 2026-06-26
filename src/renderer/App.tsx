@@ -11,7 +11,15 @@ import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import BrowserPane from './components/Browser/BrowserPane';
 import Tutorial from './components/Tutorial/Tutorial';
+import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
 import { initPipeBridge } from './pipe-bridge';
+import type {
+  SurfaceDragCommitOptions,
+  SurfaceDragPayload,
+  SurfaceDragPreview,
+  SurfaceDragPreviewTarget,
+} from './components/SplitPane/drag-preview-types';
+import { buildSurfaceDragPreview } from './components/SplitPane/surface-drag-preview';
 
 const DEFAULT_SIDEBAR_WIDTH = 240;
 
@@ -631,10 +639,113 @@ export default function App() {
   }, []);
 
   const [zoomedPaneId, setZoomedPaneId] = useState<PaneId | null>(null);
+  const [surfaceDrag, setSurfaceDrag] = useState<SurfaceDragPayload | null>(null);
+  const [surfaceDragPreview, setSurfaceDragPreview] = useState<SurfaceDragPreview | null>(null);
+  const surfaceDragRef = useRef<SurfaceDragPayload | null>(null);
+  const surfaceDragPreviewRef = useRef<SurfaceDragPreview | null>(null);
+  const previewFrameRef = useRef<number | null>(null);
+  const pendingPreviewTargetRef = useRef<{ targetPaneId: PaneId; target: SurfaceDragPreviewTarget } | null>(null);
 
   const handleToggleZoom = useCallback(() => {
     setZoomedPaneId((prev) => (prev ? null : focusedPaneId));
   }, [focusedPaneId]);
+
+  useEffect(() => {
+    surfaceDragRef.current = surfaceDrag;
+  }, [surfaceDrag]);
+
+  useEffect(() => {
+    surfaceDragPreviewRef.current = surfaceDragPreview;
+  }, [surfaceDragPreview]);
+
+  useEffect(() => {
+    return () => {
+      if (previewFrameRef.current !== null) {
+        cancelAnimationFrame(previewFrameRef.current);
+        previewFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleSurfaceDragStart = useCallback((payload: SurfaceDragPayload) => {
+    surfaceDragRef.current = payload;
+    setSurfaceDrag(payload);
+  }, []);
+
+  const handleSurfaceDragEnd = useCallback(() => {
+    pendingPreviewTargetRef.current = null;
+    if (previewFrameRef.current !== null) {
+      cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
+    }
+    surfaceDragRef.current = null;
+    surfaceDragPreviewRef.current = null;
+    setSurfaceDrag(null);
+    setSurfaceDragPreview(null);
+    document.body.classList.remove('wmux-dragging');
+  }, []);
+
+  const handleSurfaceDragPreviewTarget = useCallback((targetPaneId: PaneId, target: SurfaceDragPreviewTarget) => {
+    pendingPreviewTargetRef.current = { targetPaneId, target };
+
+    if (previewFrameRef.current !== null) return;
+
+    previewFrameRef.current = requestAnimationFrame(() => {
+      previewFrameRef.current = null;
+
+      const pending = pendingPreviewTargetRef.current;
+      const drag = surfaceDragRef.current;
+      if (!pending || !drag) {
+        surfaceDragPreviewRef.current = null;
+        setSurfaceDragPreview(null);
+        return;
+      }
+
+      const nextPreview = buildSurfaceDragPreview({
+        workspaces: useStore.getState().workspaces,
+        activeWorkspaceId,
+        drag,
+        pendingTarget: pending,
+      });
+      surfaceDragPreviewRef.current = nextPreview;
+      setSurfaceDragPreview(nextPreview);
+    });
+  }, [activeWorkspaceId]);
+
+  const handleClearSurfaceDragPreview = useCallback(() => {
+    pendingPreviewTargetRef.current = null;
+    if (previewFrameRef.current !== null) {
+      cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
+    }
+    surfaceDragPreviewRef.current = null;
+    setSurfaceDragPreview(null);
+  }, []);
+
+  const handleSurfaceDragCommit = useCallback((options?: SurfaceDragCommitOptions) => {
+    if (options?.clearZoom || surfaceDragPreviewRef.current) setZoomedPaneId(null);
+    pendingPreviewTargetRef.current = null;
+    if (previewFrameRef.current !== null) {
+      cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
+    }
+    surfaceDragRef.current = null;
+    surfaceDragPreviewRef.current = null;
+    setSurfaceDrag(null);
+    setSurfaceDragPreview(null);
+    document.body.classList.remove('wmux-dragging');
+  }, []);
+
+  useEffect(() => {
+    if (!surfaceDrag) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleSurfaceDragEnd();
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [surfaceDrag, handleSurfaceDragEnd]);
 
   // Clear zoom when the zoomed pane no longer exists
   useEffect(() => {
@@ -737,7 +848,21 @@ export default function App() {
                 focusedPaneId={ws.id === activeWorkspaceId ? focusedPaneId : null}
                 onRatioChange={ws.id === activeWorkspaceId ? handleRatioChange : undefined}
                 onPaneFocus={handlePaneFocus}
+                surfaceDrag={ws.id === activeWorkspaceId ? surfaceDrag : null}
+                onSurfaceDragStart={handleSurfaceDragStart}
+                onSurfaceDragEnd={handleSurfaceDragEnd}
+                onSurfaceDragPreviewTarget={handleSurfaceDragPreviewTarget}
+                onClearSurfaceDragPreview={handleClearSurfaceDragPreview}
+                onSurfaceDragCommit={handleSurfaceDragCommit}
               />
+              {surfaceDragPreview?.workspaceId === ws.id && ws.id === activeWorkspaceId && (
+                <SplitPreviewOverlay
+                  tree={surfaceDragPreview.previewTree}
+                  destinationPaneId={surfaceDragPreview.destinationPaneId}
+                  draggedSurfaceId={surfaceDragPreview.surfaceId}
+                  workspaceShell={ws.shell}
+                />
+              )}
             </div>
           ))}
         </div>
