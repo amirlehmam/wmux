@@ -5,10 +5,11 @@ import '../../styles/browser.css';
 interface BrowserPaneProps {
   initialUrl?: string;
   surfaceId: string;
+  workspaceId?: string;
   onUrlChange?: (url: string) => void;
 }
 
-export default function BrowserPane({ initialUrl = 'https://github.com/amirlehmam/wmux', surfaceId, onUrlChange }: BrowserPaneProps) {
+export default function BrowserPane({ initialUrl = 'https://github.com/amirlehmam/wmux', surfaceId, workspaceId, onUrlChange }: BrowserPaneProps) {
   const [url, setUrl] = useState(initialUrl);
   const [currentUrl, setCurrentUrl] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -69,14 +70,15 @@ export default function BrowserPane({ initialUrl = 'https://github.com/amirlehma
   }, []);
 
   const wcIdRef = useRef<number | null>(null);
-  // Claim this pane's webview as the active CDP target (issue #27).
+  // Register this pane's webview as a CDP target, tagged with its surface and
+  // workspace so main can route per-caller browser commands here (issues #27, #62).
   const claimCdp = useCallback(() => {
     const wcId = webviewRef.current?.getWebContentsId?.();
     if (wcId && window.wmux?.cdp?.attach) {
       wcIdRef.current = wcId;
-      window.wmux.cdp.attach(wcId);
+      window.wmux.cdp.attach(wcId, surfaceId, workspaceId ?? null);
     }
-  }, []);
+  }, [surfaceId, workspaceId]);
   useEffect(() => {
     const wv = webviewRef.current;
     if (!wv) return;

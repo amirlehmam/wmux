@@ -185,15 +185,22 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false
   );
 
-  ipcMain.on(IPC_CHANNELS.CDP_ATTACH, (_event, webContentsId: number) => {
-    cdpBridge.attach(webContentsId);
-    cdpProxyInstance?.setWebContentsId(webContentsId);
-  });
+  ipcMain.on(
+    IPC_CHANNELS.CDP_ATTACH,
+    (_event, webContentsId: number, surfaceId?: string | null, workspaceId?: string | null) => {
+      // surfaceId/workspaceId let main route per-caller browser commands to the
+      // right pane so concurrent agents don't collide (issue #62).
+      cdpBridge.attach(webContentsId, surfaceId, workspaceId);
+      cdpProxyInstance?.setWebContentsId(webContentsId);
+    },
+  );
   ipcMain.on(IPC_CHANNELS.CDP_DETACH, (_event, webContentsId?: number) => {
-    // Only the pane that owns the current attachment may clear it (issue #27).
-    if (webContentsId !== undefined && cdpBridge.attachedWebContentsId !== webContentsId) return;
+    // Detach only this pane's own target — other open browsers keep their
+    // independent connections (issues #27, #62).
     cdpBridge.detach(webContentsId);
-    cdpProxyInstance?.setWebContentsId(null);
+    if (webContentsId === undefined || cdpProxyInstance?.currentWebContentsId === webContentsId) {
+      cdpProxyInstance?.setWebContentsId(null);
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_LIST, async (_event, workspaceId?: string) => {

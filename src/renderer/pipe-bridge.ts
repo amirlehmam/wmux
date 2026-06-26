@@ -45,6 +45,36 @@ export function initPipeBridge(): void {
     }));
   };
 
+  // Which workspace owns a given surface? Used by main to route browser commands
+  // to a browser pane in the *caller agent's* workspace (issue #62). Returns the
+  // active workspace id as a fallback when the surface isn't found.
+  w.__wmux_getWorkspaceIdForSurface = (surfaceId: string) => {
+    const store = useStore.getState();
+    for (const ws of store.workspaces) {
+      for (const paneId of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, paneId);
+        if (leaf?.surfaces?.some(s => s.id === surfaceId)) return ws.id;
+      }
+    }
+    return store.activeWorkspaceId ?? null;
+  };
+
+  // All browser surface ids in a workspace. Main adopts an unbound one for a
+  // caller (or creates a fresh pane) so each agent gets its own browser (#62).
+  w.__wmux_listBrowserSurfaces = (workspaceId: string) => {
+    const store = useStore.getState();
+    const ws = store.workspaces.find(x => x.id === workspaceId);
+    if (!ws) return [];
+    const ids: string[] = [];
+    for (const paneId of getAllPaneIds(ws.splitTree)) {
+      const leaf = findLeaf(ws.splitTree, paneId);
+      for (const s of leaf?.surfaces ?? []) {
+        if (s.type === 'browser') ids.push(s.id);
+      }
+    }
+    return ids;
+  };
+
   // ─── Pane ───────────────────────────────────────────────────────────────────
 
   w.__wmux_splitPane = (params?: { direction?: string; type?: string; workspaceId?: string; colorScheme?: string }) => {

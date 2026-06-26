@@ -225,6 +225,7 @@ export default function PaneWrapper({
           {surface.type === 'browser' && (
             <BrowserPane
               surfaceId={surface.id}
+              workspaceId={workspaceId}
               {...(surface.url ? { initialUrl: surface.url } : {})}
               // Persist the live URL into the surface so a split-tree
               // restructure (which remounts this pane) restores the page the

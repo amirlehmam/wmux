@@ -63,6 +63,10 @@ export class CDPProxy {
     this.webContentsId = wcId;
   }
 
+  get currentWebContentsId(): number | null {
+    return this.webContentsId;
+  }
+
   private getPageInfo(): { title: string; url: string } {
     if (!this.webContentsId) return { title: '', url: '' };
     try {

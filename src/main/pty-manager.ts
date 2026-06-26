@@ -86,6 +86,53 @@ function getShellType(shell: string): 'powershell' | 'cmd' | 'wsl' | 'unknown' {
   return 'unknown';
 }
 
+// A POSIX/WSL path (e.g. /home/user/project restored from session.json — issue
+// #60). Such a path is NOT a valid working dir for a Win32 process and makes
+// pty.spawn fail with error 267 (ERROR_DIRECTORY). Win32 paths are drive-rooted
+// (C:\...) or UNC (\\server\...); a leading forward slash means POSIX.
+function isPosixPath(p: string): boolean {
+  return p.startsWith('/') && !p.startsWith('//');
+}
+
+// Build the launch args for a shell and mutate `env` with shell-specific vars.
+// Kept out of create() so that hot path stays under the cognitive-complexity
+// budget. `env` is mutated in place (integration script paths, WSLENV, etc.).
+function buildShellArgs(
+  shellType: ReturnType<typeof getShellType>,
+  env: { [key: string]: string },
+  integrationDir: string,
+  cwd: string | undefined,
+): string[] {
+  if (shellType === 'powershell') {
+    const script = path.join(integrationDir, 'wmux-powershell-integration.ps1');
+    if (fs.existsSync(script)) {
+      env.WMUX_PS1_SCRIPT = script;
+      return ['-NoLogo', '-ExecutionPolicy', 'Bypass', '-NoExit', '-Command', '. $env:WMUX_PS1_SCRIPT'];
+    }
+    console.warn(`[wmux] shell-integration not found at: ${script} — starting PowerShell without integration`);
+    return ['-NoLogo'];
+  }
+  if (shellType === 'cmd') {
+    return ['/K', path.join(integrationDir, 'wmux-cmd-integration.cmd')];
+  }
+  if (shellType === 'wsl') {
+    env.WMUX_INTEGRATION = '1';
+    // Propagate WMUX_* vars into the WSL distro (issue #60). Without WSLENV, WSL
+    // strips every Windows env var, so the notification framework, sidebar and
+    // `wmux` CLI inside WSL can't reach the host. /u = pass through, /up = pass
+    // through AND translate the Windows path to a WSL mount (/mnt/c/...).
+    const wmuxWslEnv =
+      'WMUX/u:WMUX_SURFACE_ID/u:WMUX_CLI/up:WMUX_PIPE/u:WMUX_PIPE_TOKEN/u:WMUX_INTEGRATION/u';
+    env.WSLENV = env.WSLENV ? `${env.WSLENV}:${wmuxWslEnv}` : wmuxWslEnv;
+    // A restored WSL/POSIX cwd (issue #60) can't be a Win32 process cwd (error
+    // 267). Open it INSIDE the distro via --cd instead; the Win32-side cwd is
+    // sanitized to a valid Windows dir by the caller.
+    const posixCwd = cwd && isPosixPath(cwd) ? cwd : null;
+    return ['--cd', posixCwd ?? '~'];
+  }
+  return [];
+}
+
 interface PtyEntry {
   pty: pty.IPty;
   dataListeners: Set<(data: string) => void>;
@@ -191,24 +238,7 @@ export class PtyManager {
       WMUX_CLI: cliPath,
     };
 
-    let args: string[] = [];
-    if (shellType === 'powershell') {
-      const script = path.join(integrationDir, 'wmux-powershell-integration.ps1');
-      if (fs.existsSync(script)) {
-        env.WMUX_PS1_SCRIPT = script;
-        args = ['-NoLogo', '-ExecutionPolicy', 'Bypass', '-NoExit', '-Command', '. $env:WMUX_PS1_SCRIPT'];
-      } else {
-        console.warn(`[wmux] shell-integration not found at: ${script} — starting PowerShell without integration`);
-        args = ['-NoLogo'];
-      }
-    } else if (shellType === 'cmd') {
-      const script = path.join(integrationDir, 'wmux-cmd-integration.cmd');
-      args = ['/K', script];
-    } else if (shellType === 'wsl') {
-      env.WMUX_INTEGRATION = '1';
-      // Start in Linux home instead of the Windows CWD (which WSL would mount as /mnt/c/...)
-      args = ['--cd', '~'];
-    }
+    const args = buildShellArgs(shellType, env, integrationDir, options.cwd);
 
     // Quick-launch startup commands (issue #32). Run them as part of the shell's
     // own initialization — BEFORE the first interactive prompt — instead of
@@ -234,11 +264,17 @@ export class PtyManager {
       startupCommandsConsumed = true;
     }
 
+    // A POSIX/WSL cwd (restored from session.json — issue #60) is never a valid
+    // Win32 process working dir and triggers spawn error 267. Fall back to a real
+    // Windows dir; WSL itself is still sent to the POSIX path via --cd (above).
+    const spawnCwd =
+      options.cwd && isPosixPath(options.cwd) ? (process.env.USERPROFILE || 'C:\\') : options.cwd;
+
     const spawnOptions: pty.IWindowsPtyForkOptions = {
       name: 'xterm-256color',
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
-      cwd: options.cwd,
+      cwd: spawnCwd,
       env,
       useConpty: true,
       // The OS-inbox ConPTY garbles fast TUI repaints (stray inverse cells at

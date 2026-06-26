@@ -179,7 +179,8 @@ contextBridge.exposeInMainWorld('wmux', {
     },
   },
   cdp: {
-    attach: (webContentsId: number) => ipcRenderer.send(IPC_CHANNELS.CDP_ATTACH, webContentsId),
+    attach: (webContentsId: number, surfaceId?: string | null, workspaceId?: string | null) =>
+      ipcRenderer.send(IPC_CHANNELS.CDP_ATTACH, webContentsId, surfaceId, workspaceId),
     detach: (webContentsId?: number) => ipcRenderer.send(IPC_CHANNELS.CDP_DETACH, webContentsId),
   },
   window: {
