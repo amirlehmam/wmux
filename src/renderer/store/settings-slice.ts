@@ -156,7 +156,19 @@ export type ShortcutAction =
   | 'fontSizeReset'
   | 'openSettings'
   | 'commandPalette'
-  | 'openMarkdownPanel';
+  | 'openMarkdownPanel'
+  // ─── issue #64: high-value additions ──────────────────────────────────────
+  | 'reopenClosedSurface'
+  | 'findNext'
+  | 'findPrevious'
+  | 'resizePaneLeft'
+  | 'resizePaneRight'
+  | 'resizePaneUp'
+  | 'resizePaneDown'
+  | 'broadcastInput'
+  | 'togglePinWorkspace'
+  | 'markWorkspaceRead'
+  | 'toggleShortcutCheatSheet';
 
 // ─── Default shortcuts ────────────────────────────────────────────────────────
 
@@ -200,6 +212,21 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   openSettings:      { key: ',', ctrl: true },
   commandPalette:    { key: 'p', ctrl: true, shift: true },
   openMarkdownPanel: { key: 'm', ctrl: true, shift: true },
+  // ─── issue #64 ──────────────────────────────────────────────────────────────
+  // Defaults collision-checked against the bindings above. All use Shift/Alt or
+  // function keys, so isSafeToIntercept() forwards bare-Ctrl combos to the
+  // terminal unchanged (no SAFE_CTRL_KEYS edit needed).
+  reopenClosedSurface:    { key: 't', ctrl: true, shift: true },
+  findNext:               { key: 'F3' },
+  findPrevious:           { key: 'F3', shift: true },
+  resizePaneLeft:         { key: 'ArrowLeft', ctrl: true, shift: true },
+  resizePaneRight:        { key: 'ArrowRight', ctrl: true, shift: true },
+  resizePaneUp:           { key: 'ArrowUp', ctrl: true, shift: true },
+  resizePaneDown:         { key: 'ArrowDown', ctrl: true, shift: true },
+  broadcastInput:         { key: 'b', ctrl: true, alt: true },
+  togglePinWorkspace:     { key: 'p', ctrl: true, alt: true },
+  markWorkspaceRead:      { key: 'r', ctrl: true, alt: true },
+  toggleShortcutCheatSheet: { key: 'F1' },
 };
 
 // ─── Sidebar settings ─────────────────────────────────────────────────────────
@@ -335,6 +362,13 @@ export interface SettingsSlice {
   quickLaunchProfiles: QuickLaunchProfile[];
   /** Selected UI language (issue #56). */
   language: Language;
+  /**
+   * Broadcast-input mode (issue #64, tmux `synchronize-panes`): when on, typed
+   * input + Enter fan out to every terminal pane in the workspace. Runtime-only
+   * (deliberately not persisted) — it's a transient "drive all agents at once"
+   * mode, dangerous to restore silently on the next launch.
+   */
+  broadcastInputActive: boolean;
 
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void;
   resetShortcuts(): void;
@@ -346,6 +380,7 @@ export interface SettingsSlice {
   setBrowserPrefs(prefs: Partial<BrowserPrefs>): void;
   setQuickLaunchProfiles(profiles: QuickLaunchProfile[]): void;
   setLanguage(language: Language): void;
+  toggleBroadcastInput(): void;
 }
 
 // ─── Slice creator ────────────────────────────────────────────────────────────
@@ -360,6 +395,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   browserPrefs:      { ...DEFAULT_BROWSER_PREFS,      ...loadPersisted<BrowserPrefs>(STORAGE_KEYS.browserPrefs) },
   quickLaunchProfiles: loadPersistedArray<QuickLaunchProfile>(STORAGE_KEYS.quickLaunchProfiles),
   language:          loadPersistedLanguage(),
+  broadcastInputActive: false,
 
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void {
     set((state) => {
@@ -426,5 +462,9 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setLanguage(language: Language): void {
     persist(STORAGE_KEYS.language, language);
     set({ language });
+  },
+
+  toggleBroadcastInput(): void {
+    set((state) => ({ broadcastInputActive: !state.broadcastInputActive }));
   },
 });

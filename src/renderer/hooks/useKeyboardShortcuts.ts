@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useStore } from '../store';
 import { ShortcutBinding, ShortcutAction } from '../store/settings-slice';
-import { splitNode, removeLeaf, getAllPaneIds, findLeaf } from '../store/split-utils';
+import { splitNode, removeLeaf, getAllPaneIds, findLeaf, adjustPaneRatio } from '../store/split-utils';
 import { PaneId, SplitNode } from '../../shared/types';
 import { v4 as uuid } from 'uuid';
 
@@ -150,6 +150,188 @@ export function useKeyboardShortcuts(
   } = useStore();
 
   useEffect(() => {
+    // ── Shared action helpers (kept small so each stays well under Sonar's
+    //    cognitive-complexity budget; the dispatch table below maps actions to
+    //    these instead of one giant switch). ──────────────────────────────────
+    const activeWs = () => useStore.getState().workspaces.find((w) => w.id === activeWorkspaceId);
+
+    const doSplit = (type: 'terminal' | 'browser', dir: 'horizontal' | 'vertical') => {
+      if (!activeWorkspaceId || !focusedPaneId) return;
+      const ws = activeWs();
+      if (!ws) return;
+      const newPaneId = `pane-${uuid()}` as PaneId;
+      updateSplitTree(activeWorkspaceId, splitNode(ws.splitTree, focusedPaneId, newPaneId, type, dir));
+    };
+
+    const doFocus = (dir: 'left' | 'right' | 'up' | 'down') => {
+      if (!activeWorkspaceId || !focusedPaneId) return;
+      const ws = activeWs();
+      if (!ws) return;
+      const target = findAdjacentPane(ws.splitTree, focusedPaneId, dir);
+      if (target) onFocusPane?.(target);
+    };
+
+    // Move the divider adjacent to the focused pane (issue #64 keyboard resize).
+    const doResize = (orientation: 'horizontal' | 'vertical', delta: number) => {
+      if (!activeWorkspaceId || !focusedPaneId) return;
+      const ws = activeWs();
+      if (!ws) return;
+      const newTree = adjustPaneRatio(ws.splitTree, focusedPaneId, orientation, delta);
+      if (newTree !== ws.splitTree) updateSplitTree(activeWorkspaceId, newTree);
+    };
+
+    const cycleWorkspace = (dir: 1 | -1) => {
+      if (workspaces.length === 0 || !activeWorkspaceId) return;
+      const idx = workspaces.findIndex((w) => w.id === activeWorkspaceId);
+      const nextIdx = (idx + dir + workspaces.length) % workspaces.length;
+      selectWorkspace(workspaces[nextIdx].id);
+    };
+
+    const closeFocusedSurfaceOrPane = () => {
+      if (!activeWorkspaceId || !focusedPaneId) return;
+      const ws = activeWs();
+      if (!ws) return;
+      const leaf = findLeaf(ws.splitTree, focusedPaneId);
+      const activeSurface = leaf?.surfaces[leaf.activeSurfaceIndex];
+      if (activeSurface) {
+        // Close the active surface; if it's the last, closeSurface removes the pane.
+        closeSurface(activeWorkspaceId, focusedPaneId, activeSurface.id);
+        return;
+      }
+      // Fallback: no surfaces — remove the pane directly (guard: keep last pane).
+      if (getAllPaneIds(ws.splitTree).length <= 1) return;
+      const newTree = removeLeaf(ws.splitTree, focusedPaneId);
+      if (newTree) updateSplitTree(activeWorkspaceId, newTree);
+    };
+
+    const jumpToUnread = () => {
+      const state = useStore.getState();
+      const unread = state.notifications.find((n) => !n.read);
+      if (!unread) return;
+      state.selectWorkspace(unread.workspaceId);
+      const ws = state.workspaces.find((w) => w.id === unread.workspaceId);
+      for (const pid of ws ? getAllPaneIds(ws.splitTree) : []) {
+        const leaf = findLeaf(ws!.splitTree, pid);
+        const surfIdx = leaf ? leaf.surfaces.findIndex((s) => s.id === unread.surfaceId) : -1;
+        if (surfIdx !== -1) {
+          state.selectSurface(unread.workspaceId, pid, surfIdx);
+          onFocusPane?.(pid);
+          break;
+        }
+      }
+      state.markRead(unread.surfaceId);
+    };
+
+    const copySelection = () => {
+      const selection = window.getSelection()?.toString();
+      if (selection) navigator.clipboard.writeText(selection);
+    };
+
+    const pasteIntoFocusedTerminal = () => {
+      if (!focusedPaneId || !activeWorkspaceId) return;
+      const ws = activeWs();
+      const leaf = ws ? findLeaf(ws.splitTree, focusedPaneId) : undefined;
+      const activeSurf = leaf?.surfaces[leaf.activeSurfaceIndex];
+      // Delegate to the focused terminal (see TerminalPane) instead of reading the
+      // clipboard here: navigator.clipboard.readText() garbles non-UTF-8 Windows
+      // formats and a raw pty.write strips bracketed-paste markers.
+      if (activeSurf?.type === 'terminal') {
+        document.dispatchEvent(new CustomEvent('wmux:paste-terminal', { detail: { surfaceId: activeSurf.id } }));
+      }
+    };
+
+    const adjustFontSize = (next: (size: number) => number) => {
+      const prefs = useStore.getState().terminalPrefs;
+      useStore.getState().setTerminalPrefs({ fontSize: next(prefs.fontSize) });
+    };
+
+    const togglePinWorkspace = () => {
+      if (!activeWorkspaceId) return;
+      const state = useStore.getState();
+      const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
+      if (ws) state.updateWorkspaceMetadata(activeWorkspaceId, { pinned: !ws.pinned });
+    };
+
+    const markWorkspaceRead = () => {
+      if (!activeWorkspaceId) return;
+      const state = useStore.getState();
+      state.updateWorkspaceMetadata(activeWorkspaceId, { unreadCount: 0, notificationText: undefined });
+      const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
+      for (const pid of ws ? getAllPaneIds(ws.splitTree) : []) {
+        const leaf = findLeaf(ws!.splitTree, pid);
+        for (const s of leaf ? leaf.surfaces : []) state.markRead(s.id);
+      }
+    };
+
+    const openFolderAsWorkspace = () => {
+      void (async () => {
+        const res = await window.wmux?.system?.pickFolder?.();
+        if (!res || res.canceled || !res.path) return;
+        const segments = String(res.path).split(/[\\/]/).filter(Boolean);
+        createWorkspace({ cwd: res.path, title: segments[segments.length - 1] || res.path });
+      })();
+    };
+
+    const fire = (eventName: string, detail?: unknown) =>
+      document.dispatchEvent(new CustomEvent(eventName, detail ? { detail } : undefined));
+
+    // ── Action → handler dispatch table. Replaces the previous 35-case switch;
+    //    new actions just add an entry. `find`/`copyMode` are handled at the
+    //    PaneWrapper level and short-circuited before this lookup. ─────────────
+    const handlers: Partial<Record<ShortcutAction, () => void>> = {
+      newWorkspace: () => createWorkspace(),
+      newWindow: () => window.wmux?.window?.create?.(),
+      closeWorkspace: () => { if (activeWorkspaceId) closeWorkspace(activeWorkspaceId); },
+      closeWindow: () => window.close(),
+      openFolder: openFolderAsWorkspace,
+      toggleSidebar: () => toggleSidebar(),
+      nextWorkspace: () => cycleWorkspace(1),
+      prevWorkspace: () => cycleWorkspace(-1),
+      renameSurface: () => fire('wmux:rename-surface'),
+      renameWorkspace: () => fire('wmux:rename-workspace'),
+      splitRight: () => doSplit('terminal', 'horizontal'),
+      splitDown: () => doSplit('terminal', 'vertical'),
+      splitBrowserRight: () => doSplit('browser', 'horizontal'),
+      splitBrowserDown: () => doSplit('browser', 'vertical'),
+      toggleZoom: () => onToggleZoom?.(),
+      focusLeft: () => doFocus('left'),
+      focusRight: () => doFocus('right'),
+      focusUp: () => doFocus('up'),
+      focusDown: () => doFocus('down'),
+      closeSurfaceOrPane: closeFocusedSurfaceOrPane,
+      newSurface: () => { if (activeWorkspaceId && focusedPaneId) addSurface(activeWorkspaceId, focusedPaneId, 'terminal'); },
+      nextSurface: () => { if (activeWorkspaceId && focusedPaneId) nextSurface(activeWorkspaceId, focusedPaneId); },
+      prevSurface: () => { if (activeWorkspaceId && focusedPaneId) prevSurface(activeWorkspaceId, focusedPaneId); },
+      jumpToUnread,
+      showNotifications: () => onToggleNotifications?.(),
+      flashFocused: () => { if (focusedPaneId) fire('wmux:trigger-flash', { paneId: focusedPaneId }); },
+      openBrowser: () => onToggleBrowser?.(),
+      browserDevTools: () => window.wmux?.system?.toggleDevTools?.(),
+      browserConsole: () => window.wmux?.system?.toggleDevTools?.(),
+      copy: copySelection,
+      paste: pasteIntoFocusedTerminal,
+      fontSizeIncrease: () => adjustFontSize((s) => Math.min(32, s + 1)),
+      fontSizeDecrease: () => adjustFontSize((s) => Math.max(8, s - 1)),
+      fontSizeReset: () => useStore.getState().setTerminalPrefs({ fontSize: 13 }),
+      openSettings: () => onOpenSettings?.(true),
+      openMarkdownPanel: () => { if (activeWorkspaceId && focusedPaneId) addSurface(activeWorkspaceId, focusedPaneId, 'markdown'); },
+      // commandPalette is opened by App.tsx's own listener; keep a no-op so we
+      // still preventDefault on the combo. find/copyMode are short-circuited above.
+      commandPalette: () => {},
+      // ── issue #64 additions ──────────────────────────────────────────────
+      reopenClosedSurface: () => { if (activeWorkspaceId && focusedPaneId) useStore.getState().reopenClosedSurface(activeWorkspaceId, focusedPaneId); },
+      findNext: () => fire('wmux:find-next'),
+      findPrevious: () => fire('wmux:find-prev'),
+      resizePaneLeft: () => doResize('horizontal', -0.05),
+      resizePaneRight: () => doResize('horizontal', 0.05),
+      resizePaneUp: () => doResize('vertical', -0.05),
+      resizePaneDown: () => doResize('vertical', 0.05),
+      broadcastInput: () => useStore.getState().toggleBroadcastInput(),
+      togglePinWorkspace,
+      markWorkspaceRead,
+      toggleShortcutCheatSheet: () => fire('wmux:toggle-cheatsheet'),
+    };
+
     function handleKeyDown(e: KeyboardEvent): void {
       if (!isSafeToIntercept(e)) return;
 
@@ -161,298 +343,13 @@ export function useKeyboardShortcuts(
         // find and copyMode are handled at PaneWrapper level — don't block them
         if (action === 'find' || action === 'copyMode') return;
 
+        const handler = handlers[action];
+        if (!handler) return;
+
         // Found a matching action — prevent default and handle it
         e.preventDefault();
-        dispatchAction(action);
+        handler();
         return;
-      }
-    }
-
-    function dispatchAction(action: ShortcutAction): void {
-      const state = useStore.getState();
-
-      switch (action) {
-        case 'newWorkspace': {
-          createWorkspace();
-          break;
-        }
-
-        case 'newWindow': {
-          window.wmux?.window?.create?.();
-          break;
-        }
-
-        case 'closeWorkspace': {
-          if (activeWorkspaceId) closeWorkspace(activeWorkspaceId);
-          break;
-        }
-
-        case 'closeWindow': {
-          window.close();
-          break;
-        }
-
-        case 'openFolder': {
-          // No-op: needs OS file dialog via IPC, not yet implemented
-          break;
-        }
-
-        case 'toggleSidebar': {
-          toggleSidebar();
-          break;
-        }
-
-        case 'nextWorkspace': {
-          if (workspaces.length === 0 || !activeWorkspaceId) break;
-          const idx = workspaces.findIndex((w) => w.id === activeWorkspaceId);
-          const nextIdx = (idx + 1) % workspaces.length;
-          selectWorkspace(workspaces[nextIdx].id);
-          break;
-        }
-
-        case 'prevWorkspace': {
-          if (workspaces.length === 0 || !activeWorkspaceId) break;
-          const idx = workspaces.findIndex((w) => w.id === activeWorkspaceId);
-          const prevIdx = (idx - 1 + workspaces.length) % workspaces.length;
-          selectWorkspace(workspaces[prevIdx].id);
-          break;
-        }
-
-        case 'renameSurface': {
-          document.dispatchEvent(new CustomEvent('wmux:rename-surface'));
-          break;
-        }
-
-        case 'renameWorkspace': {
-          document.dispatchEvent(new CustomEvent('wmux:rename-workspace'));
-          break;
-        }
-
-        case 'splitRight': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
-          if (!ws) break;
-          const newPaneId: PaneId = `pane-${uuid()}` as PaneId;
-          const newTree = splitNode(ws.splitTree, focusedPaneId, newPaneId, 'terminal', 'horizontal');
-          updateSplitTree(activeWorkspaceId, newTree);
-          break;
-        }
-
-        case 'splitDown': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
-          if (!ws) break;
-          const newPaneId: PaneId = `pane-${uuid()}` as PaneId;
-          const newTree = splitNode(ws.splitTree, focusedPaneId, newPaneId, 'terminal', 'vertical');
-          updateSplitTree(activeWorkspaceId, newTree);
-          break;
-        }
-
-        case 'splitBrowserRight': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
-          if (!ws) break;
-          const newPaneId: PaneId = `pane-${uuid()}` as PaneId;
-          const newTree = splitNode(ws.splitTree, focusedPaneId, newPaneId, 'browser', 'horizontal');
-          updateSplitTree(activeWorkspaceId, newTree);
-          break;
-        }
-
-        case 'splitBrowserDown': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
-          if (!ws) break;
-          const newPaneId: PaneId = `pane-${uuid()}` as PaneId;
-          const newTree = splitNode(ws.splitTree, focusedPaneId, newPaneId, 'browser', 'vertical');
-          updateSplitTree(activeWorkspaceId, newTree);
-          break;
-        }
-
-        case 'toggleZoom': {
-          onToggleZoom?.();
-          break;
-        }
-
-        case 'focusLeft':
-        case 'focusRight':
-        case 'focusUp':
-        case 'focusDown': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
-          if (!ws) break;
-          const dirMap: Record<string, 'left' | 'right' | 'up' | 'down'> = {
-            focusLeft: 'left',
-            focusRight: 'right',
-            focusUp: 'up',
-            focusDown: 'down',
-          };
-          const targetPane = findAdjacentPane(ws.splitTree, focusedPaneId, dirMap[action]);
-          if (targetPane) onFocusPane?.(targetPane);
-          break;
-        }
-
-        case 'closeSurfaceOrPane': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
-          if (!ws) break;
-          const leaf = findLeaf(ws.splitTree, focusedPaneId);
-          if (leaf && leaf.surfaces.length > 0) {
-            // Close the active surface; if it's the last, closeSurface removes the pane
-            const activeSurface = leaf.surfaces[leaf.activeSurfaceIndex];
-            if (activeSurface) {
-              closeSurface(activeWorkspaceId, focusedPaneId, activeSurface.id);
-              break;
-            }
-          }
-          // Fallback: no surfaces found, remove the pane directly (guard: keep last pane)
-          const paneIds = getAllPaneIds(ws.splitTree);
-          if (paneIds.length <= 1) break;
-          const newTree = removeLeaf(ws.splitTree, focusedPaneId);
-          if (newTree) updateSplitTree(activeWorkspaceId, newTree);
-          break;
-        }
-
-        case 'newSurface': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          addSurface(activeWorkspaceId, focusedPaneId, 'terminal');
-          break;
-        }
-
-        case 'nextSurface': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          nextSurface(activeWorkspaceId, focusedPaneId);
-          break;
-        }
-
-        case 'prevSurface': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          prevSurface(activeWorkspaceId, focusedPaneId);
-          break;
-        }
-
-        case 'jumpToUnread': {
-          const notifs = state.notifications;
-          const unread = notifs.find((n) => !n.read);
-          if (!unread) break;
-          state.selectWorkspace(unread.workspaceId);
-          // Find the pane containing this surface and focus it
-          const ws = state.workspaces.find((w) => w.id === unread.workspaceId);
-          if (ws) {
-            const paneIds = getAllPaneIds(ws.splitTree);
-            for (const pid of paneIds) {
-              const leaf = findLeaf(ws.splitTree, pid);
-              if (leaf) {
-                const surfIdx = leaf.surfaces.findIndex((s) => s.id === unread.surfaceId);
-                if (surfIdx !== -1) {
-                  state.selectSurface(unread.workspaceId, pid, surfIdx);
-                  onFocusPane?.(pid);
-                  break;
-                }
-              }
-            }
-          }
-          state.markRead(unread.surfaceId);
-          break;
-        }
-
-        case 'showNotifications': {
-          onToggleNotifications?.();
-          break;
-        }
-
-        case 'flashFocused': {
-          if (focusedPaneId) {
-            document.dispatchEvent(
-              new CustomEvent('wmux:trigger-flash', { detail: { paneId: focusedPaneId } }),
-            );
-          }
-          break;
-        }
-
-        case 'openBrowser': {
-          onToggleBrowser?.();
-          break;
-        }
-
-        case 'browserDevTools': {
-          window.wmux?.system?.toggleDevTools?.();
-          break;
-        }
-
-        case 'browserConsole': {
-          window.wmux?.system?.toggleDevTools?.();
-          break;
-        }
-
-        // find and copyMode are handled at PaneWrapper level
-        case 'find':
-        case 'copyMode':
-          break;
-
-        case 'copy': {
-          const selection = window.getSelection()?.toString();
-          if (selection) {
-            navigator.clipboard.writeText(selection);
-          }
-          break;
-        }
-
-        case 'paste': {
-          if (!focusedPaneId || !activeWorkspaceId) break;
-          const ws = useStore.getState().workspaces.find((w) => w.id === activeWorkspaceId);
-          if (!ws) break;
-          const leaf = findLeaf(ws.splitTree, focusedPaneId);
-          if (!leaf) break;
-          const activeSurf = leaf.surfaces[leaf.activeSurfaceIndex];
-          if (activeSurf?.type === 'terminal') {
-            // Delegate to the focused terminal instead of reading the clipboard
-            // here: navigator.clipboard.readText() garbles non-UTF-8 Windows
-            // clipboard formats (em dash → "â"), and a raw pty.write strips
-            // bracketed-paste markers (breaking multi-line paste in Claude Code).
-            // The terminal's handler reads via Electron's clipboard and uses
-            // terminal.paste(), matching the Ctrl+V path.
-            document.dispatchEvent(
-              new CustomEvent('wmux:paste-terminal', { detail: { surfaceId: activeSurf.id } }),
-            );
-          }
-          break;
-        }
-
-        case 'fontSizeIncrease': {
-          const prefs = state.terminalPrefs;
-          state.setTerminalPrefs({ fontSize: Math.min(32, prefs.fontSize + 1) });
-          break;
-        }
-
-        case 'fontSizeDecrease': {
-          const prefs = state.terminalPrefs;
-          state.setTerminalPrefs({ fontSize: Math.max(8, prefs.fontSize - 1) });
-          break;
-        }
-
-        case 'fontSizeReset': {
-          state.setTerminalPrefs({ fontSize: 13 });
-          break;
-        }
-
-        case 'openSettings': {
-          onOpenSettings?.(true);
-          break;
-        }
-
-        case 'openMarkdownPanel': {
-          if (!activeWorkspaceId || !focusedPaneId) break;
-          addSurface(activeWorkspaceId, focusedPaneId, 'markdown');
-          break;
-        }
-
-        case 'commandPalette':
-          // Handled separately in App.tsx
-          break;
-
-        default:
-          console.log(`[wmux] Shortcut triggered: ${action}`);
-          break;
       }
     }
 
@@ -498,4 +395,24 @@ export function useKeyboardShortcuts(
       document.removeEventListener('keydown', handleWorkspaceIndexKey);
     };
   }, [workspaces, selectWorkspace]);
+
+  // Ctrl+Alt+1 through Ctrl+Alt+9 — select tab (surface) N in the focused pane
+  // (issue #64). Mirrors the Ctrl+1–9 workspace selector above; kept as a fixed
+  // handler rather than nine remappable entries to avoid bloating Settings.
+  useEffect(() => {
+    function handleSurfaceIndexKey(e: KeyboardEvent): void {
+      if (!e.ctrlKey || !e.altKey || e.shiftKey) return;
+      const digit = parseInt(e.key, 10);
+      if (isNaN(digit) || digit < 1 || digit > 9) return;
+      if (!activeWorkspaceId || !focusedPaneId) return;
+
+      e.preventDefault();
+      useStore.getState().selectSurface(activeWorkspaceId, focusedPaneId, digit - 1);
+    }
+
+    document.addEventListener('keydown', handleSurfaceIndexKey);
+    return () => {
+      document.removeEventListener('keydown', handleSurfaceIndexKey);
+    };
+  }, [activeWorkspaceId, focusedPaneId]);
 }

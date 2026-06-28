@@ -3,7 +3,7 @@ import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import ShortcutRecorder from './ShortcutRecorder';
 
 // Human-readable labels for each action
-const ACTION_LABELS: Record<ShortcutAction, string> = {
+export const ACTION_LABELS: Record<ShortcutAction, string> = {
   newWorkspace: 'New workspace',
   newWindow: 'New window',
   closeWorkspace: 'Close workspace',
@@ -43,6 +43,17 @@ const ACTION_LABELS: Record<ShortcutAction, string> = {
   openSettings: 'Open settings',
   commandPalette: 'Command palette',
   openMarkdownPanel: 'Open markdown panel',
+  reopenClosedSurface: 'Reopen closed tab',
+  findNext: 'Find next',
+  findPrevious: 'Find previous',
+  resizePaneLeft: 'Resize pane left',
+  resizePaneRight: 'Resize pane right',
+  resizePaneUp: 'Resize pane up',
+  resizePaneDown: 'Resize pane down',
+  broadcastInput: 'Broadcast input to all panes',
+  togglePinWorkspace: 'Pin / unpin workspace',
+  markWorkspaceRead: 'Mark workspace read',
+  toggleShortcutCheatSheet: 'Shortcut cheat-sheet',
 };
 
 export default function KeyboardSettings() {

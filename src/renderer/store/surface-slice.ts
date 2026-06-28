@@ -7,7 +7,11 @@ import { WorkspaceSlice } from './workspace-slice';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface SurfaceSlice {
-  /** Add a new surface (tab) to a pane; returns the new SurfaceId */
+  /**
+   * Add a new surface (tab) to a pane; returns the new SurfaceId, or null if the
+   * target workspace/pane no longer exists (so callers don't get an id for a
+   * surface that was never created).
+   */
   addSurface: (
     workspaceId: WorkspaceId,
     paneId: PaneId,
@@ -20,7 +24,7 @@ export interface SurfaceSlice {
       startupCommands?: string[];
       url?: string;
     },
-  ) => SurfaceId;
+  ) => SurfaceId | null;
 
   /** Close a surface; if it's the last one in the pane, the pane is removed */
   closeSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => void;
@@ -33,6 +37,14 @@ export interface SurfaceSlice {
 
   /** Select a surface by 0-based index */
   selectSurface: (workspaceId: WorkspaceId, paneId: PaneId, index: number) => void;
+
+  /**
+   * Re-create the most-recently-closed surface (issue #64, Ctrl+Shift+T) into the
+   * given pane. Restores tab metadata (type/title/shell/cwd/url/startup commands);
+   * a terminal restarts fresh since its PTY is gone. Returns null if the
+   * reopen-stack is empty.
+   */
+  reopenClosedSurface: (workspaceId: WorkspaceId, paneId: PaneId) => SurfaceId | null;
 
   /** Move a surface from one pane to another (drag-and-drop) */
   moveSurface: (workspaceId: WorkspaceId, sourcePaneId: PaneId, surfaceId: SurfaceId, targetPaneId: PaneId) => void;
@@ -67,6 +79,37 @@ export interface SurfaceSlice {
 
 type SliceState = SurfaceSlice & WorkspaceSlice;
 
+// Reopen stack (issue #64): the metadata of recently-closed surfaces, most
+// recent last. Module-level (not store state) — it's a transient undo buffer
+// nothing renders. Bounded so a long session can't grow it unboundedly.
+interface ClosedSurface {
+  type: SurfaceType;
+  colorScheme?: string;
+  customTitle?: string;
+  shell?: string;
+  cwd?: string;
+  startupCommands?: string[];
+  url?: string;
+}
+const closedSurfaceStack: ClosedSurface[] = [];
+const MAX_CLOSED_SURFACES = 25;
+
+function pushClosedSurface(surface: SurfaceRef): void {
+  // Diff surfaces are auto-generated from hook events (issue #63) — reopening a
+  // stale one is noise, so don't track them.
+  if (surface.type === 'diff') return;
+  closedSurfaceStack.push({
+    type: surface.type,
+    colorScheme: surface.colorScheme,
+    customTitle: surface.customTitle,
+    shell: surface.shell,
+    cwd: surface.cwd,
+    startupCommands: surface.startupCommands,
+    url: surface.url,
+  });
+  if (closedSurfaceStack.length > MAX_CLOSED_SURFACES) closedSurfaceStack.shift();
+}
+
 // ─── Slice creator ───────────────────────────────────────────────────────────
 
 export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> = (_set, get) => ({
@@ -75,10 +118,10 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
     const { workspaces, updateSplitTree } = get();
     const ws = workspaces.find((w) => w.id === workspaceId);
-    if (!ws) return surfaceId;
+    if (!ws) return null;
 
     const leaf = findLeaf(ws.splitTree, paneId);
-    if (!leaf) return surfaceId;
+    if (!leaf) return null;
 
     const newSurface: SurfaceRef = {
       id: surfaceId,
@@ -110,6 +153,10 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
     const leaf = findLeaf(ws.splitTree, paneId);
     if (!leaf) return;
+
+    // Remember the closed surface so Ctrl+Shift+T can bring it back (issue #64).
+    const closing = leaf.surfaces.find((s) => s.id === surfaceId);
+    if (closing) pushClosedSurface(closing);
 
     const newSurfaces = leaf.surfaces.filter((s) => s.id !== surfaceId);
 
@@ -214,6 +261,20 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
     const updatedTree = patchLeaf(ws.splitTree, paneId, { activeSurfaceIndex: clampedIndex });
     updateSplitTree(workspaceId, updatedTree);
+  },
+
+  reopenClosedSurface(workspaceId, paneId) {
+    const restored = closedSurfaceStack.pop();
+    if (!restored) return null;
+    const { addSurface } = get();
+    return addSurface(workspaceId, paneId, restored.type, {
+      ...(restored.colorScheme ? { colorScheme: restored.colorScheme } : {}),
+      ...(restored.customTitle ? { customTitle: restored.customTitle } : {}),
+      ...(restored.shell ? { shell: restored.shell } : {}),
+      ...(restored.cwd ? { cwd: restored.cwd } : {}),
+      ...(restored.startupCommands ? { startupCommands: restored.startupCommands } : {}),
+      ...(restored.url ? { url: restored.url } : {}),
+    });
   },
 
   reorderSurface(workspaceId, paneId, surfaceId, newIndex) {

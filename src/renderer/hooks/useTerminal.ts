@@ -7,6 +7,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { ImageAddon } from '@xterm/addon-image';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { useStore } from '../store';
+import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
 import { SplitNode, ThemeConfig } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
 import { openInWmuxBrowser } from '../utils/open-in-browser';
@@ -720,9 +721,21 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Wire xterm input → PTY
     const dataDisposable = terminal.onData((data: string) => {
-      if (ptyIdRef.current) {
-        window.wmux.pty.write(ptyIdRef.current, data);
+      if (!ptyIdRef.current) return;
+      // Broadcast-input mode (issue #64, tmux synchronize-panes): fan keystrokes
+      // out to every terminal pane in the workspace that owns this surface. Only
+      // the focused terminal's onData fires, so this is the single source pane.
+      const st = useStore.getState();
+      if (st.broadcastInputActive && surfaceId) {
+        const ws = st.workspaces.find((w) => treeHasSurface(w.splitTree, surfaceId));
+        if (ws) {
+          for (const id of collectActiveTerminalSurfaceIds(ws.splitTree)) {
+            window.wmux.pty.write(id, data);
+          }
+          return;
+        }
       }
+      window.wmux.pty.write(ptyIdRef.current, data);
     });
 
     // ResizeObserver to auto-fit and relay size to PTY (debounced to prevent IPC spam)

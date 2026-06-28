@@ -323,6 +323,21 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       return { error: err?.message || 'Failed to read file' };
     }
   });
+
+  // Folder picker (issue #64): backs the `openFolder` shortcut (Ctrl+O). Shows a
+  // native directory dialog and returns the chosen path; the renderer opens a new
+  // workspace rooted there. Previously `openFolder` was a bound-but-no-op stub.
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_PICK_FOLDER, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = await dialog.showOpenDialog(win as BrowserWindow, {
+      title: 'Open Folder as Workspace',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    return { path: result.filePaths[0] };
+  });
 }
 
 export function setupAgentPtyForwarding(surfaceId: string, window: BrowserWindow): void {

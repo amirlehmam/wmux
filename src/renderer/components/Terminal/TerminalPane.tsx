@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTerminal } from '../../hooks/useTerminal';
 import FindBar from './FindBar';
 import CopyMode from './CopyMode';
@@ -34,6 +34,31 @@ export default function TerminalPane({
   const { terminalRef, searchAddonRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, colorScheme, startupCommands });
 
   const [_lastQuery, setLastQuery] = useState('');
+
+  // Latest values mirrored into refs so the global F3 / Shift+F3 listener (issue
+  // #64) can read them without re-subscribing on every keystroke or focus change.
+  const lastQueryRef = useRef(_lastQuery);
+  lastQueryRef.current = _lastQuery;
+  const activeRef = useRef(false);
+  activeRef.current = focused && visible;
+
+  // F3 / Shift+F3 cycle search matches without reopening the find bar. Only the
+  // focused, visible terminal acts (there's exactly one at a time).
+  useEffect(() => {
+    const cycle = (forward: boolean) => {
+      if (!activeRef.current || !searchAddonRef.current || !lastQueryRef.current) return;
+      if (forward) searchAddonRef.current.findNext(lastQueryRef.current);
+      else searchAddonRef.current.findPrevious(lastQueryRef.current);
+    };
+    const onNext = () => cycle(true);
+    const onPrev = () => cycle(false);
+    document.addEventListener('wmux:find-next', onNext);
+    document.addEventListener('wmux:find-prev', onPrev);
+    return () => {
+      document.removeEventListener('wmux:find-next', onNext);
+      document.removeEventListener('wmux:find-prev', onPrev);
+    };
+  }, [searchAddonRef]);
 
   const handleSearch = useCallback((query: string) => {
     setLastQuery(query);

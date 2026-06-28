@@ -201,6 +201,7 @@ export function initPipeBridge(): void {
 
     const type = (params?.type || 'terminal') as SurfaceType;
     const surfaceId = store.addSurface(wsId, paneId, type, { colorScheme: params?.colorScheme });
+    if (!surfaceId) return null;
     return { surfaceId, paneId };
   };
 

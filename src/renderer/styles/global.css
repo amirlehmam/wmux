@@ -30,3 +30,22 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+/* Broadcast-input mode banner (issue #64) — pinned bottom-center while typing
+   fans out to every terminal pane in the workspace (tmux synchronize-panes). */
+.broadcast-input-banner {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: #b3261e;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}

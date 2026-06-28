@@ -280,6 +280,7 @@ export const IPC_CHANNELS = {
   SYSTEM_GET_SHELLS: 'system:getShells',
   SYSTEM_OPEN_EXTERNAL: 'system:openExternal',
   SYSTEM_GET_VERSION: 'system:getVersion',
+  SYSTEM_PICK_FOLDER: 'system:pickFolder',
   // Metadata events (main → renderer)
   METADATA_UPDATE: 'metadata:update',
   // Agent

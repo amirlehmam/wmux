@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { SurfaceRef, SurfaceId, PaneId, QuickLaunchProfile, ShellInfo } from '../../../shared/types';
 import { useStore } from '../../store';
+import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret } from './icons';
 import type { SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import { parseSurfaceDragData } from './surface-drag-preview';
@@ -90,6 +91,19 @@ export default function SurfaceTabBar({
   const activeWorkspaceId = useStore((state) => state.activeWorkspaceId);
   const renameSurface = useStore((state) => state.renameSurface);
   const getAgentMeta = (surfaceId: string) => agentMeta.get(surfaceId as any);
+
+  // Live binding labels for control tooltips (issue #64): read from the store so
+  // they stay in sync when the user remaps a shortcut in Settings → Keyboard.
+  const shortcuts = useStore((state) => state.shortcuts);
+  const bindingFor = (action: ShortcutAction): string => {
+    const b: ShortcutBinding = shortcuts[action];
+    const parts: string[] = [];
+    if (b.ctrl) parts.push('Ctrl');
+    if (b.alt) parts.push('Alt');
+    if (b.shift) parts.push('Shift');
+    parts.push(b.key.length === 1 ? b.key.toUpperCase() : b.key);
+    return parts.join('+');
+  };
 
   useEffect(() => {
     if (!isDragActive) {
@@ -345,7 +359,7 @@ export default function SurfaceTabBar({
             className="surface-tab-bar__ctl surface-tab-bar__ctl--new"
             onClick={onNew}
             tabIndex={-1}
-            title="New terminal tab (Ctrl+T)"
+            title={`New terminal tab (${bindingFor('newSurface')})`}
           >
             <IconAdd />
           </button>
@@ -371,7 +385,7 @@ export default function SurfaceTabBar({
               className="surface-tab-bar__ctl surface-tab-bar__ctl--layout"
               onClick={onSplitRight}
               tabIndex={-1}
-              title="Split right (Ctrl+D)"
+              title={`Split right (${bindingFor('splitRight')})`}
             >
               <IconSplit />
             </button>
@@ -395,7 +409,7 @@ export default function SurfaceTabBar({
             className="surface-tab-bar__ctl surface-tab-bar__ctl--close"
             onClick={onClosePane}
             tabIndex={-1}
-            title="Close pane"
+            title={`Close pane (${bindingFor('closeSurfaceOrPane')})`}
           >
             <IconClose />
           </button>

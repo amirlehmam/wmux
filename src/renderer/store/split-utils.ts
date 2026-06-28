@@ -126,6 +126,57 @@ export function getAllPaneIds(tree: SplitNode): PaneId[] {
   return [...getAllPaneIds(tree.children[0]), ...getAllPaneIds(tree.children[1])];
 }
 
+// ─── adjustPaneRatio (issue #64: keyboard pane resize) ───────────────────────
+// Move the divider adjacent to `paneId` along `orientation` by `delta`. We walk
+// to the DEEPEST branch of the matching orientation that contains the pane (its
+// nearest enclosing divider) and nudge that branch's ratio. "Move the divider"
+// semantics (always +delta = right/down) match tmux `resize-pane` and stay
+// predictable regardless of which child the pane sits in.
+export function adjustPaneRatio(
+  tree: SplitNode,
+  paneId: PaneId,
+  orientation: 'horizontal' | 'vertical',
+  delta: number,
+): SplitNode {
+  if (tree.type === 'leaf') return tree;
+
+  const [left, right] = tree.children;
+  const inLeft = branchContainsPaneId(left, paneId);
+  const inRight = branchContainsPaneId(right, paneId);
+  if (!inLeft && !inRight) return tree;
+
+  // Prefer a deeper matching divider (nearest to the pane) over this one.
+  const childWithPane = inLeft ? left : right;
+  const adjustedChild = adjustPaneRatio(childWithPane, paneId, orientation, delta);
+  if (adjustedChild !== childWithPane) {
+    return inLeft
+      ? { ...tree, children: [adjustedChild, right] }
+      : { ...tree, children: [left, adjustedChild] };
+  }
+
+  // No deeper match — this is the nearest enclosing divider for the pane.
+  if (tree.direction === orientation) {
+    return { ...tree, ratio: clampRatio(tree.ratio + delta) };
+  }
+  return tree;
+}
+
+// ─── collectActiveTerminalSurfaceIds (issue #64: broadcast input) ────────────
+// One id per pane: the pane's ACTIVE surface, if it's a terminal. PTY id ===
+// surface id, so callers `pty.write(id, …)` to fan keystrokes across the visible
+// terminal of every pane (background keep-alive tabs are intentionally skipped —
+// broadcasting to shells the user can't see would be surprising).
+export function collectActiveTerminalSurfaceIds(tree: SplitNode): SurfaceId[] {
+  if (tree.type === 'leaf') {
+    const active = tree.surfaces[tree.activeSurfaceIndex];
+    return active && active.type === 'terminal' ? [active.id] : [];
+  }
+  return [
+    ...collectActiveTerminalSurfaceIds(tree.children[0]),
+    ...collectActiveTerminalSurfaceIds(tree.children[1]),
+  ];
+}
+
 // ─── buildGridLayout ──────────────────────────────────────────────────────────
 // Replace the ENTIRE workspace split tree with a balanced grid of `count` cells.
 //

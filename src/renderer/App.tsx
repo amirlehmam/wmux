@@ -9,6 +9,7 @@ import Titlebar from './components/Titlebar/Titlebar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
+import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
 import BrowserPane from './components/Browser/BrowserPane';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
@@ -239,6 +240,15 @@ export default function App() {
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  // Shortcut cheat-sheet overlay (issue #64, toggled by F1 via wmux:toggle-cheatsheet).
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
+  useEffect(() => {
+    const toggle = () => setCheatSheetOpen((open) => !open);
+    document.addEventListener('wmux:toggle-cheatsheet', toggle);
+    return () => document.removeEventListener('wmux:toggle-cheatsheet', toggle);
+  }, []);
+  // Broadcast-input mode banner (issue #64): mirror the runtime store flag.
+  const broadcastInputActive = useStore((s) => s.broadcastInputActive);
   // Browser panel auto-opens on startup unless disabled in Settings (issue #22).
   const [browserOpen, setBrowserOpen] = useState(() => useStore.getState().browserPrefs.openOnStartup);
   const [browserWidth, setBrowserWidth] = useState(420);
@@ -441,8 +451,14 @@ export default function App() {
       }
       if (!event?.tool) return;
       const state = useStore.getState();
-      const wsId = state.activeWorkspaceId;
-      if (!wsId) return;
+      // Resolve the workspace that OWNS the agent's pane (issue #63), so the
+      // diff tab and sidebar activity attach to the agent's workspace — not
+      // whichever workspace happens to be focused. Fall back to the active
+      // workspace only when the event carries no surfaceId (legacy hooks).
+      const ownerWs = workspaceForSurface(event.surfaceId)
+        ?? state.workspaces.find(w => w.id === state.activeWorkspaceId);
+      if (!ownerWs) return;
+      const wsId = ownerWs.id;
 
       // Track hook activity for sidebar display
       setHookActivity(prev => {
@@ -459,7 +475,7 @@ export default function App() {
 
       // Auto-open diff tab in the BOTTOM pane when Claude edits/writes files
       if (event.tool === 'Edit' || event.tool === 'Write') {
-        const ws = state.workspaces.find(w => w.id === wsId);
+        const ws = ownerWs;
         if (ws) {
           const bottomPaneId = findBottomPane(ws.splitTree);
           if (bottomPaneId) {
@@ -956,6 +972,14 @@ export default function App() {
           onClose={handlePaletteClose}
           onAction={handlePaletteAction}
         />
+      )}
+
+      {cheatSheetOpen && <ShortcutCheatSheet onClose={() => setCheatSheetOpen(false)} />}
+
+      {broadcastInputActive && (
+        <div className="broadcast-input-banner" title="Typed input is sent to every terminal pane in this workspace">
+          Broadcast input ON — typing goes to all panes (Ctrl+Alt+B to stop)
+        </div>
       )}
     </div>
   );
