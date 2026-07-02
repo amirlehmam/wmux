@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, clipboard, shell, dialog, app } from 'electron';
+import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -100,6 +100,18 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_VERSION, () => app.getVersion());
+
+  // App UI theme (issue #67): report the Windows light/dark setting so the
+  // renderer can follow it when appearance mode is "system", and push updates
+  // when the user flips it in Windows Settings while wmux is running.
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_SHOULD_USE_DARK_COLORS, () => nativeTheme.shouldUseDarkColors);
+  nativeTheme.on('updated', () => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.SYSTEM_NATIVE_THEME_UPDATED, nativeTheme.shouldUseDarkColors);
+      }
+    }
+  });
 
   // Config / Theme handlers
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET_THEME, async (_event, name?: string) => {

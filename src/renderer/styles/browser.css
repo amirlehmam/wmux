@@ -3,7 +3,7 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #1e1e1e;
+  background: var(--ui-bg-2);
 }
 
 .browser-address-bar {
@@ -11,7 +11,7 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: #252525;
+  background: var(--ui-bg-3);
   flex-shrink: 0;
 }
 
@@ -23,18 +23,18 @@
   justify-content: center;
   border: none;
   background: transparent;
-  color: rgba(255,255,255,0.6);
+  color: rgba(var(--ui-overlay-rgb),0.6);
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
 }
 
 .browser-address-bar__btn:hover {
-  background: rgba(255,255,255,0.08);
+  background: rgba(var(--ui-overlay-rgb),0.08);
 }
 
 .browser-address-bar__btn:active {
-  background: rgba(255,255,255,0.16);
+  background: rgba(var(--ui-overlay-rgb),0.16);
 }
 
 .browser-address-bar__btn:disabled {
@@ -45,17 +45,17 @@
 .browser-address-bar__url {
   flex: 1;
   height: 26px;
-  background: rgba(255,255,255,0.06);
+  background: rgba(var(--ui-overlay-rgb),0.06);
   border: none;
   border-radius: 10px;
   padding: 0 12px;
-  color: rgba(255,255,255,0.8);
+  color: rgba(var(--ui-overlay-rgb),0.8);
   font-size: 12px;
   outline: none;
 }
 
 .browser-address-bar__url:focus {
-  background: rgba(255,255,255,0.1);
+  background: rgba(var(--ui-overlay-rgb),0.1);
   color: white;
 }
 

@@ -4,7 +4,7 @@
   display: flex;
   width: 100%;
   height: 100%;
-  background: #1a1a1a;
+  background: var(--ui-bg-1);
   color: #d4d4d4;
   font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
   font-size: 13px;
@@ -20,7 +20,7 @@
   justify-content: center;
   height: 100%;
   width: 100%;
-  color: #666;
+  color: var(--ui-text-muted);
   font-size: 14px;
   gap: 8px;
   user-select: none;
@@ -32,7 +32,7 @@
 
 .diff-pane__empty-hint {
   font-size: 12px;
-  color: #555;
+  color: var(--ui-text-muted);
 }
 
 /* ─── File list sidebar ──────────────────────────────────────────────────── */
@@ -41,7 +41,7 @@
   width: 240px;
   min-width: 180px;
   max-width: 320px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(var(--ui-overlay-rgb), 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -54,8 +54,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #999;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--ui-text-muted);
+  border-bottom: 1px solid rgba(var(--ui-overlay-rgb), 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -69,8 +69,8 @@
 }
 
 .diff-pane__sidebar-count {
-  background: rgba(255, 255, 255, 0.1);
-  color: #bbb;
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: var(--ui-text-secondary);
   padding: 1px 6px;
   border-radius: 8px;
   font-size: 10px;
@@ -97,7 +97,7 @@
   height: 22px;
   background: transparent;
   border: none;
-  color: #888;
+  color: var(--ui-text-muted);
   cursor: pointer;
   border-radius: 3px;
   padding: 0;
@@ -105,8 +105,8 @@
 }
 
 .diff-pane__refresh-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: var(--ui-text-primary);
 }
 
 .diff-pane__file-list {
@@ -117,7 +117,7 @@
 
 .diff-pane__no-files {
   padding: 16px 12px;
-  color: #555;
+  color: var(--ui-text-muted);
   font-size: 12px;
   text-align: center;
 }
@@ -133,7 +133,7 @@
 }
 
 .diff-pane__file:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--ui-overlay-rgb), 0.04);
 }
 
 .diff-pane__file--selected {
@@ -151,14 +151,14 @@
 
 .diff-pane__file-name {
   font-size: 12px;
-  color: #ddd;
+  color: var(--ui-text-primary);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .diff-pane__file-dir {
   font-size: 11px;
-  color: #666;
+  color: var(--ui-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -187,10 +187,10 @@
 
 .diff-pane__file-header {
   padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--ui-overlay-rgb), 0.03);
+  border-bottom: 1px solid rgba(var(--ui-overlay-rgb), 0.08);
   font-size: 12px;
-  color: #bbb;
+  color: var(--ui-text-secondary);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -332,13 +332,13 @@
 
 .diff-pane__content::-webkit-scrollbar-thumb,
 .diff-pane__file-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(var(--ui-overlay-rgb), 0.12);
   border-radius: 4px;
 }
 
 .diff-pane__content::-webkit-scrollbar-thumb:hover,
 .diff-pane__file-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(var(--ui-overlay-rgb), 0.2);
 }
 
 .diff-pane__content::-webkit-scrollbar-corner {

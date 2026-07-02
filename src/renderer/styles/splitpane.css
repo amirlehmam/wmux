@@ -10,7 +10,7 @@
 .split-divider { flex-shrink: 0; background: transparent; position: relative; z-index: 10; }
 .split-divider--horizontal { width: 6px; cursor: col-resize; }
 .split-divider--vertical { height: 6px; cursor: row-resize; }
-.split-divider__line { position: absolute; background: rgba(255, 255, 255, 0.06); transition: background 0.15s ease, transform 0.15s ease; will-change: transform, background; }
+.split-divider__line { position: absolute; background: rgba(var(--ui-overlay-rgb), 0.06); transition: background 0.15s ease, transform 0.15s ease; will-change: transform, background; }
 .split-divider:hover .split-divider__line { background: rgba(0, 145, 255, 0.4); }
 .split-divider--horizontal .split-divider__line { width: 2px; height: 100%; left: 50%; transform: translateX(-50%) scaleX(0.5); }
 .split-divider--vertical .split-divider__line { height: 2px; width: 100%; top: 50%; transform: translateY(-50%) scaleY(0.5); }
@@ -60,7 +60,7 @@
   align-items: center;
   height: 28px;
   min-height: 28px;
-  background: #1e1e1e;
+  background: var(--ui-bg-2);
   overflow: visible;
   flex-shrink: 0;
   z-index: 6;
@@ -83,20 +83,20 @@
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  background: #2a2a2a;
-  color: #888;
+  background: var(--ui-bg-4);
+  color: var(--ui-text-muted);
   font-size: 12px;
-  border-right: 1px solid #111;
+  border-right: 1px solid var(--ui-bg-0);
   user-select: none;
   transition: background 0.1s ease, color 0.1s ease;
 }
-.surface-tab:hover { background: #333; color: #bbb; }
-.surface-tab--active { background: #3a3a3a; color: #fff; }
+.surface-tab:hover { background: var(--ui-bg-5); color: var(--ui-text-secondary); }
+.surface-tab--active { background: var(--ui-border); color: var(--ui-text-primary); }
 .surface-tab__label { pointer-events: none; }
 .surface-tab__rename-input {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--ui-overlay-rgb), 0.1);
   border: 1px solid rgba(0, 145, 255, 0.5);
-  color: #fff;
+  color: var(--ui-text-primary);
   font-size: 11px;
   font-family: inherit;
   padding: 0 4px;
@@ -106,7 +106,7 @@
   outline: none;
 }
 .surface-tab__rename-input::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--ui-overlay-rgb), 0.3);
 }
 .surface-tab__close {
   display: none;
@@ -126,7 +126,7 @@
 }
 .surface-tab:hover .surface-tab__close,
 .surface-tab--active .surface-tab__close { display: flex; }
-.surface-tab__close:hover { background: rgba(255,255,255,0.15); color: #fff; }
+.surface-tab__close:hover { background: rgba(var(--ui-overlay-rgb),0.15); color: var(--ui-text-primary); }
 /* ─── Control cluster (New / Layout / Close) — issue #34 ─────────────────── */
 .surface-tab-bar__cluster {
   display: flex;
@@ -151,13 +151,13 @@
   flex-shrink: 0;
   border: none;
   background: transparent;
-  color: #a8a8a8;
+  color: var(--ui-text-secondary);
   cursor: pointer;
   border-radius: 5px;
   transition: color 0.1s ease, background 0.1s ease;
 }
 .surface-tab-bar__caret { min-width: 16px; }
-.surface-tab-bar__ctl:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.surface-tab-bar__ctl:hover { background: rgba(var(--ui-overlay-rgb),0.10); color: var(--ui-text-primary); }
 /* per-control accent colors */
 .surface-tab-bar__ctl--new:hover { color: #5fb85f; background: rgba(95,184,95,0.12); }
 .surface-tab-bar__ctl--layout:hover { color: #0091ff; background: rgba(0,145,255,0.12); }
@@ -168,8 +168,8 @@
   z-index: 200;
   min-width: 180px;
   padding: 5px;
-  background: #1c1c1c;
-  border: 1px solid rgba(255,255,255,0.14);
+  background: var(--ui-bg-1);
+  border: 1px solid rgba(var(--ui-overlay-rgb),0.14);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.6);
   display: flex;
@@ -183,27 +183,27 @@
   padding: 7px 10px;
   border: none;
   background: transparent;
-  color: #ccc;
+  color: var(--ui-text-secondary);
   font-size: 13px;
   text-align: left;
   border-radius: 5px;
   cursor: pointer;
 }
-.surface-tab-menu button:hover { background: rgba(0,145,255,0.18); color: #fff; }
+.surface-tab-menu button:hover { background: rgba(0,145,255,0.18); color: var(--ui-text-primary); }
 .surface-tab-menu__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   text-align: center;
-  color: #888;
+  color: var(--ui-text-muted);
 }
-.surface-tab-menu button:hover .surface-tab-menu__icon { color: #fff; }
-.surface-tab-menu__kbd { margin-left: auto; font-size: 10px; color: #666; }
+.surface-tab-menu button:hover .surface-tab-menu__icon { color: var(--ui-text-primary); }
+.surface-tab-menu__kbd { margin-left: auto; font-size: 10px; color: var(--ui-text-muted); }
 .surface-tab-menu__sep {
   height: 1px;
   margin: 4px 2px;
-  background: rgba(255,255,255,0.10);
+  background: rgba(var(--ui-overlay-rgb),0.10);
 }
 .surface-tab-menu__profile-name {
   flex: 1;
@@ -215,8 +215,8 @@
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #7a7a7a;
-  border: 1px solid rgba(255,255,255,0.14);
+  color: var(--ui-text-muted);
+  border: 1px solid rgba(var(--ui-overlay-rgb),0.14);
   border-radius: 3px;
   padding: 0 4px;
   line-height: 14px;
@@ -409,7 +409,9 @@ body.wmux-dragging * {
 }
 
 .split-preview-pane__tab--active {
-  color: #fff;
+  /* Sits on the fixed-dark preview glass panel (not app chrome) in both
+     themes, so this stays literal white rather than following --ui-text-primary. */
+  color: #ffffff;
 }
 
 .split-preview-pane__tab--dragged {

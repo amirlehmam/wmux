@@ -14,36 +14,36 @@
 .notif-panel {
   position: absolute; top: calc(100% + 6px); left: 0;
   width: 350px; max-height: 400px;
-  background: #1a1a1a; border: 1px solid rgba(255,255,255,0.08);
+  background: var(--ui-bg-1); border: 1px solid rgba(var(--ui-overlay-rgb), 0.08);
   border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   z-index: 1000; display: flex; flex-direction: column; overflow: hidden;
 }
 .notif-panel__header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+  padding: 10px 12px; border-bottom: 1px solid rgba(var(--ui-overlay-rgb), 0.06); flex-shrink: 0;
 }
-.notif-panel__title { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.7); }
+.notif-panel__title { font-size: 12px; font-weight: 600; color: rgba(var(--ui-overlay-rgb), 0.7); }
 .notif-panel__mark-all {
   background: none; border: none; color: #0091FF;
   font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
 }
 .notif-panel__mark-all:hover { background: rgba(0,145,255,0.1); }
 .notif-panel__list { overflow-y: auto; flex: 1; }
-.notif-panel__empty { padding: 32px 12px; text-align: center; color: rgba(255,255,255,0.25); font-size: 12px; }
+.notif-panel__empty { padding: 32px 12px; text-align: center; color: rgba(var(--ui-overlay-rgb), 0.25); font-size: 12px; }
 .notif-panel__item {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 8px 12px; cursor: pointer; transition: background 0.1s;
 }
-.notif-panel__item:hover { background: rgba(255,255,255,0.04); }
+.notif-panel__item:hover { background: rgba(var(--ui-overlay-rgb), 0.04); }
 .notif-panel__item--unread { background: rgba(0,145,255,0.04); }
 .notif-panel__dot {
   width: 6px; height: 6px; min-width: 6px;
   border-radius: 50%; background: #0091FF; margin-top: 5px;
 }
 .notif-panel__content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.notif-panel__source { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.4); }
+.notif-panel__source { font-size: 10px; font-weight: 600; color: rgba(var(--ui-overlay-rgb), 0.4); }
 .notif-panel__text {
-  font-size: 12px; color: rgba(255,255,255,0.7);
+  font-size: 12px; color: rgba(var(--ui-overlay-rgb), 0.7);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.notif-panel__time { font-size: 10px; color: rgba(255,255,255,0.3); }
+.notif-panel__time { font-size: 10px; color: rgba(var(--ui-overlay-rgb), 0.3); }

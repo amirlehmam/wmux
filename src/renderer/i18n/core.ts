@@ -37,6 +37,14 @@ const en: Dict = {
   'settings.general.language': 'Interface language',
   'settings.general.languageHint':
     'Changes apply immediately. Untranslated text falls back to English.',
+  // Settings — General panel — Appearance (issue #67)
+  'settings.general.appearanceSection': 'Appearance',
+  'settings.general.uiTheme': 'App theme',
+  'settings.general.uiTheme.system': 'Follow system',
+  'settings.general.uiTheme.dark': 'Dark',
+  'settings.general.uiTheme.light': 'Light',
+  'settings.general.appearanceHint':
+    'Controls the sidebar, tab bar, and window chrome. Terminal colors are set separately.',
   // Command palette
   'palette.placeholder': 'Type a command or search...',
   'palette.empty': 'No results found',
@@ -86,6 +94,13 @@ const fr: Dict = {
   'settings.general.language': "Langue de l'interface",
   'settings.general.languageHint':
     "Les changements s'appliquent immédiatement. Le texte non traduit s'affiche en anglais.",
+  'settings.general.appearanceSection': 'Apparence',
+  'settings.general.uiTheme': "Thème de l'application",
+  'settings.general.uiTheme.system': 'Suivre le système',
+  'settings.general.uiTheme.dark': 'Sombre',
+  'settings.general.uiTheme.light': 'Clair',
+  'settings.general.appearanceHint':
+    "Contrôle la barre latérale, la barre d'onglets et le cadre de la fenêtre. Les couleurs du terminal se règlent séparément.",
   'palette.placeholder': 'Tapez une commande ou recherchez...',
   'palette.empty': 'Aucun résultat',
   'palette.category.actions': 'Actions',
@@ -130,6 +145,12 @@ const zh: Dict = {
   'settings.general.languageSection': '语言',
   'settings.general.language': '界面语言',
   'settings.general.languageHint': '更改立即生效。未翻译的文本将回退为英文。',
+  'settings.general.appearanceSection': '外观',
+  'settings.general.uiTheme': '应用主题',
+  'settings.general.uiTheme.system': '跟随系统',
+  'settings.general.uiTheme.dark': '深色',
+  'settings.general.uiTheme.light': '浅色',
+  'settings.general.appearanceHint': '控制侧边栏、标签栏和窗口外框。终端颜色需单独设置。',
   'palette.placeholder': '输入命令或搜索...',
   'palette.empty': '未找到结果',
   'palette.category.actions': '操作',

@@ -1,0 +1,53 @@
+/*
+ * App UI theme variables (issue #67). These control the chrome around the
+ * terminal — sidebar, tab bar, titlebar, pane borders, settings, command
+ * palette — NOT the terminal pane itself, which keeps its own independently
+ * configurable color scheme (see TerminalPrefs).
+ *
+ * Dark values below are the exact colors wmux shipped with pre-0.15 (no
+ * regression for existing users, who default to uiTheme: 'dark'). Light
+ * values are a new equivalent palette, applied by giving <html> a
+ * `data-ui-theme="light"` attribute (see hooks/useUiTheme.ts).
+ *
+ * `--ui-overlay-rgb` backs every `rgba(var(--ui-overlay-rgb), <alpha>)` use
+ * across the chrome stylesheets: white-on-dark overlays (hover/active/border
+ * tints) flip to black-on-light at the same alpha, without needing a
+ * separate variable per alpha value.
+ */
+
+:root {
+  --ui-overlay-rgb: 255, 255, 255;
+
+  /* Background elevation scale, darkest recess -> most elevated control. */
+  --ui-bg-0: #111111;
+  --ui-bg-1: #1a1a1a;
+  --ui-bg-2: #1e1e1e;
+  --ui-bg-3: #252525;
+  --ui-bg-4: #2a2a2a;
+  --ui-bg-5: #333333;
+
+  --ui-border: #3a3a3a;
+  --ui-border-strong: #555555;
+
+  --ui-text-primary: #e0e0e0;
+  --ui-text-secondary: #bbbbbb;
+  --ui-text-muted: #888888;
+}
+
+:root[data-ui-theme='light'] {
+  --ui-overlay-rgb: 0, 0, 0;
+
+  --ui-bg-0: #e4e4e4;
+  --ui-bg-1: #f5f5f5;
+  --ui-bg-2: #ffffff;
+  --ui-bg-3: #ececec;
+  --ui-bg-4: #e2e2e2;
+  --ui-bg-5: #d8d8d8;
+
+  --ui-border: #d5d5d5;
+  --ui-border-strong: #b0b0b0;
+
+  --ui-text-primary: #1c1c1c;
+  --ui-text-secondary: #4a4a4a;
+  --ui-text-muted: #767676;
+}

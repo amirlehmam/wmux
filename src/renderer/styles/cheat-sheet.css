@@ -13,8 +13,8 @@
   width: 720px;
   max-width: 90vw;
   max-height: 80vh;
-  background: #252525;
-  border: 1px solid #444;
+  background: var(--ui-bg-3);
+  border: 1px solid var(--ui-border);
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -27,23 +27,23 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid var(--ui-border);
 }
 
 .cheat-sheet__title {
   margin: 0;
   font-size: 14px;
-  color: white;
+  color: var(--ui-text-primary);
   white-space: nowrap;
 }
 
 .cheat-sheet__search {
   flex: 1;
   padding: 7px 10px;
-  background: #1c1c1c;
-  border: 1px solid #3a3a3a;
+  background: var(--ui-bg-1);
+  border: 1px solid var(--ui-border);
   border-radius: 5px;
-  color: white;
+  color: var(--ui-text-primary);
   font-size: 13px;
   outline: none;
 }
@@ -53,14 +53,14 @@
 .cheat-sheet__close {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--ui-overlay-rgb), 0.6);
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
   padding: 0 4px;
 }
 
-.cheat-sheet__close:hover { color: white; }
+.cheat-sheet__close:hover { color: var(--ui-text-primary); }
 
 .cheat-sheet__body {
   overflow-y: auto;
@@ -89,15 +89,15 @@
   gap: 12px;
   padding: 3px 0;
   font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(var(--ui-overlay-rgb), 0.82);
 }
 
 .cheat-sheet__binding {
   font-family: monospace;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
-  background: #1c1c1c;
-  border: 1px solid #383838;
+  color: rgba(var(--ui-overlay-rgb), 0.6);
+  background: var(--ui-bg-1);
+  border: 1px solid var(--ui-border);
   border-radius: 4px;
   padding: 1px 6px;
   white-space: nowrap;
@@ -106,7 +106,7 @@
 .cheat-sheet__empty {
   padding: 24px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--ui-overlay-rgb), 0.4);
   font-size: 13px;
   column-span: all;
 }

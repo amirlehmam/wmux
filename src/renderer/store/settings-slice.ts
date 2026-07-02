@@ -24,6 +24,7 @@ const STORAGE_KEYS = {
   shortcuts:         'wmux-shortcuts',
   quickLaunchProfiles: 'wmux-quick-launch-profiles',
   language:          'wmux-language',
+  appearancePrefs:   'wmux-appearance-prefs',
 } as const;
 
 // Read the whole settings file once at module load (synchronous IPC). The
@@ -356,6 +357,23 @@ export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
   openOnStartup: true,
 };
 
+// ─── Appearance settings (issue #67) ──────────────────────────────────────────
+
+/**
+ * App UI theme, independent of terminal pane color schemes. 'system' follows
+ * the Windows light/dark setting (nativeTheme, pushed live on change).
+ */
+export interface AppearancePrefs {
+  uiTheme: 'system' | 'dark' | 'light';
+}
+
+export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
+  // Defaults to 'dark' rather than 'system' — wmux shipped dark-only up to
+  // 0.14.0, so existing users' chrome must not change color on first launch
+  // after upgrading. New users can switch to 'system'/'light' in Settings.
+  uiTheme: 'dark',
+};
+
 // ─── Slice interface ──────────────────────────────────────────────────────────
 
 export interface SettingsSlice {
@@ -366,6 +384,8 @@ export interface SettingsSlice {
   terminalPrefs: TerminalPrefs;
   notificationPrefs: NotificationPrefs;
   browserPrefs: BrowserPrefs;
+  /** App UI theme — sidebar/tabbar/titlebar/pane chrome (issue #67). */
+  appearancePrefs: AppearancePrefs;
   /** Global quick-launch profiles surfaced in the `+` caret dropdown (issue #32). */
   quickLaunchProfiles: QuickLaunchProfile[];
   /** Selected UI language (issue #56). */
@@ -386,6 +406,7 @@ export interface SettingsSlice {
   setTerminalPrefs(prefs: Partial<TerminalPrefs>): void;
   setNotificationPrefs(prefs: Partial<NotificationPrefs>): void;
   setBrowserPrefs(prefs: Partial<BrowserPrefs>): void;
+  setAppearancePrefs(prefs: Partial<AppearancePrefs>): void;
   setQuickLaunchProfiles(profiles: QuickLaunchProfile[]): void;
   setLanguage(language: Language): void;
   toggleBroadcastInput(): void;
@@ -401,6 +422,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   terminalPrefs:     { ...DEFAULT_TERMINAL_PREFS,     ...loadPersisted<TerminalPrefs>(STORAGE_KEYS.terminalPrefs) },
   notificationPrefs: { ...DEFAULT_NOTIFICATION_PREFS, ...loadPersisted<NotificationPrefs>(STORAGE_KEYS.notificationPrefs) },
   browserPrefs:      { ...DEFAULT_BROWSER_PREFS,      ...loadPersisted<BrowserPrefs>(STORAGE_KEYS.browserPrefs) },
+  appearancePrefs:   { ...DEFAULT_APPEARANCE_PREFS,   ...loadPersisted<AppearancePrefs>(STORAGE_KEYS.appearancePrefs) },
   quickLaunchProfiles: loadPersistedArray<QuickLaunchProfile>(STORAGE_KEYS.quickLaunchProfiles),
   language:          loadPersistedLanguage(),
   broadcastInputActive: false,
@@ -459,6 +481,14 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
       const merged = { ...state.browserPrefs, ...prefs };
       persist(STORAGE_KEYS.browserPrefs, merged);
       return { browserPrefs: merged };
+    });
+  },
+
+  setAppearancePrefs(prefs: Partial<AppearancePrefs>): void {
+    set((state) => {
+      const merged = { ...state.appearancePrefs, ...prefs };
+      persist(STORAGE_KEYS.appearancePrefs, merged);
+      return { appearancePrefs: merged };
     });
   },
 

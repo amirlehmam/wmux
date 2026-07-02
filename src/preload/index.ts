@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld('wmux', {
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
     toggleDevTools: () => ipcRenderer.send('toggle-devtools'),
     pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_PICK_FOLDER),
+    getShouldUseDarkColors: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_SHOULD_USE_DARK_COLORS) as Promise<boolean>,
+    onNativeThemeUpdated: (callback: (shouldUseDarkColors: boolean) => void) => {
+      const handler = (_event: any, shouldUseDarkColors: boolean) => callback(shouldUseDarkColors);
+      ipcRenderer.on(IPC_CHANNELS.SYSTEM_NATIVE_THEME_UPDATED, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.SYSTEM_NATIVE_THEME_UPDATED, handler);
+    },
   },
   config: {
     getTheme: (name?: string) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET_THEME, name),

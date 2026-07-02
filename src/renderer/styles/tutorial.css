@@ -17,8 +17,8 @@
 .tutorial-card {
   width: 100%;
   max-width: 560px;
-  background: #1e1e1e;
-  border: 1px solid #333;
+  background: var(--ui-bg-2);
+  border: 1px solid var(--ui-border);
   border-radius: 12px;
   padding: 32px;
   position: relative;
@@ -31,13 +31,13 @@
   right: 16px;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--ui-overlay-rgb), 0.4);
   font-size: 13px;
   cursor: pointer;
 }
 
 .tutorial-skip:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--ui-overlay-rgb), 0.7);
 }
 
 .tutorial-dots {
@@ -51,7 +51,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(var(--ui-overlay-rgb), 0.15);
   transition: all 0.2s ease;
 }
 
@@ -64,7 +64,7 @@
 .tutorial-title {
   font-size: 22px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--ui-text-primary);
   margin-bottom: 12px;
   text-align: center;
 }
@@ -72,7 +72,7 @@
 .tutorial-body {
   font-size: 14px;
   line-height: 1.7;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--ui-overlay-rgb), 0.7);
   text-align: center;
   margin-bottom: 20px;
 }
@@ -87,12 +87,12 @@
 .tutorial-shortcut {
   display: inline-block;
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(var(--ui-overlay-rgb), 0.08);
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.12);
   border-radius: 6px;
   font-size: 12px;
   font-family: 'Cascadia Mono', 'Consolas', monospace;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(var(--ui-overlay-rgb), 0.8);
 }
 
 .tutorial-nav {
@@ -113,14 +113,14 @@
 }
 
 .tutorial-btn--secondary {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(var(--ui-overlay-rgb), 0.06);
+  color: rgba(var(--ui-overlay-rgb), 0.6);
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.1);
 }
 
 .tutorial-btn--secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: rgba(var(--ui-overlay-rgb), 0.8);
 }
 
 .tutorial-btn--secondary:disabled {
@@ -139,5 +139,5 @@
 
 .tutorial-step-counter {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--ui-overlay-rgb), 0.3);
 }

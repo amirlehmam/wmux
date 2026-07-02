@@ -3,8 +3,8 @@
   display: flex;
   align-items: center;
   -webkit-app-region: drag;
-  background: #111111;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--ui-bg-0);
+  border-bottom: 1px solid rgba(var(--ui-overlay-rgb),0.04);
   flex-shrink: 0;
   position: relative;
   padding: 0 8px;
@@ -32,7 +32,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(var(--ui-overlay-rgb),0.35);
   -webkit-app-region: drag;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -48,8 +48,8 @@
   width: 28px;
   height: 28px;
   background: none;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(var(--ui-overlay-rgb),0.08);
+  color: rgba(var(--ui-overlay-rgb),0.4);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -65,9 +65,9 @@
 }
 
 .titlebar__btn:hover {
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(var(--ui-overlay-rgb),0.9);
+  background: rgba(var(--ui-overlay-rgb),0.08);
+  border-color: rgba(var(--ui-overlay-rgb),0.15);
 }
 
 .titlebar__update-badge {

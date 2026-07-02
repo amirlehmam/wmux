@@ -24,6 +24,9 @@
  *   foreground = "#ccffcc"
  *   palette    = ["#000", "#ff5555", ...] # optional, up to 16 entries
  *
+ *   [appearance]
+ *   ui-theme = "light"   # light | dark | system (issue #67)
+ *
  * File-wins-at-startup, app-wins-at-runtime: this data seeds the store
  * on boot; users can still tweak via the Settings UI afterwards.
  * A `wmux reload-config` command re-applies the file over runtime state.
@@ -43,6 +46,8 @@ export interface UserColorScheme {
   palette?: string[];
 }
 
+export type UiTheme = 'light' | 'dark' | 'system';
+
 export interface UserConfig {
   terminal?: {
     fontFamily?: string;
@@ -52,6 +57,10 @@ export interface UserConfig {
     cursorBlink?: boolean;
     scrollbackLines?: number;
     userColorSchemes?: Record<string, UserColorScheme>;
+  };
+  /** App UI theme (issue #67) — separate from the terminal color scheme. */
+  appearance?: {
+    uiTheme?: UiTheme;
   };
   /** Absolute path the config was read from (for diagnostics). */
   path?: string;
@@ -118,11 +127,52 @@ function asStringArray(v: TomlValue | undefined): string[] | undefined {
   return out.length ? out : undefined;
 }
 
-function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
-  const out: UserConfig = {};
+function mapColorScheme(schemeTable: TomlTable): UserColorScheme {
+  const scheme: UserColorScheme = {};
+  const bg = asString(schemeTable.background);
+  if (bg) scheme.background = bg;
+  const fg = asString(schemeTable.foreground);
+  if (fg) scheme.foreground = fg;
+  const cursor = asString(schemeTable.cursor ?? schemeTable['cursor-color']);
+  if (cursor) scheme.cursor = cursor;
+  const cursorText = asString(schemeTable['cursor-text'] ?? schemeTable.cursorText);
+  if (cursorText) scheme.cursorText = cursorText;
+  const selBg = asString(schemeTable['selection-background'] ?? schemeTable.selectionBackground);
+  if (selBg) scheme.selectionBackground = selBg;
+  const selFg = asString(schemeTable['selection-foreground'] ?? schemeTable.selectionForeground);
+  if (selFg) scheme.selectionForeground = selFg;
+  const palette = asStringArray(schemeTable.palette);
+  if (palette) scheme.palette = palette.slice(0, 16);
+  return scheme;
+}
 
+function mapUserColorSchemes(schemes: TomlTable, errors: string[]): Record<string, UserColorScheme> | undefined {
+  const userSchemes: Record<string, UserColorScheme> = {};
+  for (const [name, value] of Object.entries(schemes)) {
+    const schemeTable = asTable(value);
+    if (!schemeTable) {
+      errors.push(`terminal.colors.schemes.${name}: expected table`);
+      continue;
+    }
+    const scheme = mapColorScheme(schemeTable);
+    if (Object.keys(scheme).length) userSchemes[name] = scheme;
+  }
+  return Object.keys(userSchemes).length ? userSchemes : undefined;
+}
+
+function mapTerminalColors(t: NonNullable<UserConfig['terminal']>, colors: TomlTable, errors: string[]): void {
+  const defaultName = asString(colors.default ?? colors.theme);
+  if (defaultName) t.theme = defaultName;
+
+  const schemes = asTable(colors.schemes);
+  if (!schemes) return;
+  const userSchemes = mapUserColorSchemes(schemes, errors);
+  if (userSchemes) t.userColorSchemes = userSchemes;
+}
+
+function mapTerminalSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['terminal']> | undefined {
   const terminal = asTable(root.terminal);
-  if (!terminal) return out;
+  if (!terminal) return undefined;
 
   const t: NonNullable<UserConfig['terminal']> = {};
 
@@ -148,41 +198,34 @@ function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
   if (scrollbackLines !== undefined) t.scrollbackLines = scrollbackLines;
 
   const colors = asTable(terminal.colors);
-  if (colors) {
-    const defaultName = asString(colors.default ?? colors.theme);
-    if (defaultName) t.theme = defaultName;
+  if (colors) mapTerminalColors(t, colors, errors);
 
-    const schemes = asTable(colors.schemes);
-    if (schemes) {
-      const userSchemes: Record<string, UserColorScheme> = {};
-      for (const [name, value] of Object.entries(schemes)) {
-        const schemeTable = asTable(value);
-        if (!schemeTable) {
-          errors.push(`terminal.colors.schemes.${name}: expected table`);
-          continue;
-        }
-        const scheme: UserColorScheme = {};
-        const bg = asString(schemeTable.background);
-        if (bg) scheme.background = bg;
-        const fg = asString(schemeTable.foreground);
-        if (fg) scheme.foreground = fg;
-        const cursor = asString(schemeTable.cursor ?? schemeTable['cursor-color']);
-        if (cursor) scheme.cursor = cursor;
-        const cursorText = asString(schemeTable['cursor-text'] ?? schemeTable.cursorText);
-        if (cursorText) scheme.cursorText = cursorText;
-        const selBg = asString(schemeTable['selection-background'] ?? schemeTable.selectionBackground);
-        if (selBg) scheme.selectionBackground = selBg;
-        const selFg = asString(schemeTable['selection-foreground'] ?? schemeTable.selectionForeground);
-        if (selFg) scheme.selectionForeground = selFg;
-        const palette = asStringArray(schemeTable.palette);
-        if (palette) scheme.palette = palette.slice(0, 16);
+  return Object.keys(t).length ? t : undefined;
+}
 
-        if (Object.keys(scheme).length) userSchemes[name] = scheme;
-      }
-      if (Object.keys(userSchemes).length) t.userColorSchemes = userSchemes;
-    }
+// App UI theme (issue #67): `[appearance] ui-theme = "light" | "dark" | "system"`.
+function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['appearance']> | undefined {
+  const appearance = asTable(root.appearance);
+  if (!appearance) return undefined;
+
+  const uiThemeRaw = asString(appearance['ui-theme'] ?? appearance.uiTheme);
+  if (!uiThemeRaw) return undefined;
+
+  if (uiThemeRaw === 'light' || uiThemeRaw === 'dark' || uiThemeRaw === 'system') {
+    return { uiTheme: uiThemeRaw };
   }
+  errors.push(`appearance.ui-theme: "${uiThemeRaw}" not one of light|dark|system`);
+  return undefined;
+}
 
-  if (Object.keys(t).length) out.terminal = t;
+function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
+  const out: UserConfig = {};
+
+  const terminal = mapTerminalSection(root, errors);
+  if (terminal) out.terminal = terminal;
+
+  const appearance = mapAppearanceSection(root, errors);
+  if (appearance) out.appearance = appearance;
+
   return out;
 }

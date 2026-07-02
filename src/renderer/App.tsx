@@ -14,6 +14,7 @@ import BrowserPane from './components/Browser/BrowserPane';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
 import { initPipeBridge } from './pipe-bridge';
+import { useUiTheme } from './hooks/useUiTheme';
 import type {
   SurfaceDragCommitOptions,
   SurfaceDragPayload,
@@ -33,6 +34,26 @@ function getAllSurfaces(tree: SplitNode): string[] {
 function findLeafFromTree(node: SplitNode, paneId: PaneId): (SplitNode & { type: 'leaf' }) | null {
   if (node.type === 'leaf') return node.paneId === paneId ? node : null;
   return findLeafFromTree(node.children[0], paneId) || findLeafFromTree(node.children[1], paneId);
+}
+
+/** Apply `~/.wmux/config.toml`'s `[terminal]` section onto the terminal prefs slice. */
+function applyUserConfigTerminal(state: ReturnType<typeof useStore.getState>, terminal: any): void {
+  if (!terminal) return;
+  const patch: Partial<typeof state.terminalPrefs> = {};
+  if (terminal.fontFamily !== undefined) patch.fontFamily = terminal.fontFamily;
+  if (terminal.fontSize !== undefined) patch.fontSize = terminal.fontSize;
+  if (terminal.theme !== undefined) patch.theme = terminal.theme;
+  if (terminal.cursorStyle !== undefined) patch.cursorStyle = terminal.cursorStyle;
+  if (terminal.cursorBlink !== undefined) patch.cursorBlink = terminal.cursorBlink;
+  if (terminal.scrollbackLines !== undefined) patch.scrollbackLines = terminal.scrollbackLines;
+  if (terminal.userColorSchemes) {
+    // Merge: file-defined schemes replace by-name but don't clobber others.
+    patch.userColorSchemes = {
+      ...state.terminalPrefs.userColorSchemes,
+      ...terminal.userColorSchemes,
+    };
+  }
+  if (Object.keys(patch).length) state.setTerminalPrefs(patch);
 }
 
 /** Find the bottom-most pane in the split tree (follows last child of vertical splits) */
@@ -237,6 +258,8 @@ export default function App() {
     toggleSidebar,
   } = useStore();
 
+  useUiTheme();
+
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -370,24 +393,12 @@ export default function App() {
     if (!cfg?.getUserConfig) return;
 
     const apply = (result: any) => {
-      const terminal = result?.terminal;
-      if (!terminal) return;
       const state = useStore.getState();
-      const patch: Partial<typeof state.terminalPrefs> = {};
-      if (terminal.fontFamily !== undefined) patch.fontFamily = terminal.fontFamily;
-      if (terminal.fontSize !== undefined) patch.fontSize = terminal.fontSize;
-      if (terminal.theme !== undefined) patch.theme = terminal.theme;
-      if (terminal.cursorStyle !== undefined) patch.cursorStyle = terminal.cursorStyle;
-      if (terminal.cursorBlink !== undefined) patch.cursorBlink = terminal.cursorBlink;
-      if (terminal.scrollbackLines !== undefined) patch.scrollbackLines = terminal.scrollbackLines;
-      if (terminal.userColorSchemes) {
-        // Merge: file-defined schemes replace by-name but don't clobber others.
-        patch.userColorSchemes = {
-          ...state.terminalPrefs.userColorSchemes,
-          ...terminal.userColorSchemes,
-        };
-      }
-      if (Object.keys(patch).length) state.setTerminalPrefs(patch);
+      applyUserConfigTerminal(state, result?.terminal);
+
+      // App UI theme override (issue #67): `[appearance] ui-theme = "..."`.
+      const uiTheme = result?.appearance?.uiTheme;
+      if (uiTheme) state.setAppearancePrefs({ uiTheme });
     };
 
     cfg.getUserConfig().then(apply).catch(() => { /* no-op */ });
