@@ -1,6 +1,7 @@
 {
   "appId": "com.wmux.app",
   "productName": "wmux",
+  "npmRebuild": false,
   "directories": {
     "output": "release"
   },
