@@ -10,7 +10,11 @@ interface BrowserPaneProps {
 }
 
 export default function BrowserPane({ initialUrl = 'https://github.com/amirlehmam/wmux', surfaceId, workspaceId, onUrlChange }: BrowserPaneProps) {
-  const [url, setUrl] = useState(initialUrl);
+  // src is fixed to the initial page; all later navigation goes through loadURL
+  // (below). Binding src to a mutable url state AND calling loadURL made every
+  // navigation trigger two loads of the same URL, which raced and produced a
+  // spurious ERR_ABORTED (logged by the main process' guest-view handler).
+  const [initialSrc] = useState(initialUrl);
   const [currentUrl, setCurrentUrl] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -26,10 +30,11 @@ export default function BrowserPane({ initialUrl = 'https://github.com/amirlehma
         resolved = `https://www.google.com/search?q=${encodeURIComponent(newUrl)}`;
       }
     }
-    setUrl(resolved);
-    if (webviewRef.current) {
-      webviewRef.current.loadURL(resolved);
-    }
+    // Single navigation. loadURL can still reject with ERR_ABORTED for genuine
+    // cases (a client-side redirect, an unreachable host, navigating again
+    // mid-load); those are reflected by the did-*-load handlers below, so
+    // swallow the promise rejection rather than leaving it unhandled.
+    webviewRef.current?.loadURL(resolved).catch(() => {});
   }, []);
 
   const goBack = useCallback(() => webviewRef.current?.goBack(), []);
@@ -119,7 +124,7 @@ export default function BrowserPane({ initialUrl = 'https://github.com/amirlehma
       {/* @ts-ignore — webview is an Electron-specific HTML element */}
       <webview
         ref={webviewRef}
-        src={url}
+        src={initialSrc}
         className="browser-pane__webview"
       />
     </div>
