@@ -217,7 +217,10 @@ export class CDPBridge {
     const target = this.resolveTarget(wcId);
     const params: any = { format: 'png' };
     if (fullPage) {
-      const { contentSize } = await this.sendCommand(target, 'Page.getLayoutMetrics');
+      // Chromium ≥M141 prefers cssContentSize; contentSize is deprecated but
+      // still emitted. Prefer the modern field, fall back for older engines.
+      const metrics = await this.sendCommand(target, 'Page.getLayoutMetrics');
+      const contentSize = metrics.cssContentSize ?? metrics.contentSize;
       params.clip = { x: 0, y: 0, width: contentSize.width, height: contentSize.height, scale: 1 };
     }
     const { data } = await this.sendCommand(target, 'Page.captureScreenshot', params);

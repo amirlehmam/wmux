@@ -817,7 +817,6 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       xtermRef.current = null;
       ptyIdRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Paste delegated from the keyboard-shortcut handler (e.g. Ctrl+Shift+V).

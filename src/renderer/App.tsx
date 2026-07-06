@@ -363,7 +363,7 @@ export default function App() {
         });
       }
     })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Expose helpers for main process queries + pipe bridge
   useEffect(() => {
@@ -447,7 +447,7 @@ export default function App() {
       if (ws) handleSurfaceMetadata(cmd, ws, deps);
     });
     return unsub;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Listen for Claude Code hook events — tie to active workspace
   // Also auto-create diff surface when Edit/Write tools fire
@@ -502,7 +502,7 @@ export default function App() {
       }
     });
     return unsub;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // NOTE: hookActivity entries are intentionally kept forever (not cleaned up).
   // WorkspaceRow uses the lastSeen timestamp + TTL to decide what to display.
@@ -560,7 +560,7 @@ export default function App() {
     if (paneIds.length > 0 && (focusedPaneId === null || !paneIds.includes(focusedPaneId))) {
       setFocusedPaneId(paneIds[0]);
     }
-  }, [activeWorkspace?.id, activeWorkspace?.splitTree]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeWorkspace?.id, activeWorkspace?.splitTree]);
 
   const handleRatioChange = useCallback(
     (leftPaneId: PaneId, rightPaneId: PaneId, ratio: number) => {

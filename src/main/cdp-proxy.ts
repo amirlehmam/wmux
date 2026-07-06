@@ -90,11 +90,17 @@ export class CDPProxy {
       }
 
       if (req.url === '/json/version') {
+        // Derive from the running Electron's actual versions so strict CDP
+        // clients (chrome-devtools-mcp, puppeteer-core) negotiate correctly and
+        // this never goes stale across Electron/Chromium bumps.
+        const chrome = process.versions.chrome || '0.0.0.0';
+        const chromeMajor = chrome.split('.')[0];
+        const v8 = (process.versions.v8 || '').split('-')[0];
         res.end(JSON.stringify({
-          Browser: 'Chrome/133.0.0.0',
+          Browser: `Chrome/${chrome}`,
           'Protocol-Version': '1.3',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-          'V8-Version': '13.3.0',
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`,
+          'V8-Version': v8,
           'WebKit-Version': '537.36',
           webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/browser/1`,
         }));

@@ -24,7 +24,7 @@ describe('PtyManager', () => {
 
   it('create returns a surf- prefixed SurfaceId', () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -34,7 +34,7 @@ describe('PtyManager', () => {
 
   it('has() returns true after create and false after kill', () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -46,7 +46,7 @@ describe('PtyManager', () => {
 
   it('write does not throw', () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -56,7 +56,7 @@ describe('PtyManager', () => {
 
   it('write of a large payload (>1KB) does not throw and is processed via the chunked queue', async () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -71,7 +71,7 @@ describe('PtyManager', () => {
 
   it('resize does not throw', () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -81,7 +81,7 @@ describe('PtyManager', () => {
 
   it('receives data from PTY after writing', async () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -103,7 +103,7 @@ describe('PtyManager', () => {
 
   it('kill removes the PTY from the manager', () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -115,7 +115,7 @@ describe('PtyManager', () => {
 
   it('getPid returns a numeric PID', () => {
     const manager = makeManager();
-    const id = manager.create({
+    const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
@@ -127,12 +127,12 @@ describe('PtyManager', () => {
 
   it('killAll removes all PTYs', () => {
     const manager = makeManager();
-    const id1 = manager.create({
+    const { id: id1 } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
     });
-    const id2 = manager.create({
+    const { id: id2 } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,

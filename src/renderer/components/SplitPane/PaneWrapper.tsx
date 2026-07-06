@@ -103,7 +103,6 @@ export default function PaneWrapper({
         markRead(surfaceId as SurfaceId);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
 
   // Keyboard shortcut listeners for find (Ctrl+F) and copy mode (Ctrl+Alt+[)
