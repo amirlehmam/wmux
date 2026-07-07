@@ -26,9 +26,11 @@ function readPipeToken(): string {
 const PIPE_TOKEN = readPipeToken();
 
 function sendV1(command: string): Promise<string> {
+  // V1 state updates authenticate with an "auth <token> " prefix (issue #72).
+  const line = PIPE_TOKEN ? `auth ${PIPE_TOKEN} ${command}` : command;
   return new Promise((resolve, reject) => {
     const client = net.connect({ path: PIPE_PATH }, () => {
-      client.write(command + '\n');
+      client.write(line + '\n');
     });
     let data = '';
     client.on('data', (chunk) => { data += chunk.toString(); });

@@ -43,19 +43,46 @@ describe('PipeServer', () => {
     expect(response).toBe('pong');
   });
 
-  it('parses V1 commands', async () => {
+  it('parses authenticated V1 commands', async () => {
     const pipe = uniquePipe();
-    server = new PipeServer(pipe);
+    server = new PipeServer(pipe, 'test-token');
     const commands: any[] = [];
     server.on('v1', (cmd) => commands.push(cmd));
     server.start();
     await new Promise(r => setTimeout(r, 200));
 
-    await connectAndSend(pipe, 'report_pwd surf-123 C:\\Users\\test');
+    const response = await connectAndSend(pipe, 'auth test-token report_pwd surf-123 C:\\Users\\test');
+    expect(response).toBe('ok');
     expect(commands.length).toBe(1);
     expect(commands[0].command).toBe('report_pwd');
     expect(commands[0].surfaceId).toBe('surf-123');
     expect(commands[0].args).toEqual(['C:\\Users\\test']);
+  });
+
+  it('rejects V1 state updates without a token', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    const commands: any[] = [];
+    server.on('v1', (cmd) => commands.push(cmd));
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const response = await connectAndSend(pipe, 'notify surf-123 agent needs your password');
+    expect(response).toBe('unauthorized');
+    expect(commands.length).toBe(0);
+  });
+
+  it('rejects V1 state updates with a wrong token', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    const commands: any[] = [];
+    server.on('v1', (cmd) => commands.push(cmd));
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const response = await connectAndSend(pipe, 'auth wrong report_pwd surf-123 C:\\evil');
+    expect(response).toBe('unauthorized');
+    expect(commands.length).toBe(0);
   });
 
   it('handles V2 JSON-RPC', async () => {
@@ -168,7 +195,7 @@ describe('PipeServer', () => {
     expect(parsed.result.name).toBe('wmux');
   });
 
-  it('still accepts unauthenticated V1 telemetry', async () => {
+  it('still accepts unauthenticated V1 ping', async () => {
     const pipe = uniquePipe();
     server = new PipeServer(pipe, 'secret');
     server.start();
@@ -176,5 +203,44 @@ describe('PipeServer', () => {
 
     const response = await connectAndSend(pipe, 'ping');
     expect(response).toBe('pong');
+  });
+
+  it('rejects hook.event and agent.activity without a token', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    let handlerCalled = false;
+    server.on('v2', (req, respond) => { handlerCalled = true; respond({ ok: true }); });
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    for (const method of ['hook.event', 'agent.activity']) {
+      const response = await connectAndSend(pipe, JSON.stringify({
+        method,
+        params: { surfaceId: 'surf-victim', done: true, tool: 'Edit' },
+        id: 7,
+      }));
+      const parsed = JSON.parse(response);
+      expect(parsed.error?.code).toBe(-32001);
+    }
+    expect(handlerCalled).toBe(false);
+  });
+
+  it('allows hook.event and agent.activity with the correct token', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    server.on('v2', (req, respond) => respond({ ok: true }));
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    for (const method of ['hook.event', 'agent.activity']) {
+      const response = await connectAndSend(pipe, JSON.stringify({
+        method,
+        params: { surfaceId: 'surf-1', tool: 'Edit' },
+        id: 8,
+        token: 'secret',
+      }));
+      const parsed = JSON.parse(response);
+      expect(parsed.result).toEqual({ ok: true });
+    }
   });
 });

@@ -15,10 +15,13 @@ try {
 # wmux CLI shortcut — Claude Code and users can just type: wmux browser open <url>
 function wmux { node "$env:WMUX_CLI" @args }
 
-# Named pipe client helper
+# Named pipe client helper. State updates carry an "auth <token> " prefix —
+# wmux injects WMUX_PIPE_TOKEN into every shell it spawns, and the pipe server
+# rejects unauthenticated V1 commands (issue #72).
 function Send-WmuxMessage {
     param([string]$Message)
     try {
+        if ($env:WMUX_PIPE_TOKEN) { $Message = "auth $($env:WMUX_PIPE_TOKEN) $Message" }
         $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", "wmux", [System.IO.Pipes.PipeDirection]::InOut)
         $pipe.Connect(1000)
         $writer = New-Object System.IO.StreamWriter($pipe)
@@ -109,23 +112,25 @@ $null = Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PS
     if ($global:_wmux_pr_started) { return }
     $global:_wmux_pr_started = $true
     $global:_wmux_pr_job = Start-Job -ScriptBlock {
-        param($surfaceId, $pipeName)
+        param($surfaceId, $pipeName, $pipeToken)
         while ($true) {
             Start-Sleep -Seconds 45
             try {
                 $prJson = gh pr view --json number,state,title 2>$null
                 if ($LASTEXITCODE -eq 0 -and $prJson) {
                     $pr = $prJson | ConvertFrom-Json
+                    $msg = "report_pr $surfaceId $($pr.number) $($pr.state) $($pr.title)"
+                    if ($pipeToken) { $msg = "auth $pipeToken $msg" }
                     $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
                     $pipe.Connect(1000)
                     $writer = New-Object System.IO.StreamWriter($pipe)
                     $writer.AutoFlush = $true
-                    $writer.WriteLine("report_pr $surfaceId $($pr.number) $($pr.state) $($pr.title)")
+                    $writer.WriteLine($msg)
                     $pipe.Close()
                 }
             } catch { }
         }
-    } -ArgumentList $env:WMUX_SURFACE_ID, "wmux"
+    } -ArgumentList $env:WMUX_SURFACE_ID, "wmux", $env:WMUX_PIPE_TOKEN
 }
 
 # Quick-launch profile startup commands (issue #32).

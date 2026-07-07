@@ -15,16 +15,18 @@ export interface V2Request {
   token?: string;
 }
 
-// V2 methods that are safe to call without authentication. These are read-only
-// or telemetry-style and don't grant code execution / file access. Everything
-// else (agent.spawn, browser.eval, markdown.load_file, pane/workspace mutation,
-// …) requires a valid per-instance token. Keeping an allowlist (rather than a
-// blocklist) means any new privileged method is locked down by default.
+// V2 methods that are safe to call without authentication. These are strictly
+// read-only and don't mutate any UI/agent state. Everything else — including
+// telemetry-style writes like hook.event and agent.activity, which can spoof
+// agent status / notifications / diff refreshes (issue #72) — requires a valid
+// per-instance token. The legitimate telemetry clients (Claude Code hooks,
+// agents, shell integration) all run inside wmux-spawned shells and carry
+// WMUX_PIPE_TOKEN, so nothing tokenless has a reason to write state. Keeping
+// an allowlist (rather than a blocklist) means any new privileged method is
+// locked down by default.
 const PUBLIC_V2_METHODS = new Set<string>([
   'system.identify',
   'system.capabilities',
-  'hook.event',
-  'agent.activity',
 ]);
 
 export interface V2Response {
@@ -102,6 +104,21 @@ export class PipeServer extends EventEmitter {
   }
 
   private handleV1(line: string, socket: net.Socket): void {
+    // V1 lines from wmux-spawned clients carry an "auth <token> " prefix
+    // (WMUX_PIPE_TOKEN is injected into every wmux shell). All V1 commands
+    // mutate UI state (notify, report_pwd, report_pr, shell state, …), so —
+    // like privileged V2 methods — they require the per-instance token; an
+    // unauthenticated local process must not be able to spoof them (issue
+    // #72). Only `ping` (read-only liveness probe) stays public.
+    let authed = false;
+    if (line.startsWith('auth ')) {
+      const rest = line.substring(5);
+      const tokenEnd = rest.indexOf(' ');
+      const token = tokenEnd === -1 ? rest : rest.substring(0, tokenEnd);
+      authed = !!this.authToken && tokensMatch(token, this.authToken);
+      line = tokenEnd === -1 ? '' : rest.substring(tokenEnd + 1).trim();
+    }
+
     // Parse command and surfaceId from fixed positions, then handle args
     // per-command to avoid breaking paths that contain spaces (e.g. OneDrive).
     const firstSpace = line.indexOf(' ');
@@ -132,15 +149,19 @@ export class PipeServer extends EventEmitter {
         break;
     }
 
-    const v1Command: V1Command = { command, surfaceId, args };
-    this.emit('v1', v1Command);
-
-    // Respond with OK for simple commands
     if (command === 'ping') {
       socket.write('pong\n');
-    } else {
-      socket.write('ok\n');
+      return;
     }
+
+    if (!authed) {
+      socket.write('unauthorized\n');
+      return;
+    }
+
+    const v1Command: V1Command = { command, surfaceId, args };
+    this.emit('v1', v1Command);
+    socket.write('ok\n');
   }
 
   private handleV2(request: V2Request, socket: net.Socket): void {
@@ -154,8 +175,8 @@ export class PipeServer extends EventEmitter {
       socket.write(JSON.stringify(response) + '\n');
     };
 
-    // Authenticate privileged methods. Public methods (identify/capabilities/
-    // hooks) are exempt so detection and shell/agent telemetry keep working
+    // Authenticate privileged methods. Only read-only discovery methods
+    // (identify/capabilities) are exempt so instance detection keeps working
     // without a token. -32001 signals "unauthorized" to clients.
     if (!PUBLIC_V2_METHODS.has(request.method)) {
       if (!this.authToken) {
