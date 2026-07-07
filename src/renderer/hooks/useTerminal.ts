@@ -121,6 +121,13 @@ const surfaceMouseEnabled = new Map<string, boolean>();
 const surfaceBufferCache = new Map<string, string>();
 const MAX_BUFFER_CACHE = 32;
 
+// Live xterm instances keyed by surfaceId, so the pipe bridge can read screen
+// content (surface.read_text / `wmux read-screen`) from the active buffer.
+// Module-level like surfaceMouseEnabled: survives remounts; entries are
+// registered on mount and removed on unmount (guarded so a StrictMode
+// setup→cleanup→setup sequence can't delete the replacement instance).
+export const surfaceTerminalRegistry = new Map<string, Terminal>();
+
 // Convert a wheel delta to a line count (sign preserved, magnitude ≥ 1).
 function wheelDeltaToLines(ev: WheelEvent, rows: number): number {
   let amount: number;
@@ -367,6 +374,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Open terminal in the DOM
     terminal.open(terminalRef.current);
+
+    if (surfaceId) surfaceTerminalRegistry.set(surfaceId, terminal);
 
     // Restore a buffer snapshot captured before a previous unmount (issue #49).
     // Written now — before the PTY reattaches below — so the restored scrollback
@@ -806,6 +815,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         } catch {
           // Serialization failure is non-fatal — just lose the snapshot.
         }
+      }
+
+      // Drop the read-screen registry entry — but only if it still points at
+      // THIS terminal (StrictMode re-setup may already have registered the
+      // replacement instance under the same surfaceId).
+      if (surfaceId && surfaceTerminalRegistry.get(surfaceId) === terminal) {
+        surfaceTerminalRegistry.delete(surfaceId);
       }
 
       // Release the GPU renderer (and its WebGL budget slot) before disposing

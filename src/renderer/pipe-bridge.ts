@@ -5,6 +5,7 @@
 import { useStore } from './store';
 import { splitNode, removeLeaf, getAllPaneIds, findLeaf, buildGridLayout } from './store/split-utils';
 import { killSurfacePty } from './store/pty-teardown';
+import { surfaceTerminalRegistry } from './hooks/useTerminal';
 import { PaneId, SurfaceId, WorkspaceId, SurfaceType } from '../shared/types';
 import { v4 as uuid } from 'uuid';
 
@@ -306,6 +307,28 @@ export function initPipeBridge(): void {
     if (!leaf?.surfaces?.length) return null;
     const idx = leaf.activeSurfaceIndex ?? 0;
     return leaf.surfaces[idx]?.id || null;
+  };
+
+  // Read a terminal's screen as plain text (surface.read_text / read-screen).
+  // Reads the ACTIVE xterm buffer — alt buffer included, so a full-screen TUI
+  // returns what is actually visible. `lines` counts back from the bottom of
+  // the buffer (scrollback included); trailing blank lines are trimmed.
+  w.__wmux_readScreen = (surfaceId?: string, lines?: number) => {
+    const id = surfaceId || w.__wmux_getActiveSurfaceId?.();
+    if (!id) return { error: 'No active surface' };
+    const terminal = surfaceTerminalRegistry.get(id);
+    if (!terminal) {
+      return { error: `no terminal for surface ${id} (markdown/browser pane, another window, or closed)` };
+    }
+    const buf = terminal.buffer.active;
+    const count = Math.min(Math.max(Math.floor(lines ?? 50), 1), 10000);
+    const end = buf.length;
+    const out: string[] = [];
+    for (let i = Math.max(0, end - count); i < end; i++) {
+      out.push(buf.getLine(i)?.translateToString(true) ?? '');
+    }
+    while (out.length && out[out.length - 1] === '') out.pop();
+    return { text: out.join('\n'), lines: out.length, surfaceId: id };
   };
 
   // ─── Markdown ───────────────────────────────────────────────────────────────

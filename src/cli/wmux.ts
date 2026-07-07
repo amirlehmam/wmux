@@ -363,7 +363,13 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
   'send-key': cmdSendKey,
   'read-screen': async (args) => {
     const lines = args.find((a, i) => args[i - 1] === '--lines');
-    print(await sendV2('surface.read_text', { lines: lines ? parseInt(lines) : 50 }));
+    // Same targeting rule as send/send-key: inside a pane the caller's own
+    // surface is the default; cross-pane reads take --surface explicitly.
+    const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+    print(await sendV2('surface.read_text', {
+      ...(surfaceId ? { surfaceId } : {}),
+      lines: lines ? parseInt(lines) : 50,
+    }));
   },
   'trigger-flash': async (args) => print(await sendV2('surface.trigger_flash', { id: args[1] })),
 
@@ -438,7 +444,7 @@ Surface:    new-surface [--type T] [--color-scheme NAME], close-surface, focus-s
 Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-pane, zoom-pane, list-panes, tree
             pane new|close|focus|list   (verb form, mirrors issue #4 example)
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
-Terminal:   send <text>, send-key <key>, read-screen, trigger-flash
+Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>], trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
 Agent:      agent spawn|spawn-batch|status|list|kill
 Markdown:   markdown <file>   (open a file in a new markdown view)

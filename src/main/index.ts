@@ -531,9 +531,34 @@ app.whenReady().then(() => {
         break;
       }
       case 'surface.read_text': {
-        // Read screen content — not easily available from PTY buffer directly.
-        // Return a note that this requires xterm.js serializer addon in the renderer.
-        respond({ text: '', note: 'Screen reading requires renderer-side xterm serializer' });
+        // Screen content lives in the renderer (xterm owns the buffer), so
+        // delegate to the __wmux_readScreen bridge global. It reads the ACTIVE
+        // buffer — alt buffer included — so full-screen TUIs return what is
+        // actually visible, as plain text (no ANSI escapes).
+        (async () => {
+          try {
+            const surfaceId = await resolvePtySurface(request.params?.surfaceId || request.params?.id);
+            if (!surfaceId.ok) { respondError(-32000, surfaceId.error); return; }
+            const rawLines = Number(request.params?.lines);
+            const lines = Number.isFinite(rawLines)
+              ? Math.min(Math.max(Math.floor(rawLines), 1), 10000)
+              : 50;
+            // The surface's terminal is mounted in exactly one window; probe
+            // each until one has it, keeping the first miss as the error.
+            let result: { text?: string; error?: string } | null = null;
+            for (const win of BrowserWindow.getAllWindows()) {
+              if (win.isDestroyed()) continue;
+              const r = await win.webContents.executeJavaScript(
+                `window.__wmux_readScreen?.(${JSON.stringify(surfaceId.id)}, ${lines})`
+              );
+              if (r && !r.error) { result = r; break; }
+              if (r && !result) result = r;
+            }
+            if (!result) { respondError(-32000, 'No window'); return; }
+            if (result.error) { respondError(-32000, result.error); return; }
+            respond(result);
+          } catch (err: any) { respondError(-32000, err.message); }
+        })();
         break;
       }
       case 'surface.trigger_flash': {

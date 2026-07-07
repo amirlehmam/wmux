@@ -304,15 +304,13 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 - `workspace.create`, `workspace.close`, `workspace.select`, `workspace.rename`, `workspace.list`
 - `pane.split`, `pane.close`, `pane.focus`, `pane.zoom`, `pane.list`
 - `surface.create`, `surface.close`, `surface.focus`, `surface.list`
-- `surface.send_text`, `surface.send_key`, `surface.trigger_flash`
+- `surface.send_text`, `surface.send_key`, `surface.read_text`, `surface.trigger_flash`
 - `markdown.set_content`, `markdown.load_file`
 - `notification.list`, `notification.clear`
 - `sidebar.set_status`, `sidebar.set_progress`, `sidebar.log`, `sidebar.get_state`
 - `browser.*` (via CDP bridge)
 - `agent.spawn`, `agent.spawn_batch`, `agent.status`, `agent.list`, `agent.kill`
 - `hook.event`, `diff.refresh`
-
-**Partially implemented:** `surface.read_text` (stub — needs xterm serializer addon)
 
 ---
 
@@ -363,7 +361,7 @@ wmux split [--down] [--type T] | close-pane | focus-pane | zoom-pane | list-pane
 
 # Terminal I/O
 wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]
-wmux read-screen [--lines N] | trigger-flash
+wmux read-screen [--lines N] [--surface <id>] | trigger-flash
 
 # Browser (CDP)
 wmux browser open <url> | snapshot | click @eN | type @eN <text>
