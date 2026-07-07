@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# wmux CLI shim. wmux prepends this dir (cli-bin) to PATH in every shell it
+# spawns, so bare `wmux` resolves in non-interactive shells too (Claude Code's
+# Bash tool, orchestrator hook scripts) — not just interactive panes. Runs the
+# Node pipe client via the $WMUX_CLI path wmux injects; falls back to the copy
+# next to this shim. There is no wmux.exe in this dir, so no PATHEXT collision.
+CLI="${WMUX_CLI:-$(cd "$(dirname "$0")/../cli" && pwd)/wmux.js}"
+exec node "$CLI" "$@"

@@ -78,6 +78,24 @@ function getCliPath(): string {
   return path.join(__dirname, '../cli/wmux.js');
 }
 
+// Dir holding the `wmux`/`wmux.cmd` shims (each runs `node $WMUX_CLI`). Prepended
+// to PATH in every spawned shell so bare `wmux` resolves in NON-interactive shells
+// too (Claude Code's Bash tool, orchestrator hook scripts) — the interactive
+// `wmux` shell function only exists in the pane's own interactive shell. The dir
+// has no wmux.exe, so there is no PATHEXT collision with the GUI.
+function getCliBinPath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as typeof import('electron');
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'cli-bin');
+    }
+  } catch {
+    // Not running in Electron
+  }
+  return path.join(__dirname, '../../src/cli-bin');
+}
+
 function getShellType(shell: string): 'powershell' | 'cmd' | 'wsl' | 'unknown' {
   const lower = shell.toLowerCase();
   if (lower.includes('pwsh') || lower.includes('powershell')) return 'powershell';
@@ -237,6 +255,17 @@ export class PtyManager {
       WMUX_PIPE_TOKEN: readPipeToken(),
       WMUX_CLI: cliPath,
     };
+
+    // Make bare `wmux` resolvable in every spawned shell AND all its children
+    // (Claude Code's Bash tool, hook scripts, the orchestrator coordinator) by
+    // prepending the cli-bin shim dir to PATH. PATH inherits down the process
+    // tree regardless of shell/login/interactive state — which is exactly what
+    // the interactive `wmux` shell function cannot reach. Prepend (not append)
+    // so this instance's shim wins; it is instance-scoped via $WMUX_CLI/$WMUX_PIPE
+    // anyway. The Windows env key is `Path`, so match case-insensitively.
+    const cliBinDir = getCliBinPath();
+    const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'PATH';
+    env[pathKey] = env[pathKey] ? `${cliBinDir}${path.delimiter}${env[pathKey]}` : cliBinDir;
 
     const args = buildShellArgs(shellType, env, integrationDir, options.cwd);
 
