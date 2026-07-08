@@ -9,6 +9,32 @@ import path from 'path';
 // so the CLI talks to the same instance that spawned the shell.
 const PIPE_PATH = process.env.WMUX_PIPE || '\\\\.\\pipe\\wmux';
 
+// ─── Remote transport (issue #78: remote wmux management) ────────────────────
+// When --remote host[:port] (or WMUX_REMOTE) is set, every command connects
+// over TCP instead of the local named pipe — typically through an SSH tunnel
+// (`ssh -L 9787:127.0.0.1:9787 user@host`) to a `wmux bridge` running on the
+// remote machine. Auth is unchanged: the remote instance's pipe token must be
+// supplied via --token or WMUX_REMOTE_TOKEN (print it there with `wmux token`).
+const DEFAULT_BRIDGE_PORT = 9787;
+let remoteTarget: { host: string; port: number } | null = null;
+
+function parseRemoteTarget(spec: string): { host: string; port: number } {
+  const idx = spec.lastIndexOf(':');
+  if (idx === -1) return { host: spec, port: DEFAULT_BRIDGE_PORT };
+  const port = parseInt(spec.slice(idx + 1), 10);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    console.error(`Invalid --remote target: ${spec} (expected host[:port])`);
+    process.exit(1);
+  }
+  return { host: spec.slice(0, idx) || '127.0.0.1', port };
+}
+
+function connectTransport(onConnect: () => void): net.Socket {
+  return remoteTarget
+    ? net.connect({ host: remoteTarget.host, port: remoteTarget.port }, onConnect)
+    : net.connect({ path: PIPE_PATH }, onConnect);
+}
+
 // Auth token for privileged (V2) pipe requests. wmux injects WMUX_PIPE_TOKEN
 // into the shells it spawns; for CLIs launched elsewhere, fall back to the
 // token file in the instance's APPDATA dir (readable only by this user).
@@ -23,13 +49,15 @@ function readPipeToken(): string {
     return '';
   }
 }
-const PIPE_TOKEN = readPipeToken();
+// Mutable: overridden by --token / WMUX_REMOTE_TOKEN when talking to a remote
+// instance, whose token differs from this machine's.
+let PIPE_TOKEN = readPipeToken();
 
 function sendV1(command: string): Promise<string> {
   // V1 state updates authenticate with an "auth <token> " prefix (issue #72).
   const line = PIPE_TOKEN ? `auth ${PIPE_TOKEN} ${command}` : command;
   return new Promise((resolve, reject) => {
-    const client = net.connect({ path: PIPE_PATH }, () => {
+    const client = connectTransport(() => {
       client.write(line + '\n');
     });
     let data = '';
@@ -48,7 +76,7 @@ function sendV2(method: string, params: Record<string, any> = {}): Promise<any> 
     params = { ...params, caller: process.env.WMUX_SURFACE_ID };
   }
   return new Promise((resolve, reject) => {
-    const client = net.connect({ path: PIPE_PATH }, () => {
+    const client = connectTransport(() => {
       const request = JSON.stringify({ method, params, id: 1, token: PIPE_TOKEN });
       client.write(request + '\n');
     });
@@ -258,6 +286,47 @@ async function cmdSsh(args: string[]): Promise<void> {
   }));
 }
 
+// TCP↔pipe bridge (issue #78): exposes this machine's wmux pipe on a TCP port
+// so a remote CLI can drive it through an SSH tunnel. Pure byte relay — no
+// parsing, no auth of its own; the pipe token is still verified end-to-end by
+// wmux's pipe server, so the bridge grants nothing by itself.
+async function cmdBridge(args: string[]): Promise<void> {
+  const port = parseInt(getFlag(args, '--port') || '', 10) || DEFAULT_BRIDGE_PORT;
+  const host = getFlag(args, '--host') || '127.0.0.1';
+  if (host !== '127.0.0.1' && host !== 'localhost') {
+    console.warn('WARNING: binding beyond localhost exposes the wmux pipe to the network.');
+    console.warn(`Prefer the default 127.0.0.1 + an SSH tunnel: ssh -L ${port}:127.0.0.1:${port} user@host`);
+  }
+  const server = net.createServer((sock) => {
+    const pipe = net.connect({ path: PIPE_PATH });
+    sock.pipe(pipe);
+    pipe.pipe(sock);
+    const drop = () => { sock.destroy(); pipe.destroy(); };
+    sock.on('error', drop);
+    pipe.on('error', drop);
+    sock.on('close', drop);
+    pipe.on('close', drop);
+  });
+  server.on('error', (err) => { console.error(`bridge error: ${err.message}`); process.exit(1); });
+  server.listen(port, host, () => {
+    console.log(`wmux bridge listening on ${host}:${port} ↔ ${PIPE_PATH}`);
+    console.log('From another machine:');
+    console.log(`  ssh -L ${port}:127.0.0.1:${port} <user>@<this-host>`);
+    console.log(`  wmux --remote 127.0.0.1:${port} --token <run 'wmux token' here> list-workspaces`);
+    console.log('Ctrl+C to stop.');
+  });
+}
+
+// Prints this instance's pipe auth token so it can be passed to --token /
+// WMUX_REMOTE_TOKEN on the machine that will drive this one remotely.
+function cmdToken(): void {
+  if (!PIPE_TOKEN) {
+    console.error('No pipe token found — has wmux been started on this machine?');
+    process.exit(1);
+  }
+  console.log(PIPE_TOKEN);
+}
+
 async function cmdSetColorScheme(args: string[]): Promise<void> {
   // Two forms:
   //   wmux set-color-scheme <scheme>             → apply to current surface
@@ -335,6 +404,10 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
   'list-windows': async () => print(await sendV2('window.list')),
   'focus-window': async (args) => print(await sendV2('window.focus', { id: args[1] })),
   'new-window': async () => print(await sendV2('window.create')),
+
+  // Remote management (issue #78)
+  bridge: cmdBridge,
+  token: cmdToken,
 
   // Workspace
   'new-workspace': cmdNewWorkspace,
@@ -430,7 +503,15 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
 };
 
 async function main() {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
+
+  // Global flags (issue #78 remote management) — may appear anywhere in argv.
+  const remoteSpec = getFlag(args, '--remote') ?? process.env.WMUX_REMOTE;
+  const tokenOverride = getFlag(args, '--token') ?? process.env.WMUX_REMOTE_TOKEN;
+  args = stripFlag(stripFlag(args, '--remote'), '--token');
+  if (remoteSpec) remoteTarget = parseRemoteTarget(remoteSpec);
+  if (tokenOverride) PIPE_TOKEN = tokenOverride;
+
   const command = args[0];
 
   if (!command) {
@@ -465,6 +546,10 @@ Usage: wmux <command> [options]
 System:     ping, identify, capabilities, list-windows, focus-window <id>, new-window
 Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, list-workspaces
 Remote:     ssh [ssh options] <user@host> [--title T]   (remote terminal in a new workspace)
+            bridge [--port P] [--host H]   (expose this wmux's pipe over TCP, default 127.0.0.1:9787)
+            token                          (print this instance's auth token, for --token)
+Global:     --remote host[:port] --token <T>   (drive a REMOTE wmux through an SSH tunnel;
+            env equivalents: WMUX_REMOTE, WMUX_REMOTE_TOKEN)
 Surface:    new-surface [--type T] [--color-scheme NAME], close-surface, focus-surface, list-surfaces
             set-color-scheme [surfaceId] <scheme>, clear-color-scheme [surfaceId], list-themes
 Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-pane, zoom-pane, list-panes, tree

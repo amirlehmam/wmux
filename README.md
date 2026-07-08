@@ -315,6 +315,17 @@ wmux browser fill @e3 "value"      # Set input value directly
 wmux browser screenshot            # Base64 PNG screenshot
 wmux browser eval "document.title" # Run JavaScript
 
+# Remote wmux management (SSH tunnel)
+# On the remote machine — expose its wmux pipe on localhost TCP and get its token:
+wmux bridge                        # 127.0.0.1:9787 ↔ \\.\pipe\wmux (pure relay, token still required)
+wmux token                         # print the auth token, copy it
+
+# On your machine — tunnel the port, then drive the remote wmux with any command:
+# ssh -L 9787:127.0.0.1:9787 user@host
+wmux --remote 127.0.0.1:9787 --token <TOKEN> list-workspaces
+wmux --remote 127.0.0.1:9787 --token <TOKEN> new-workspace --title "api"
+# Or set once: WMUX_REMOTE=127.0.0.1:9787 and WMUX_REMOTE_TOKEN=<TOKEN>
+
 # Agents
 wmux agent spawn --cmd "claude --resume abc" --label "Research"
 wmux agent spawn-batch --json '[{"cmd":"claude","label":"Agent 1"},{"cmd":"claude","label":"Agent 2"}]'
