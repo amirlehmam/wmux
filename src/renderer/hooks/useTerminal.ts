@@ -638,6 +638,20 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // Wire PTY exit → inform user
       const unsubExit = window.wmux.pty.onExit(id, (_code: number) => {
         terminal.writeln('\r\n\x1b[2m[process exited]\x1b[0m');
+        // Auto-heal a stuck "Running" badge. shellState is a single
+        // last-writer-wins workspace field, written only by the in-pane shell
+        // integration (report_shell_state). A shell that emits "running" but is
+        // killed before returning to its prompt (e.g. an orchestration agent TUI
+        // reaped at teardown) never emits the matching "idle", stranding the
+        // sidebar on "Running". A PTY that has exited cannot be the running
+        // command, so clear it here.
+        try {
+          const store = useStore.getState();
+          const ws = store.workspaces.find((w) => treeHasSurface(w.splitTree, id));
+          if (ws && ws.shellState === 'running') {
+            store.updateWorkspaceMetadata(ws.id, { shellState: 'idle' });
+          }
+        } catch { /* best-effort: badge reset is non-critical */ }
       });
 
       cleanupFnsRef.current.push(unsubData, unsubExit);

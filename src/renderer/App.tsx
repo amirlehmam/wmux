@@ -441,6 +441,19 @@ export default function App() {
       // ports_update and notify have no (required) surfaceId — handle globally.
       if (cmd.command === 'ports_update') { handlePortsUpdate(cmd, updateWorkspaceMetadata); return; }
       if (cmd.command === 'notify') { handleNotifyCommand(cmd, addNotification); return; }
+      // set_workspace_status is keyed on workspaceId (not surfaceId) — a
+      // coordinator setting a named workspace's status via `wmux set-status
+      // --workspace`. Handle before the surfaceId guard below.
+      if (cmd.command === 'set_workspace_status') {
+        const [state, text] = cmd.args || [];
+        if (state === 'idle' || state === 'running' || state === 'interrupted') {
+          const target = useStore.getState().workspaces.find((w) => w.id === cmd.workspaceId);
+          if (target) {
+            updateWorkspaceMetadata(target.id, { shellState: state, notificationText: text || undefined });
+          }
+        }
+        return;
+      }
 
       if (!cmd.surfaceId) return;
       const ws = workspaceForSurface(cmd.surfaceId);

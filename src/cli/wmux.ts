@@ -486,7 +486,25 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
   'clear-notifications': async (args) => print(await sendV2('notification.clear', { id: args[1] })),
 
   // Sidebar
-  'set-status': async (args) => print(await sendV2('sidebar.set_status', { key: args[1], value: args[2] })),
+  'set-status': async (args) => {
+    // `set-status --workspace <id> --state <idle|running|interrupted> [--text "<label>"]`
+    // sets a named workspace's sidebar status from anywhere (works outside a
+    // pane, unlike the surface-scoped shell integration). Without --workspace it
+    // falls back to the legacy positional `set-status <key> <value>` form.
+    const workspaceId = getFlag(args, '--workspace');
+    if (workspaceId) {
+      const state = getFlag(args, '--state');
+      const valid = ['idle', 'running', 'interrupted'];
+      if (!state || !valid.includes(state)) {
+        console.error(`set-status --workspace requires --state <${valid.join('|')}>`);
+        process.exit(1);
+      }
+      const text = getFlag(args, '--text');
+      print(await sendV2('workspace.set_status', { workspaceId, state, ...(text ? { text } : {}) }));
+      return;
+    }
+    print(await sendV2('sidebar.set_status', { key: args[1], value: args[2] }));
+  },
   'set-progress': async (args) => {
     const label = args.find((a, i) => args[i - 1] === '--label');
     print(await sendV2('sidebar.set_progress', { value: parseFloat(args[1]), label }));

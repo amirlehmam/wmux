@@ -666,6 +666,24 @@ app.whenReady().then(() => {
         break;
       }
 
+      // ─── Workspace status handler ─────────────────────────────────────────
+      case 'workspace.set_status': {
+        // Set a named workspace's sidebar status by id (e.g. an orchestration
+        // coordinator marking a workspace idle when all waves finish). Keyed on
+        // workspaceId, not surfaceId, so it works from outside any pane.
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) {
+            w.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
+              command: 'set_workspace_status',
+              workspaceId: request.params?.workspaceId,
+              args: [request.params?.state || '', request.params?.text || ''],
+            });
+          }
+        });
+        respond({ ok: true });
+        break;
+      }
+
       // ─── Sidebar V2 handlers ──────────────────────────────────────────────
       case 'sidebar.set_status': {
         // Forward as metadata update to renderer
