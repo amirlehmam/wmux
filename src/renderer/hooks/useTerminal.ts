@@ -486,8 +486,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     });
 
     // Korean/CJK IME reliability fix.
-    // xterm.js 5.5's CompositionHelper._finalizeComposition defers reading the
-    // textarea via setTimeout(0), which races against fast Hangul composition
+    // xterm.js's CompositionHelper._finalizeComposition (unchanged through 6.0)
+    // defers reading the textarea via setTimeout(0), which races against fast Hangul composition
     // (an ending jamo can migrate into the next syllable before the timer fires,
     // producing dropped/duplicated/wrong characters). Modern Chromium updates
     // the textarea synchronously before compositionend, so we replace
@@ -594,12 +594,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       return true;
     });
 
-    // GPU renderer (WebGL preferred) is attached by the visibility effect
-    // below, only while this terminal is actually on screen. Hidden keep-alive
-    // tabs stay on xterm's default DOM renderer so the per-process WebGL
-    // context cap (~16 in Chromium) is never approached. The deprecated Canvas
-    // addon is only a fallback — it mispaints wide CJK chars and stale rows
-    // under load (issues #23, #30).
+    // GPU renderer (WebGL) is attached by the visibility effect below, only
+    // while this terminal is actually on screen. Hidden keep-alive tabs stay
+    // on xterm's default DOM renderer so the per-process WebGL context cap
+    // (~16 in Chromium) is never approached. Past the WebGL budget (or on
+    // context loss) visible panes also run on the DOM renderer — xterm 6.0
+    // removed the Canvas addon we previously used as a middle tier.
 
     // Initial fit
     requestAnimationFrame(() => {
@@ -918,7 +918,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   }, [schemeName, userScheme, prefs.fontFamily, prefs.fontSize, prefs.cursorStyle, prefs.cursorBlink, prefs.scrollbackLines, visible]);
 
   // Refit + force-repaint when terminal becomes visible again (tab/workspace switch).
-  // Canvas2D inside a visibility:hidden ancestor skips paint frames; on return we
+  // A canvas inside a visibility:hidden ancestor skips paint frames; on return we
   // must trigger an explicit refresh() so the buffer re-draws to the canvas.
   // Also: when this pane is the active one in the now-visible workspace,
   // pull DOM focus back onto xterm's textarea. Without this, after switching
@@ -933,9 +933,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     let raf2: number | null = null;
     if (visible && fitAddonRef.current && xtermRef.current) {
       const term = xtermRef.current;
-      // Attach the GPU renderer on show (WebGL → Canvas → DOM). A Canvas/DOM
-      // fallback handle is kept across hides to avoid attach churn; only WebGL
-      // is released on hide to return its context to the budget.
+      // Attach the GPU renderer on show (WebGL → DOM). A DOM fallback handle
+      // is kept across hides to avoid attach churn; only WebGL is released on
+      // hide to return its context to the budget.
       if (!rendererRef.current) {
         rendererRef.current = attachVisibleRenderer(term);
       }
