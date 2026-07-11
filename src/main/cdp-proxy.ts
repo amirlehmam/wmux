@@ -194,16 +194,27 @@ export class CDPProxy {
       console.log('[wmux] CDP proxy: client connected');
     });
 
-    // Safety net: prevent 'error' events from becoming uncaught exceptions
+    // Safety nets: never let an 'error' event become an uncaught exception.
+    // BOTH emitters need one. `ws` forwards the http server's 'error' events
+    // onto the WebSocketServer, so without a wss listener the failed listen()
+    // below (port busy — the common case when a second wmux instance starts and
+    // the first already holds 9222) is re-emitted on the wss as an unhandled
+    // 'error'. That crashes the main process with Electron's modal error dialog,
+    // which in turn blocks the event loop and wedges the whole instance.
     this.server.on('error', () => {});
+    this.wss.on('error', () => {});
 
     // Try ports 9222-9230
     for (let p = DEFAULT_PORT; p <= MAX_PORT; p++) {
       try {
         await new Promise<void>((resolve, reject) => {
-          this.server!.once('error', reject);
+          const onListenError = (err: Error): void => reject(err);
+          this.server!.once('error', onListenError);
           this.server!.listen(p, '127.0.0.1', () => {
-            this.server!.removeAllListeners('error');
+            // Drop only THIS probe's listener. removeAllListeners('error') would
+            // also strip the safety net above and ws's own forwarder, leaving a
+            // post-bind server error with no handler — uncaught again.
+            this.server!.removeListener('error', onListenError);
             this.port = p;
             resolve();
           });

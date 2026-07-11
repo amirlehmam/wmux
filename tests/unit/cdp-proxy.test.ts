@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import net from 'net';
 
 // cdp-proxy.ts imports `electron` at module scope; stub it so the pure
 // host-check function can be tested without an Electron runtime.
@@ -6,7 +7,7 @@ vi.mock('electron', () => ({
   webContents: { fromId: () => undefined },
 }));
 
-import { isAllowedCdpHost, isAllowedCdpOrigin } from '../../src/main/cdp-proxy';
+import { CDPProxy, isAllowedCdpHost, isAllowedCdpOrigin } from '../../src/main/cdp-proxy';
 
 describe('isAllowedCdpHost (DNS-rebinding guard)', () => {
   it('allows loopback literals with the proxy port', () => {
@@ -60,5 +61,44 @@ describe('isAllowedCdpOrigin (browser-origin guard)', () => {
     expect(isAllowedCdpOrigin('https://evil.com')).toBe(false);
     expect(isAllowedCdpOrigin('null')).toBe(false);
     expect(isAllowedCdpOrigin('file://')).toBe(false);
+  });
+});
+
+const DEFAULT_PORT = 9222;
+const MAX_PORT = 9230;
+
+describe('CDPProxy.start (port fallback when a first instance holds 9222)', () => {
+  it('falls back to a free port instead of raising an uncaught error', async () => {
+    // Occupy the default port to reproduce the second-instance condition. If it
+    // is already taken (a real wmux is running), that serves the same purpose.
+    const blocker = net.createServer();
+    const blocked = await new Promise<boolean>((resolve) => {
+      blocker.once('error', () => resolve(false));
+      blocker.listen(DEFAULT_PORT, '127.0.0.1', () => resolve(true));
+    });
+
+    const proxy = new CDPProxy();
+    try {
+      // Before the fix this rejected/crashed: `ws` re-emits the http server's
+      // EADDRINUSE onto the WebSocketServer, which had no 'error' listener, so
+      // the failed listen() surfaced as an uncaught exception rather than
+      // advancing the fallback loop.
+      await proxy.start();
+
+      const port = proxy.getPort();
+      expect(port).not.toBe(DEFAULT_PORT);
+      expect(port).toBeGreaterThan(DEFAULT_PORT);
+      expect(port).toBeLessThanOrEqual(MAX_PORT);
+
+      // Both emitters must still carry an 'error' handler after a successful
+      // bind — the old removeAllListeners('error') stripped the safety net and
+      // ws's forwarder, so any later server error became uncaught again.
+      const internals = proxy as unknown as { server: net.Server; wss: { listenerCount(e: string): number } };
+      expect(internals.server.listenerCount('error')).toBeGreaterThan(0);
+      expect(internals.wss.listenerCount('error')).toBeGreaterThan(0);
+    } finally {
+      proxy.stop();
+      if (blocked) await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
   });
 });
