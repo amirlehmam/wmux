@@ -53,9 +53,7 @@ export default function Sidebar({
   const [dragOverId, setDragOverId] = useState<WorkspaceId | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
-  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
-  const [saveInputOpen, setSaveInputOpen] = useState(false);
-  const [saveInputValue, setSaveInputValue] = useState('');
+  const [sessionMenuMode, setSessionMenuMode] = useState<'load' | 'save' | null>(null);
 
   useEffect(() => {
     let polling = false;
@@ -294,40 +292,32 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar__footer">
-        {saveInputOpen ? (
-          <input
-            className="sidebar__save-input"
-            placeholder="Session name..."
-            value={saveInputValue}
-            onChange={(e) => setSaveInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && saveInputValue.trim()) {
-                onSaveSession?.(saveInputValue.trim());
-                setSaveInputOpen(false);
-                setSaveInputValue('');
-              }
-              if (e.key === 'Escape') { setSaveInputOpen(false); setSaveInputValue(''); }
-            }}
-            onBlur={() => { setSaveInputOpen(false); setSaveInputValue(''); }}
-            autoFocus
-          />
-        ) : (
-          <>
-            <button className="sidebar__footer-btn" onClick={() => setSaveInputOpen(true)} title="Save session">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4.414A1 1 0 0 0 14.707 4L12 1.293A1 1 0 0 0 11.586 1H2zm0 1h1v3.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V2h.586L14 4.414V14H2V2zm3 0v3h5V2H5zm3 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
-            </button>
-            <button className="sidebar__footer-btn" onClick={() => setSessionMenuOpen(!sessionMenuOpen)} title="Load session">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9zM2.5 3a.5.5 0 0 0-.5.5V6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.572-2.331-1.184C6.268 3.394 5.762 3 5.264 3H2.5zM14 7H2v5.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V7z"/></svg>
-            </button>
-            <button className="sidebar__new-btn" onClick={onCreate} title="New workspace">
-              +
-            </button>
-          </>
-        )}
-        {sessionMenuOpen && (
+        <button
+          className="sidebar__footer-btn"
+          onClick={() => setSessionMenuMode(sessionMenuMode === 'save' ? null : 'save')}
+          title="Save session"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4.414A1 1 0 0 0 14.707 4L12 1.293A1 1 0 0 0 11.586 1H2zm0 1h1v3.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V2h.586L14 4.414V14H2V2zm3 0v3h5V2H5zm3 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+        </button>
+        <button
+          className="sidebar__footer-btn"
+          onClick={() => setSessionMenuMode(sessionMenuMode === 'load' ? null : 'load')}
+          title="Load session"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9zM2.5 3a.5.5 0 0 0-.5.5V6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.572-2.331-1.184C6.268 3.394 5.762 3 5.264 3H2.5zM14 7H2v5.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V7z"/></svg>
+        </button>
+        <button className="sidebar__new-btn" onClick={onCreate} title="New workspace">
+          +
+        </button>
+        {sessionMenuMode && (
           <SessionMenu
-            onLoad={(name) => { onLoadSession?.(name); setSessionMenuOpen(false); }}
-            onClose={() => setSessionMenuOpen(false)}
+            mode={sessionMenuMode}
+            onSelect={(name) => {
+              if (sessionMenuMode === 'save') onSaveSession?.(name);
+              else onLoadSession?.(name);
+              setSessionMenuMode(null);
+            }}
+            onClose={() => setSessionMenuMode(null)}
           />
         )}
       </div>

@@ -58,6 +58,9 @@ const en: Dict = {
   'titlebar.help': 'Help / Tutorial',
   'titlebar.devtools': 'Toggle Developer Tools',
   'titlebar.settings': 'Settings (Ctrl+,)',
+  // Titlebar — update badge (issue #88)
+  'titlebar.updateAvailable': 'Update available',
+  'titlebar.updateDownload': 'Click to download from GitHub',
   // Settings — Help / About panel
   'settings.tab.help': 'Help',
   'settings.help.about': 'About wmux',
@@ -116,6 +119,8 @@ const fr: Dict = {
   'titlebar.help': 'Aide / Tutoriel',
   'titlebar.devtools': 'Afficher/Masquer les outils de développement',
   'titlebar.settings': 'Paramètres (Ctrl+,)',
+  'titlebar.updateAvailable': 'Mise à jour disponible',
+  'titlebar.updateDownload': 'Clic pour télécharger sur GitHub',
   'settings.tab.help': 'Aide',
   'settings.help.about': 'À propos de wmux',
   'settings.help.version': 'Version',
@@ -170,6 +175,8 @@ const zh: Dict = {
   'titlebar.help': '帮助 / 教程',
   'titlebar.devtools': '切换开发者工具',
   'titlebar.settings': '设置 (Ctrl+,)',
+  'titlebar.updateAvailable': '有可用更新',
+  'titlebar.updateDownload': '点击前往 GitHub 下载',
   'settings.tab.help': '帮助',
   'settings.help.about': '关于 wmux',
   'settings.help.version': '版本',

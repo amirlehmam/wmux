@@ -642,6 +642,21 @@
   padding: 4px;
 }
 
+.session-menu__save-input {
+  display: block;
+  width: calc(100% - 8px);
+  margin: 4px;
+  box-sizing: border-box;
+}
+
+.session-menu__label {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(var(--ui-overlay-rgb), 0.35);
+}
+
 .session-menu__empty {
   padding: 12px;
   text-align: center;

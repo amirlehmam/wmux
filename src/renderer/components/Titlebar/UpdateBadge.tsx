@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useT } from '../../i18n';
 
 interface UpdateInfo {
   version: string;
@@ -9,6 +10,7 @@ interface UpdateInfo {
 
 export default function UpdateBadge() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const t = useT();
 
   useEffect(() => {
     const wmux = (window as any).wmux;
@@ -33,7 +35,7 @@ export default function UpdateBadge() {
     <button
       className="titlebar__btn titlebar__update-badge"
       onClick={handleClick}
-      title={`Mise à jour disponible : v${update.version}\nClic pour télécharger sur GitHub`}
+      title={`${t('titlebar.updateAvailable')}: v${update.version}\n${t('titlebar.updateDownload')}`}
     >
       <span className="titlebar__update-badge__arrow">↑</span>
       <span className="titlebar__update-badge__version">v{update.version}</span>
