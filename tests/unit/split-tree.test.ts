@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout } from '../../src/renderer/store/split-utils';
+import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout, replaceSoleTerminalSurface } from '../../src/renderer/store/split-utils';
 
 describe('split-tree', () => {
   it('creates a leaf node', () => {
@@ -151,5 +151,63 @@ describe('buildGridLayout', () => {
     for (const pid of result.newPaneIds) {
       expect(findLeaf(result.tree, pid)).toBeDefined();
     }
+  });
+});
+
+describe('replaceSoleTerminalSurface (agent spawn --replace-tab)', () => {
+  const agentSurface = { id: 'surf-agent' as any, type: 'terminal' as const };
+
+  it('replaces a sole terminal surface and reports the replaced id', () => {
+    let tree: any = createLeaf('pane-1' as any, 'terminal');
+    tree = splitNode(tree, 'pane-1' as any, 'pane-2' as any, 'terminal', 'horizontal');
+    const defaultSurfaceId = findLeaf(tree, 'pane-2' as any)!.surfaces[0].id;
+
+    const result = replaceSoleTerminalSurface(tree, 'pane-2' as any, agentSurface);
+    expect(result.replacedSurfaceId).toBe(defaultSurfaceId);
+
+    const leaf = findLeaf(result.tree, 'pane-2' as any)!;
+    expect(leaf.surfaces.length).toBe(1);
+    expect(leaf.surfaces[0].id).toBe('surf-agent');
+    expect(leaf.activeSurfaceIndex).toBe(0);
+    // Other panes untouched
+    expect(findLeaf(result.tree, 'pane-1' as any)!.surfaces[0].id)
+      .toBe(findLeaf(tree, 'pane-1' as any)!.surfaces[0].id);
+  });
+
+  it('refuses when the leaf has more than one surface', () => {
+    const leaf = createLeaf('pane-1' as any, 'terminal');
+    const tree: any = {
+      ...leaf,
+      surfaces: [...leaf.surfaces, { id: 'surf-user' as any, type: 'terminal' as const }],
+    };
+    const result = replaceSoleTerminalSurface(tree, 'pane-1' as any, agentSurface);
+    expect(result.replacedSurfaceId).toBeNull();
+    expect(result.tree).toBe(tree);
+  });
+
+  it('refuses when the sole surface is not a terminal', () => {
+    const tree = createLeaf('pane-1' as any, 'browser');
+    const result = replaceSoleTerminalSurface(tree, 'pane-1' as any, agentSurface);
+    expect(result.replacedSurfaceId).toBeNull();
+    expect(result.tree).toBe(tree);
+  });
+
+  it('is a no-op for an unknown paneId', () => {
+    const tree = createLeaf('pane-1' as any, 'terminal');
+    const result = replaceSoleTerminalSurface(tree, 'pane-nope' as any, agentSurface);
+    expect(result.replacedSurfaceId).toBeNull();
+    expect(result.tree).toBe(tree);
+  });
+
+  it('works on a leaf nested inside branches (grid pane)', () => {
+    const base = createLeaf('pane-1' as any, 'terminal');
+    const grid = buildGridLayout(base, 'pane-1' as any, 4);
+    const target = grid.newPaneIds[2];
+    const result = replaceSoleTerminalSurface(grid.tree, target, agentSurface);
+    expect(result.replacedSurfaceId).not.toBeNull();
+    expect(findLeaf(result.tree, target)!.surfaces[0].id).toBe('surf-agent');
+    // Anchor untouched
+    expect(findLeaf(result.tree, 'pane-1' as any)!.surfaces[0].id)
+      .toBe(base.surfaces[0].id);
   });
 });

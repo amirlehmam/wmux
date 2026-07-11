@@ -362,7 +362,7 @@ CLI's sharp edges (eval scoping, ref format, framework-specific input recipes).
 
 **IMPORTANT: Work in the CURRENT workspace. Do NOT create or close workspaces — that hides agent panes from the user.**
 
-The spawn script (`spawn-agents.sh`) automatically creates panes via `wmux split`.
+The spawn script (`spawn-agents.sh`) automatically creates panes via `wmux layout grid` (one atomic split-tree mutation for the whole wave).
 
 **Pane hygiene — start each orchestration from a single coordinator pane.** Re-gridding a window
 that already has extra panes (a previous run's agents, stray splits) does NOT reuse them: the old
@@ -382,8 +382,8 @@ bash "$PLUGIN_ROOT/scripts/spawn-agents.sh" "[orch-dir]" 0
 ```
 
 This script:
-1. Creates a pane per agent via `wmux split`
-2. Runs `node launch-agent.js <prompt-file>` in each pane
+1. Creates a pane per agent via `wmux layout grid --count <agents+1>` (orchestrator keeps the anchor cell)
+2. Runs `node launch-agent.js <prompt-file>` in each pane via `wmux agent spawn --replace-tab`, so the agent TUI replaces the grid pane's default terminal tab (agent panes end with a single tab)
 3. `launch-agent.js` uses `execFileSync` with `'--'` separator to pass the full prompt as a positional argument — this bypasses all shell quoting issues
 4. Claude starts in **interactive mode with full TUI** — the prompt auto-submits and Claude begins working immediately
 5. The user can watch agents in real-time by clicking their pane tabs, and can type into any agent to intervene
