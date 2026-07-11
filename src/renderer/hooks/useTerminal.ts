@@ -59,6 +59,41 @@ function findSurfaceLocation(node: SplitNode, surfaceId: string): { paneId: stri
   return findSurfaceLocation(node.children[0], surfaceId) || findSurfaceLocation(node.children[1], surfaceId);
 }
 
+// Auto-heal a stuck "Running" badge. shellState is a single last-writer-wins
+// workspace field, written only by the in-pane shell integration
+// (report_shell_state). A shell that emits "running" but is killed before
+// returning to its prompt (e.g. an orchestration agent TUI reaped at teardown)
+// never emits the matching "idle", stranding the sidebar on "Running". A PTY
+// that has exited cannot be the running command, so clear it here.
+function clearStuckRunningState(surfaceId: string): void {
+  try {
+    const store = useStore.getState();
+    const ws = store.workspaces.find((w) => treeHasSurface(w.splitTree, surfaceId));
+    if (ws && ws.shellState === 'running') {
+      store.updateWorkspaceMetadata(ws.id, { shellState: 'idle' });
+    }
+  } catch { /* best-effort: badge reset is non-critical */ }
+}
+
+// Snapshot the buffer before disposal so a remount (split-tree restructure)
+// can replay it (issue #49). Normal buffer only, so a TUI's own SIGWINCH
+// redraw owns the alt screen after remount. Bounded LRU so a genuine pane
+// close (no remount to consume it) can't grow the cache.
+function snapshotSurfaceBuffer(surfaceId: string | undefined, serializeAddon: SerializeAddon): void {
+  if (!surfaceId) return;
+  try {
+    const snapshot = serializeAddon.serialize({ excludeAltBuffer: true });
+    if (!snapshot) return;
+    if (surfaceBufferCache.size >= MAX_BUFFER_CACHE) {
+      const oldest = surfaceBufferCache.keys().next().value;
+      if (oldest !== undefined) surfaceBufferCache.delete(oldest);
+    }
+    surfaceBufferCache.set(surfaceId, snapshot);
+  } catch {
+    // Serialization failure is non-fatal — just lose the snapshot.
+  }
+}
+
 function setResolvedShellForSurface(surfaceId: string | undefined, resolvedShell: string): void {
   if (!surfaceId || !resolvedShell) return;
   const state = useStore.getState();
@@ -635,23 +670,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         terminal.write(data);
       });
 
-      // Wire PTY exit → inform user
+      // Wire PTY exit → inform user; also auto-heal a stuck "Running" badge
+      // (see clearStuckRunningState).
       const unsubExit = window.wmux.pty.onExit(id, (_code: number) => {
         terminal.writeln('\r\n\x1b[2m[process exited]\x1b[0m');
-        // Auto-heal a stuck "Running" badge. shellState is a single
-        // last-writer-wins workspace field, written only by the in-pane shell
-        // integration (report_shell_state). A shell that emits "running" but is
-        // killed before returning to its prompt (e.g. an orchestration agent TUI
-        // reaped at teardown) never emits the matching "idle", stranding the
-        // sidebar on "Running". A PTY that has exited cannot be the running
-        // command, so clear it here.
-        try {
-          const store = useStore.getState();
-          const ws = store.workspaces.find((w) => treeHasSurface(w.splitTree, id));
-          if (ws && ws.shellState === 'running') {
-            store.updateWorkspaceMetadata(ws.id, { shellState: 'idle' });
-          }
-        } catch { /* best-effort: badge reset is non-critical */ }
+        clearStuckRunningState(id);
       });
 
       cleanupFnsRef.current.push(unsubData, unsubExit);
@@ -812,24 +835,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // kills PTYs. This allows tree restructuring (closing an adjacent pane)
       // to re-mount this component without losing the terminal session.
 
-      // Snapshot the buffer before disposal so a remount (split-tree
-      // restructure) can replay it (issue #49). Normal buffer only, so a TUI's
-      // own SIGWINCH redraw owns the alt screen after remount. Bounded LRU so a
-      // genuine pane close (no remount to consume it) can't grow the cache.
-      if (surfaceId) {
-        try {
-          const snapshot = serializeAddon.serialize({ excludeAltBuffer: true });
-          if (snapshot) {
-            if (surfaceBufferCache.size >= MAX_BUFFER_CACHE) {
-              const oldest = surfaceBufferCache.keys().next().value;
-              if (oldest !== undefined) surfaceBufferCache.delete(oldest);
-            }
-            surfaceBufferCache.set(surfaceId, snapshot);
-          }
-        } catch {
-          // Serialization failure is non-fatal — just lose the snapshot.
-        }
-      }
+      // Snapshot the buffer before disposal so a remount can replay it
+      // (see snapshotSurfaceBuffer).
+      snapshotSurfaceBuffer(surfaceId, serializeAddon);
 
       // Drop the read-screen registry entry — but only if it still points at
       // THIS terminal (StrictMode re-setup may already have registered the
@@ -886,8 +894,28 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     term.options.cursorStyle = prefs.cursorStyle || term.options.cursorStyle;
     term.options.cursorBlink = prefs.cursorBlink ?? term.options.cursorBlink;
     term.options.scrollback = prefs.scrollbackLines || term.options.scrollback;
-    return () => { cancelled = true; };
-  }, [schemeName, userScheme, prefs.fontFamily, prefs.fontSize, prefs.cursorStyle, prefs.cursorBlink, prefs.scrollbackLines]);
+    // A font change alters the cell size, so the same viewport now fits a
+    // different col/row count. Refit and tell the PTY (SIGWINCH) or apps
+    // anchored to the bottom row (prompts, TUIs) end up past the viewport
+    // with no way to scroll to them (issue #82). Hidden terminals are
+    // handled by the visibility effect's refit on show.
+    let raf: number | null = null;
+    if (visible) {
+      raf = requestAnimationFrame(() => {
+        if (!xtermRef.current) return;
+        fit();
+        const dims = fitAddonRef.current?.proposeDimensions();
+        if (dims && ptyIdRef.current) {
+          window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
+        }
+        try { xtermRef.current.refresh(0, xtermRef.current.rows - 1); } catch { /* no-op */ }
+      });
+    }
+    return () => {
+      cancelled = true;
+      if (raf !== null) cancelAnimationFrame(raf);
+    };
+  }, [schemeName, userScheme, prefs.fontFamily, prefs.fontSize, prefs.cursorStyle, prefs.cursorBlink, prefs.scrollbackLines, visible]);
 
   // Refit + force-repaint when terminal becomes visible again (tab/workspace switch).
   // Canvas2D inside a visibility:hidden ancestor skips paint frames; on return we

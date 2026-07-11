@@ -76,9 +76,18 @@ export default function WorkspaceRow({
   }, [isActive, workspace.title]);
 
   const activeBackground = workspace.customColor ?? '#0091FF';
+  // 15% alpha tint for inactive colored rows. The previous 5% (`0D`) was
+  // indistinguishable from the sidebar background on dark themes (issue #80).
   const customColorTint = workspace.customColor
-    ? `${workspace.customColor}0D`
+    ? `${workspace.customColor}26`
     : undefined;
+  // Solid color rail so the assigned color reads unambiguously even where a
+  // translucent tint can't (issue #80). Skipped on the active row, whose full
+  // background is already the custom color (the CSS overlay rail stays).
+  const railStyle: React.CSSProperties | undefined =
+    workspace.customColor && !isActive
+      ? { background: workspace.customColor, opacity: 1 }
+      : undefined;
 
   // Tick counter — forces re-evaluation of time-based memos every 2 seconds.
   // Without this, useMemo caches stale Date.now() results because the deps
@@ -99,11 +108,12 @@ export default function WorkspaceRow({
     return null;
   }, [claudeActivity, workspace.splitTree]);
 
-  const rowStyle: React.CSSProperties = isActive
-    ? { backgroundColor: activeBackground }
-    : customColorTint
-    ? { backgroundColor: customColorTint }
-    : {};
+  let rowStyle: React.CSSProperties = {};
+  if (isActive) {
+    rowStyle = { backgroundColor: activeBackground };
+  } else if (customColorTint) {
+    rowStyle = { backgroundColor: customColorTint };
+  }
 
   // How long a tool label persists after the last hook/observer event (ms)
   const ACTIVITY_TTL = 5000;
@@ -143,8 +153,14 @@ export default function WorkspaceRow({
     return false;
   }, [workspace.shellState, wsActivity, hookActivity, tick]);
 
-  // ── Status text: tool activity > shell state > default ──
+  // ── Status text: manual override > tool activity > shell state > default ──
   const statusText = useMemo(() => {
+    // Priority 0: user pinned the status by hand (issue #81) — detection
+    // heuristics can misread tools that keep the shell "running" while idle.
+    if (workspace.statusOverride) {
+      return workspace.statusOverride === 'running' ? 'Running' : 'Idle';
+    }
+
     // Priority 1: Claude is actively using a tool
     if (currentToolLabel) return currentToolLabel;
 
@@ -166,10 +182,15 @@ export default function WorkspaceRow({
 
     // Priority 5: Default — always show something
     return 'Idle';
-  }, [currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
+  }, [workspace.statusOverride, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
 
   // ── Status color class ──
   const statusClass = useMemo(() => {
+    if (workspace.statusOverride) {
+      return workspace.statusOverride === 'running'
+        ? 'workspace-row__status--running'
+        : 'workspace-row__status--idle';
+    }
     if (currentToolLabel) return 'workspace-row__status--working';
     if (claudeIsIdle) return 'workspace-row__status--idle';
     const state = workspace.shellState;
@@ -177,7 +198,7 @@ export default function WorkspaceRow({
     if (state === 'interrupted') return 'workspace-row__status--interrupted';
     if (state === 'idle') return 'workspace-row__status--done';
     return 'workspace-row__status--idle';
-  }, [currentToolLabel, claudeIsIdle, workspace.shellState]);
+  }, [workspace.statusOverride, currentToolLabel, claudeIsIdle, workspace.shellState]);
 
   // ── Context line: "branch* · ~/path/to/dir" ──
   const contextLine = useMemo(() => {
@@ -197,13 +218,18 @@ export default function WorkspaceRow({
 
   // ── State dot class — pulsing when Claude is active ──
   const stateDotClass = useMemo(() => {
+    if (workspace.statusOverride) {
+      return workspace.statusOverride === 'running'
+        ? 'workspace-row__state-dot--running'
+        : 'workspace-row__state-dot--idle';
+    }
     if (isClaudeActive) return 'workspace-row__state-dot--running';
     if (claudeIsIdle) return 'workspace-row__state-dot--idle';
     if (workspace.shellState === 'running') return 'workspace-row__state-dot--running';
     if (workspace.shellState === 'interrupted') return 'workspace-row__state-dot--interrupted';
     if (workspace.shellState === 'idle') return 'workspace-row__state-dot--idle';
     return '';
-  }, [isClaudeActive, claudeIsIdle, workspace.shellState]);
+  }, [workspace.statusOverride, isClaudeActive, claudeIsIdle, workspace.shellState]);
 
   return (
     <div
@@ -222,7 +248,7 @@ export default function WorkspaceRow({
       onDrop={onDrop}
       onDragEnd={onDragEnd}
     >
-      <span className="workspace-row__rail" />
+      <span className="workspace-row__rail" style={railStyle} />
 
       {/* Line 1: Title */}
       <div className="workspace-row__header">

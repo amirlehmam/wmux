@@ -179,6 +179,14 @@ export default function Sidebar({
     [onUpdateMetadata],
   );
 
+  // ── Status override from context menu (issue #81) ───────────────────────
+  const handleSetStatusOverride = useCallback(
+    (id: WorkspaceId, override: 'running' | 'idle' | null) => {
+      onUpdateMetadata(id, { statusOverride: override ?? undefined });
+    },
+    [onUpdateMetadata],
+  );
+
   // ── Move helpers ─────────────────────────────────────────────────────────
   const handleMoveUp = useCallback(
     (id: WorkspaceId) => {
@@ -336,6 +344,7 @@ export default function Sidebar({
           onPin={handlePin}
           onRename={onRename}
           onSetColor={handleSetColor}
+          onSetStatusOverride={handleSetStatusOverride}
           onMoveUp={handleMoveUp}
           onMoveDown={handleMoveDown}
           onMoveToTop={handleMoveToTop}

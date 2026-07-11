@@ -78,6 +78,10 @@ const en: Dict = {
   'ctx.closeOthers': 'Close Other Workspaces',
   'ctx.markRead': 'Mark as Read',
   'ctx.markUnread': 'Mark as Unread',
+  'ctx.status': 'Status Indicator',
+  'ctx.statusAuto': 'Auto (detected)',
+  'ctx.statusRunning': 'Pin as Running',
+  'ctx.statusIdle': 'Pin as Idle',
 };
 
 const fr: Dict = {
@@ -130,6 +134,10 @@ const fr: Dict = {
   'ctx.closeOthers': 'Fermer les autres espaces',
   'ctx.markRead': 'Marquer comme lu',
   'ctx.markUnread': 'Marquer comme non lu',
+  'ctx.status': "Indicateur d'état",
+  'ctx.statusAuto': 'Auto (détecté)',
+  'ctx.statusRunning': 'Épingler « En cours »',
+  'ctx.statusIdle': 'Épingler « Inactif »',
 };
 
 const zh: Dict = {
@@ -180,6 +188,10 @@ const zh: Dict = {
   'ctx.closeOthers': '关闭其他工作区',
   'ctx.markRead': '标记为已读',
   'ctx.markUnread': '标记为未读',
+  'ctx.status': '状态指示',
+  'ctx.statusAuto': '自动（检测）',
+  'ctx.statusRunning': '固定为运行中',
+  'ctx.statusIdle': '固定为空闲',
 };
 
 const DICTS: Record<Language, Dict> = { en, fr, zh };

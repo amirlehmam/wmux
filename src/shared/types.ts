@@ -71,6 +71,10 @@ export interface WorkspaceInfo {
   ports?: number[];
   notificationText?: string;
   shellState?: 'idle' | 'running' | 'interrupted';
+  // Manual pin of the sidebar status indicator (issue #81). When set it wins
+  // over all detection (shell integration, Claude observer/hooks); cleared
+  // (undefined) means automatic.
+  statusOverride?: 'running' | 'idle';
   browserUrl?: string;
   browserWidth?: number;
 }

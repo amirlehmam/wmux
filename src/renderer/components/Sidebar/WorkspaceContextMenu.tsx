@@ -12,6 +12,7 @@ interface WorkspaceContextMenuProps {
   onPin: (id: WorkspaceId) => void;
   onRename: (id: WorkspaceId, title: string) => void;
   onSetColor: (id: WorkspaceId, color: string | null) => void;
+  onSetStatusOverride: (id: WorkspaceId, override: 'running' | 'idle' | null) => void;
   onMoveUp: (id: WorkspaceId) => void;
   onMoveDown: (id: WorkspaceId) => void;
   onMoveToTop: (id: WorkspaceId) => void;
@@ -49,6 +50,7 @@ export default function WorkspaceContextMenu({
   onPin,
   onRename,
   onSetColor,
+  onSetStatusOverride,
   onMoveUp,
   onMoveDown,
   onMoveToTop,
@@ -62,6 +64,7 @@ export default function WorkspaceContextMenu({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(workspace.title);
   const [showColorSubmenu, setShowColorSubmenu] = useState(false);
+  const [showStatusSubmenu, setShowStatusSubmenu] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Close on outside click or Escape
@@ -113,6 +116,20 @@ export default function WorkspaceContextMenu({
       setRenaming(false);
       onClose();
     }
+  };
+
+  const statusChoice = (label: string, value: 'running' | 'idle' | null) => {
+    const selected = (workspace.statusOverride ?? null) === value;
+    return (
+      <div
+        className="ctx-menu__item"
+        onClick={() => { onSetStatusOverride(workspaceId, value); onClose(); }}
+        role="menuitemradio"
+        aria-checked={selected}
+      >
+        {selected ? '● ' : '○ '}{label}
+      </div>
+    );
   };
 
   const item = (label: string, action: () => void, danger = false) => (
@@ -189,6 +206,26 @@ export default function WorkspaceContextMenu({
                 />
               ))}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Status override submenu (issue #81) — manually pin the sidebar
+          status when auto-detection misreads the tool (e.g. an idling TUI
+          keeps the shell in "running"). */}
+      <div
+        className="ctx-menu__item ctx-menu__item--has-sub"
+        onMouseEnter={() => setShowStatusSubmenu(true)}
+        onMouseLeave={() => setShowStatusSubmenu(false)}
+        role="menuitem"
+        aria-haspopup="true"
+      >
+        {t('ctx.status')} ▶
+        {showStatusSubmenu && (
+          <div className="ctx-menu__submenu">
+            {statusChoice(t('ctx.statusAuto'), null)}
+            {statusChoice(t('ctx.statusRunning'), 'running')}
+            {statusChoice(t('ctx.statusIdle'), 'idle')}
           </div>
         )}
       </div>
