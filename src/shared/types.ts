@@ -151,6 +151,8 @@ export interface AgentSpawnParams {
   env?: Record<string, string>;
   paneId?: PaneId;
   workspaceId?: WorkspaceId;
+  /** Replace the target pane's sole idle default terminal tab instead of appending. */
+  replaceTab?: boolean;
 }
 
 export interface AgentBatchParams {

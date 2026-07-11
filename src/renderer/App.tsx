@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { useStore } from './store';
 import { PaneId, SurfaceId, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import SplitContainer from './components/SplitPane/SplitContainer';
-import { updateRatio, getAllPaneIds, findLeaf } from './store/split-utils';
+import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface } from './store/split-utils';
 import Sidebar from './components/Sidebar/Sidebar';
 import Titlebar from './components/Titlebar/Titlebar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -415,6 +415,28 @@ export default function App() {
         const state = useStore.getState();
         const ws = state.workspaces.find((w) => w.id === workspaceId);
         if (!ws) return;
+
+        // --replace-tab: swap the pane's sole idle default terminal for the
+        // agent surface instead of appending, so orchestration panes don't
+        // keep an unused shell tab. Guards: exactly one surface, terminal
+        // type (enforced in the helper), and not itself an agent surface.
+        if (event.replaceTab) {
+          const leaf = findLeaf(ws.splitTree, paneId);
+          const sole = leaf?.surfaces.length === 1 ? leaf.surfaces[0] : undefined;
+          if (sole && !state.agentMeta.get(sole.id)) {
+            const { tree, replacedSurfaceId } = replaceSoleTerminalSurface(
+              ws.splitTree, paneId, { id: surfaceId, type: 'terminal' },
+            );
+            if (replacedSurfaceId) {
+              state.updateSplitTree(workspaceId, tree);
+              setAgentMeta(surfaceId, { agentId: event.agentId, label, status: 'running' });
+              // Intentionally not pushed onto the reopen-closed stack — the
+              // replaced surface is an idle default shell, not user work.
+              window.wmux?.pty?.kill(replacedSurfaceId);
+              return;
+            }
+          }
+        }
 
         const addSurfaceToLeaf = (node: SplitNode): SplitNode => {
           if (node.type === 'leaf' && node.paneId === paneId) {

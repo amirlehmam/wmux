@@ -177,6 +177,40 @@ export function collectActiveTerminalSurfaceIds(tree: SplitNode): SurfaceId[] {
   ];
 }
 
+// ─── replaceSoleTerminalSurface (agent spawn --replace-tab) ──────────────────
+// Swap a pane's single default terminal tab for `newSurface`, so an agent can
+// occupy a freshly-gridded pane without leaving the idle shell behind as a
+// dead tab. Only fires when the leaf has EXACTLY one surface and it's a
+// terminal — anything else (user tabs, browser/markdown surfaces) falls back
+// to append semantics. Returns the replaced surface id so the caller can kill
+// its PTY; `replacedSurfaceId: null` means the tree is unchanged.
+
+export function replaceSoleTerminalSurface(
+  tree: SplitNode,
+  paneId: PaneId,
+  newSurface: { id: SurfaceId; type: SurfaceType },
+): { tree: SplitNode; replacedSurfaceId: SurfaceId | null } {
+  const leaf = findLeaf(tree, paneId);
+  if (!leaf || leaf.surfaces.length !== 1 || leaf.surfaces[0].type !== 'terminal') {
+    return { tree, replacedSurfaceId: null };
+  }
+  const replacedSurfaceId = leaf.surfaces[0].id;
+
+  const replaceInNode = (node: SplitNode): SplitNode => {
+    if (node.type === 'leaf') {
+      if (node.paneId !== paneId) return node;
+      return { ...node, surfaces: [newSurface], activeSurfaceIndex: 0 };
+    }
+    const [left, right] = node.children;
+    const newLeft = replaceInNode(left);
+    const newRight = replaceInNode(right);
+    if (newLeft === left && newRight === right) return node;
+    return { ...node, children: [newLeft, newRight] };
+  };
+
+  return { tree: replaceInNode(tree), replacedSurfaceId };
+}
+
 // ─── buildGridLayout ──────────────────────────────────────────────────────────
 // Replace the ENTIRE workspace split tree with a balanced grid of `count` cells.
 //

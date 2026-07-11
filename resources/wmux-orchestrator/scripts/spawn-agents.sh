@@ -84,11 +84,14 @@ while IFS= read -r agent; do
 
   # launch-agent.js uses execFileSync with '--' separator to pass the prompt
   # as a positional arg — full interactive TUI, user can watch and intervene.
+  # --replace-tab: the agent surface takes over the grid pane's default idle
+  # terminal tab instead of being appended next to it (single-tab agent panes).
   SPAWN_RESULT=$(wmux agent spawn \
     --cmd "node \"$LAUNCHER\" \"$PROMPT_FILE\"" \
     --label "$AGENT_LABEL" \
     --cwd "$CWD" \
-    --pane "$PANE_ID" 2>&1)
+    --pane "$PANE_ID" \
+    --replace-tab 2>&1)
 
   SPAWNED_AGENT_ID=$(parse_json "$SPAWN_RESULT" '.agentId')
   SPAWNED_SURFACE_ID=$(parse_json "$SPAWN_RESULT" '.surfaceId')

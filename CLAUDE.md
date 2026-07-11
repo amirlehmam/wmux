@@ -377,7 +377,7 @@ wmux browser fill @eN <value> | get-text | screenshot | eval <js>
 wmux browser back | forward | reload
 
 # Agents
-wmux agent spawn [--cmd C] [--label L] [--cwd D] [--pane P]
+wmux agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-tab]
 wmux agent spawn-batch --json '[...]' [--strategy distribute|stack|split]
 wmux agent status <id> | list | kill <id>
 

@@ -138,12 +138,17 @@ async function cmdBrowser(args: string[]): Promise<void> {
 
 function agentSpawn(args: string[]): Promise<any> {
   const params: any = {};
-  for (let i = 2; i < args.length; i += 2) {
-    if (args[i] === '--cmd') params.cmd = args[i + 1];
-    if (args[i] === '--label') params.label = args[i + 1];
-    if (args[i] === '--cwd') params.cwd = args[i + 1];
-    if (args[i] === '--pane') params.paneId = args[i + 1];
-    if (args[i] === '--workspace') params.workspaceId = args[i + 1];
+  // Valueless flags must be stripped before the pairwise --flag value loop.
+  const rest = args.slice(2).filter((a) => {
+    if (a === '--replace-tab') { params.replaceTab = true; return false; }
+    return true;
+  });
+  for (let i = 0; i < rest.length; i += 2) {
+    if (rest[i] === '--cmd') params.cmd = rest[i + 1];
+    if (rest[i] === '--label') params.label = rest[i + 1];
+    if (rest[i] === '--cwd') params.cwd = rest[i + 1];
+    if (rest[i] === '--pane') params.paneId = rest[i + 1];
+    if (rest[i] === '--workspace') params.workspaceId = rest[i + 1];
   }
   if (!params.cmd) { console.error('--cmd is required'); process.exit(1); }
   if (!params.label) params.label = params.cmd.split(/\s+/)[0];
@@ -575,7 +580,7 @@ Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-p
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
 Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>], trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
-Agent:      agent spawn|spawn-batch|status|list|kill
+Agent:      agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-tab] | spawn-batch|status|list|kill
 Markdown:   markdown <file>   (open a file in a new markdown view)
             markdown set <id> --content <text> | --file <path>
 Diff:       diff [--file <path>]

@@ -770,7 +770,7 @@ app.whenReady().then(() => {
             if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
 
             BrowserWindow.getAllWindows().forEach(w => {
-              if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, { type: 'spawned', ...result, paneId, workspaceId, label: params.label });
+              if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, { type: 'spawned', ...result, paneId, workspaceId, label: params.label, replaceTab: !!params.replaceTab });
             });
             respond(result);
           } catch (err: any) { respondError(-32000, err.message); }
