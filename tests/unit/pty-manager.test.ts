@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PtyManager, parseShellSpec } from '../../src/main/pty-manager';
+import { PtyManager, parseShellSpec, resolveSpawnCwd } from '../../src/main/pty-manager';
 
 const TEST_SHELL = 'cmd.exe';
 const TEST_ENV = Object.fromEntries(
@@ -180,5 +180,55 @@ describe('parseShellSpec (issue #78 — shell command lines with args)', () => {
       command: 'C:\\some path\\tool.exe',
       args: ['--flag'],
     });
+  });
+});
+
+/**
+ * CreateProcess fails with error 267 (ERROR_DIRECTORY) when handed a working
+ * dir that isn't a real directory, and node-pty surfaces it as an opaque
+ * "Failed to create terminal: Cannot create process, error code: 267" — the
+ * pane just dies. The cwd comes from session state / CLI args (e.g. an agent
+ * spawned into a git worktree that was deleted after its wave, or ordered
+ * before `git worktree add` finished), so it cannot be trusted to still exist.
+ */
+describe('resolveSpawnCwd', () => {
+  const home = process.env.USERPROFILE || 'C:\\';
+
+  it('keeps a cwd that exists', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-cwd-'));
+    try {
+      expect(resolveSpawnCwd(dir)).toBe(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back when the cwd was deleted (the worktree case → error 267)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-cwd-'));
+    fs.rmSync(dir, { recursive: true, force: true });
+    expect(resolveSpawnCwd(dir)).toBe(home);
+  });
+
+  it('falls back when the cwd never existed', () => {
+    expect(resolveSpawnCwd('C:\\definitely\\not\\here\\wmux-test')).toBe(home);
+  });
+
+  it('falls back when the cwd is a file, not a directory', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-cwd-'));
+    const file = path.join(dir, 'not-a-dir.txt');
+    fs.writeFileSync(file, 'x');
+    try {
+      expect(resolveSpawnCwd(file)).toBe(home);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back for a POSIX/WSL cwd (issue #60)', () => {
+    expect(resolveSpawnCwd('/home/user/project')).toBe(home);
+  });
+
+  it('passes undefined through (node-pty default)', () => {
+    expect(resolveSpawnCwd(undefined)).toBeUndefined();
   });
 });

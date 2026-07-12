@@ -129,6 +129,30 @@ function isPosixPath(p: string): boolean {
   return p.startsWith('/') && !p.startsWith('//');
 }
 
+// Resolve the working dir handed to pty.spawn, guaranteeing it is a directory
+// that exists — otherwise CreateProcess fails with error 267 (ERROR_DIRECTORY)
+// and the pane dies with an opaque "Cannot create process, error code: 267".
+// Returns undefined (node-pty's own default) when there is nothing usable.
+export function resolveSpawnCwd(cwd: string | undefined): string | undefined {
+  if (!cwd) return undefined;
+
+  const fallback = process.env.USERPROFILE || 'C:\\';
+
+  // POSIX/WSL cwd: not a valid Win32 working dir at all (issue #60).
+  if (isPosixPath(cwd)) return fallback;
+
+  // Win32 cwd that no longer exists (deleted git worktree) or does not exist
+  // yet (spawn ordered before `git worktree add` finished). Also rejects a path
+  // that exists but is a FILE — CreateProcess wants a directory.
+  try {
+    if (fs.statSync(cwd).isDirectory()) return cwd;
+    console.warn(`[wmux] cwd is not a directory, falling back to ${fallback}: ${cwd}`);
+  } catch {
+    console.warn(`[wmux] cwd does not exist, falling back to ${fallback}: ${cwd}`);
+  }
+  return fallback;
+}
+
 // Build the launch args for a shell and mutate `env` with shell-specific vars.
 // Kept out of create() so that hot path stays under the cognitive-complexity
 // budget. `env` is mutated in place (integration script paths, WSLENV, etc.).
@@ -315,11 +339,18 @@ export class PtyManager {
       startupCommandsConsumed = true;
     }
 
-    // A POSIX/WSL cwd (restored from session.json — issue #60) is never a valid
-    // Win32 process working dir and triggers spawn error 267. Fall back to a real
-    // Windows dir; WSL itself is still sent to the POSIX path via --cd (above).
-    const spawnCwd =
-      options.cwd && isPosixPath(options.cwd) ? (process.env.USERPROFILE || 'C:\\') : options.cwd;
+    // CreateProcess fails with error 267 (ERROR_DIRECTORY) when the working dir
+    // isn't a real directory, and node-pty surfaces that as an opaque "Cannot
+    // create process, error code: 267" — the pane just dies. Two ways to get
+    // there, both fixed by falling back to a directory that exists:
+    //
+    //  - a POSIX/WSL cwd restored from session.json (issue #60) is never a valid
+    //    Win32 working dir. WSL itself still reaches the POSIX path via --cd above.
+    //  - a Win32 cwd that has since been deleted, or has not been created yet:
+    //    an agent spawned into a git worktree that was removed after its wave, or
+    //    ordered before `git worktree add` finished. The cwd comes from session
+    //    state / CLI args, so it must not be trusted to still exist at spawn time.
+    const spawnCwd = resolveSpawnCwd(options.cwd);
 
     const spawnOptions: pty.IWindowsPtyForkOptions = {
       name: 'xterm-256color',
