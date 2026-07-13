@@ -9,9 +9,27 @@ import { killTreeTerminalPtys } from './pty-teardown';
 export interface WorkspaceSlice {
   workspaces: WorkspaceInfo[];
   activeWorkspaceId: WorkspaceId | null;
+  /**
+   * Sessions queued behind the close-confirmation dialog (issue #90). Non-empty
+   * only while the dialog is up; "Close others" funnels every victim in here so
+   * the user confirms the batch once instead of racing N dialogs. Runtime-only.
+   */
+  pendingCloseWorkspaceIds: WorkspaceId[];
 
   createWorkspace(options?: Partial<WorkspaceInfo>): WorkspaceId;
   closeWorkspace(id: WorkspaceId): void;
+  /**
+   * Close a workspace on behalf of a USER gesture (sidebar ×, context menu,
+   * Ctrl+Shift+W). Honours the opt-in `confirmWorkspaceClose` pref by parking
+   * the id in `pendingCloseWorkspaceIds` for the dialog instead of closing.
+   * Programmatic closes (CLI/agents via pipe-bridge) call closeWorkspace()
+   * directly and never prompt.
+   */
+  requestCloseWorkspace(id: WorkspaceId): void;
+  /** Dialog "Close" button: close everything queued and dismiss. */
+  confirmPendingClose(): void;
+  /** Dialog "Cancel" / Escape: drop the queue, close nothing. */
+  cancelPendingClose(): void;
   selectWorkspace(id: WorkspaceId): void;
   renameWorkspace(id: WorkspaceId, title: string): void;
   reorderWorkspaces(ids: WorkspaceId[]): void;
@@ -25,6 +43,7 @@ export interface WorkspaceSlice {
 export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
+  pendingCloseWorkspaceIds: [],
 
   createWorkspace(options = {}): WorkspaceId {
     const id: WorkspaceId = `ws-${uuid()}`;
@@ -86,6 +105,32 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
 
       return { workspaces: next, activeWorkspaceId: nextActiveId };
     });
+  },
+
+  requestCloseWorkspace(id: WorkspaceId): void {
+    // The pref lives in the settings slice; the composed store carries both
+    // slices at runtime, but this creator is only typed for its own slice.
+    const prefs = (get() as unknown as { workspacePrefs?: { confirmWorkspaceClose?: boolean } })
+      .workspacePrefs;
+    if (!prefs?.confirmWorkspaceClose) {
+      get().closeWorkspace(id);
+      return;
+    }
+    set((state) => ({
+      pendingCloseWorkspaceIds: state.pendingCloseWorkspaceIds.includes(id)
+        ? state.pendingCloseWorkspaceIds
+        : [...state.pendingCloseWorkspaceIds, id],
+    }));
+  },
+
+  confirmPendingClose(): void {
+    const ids = get().pendingCloseWorkspaceIds;
+    set({ pendingCloseWorkspaceIds: [] });
+    ids.forEach((id) => get().closeWorkspace(id));
+  },
+
+  cancelPendingClose(): void {
+    set({ pendingCloseWorkspaceIds: [] });
   },
 
   selectWorkspace(id: WorkspaceId): void {

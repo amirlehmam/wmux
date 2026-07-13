@@ -139,7 +139,7 @@ export function useKeyboardShortcuts(
     workspaces,
     activeWorkspaceId,
     createWorkspace,
-    closeWorkspace,
+    requestCloseWorkspace,
     selectWorkspace,
     updateSplitTree,
     toggleSidebar,
@@ -281,7 +281,9 @@ export function useKeyboardShortcuts(
     const handlers: Partial<Record<ShortcutAction, () => void>> = {
       newWorkspace: () => createWorkspace(),
       newWindow: () => window.wmux?.window?.create?.(),
-      closeWorkspace: () => { if (activeWorkspaceId) closeWorkspace(activeWorkspaceId); },
+      // Routed through the close guard (issue #90): prompts when the opt-in
+      // confirmWorkspaceClose pref is on, closes immediately otherwise.
+      closeWorkspace: () => { if (activeWorkspaceId) requestCloseWorkspace(activeWorkspaceId); },
       closeWindow: () => window.close(),
       openFolder: openFolderAsWorkspace,
       toggleSidebar: () => toggleSidebar(),
@@ -375,7 +377,7 @@ export function useKeyboardShortcuts(
     activeWorkspaceId,
     focusedPaneId,
     createWorkspace,
-    closeWorkspace,
+    requestCloseWorkspace,
     selectWorkspace,
     updateSplitTree,
     toggleSidebar,

@@ -70,6 +70,77 @@ html, body, #root {
   background: var(--ui-bg-4);
 }
 
+/* Close-session guard (issue #90) — opt-in confirmation before a workspace
+   close kills its PTYs. Overlay swallows the click that would land "behind"
+   the dialog; clicking it cancels (same instinct as Escape). */
+.confirm-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.confirm-dialog {
+  min-width: 320px;
+  max-width: 440px;
+  padding: 16px 18px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 8px;
+  background: var(--ui-bg-1);
+  color: var(--ui-text-primary);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-dialog__title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.confirm-dialog__message {
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+  margin-bottom: 14px;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-dialog__btn {
+  padding: 5px 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  background: var(--ui-bg-0);
+  color: var(--ui-text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.confirm-dialog__btn:hover {
+  background: var(--ui-bg-4);
+}
+
+.confirm-dialog__btn:focus-visible {
+  outline: 1px solid #0091ff;
+  outline-offset: 1px;
+}
+
+.confirm-dialog__btn--danger {
+  border-color: #b3261e;
+  background: rgba(179, 38, 30, 0.15);
+}
+
+.confirm-dialog__btn--danger:hover {
+  background: rgba(179, 38, 30, 0.35);
+}
+
 /* Broadcast-input mode banner (issue #64) — pinned bottom-center while typing
    fans out to every terminal pane in the workspace (tmux synchronize-panes). */
 .broadcast-input-banner {

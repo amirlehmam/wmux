@@ -271,6 +271,14 @@ export interface WorkspacePrefs {
    * is an opt-out. Defaults on to preserve the shipped behaviour.
    */
   autoOpenDiffTab: boolean;
+  /**
+   * Ask before closing a session (issue #90): an accidental × click or
+   * Ctrl+Shift+W kills every PTY in the workspace, including agents that
+   * haven't persisted their state yet. Opt-in — off by default so the
+   * one-click flow stays untouched for users who never asked for a guard.
+   * Programmatic closes (CLI/agents via the pipe) never prompt.
+   */
+  confirmWorkspaceClose: boolean;
 }
 
 export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
@@ -279,6 +287,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   defaultShell: '',
   showWelcomeScreen: true,
   autoOpenDiffTab: true,
+  confirmWorkspaceClose: false,
 };
 
 // ─── Terminal settings ────────────────────────────────────────────────────────

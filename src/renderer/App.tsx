@@ -11,6 +11,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
+import ConfirmCloseDialog from './components/ConfirmCloseDialog';
 import BrowserPane from './components/Browser/BrowserPane';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
@@ -267,7 +268,7 @@ export default function App() {
     workspaces,
     activeWorkspaceId,
     createWorkspace,
-    closeWorkspace,
+    requestCloseWorkspace,
     selectWorkspace,
     renameWorkspace,
     reorderWorkspaces,
@@ -875,7 +876,7 @@ export default function App() {
             sidebarWidth={sidebarWidth}
             onWidthChange={handleSidebarWidthChange}
             onSelect={selectWorkspace}
-            onClose={closeWorkspace}
+            onClose={requestCloseWorkspace}
             onCreate={handleCreateWorkspace}
             onRename={renameWorkspace}
             onReorder={reorderWorkspaces}
@@ -1061,6 +1062,8 @@ export default function App() {
       )}
 
       {cheatSheetOpen && <ShortcutCheatSheet onClose={() => setCheatSheetOpen(false)} />}
+
+      <ConfirmCloseDialog />
 
       {broadcastInputActive && (
         <div className="broadcast-input-banner" title="Typed input is sent to every terminal pane in this workspace">

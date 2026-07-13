@@ -45,6 +45,21 @@ export default function WorkspaceSettings() {
       </div>
 
       <div className="settings-row">
+        <label className="settings-label">Confirm before closing a session</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={workspacePrefs.confirmWorkspaceClose}
+          onChange={(e) => setWorkspacePrefs({ confirmWorkspaceClose: e.target.checked })}
+        />
+      </div>
+      <p className="settings-hint">
+        Ask before the × button, the context menu or Ctrl+Shift+W closes a session — a stray click
+        can&apos;t take down agents that haven&apos;t saved their state yet. Closes from the CLI and
+        agents never prompt.
+      </p>
+
+      <div className="settings-row">
         <label className="settings-label">Auto-open diff tab on agent edits</label>
         <input
           type="checkbox"

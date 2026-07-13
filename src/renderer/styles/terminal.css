@@ -17,6 +17,14 @@
 
 .terminal-pane__container .xterm-viewport {
   overflow-y: auto !important;
+  /* xterm 6.0 paints the theme background on .xterm-scrollable-element and no
+     longer overrides the stock `.xterm-viewport { background-color: #000 }`
+     from xterm.css (5.x set it from the theme in JS). That opaque black layer
+     sits between the translucent theme background and the custom background
+     layer (issue #89), swallowing it. The theme background always paints on
+     the scrollable element, so the viewport can be transparent
+     unconditionally — opaque themes render identically. */
+  background-color: transparent !important;
 }
 
 .find-bar {
