@@ -44,16 +44,54 @@ function listOrchDirs(): string[] {
   }
 }
 
+/**
+ * Shape-check a parsed state.json before it is allowed near the renderer.
+ * state.json is written by a separate process (the Claude Code plugin, or an
+ * agent hand-rolling the file), so it is untrusted input. A run missing `id`
+ * or `waves` used to be broadcast anyway and then throw inside the sidebar's
+ * render — and an uncaught throw in render unmounts the entire React tree,
+ * leaving a black window that only a restart clears. Anything that does not
+ * satisfy the contract is ignored rather than shipped to the UI.
+ */
+export function isValidState(value: unknown): value is OrchestrationState {
+  if (!value || typeof value !== 'object') return false;
+  const s = value as Record<string, unknown>;
+  if (typeof s.id !== 'string' || s.id === '') return false;
+  if (typeof s.status !== 'string') return false;
+  if (!Array.isArray(s.waves)) return false;
+  return s.waves.every((w) => {
+    if (!w || typeof w !== 'object') return false;
+    const wave = w as Record<string, unknown>;
+    return typeof wave.index === 'number' && Array.isArray(wave.agents);
+  });
+}
+
+// Dirs we've already rejected, so a bad file doesn't log once per poll tick.
+const warned = new Set<string>();
+
 function readState(orchDir: string): OrchestrationState | null {
   const stateFile = path.join(orchDir, 'state.json');
+  let parsed: unknown;
   try {
-    const raw = fs.readFileSync(stateFile, 'utf-8');
-    const parsed = JSON.parse(raw) as OrchestrationState;
-    parsed._orchDir = orchDir;
-    return parsed;
+    parsed = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
   } catch {
+    // Missing, unreadable, or mid-write (partial JSON) — try again next tick.
     return null;
   }
+
+  if (!isValidState(parsed)) {
+    if (!warned.has(orchDir)) {
+      warned.add(orchDir);
+      console.warn(
+        `[orchestration-watcher] ignoring malformed state.json (needs string "id", string "status", array "waves"): ${stateFile}`,
+      );
+    }
+    return null;
+  }
+  warned.delete(orchDir);
+
+  parsed._orchDir = orchDir;
+  return parsed;
 }
 
 function getMtime(orchDir: string): number {
@@ -87,6 +125,7 @@ function tick(): void {
   for (const key of Array.from(tracked.keys())) {
     if (!dirs.includes(key)) {
       tracked.delete(key);
+      warned.delete(key);
       if (active === key) {
         active = null;
         broadcast(IPC_CHANNELS.ORCHESTRATION_CLEAR, {});
@@ -160,5 +199,6 @@ export function stopOrchestrationWatcher(): void {
     pollTimer = null;
   }
   tracked.clear();
+  warned.clear();
   active = null;
 }

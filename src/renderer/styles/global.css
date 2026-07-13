@@ -31,6 +31,45 @@ html, body, #root {
   background: rgba(var(--ui-overlay-rgb), 0.2);
 }
 
+/* Error boundary fallback — shown in place of a subtree that threw during
+   render, so a bad payload degrades to a visible card instead of a black
+   window. */
+.error-boundary {
+  margin: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border-strong);
+  border-left: 3px solid #b3261e;
+  border-radius: 6px;
+  background: var(--ui-bg-1);
+  color: var(--ui-text-primary);
+  font-size: 12px;
+}
+
+.error-boundary__title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.error-boundary__message {
+  opacity: 0.75;
+  word-break: break-word;
+  margin-bottom: 8px;
+}
+
+.error-boundary__retry {
+  padding: 3px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  background: var(--ui-bg-0);
+  color: var(--ui-text-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.error-boundary__retry:hover {
+  background: var(--ui-bg-4);
+}
+
 /* Broadcast-input mode banner (issue #64) — pinned bottom-center while typing
    fans out to every terminal pane in the workspace (tmux synchronize-panes). */
 .broadcast-input-banner {

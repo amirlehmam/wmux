@@ -5,6 +5,7 @@ import SidebarResizeHandle from './SidebarResizeHandle';
 import WorkspaceContextMenu from './WorkspaceContextMenu';
 import SessionMenu from './SessionMenu';
 import OrchestrationPanel from './OrchestrationPanel';
+import ErrorBoundary from '../ErrorBoundary';
 import { useStore } from '../../store';
 import '../../styles/sidebar.css';
 
@@ -266,7 +267,9 @@ export default function Sidebar({
         )}
       </div>
 
-      <OrchestrationPanel />
+      <ErrorBoundary label="orchestration" silent>
+        <OrchestrationPanel />
+      </ErrorBoundary>
 
       <div className="sidebar__list">
         {workspaces.map((ws) => (
