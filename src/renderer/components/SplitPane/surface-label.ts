@@ -13,13 +13,23 @@ export function getShellLabel(shell?: string): string | null {
   return normalized.replace(/\.exe$/i, '').replace(/[-_]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/** Extract the last path segment from a cwd string for use as a tab label. */
+function cwdFolderName(cwd: string): string | null {
+  const normalized = cwd.replace(/\\/g, '/').replace(/\/$/, '');
+  const lastSegment = normalized.split('/').pop();
+  return lastSegment || null;
+}
+
 export function getSurfaceLabel(surface: SurfaceRef, agentLabel?: string, workspaceShell?: string): string {
   if (surface.customTitle) return surface.customTitle;
   if (agentLabel) return agentLabel;
 
   switch (surface.type) {
-    case 'terminal':
+    case 'terminal': {
+      const folder = surface.currentCwd ? cwdFolderName(surface.currentCwd) : null;
+      if (folder) return folder;
       return getShellLabel(surface.shell || workspaceShell) || 'Terminal';
+    }
     case 'browser':
       return 'Browser';
     case 'markdown':

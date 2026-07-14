@@ -44,4 +44,32 @@ describe('surface labels', () => {
     expect(getSurfaceLabel(surface('surf-markdown', { type: 'markdown' }))).toBe('Markdown');
     expect(getSurfaceLabel(surface('surf-diff', { type: 'diff' }))).toBe('Diff');
   });
+
+  it('shows the folder name from currentCwd for terminal labels', () => {
+    expect(
+      getSurfaceLabel(
+        surface('surf-1', { currentCwd: 'C:\\Users\\me\\coding\\wmux' }),
+        undefined,
+        'pwsh.exe',
+      ),
+    ).toBe('wmux');
+  });
+
+  it('falls back to shell name when currentCwd is empty', () => {
+    expect(
+      getSurfaceLabel(
+        surface('surf-1', { currentCwd: '' }),
+        undefined,
+        'pwsh.exe',
+      ),
+    ).toBe('PowerShell');
+  });
+
+  it('prefers custom title over currentCwd', () => {
+    expect(
+      getSurfaceLabel(
+        surface('surf-1', { customTitle: 'My Tab', currentCwd: 'C:\\Users\\me\\coding\\wmux' }),
+      ),
+    ).toBe('My Tab');
+  });
 });

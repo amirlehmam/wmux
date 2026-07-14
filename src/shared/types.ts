@@ -20,6 +20,8 @@ export interface SurfaceRef {
   colorScheme?: string;
   /** Per-surface working directory override (quick-launch profiles — issue #32). */
   cwd?: string;
+  /** Live working directory updated by shell integration on every prompt. */
+  currentCwd?: string;
   /** Commands run once after the terminal PTY spawns (quick-launch profiles — issue #32). */
   startupCommands?: string[];
   /** Initial URL for a browser surface created from a quick-launch profile (issue #32). */
