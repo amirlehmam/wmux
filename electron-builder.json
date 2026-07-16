@@ -27,7 +27,7 @@
     "icon": "resources/icons/icon.ico",
     "signtoolOptions": { "publisherName": ["SignPath Foundation"] },
     "target": [
-      { "target": "dir", "arch": ["x64"] }
+      { "target": "nsis", "arch": ["x64"] }
     ]
   },
   "nsis": {
@@ -35,7 +35,8 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "wmux"
+    "shortcutName": "wmux",
+    "artifactName": "wmux-${version}-setup.${ext}"
   },
   "portable": {
     "artifactName": "wmux-${version}-portable.exe"

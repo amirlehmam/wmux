@@ -44,9 +44,15 @@ jobs:
       - name: Build renderer
         run: npx vite build
 
-      # ── Package (unpacked directory, no installer) ─────────
+      # ── Package (NSIS installer) ───────────────────────────
+      # Build the NSIS installer so electron-updater can actually install the
+      # update on Windows. The previous `--dir` build shipped a zip, which
+      # electron-updater's NsisUpdater can download and verify but has no way to
+      # install — quitAndInstall() no-ops and the app relaunches unchanged
+      # (issue #96). --publish never: we upload manually below so latest.yml is
+      # generated AFTER signing (see the note on that step).
       - name: Package with electron-builder
-        run: npx electron-builder --win --dir --publish never
+        run: npx electron-builder --win --publish never
 
       - name: Extract version
         id: version
@@ -62,31 +68,12 @@ jobs:
             echo "tag=v$VER" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── Embed icon + metadata into exe (rcedit) ───────────
-      # NOTE: rcedit rewrites the PE and would invalidate an Authenticode
-      # signature, so it must run BEFORE the SignPath steps below.
-      - name: Embed icon and version metadata
-        shell: bash
-        run: |
-          VER=$(node -p "require('./package.json').version")
-          node -e "
-            const { rcedit } = require('rcedit');
-            rcedit('release/win-unpacked/wmux.exe', {
-              icon: 'resources/icons/icon.ico',
-              'version-string': {
-                ProductName: 'wmux',
-                FileDescription: 'wmux',
-                CompanyName: 'wmux',
-                InternalName: 'wmux',
-                OriginalFilename: 'wmux.exe',
-                LegalCopyright: 'Copyright (c) 2025 wmux'
-              },
-              'file-version': process.env.VER,
-              'product-version': process.env.VER
-            }).then(() => console.log('rcedit done')).catch(e => { console.error(e); process.exit(1); });
-          "
-        env:
-          VER: ${{ steps.version.outputs.version }}
+      # ── Icon + version metadata ────────────────────────────
+      # electron-builder embeds win.icon and the package.json version into the
+      # packaged exe during the NSIS build above, so the previous manual rcedit
+      # pass is no longer needed — it targeted release/win-unpacked/wmux.exe,
+      # which is already baked into the installer by the time a separate step
+      # could run, so it had no effect on the shipped artifact.
 
       # ── Sign exe with SignPath (runs only when secrets are set, #71) ──
       # continue-on-error: a rejected submission (e.g. SignPath OSS yearly
@@ -107,7 +94,7 @@ jobs:
             -F "signingPolicySlug=wmux" \
             -F "artifactConfigurationSlug=initial" \
             -F "description=CI release v${{ steps.version.outputs.version }}" \
-            -F "artifact=@release/win-unpacked/wmux.exe" \
+            -F "artifact=@release/wmux-${{ steps.version.outputs.version }}-setup.exe" \
             -D headers.txt \
             "https://app.signpath.io/api/v1/$SIGNPATH_ORGANIZATION_ID/SigningRequests/SubmitWithArtifact")
           HTTP_CODE=$(echo "$HTTP_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
@@ -151,49 +138,61 @@ jobs:
         run: |
           curl -s \
             -H "Authorization: Bearer $SIGNPATH_API_TOKEN" \
-            -o "release/win-unpacked/wmux.exe" \
+            -o "release/wmux-${{ steps.version.outputs.version }}-setup.exe" \
             "https://app.signpath.io/api/v1/$SIGNPATH_ORGANIZATION_ID/SigningRequests/${{ steps.sign-submit.outputs.signing_request_id }}/SignedArtifact"
-          echo "Signed exe downloaded, size: $(wc -c < release/win-unpacked/wmux.exe) bytes"
+          echo "Signed installer downloaded, size: $(wc -c < release/wmux-${{ steps.version.outputs.version }}-setup.exe) bytes"
           # Fail the release if the artifact we are about to ship is not validly signed.
           powershell -NoProfile -Command "
-            \$sig = Get-AuthenticodeSignature 'release/win-unpacked/wmux.exe';
+            \$sig = Get-AuthenticodeSignature 'release/wmux-${{ steps.version.outputs.version }}-setup.exe';
             Write-Host ('Status: ' + \$sig.Status + ' — Subject: ' + \$sig.SignerCertificate.Subject);
             if (\$sig.Status -ne 'Valid') { exit 1 }
           "
 
-      # ── Create release zip ─────────────────────────────────
-      - name: Create release zip
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "release/win-unpacked/*" `
-            -DestinationPath "wmux-${{ steps.version.outputs.version }}-win-x64.zip"
-
       # ── Generate latest.yml for electron-updater ──────────
+      # Gated on a successful SignPath submission (the download-and-verify step
+      # above is fatal, so reaching here with outcome == 'success' means the
+      # installer is signed AND verified). Rationale: `win.publisherName` is
+      # pinned to "SignPath Foundation", so electron-updater's NsisUpdater runs
+      # Authenticode verification on the downloaded installer. An UNSIGNED NSIS
+      # installer would fail that check → the update throws and never installs.
+      # So we only advertise an auto-update (publish latest.yml) when the
+      # artifact is actually signed and verifiable. Unsigned releases still ship
+      # the installer below for manual download, they just don't auto-update —
+      # a graceful no-op instead of a broken update. Once SignPath OSS quota is
+      # restored (issue #71), signing — and therefore auto-update — turns on
+      # automatically with no further changes.
+      #
+      # MUST also run last, AFTER signing: SignPath rewrites the installer PE,
+      # so a hash computed earlier would not match the shipped file. Points at
+      # the NSIS installer (the old zip could be downloaded but never installed
+      # — issue #96). No blockmap is emitted, so electron-updater does a full
+      # (non-differential) download verified by the top-level sha512.
       - name: Generate latest.yml
+        if: steps.sign-submit.outcome == 'success'
         shell: bash
         run: |
           node -e "
             const crypto = require('crypto');
             const fs = require('fs');
             const version = '${{ steps.version.outputs.version }}';
-            const zip = 'wmux-' + version + '-win-x64.zip';
-            const data = fs.readFileSync(zip);
+            const installer = 'wmux-' + version + '-setup.exe';
+            const data = fs.readFileSync('release/' + installer);
             const sha512 = crypto.createHash('sha512').update(data).digest('base64');
             const size = data.length;
             const date = new Date().toISOString();
             const yaml = [
               'version: ' + version,
               'files:',
-              '  - url: ' + zip,
+              '  - url: ' + installer,
               '    sha512: ' + sha512,
               '    size: ' + size,
-              'path: ' + zip,
+              'path: ' + installer,
               'sha512: ' + sha512,
               \"releaseDate: '\" + date + \"'\",
               ''
             ].join('\n');
             fs.writeFileSync('latest.yml', yaml);
-            console.log('latest.yml generated for', zip, 'size=' + size, 'sha512=' + sha512.substring(0, 20) + '...');
+            console.log('latest.yml generated for', installer, 'size=' + size, 'sha512=' + sha512.substring(0, 20) + '...');
           "
 
       - name: Upload release artifacts as workflow artifacts
@@ -201,7 +200,7 @@ jobs:
         with:
           name: wmux-release
           path: |
-            wmux-${{ steps.version.outputs.version }}-win-x64.zip
+            release/wmux-${{ steps.version.outputs.version }}-setup.exe
             latest.yml
 
       # ── GitHub Release ─────────────────────────────────────
@@ -211,7 +210,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: wmux ${{ steps.version.outputs.tag }}
           files: |
-            wmux-${{ steps.version.outputs.version }}-win-x64.zip
+            release/wmux-${{ steps.version.outputs.version }}-setup.exe
             latest.yml
           draft: false
           generate_release_notes: true
