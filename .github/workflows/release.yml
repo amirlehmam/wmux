@@ -133,6 +133,7 @@ jobs:
           exit 1
 
       - name: Download signed exe and verify signature
+        id: sign-verify
         if: steps.sign-submit.outcome == 'success' && steps.sign-submit.outputs.signing_request_id != ''
         shell: bash
         run: |
@@ -141,11 +142,24 @@ jobs:
             -o "release/wmux-${{ steps.version.outputs.version }}-setup.exe" \
             "https://app.signpath.io/api/v1/$SIGNPATH_ORGANIZATION_ID/SigningRequests/${{ steps.sign-submit.outputs.signing_request_id }}/SignedArtifact"
           echo "Signed installer downloaded, size: $(wc -c < release/wmux-${{ steps.version.outputs.version }}-setup.exe) bytes"
-          # Fail the release if the artifact we are about to ship is not validly signed.
+          # trusted=true only for a chain-valid Authenticode signature. A
+          # SignPath project can also sign with a SELF-SIGNED certificate
+          # (e.g. while the OSS "SignPath Foundation" cert is unavailable,
+          # issue #71): Get-AuthenticodeSignature then reports UnknownError
+          # (untrusted root). That artifact is fine to ship for manual
+          # download, but it must NOT be advertised to the auto-updater —
+          # electron-updater requires a Valid signature on the user's machine,
+          # so a self-signed installer downloads and then fails to install,
+          # which is exactly the endless-update loop of issue #96.
           powershell -NoProfile -Command "
             \$sig = Get-AuthenticodeSignature 'release/wmux-${{ steps.version.outputs.version }}-setup.exe';
-            Write-Host ('Status: ' + \$sig.Status + ' — Subject: ' + \$sig.SignerCertificate.Subject);
-            if (\$sig.Status -ne 'Valid') { exit 1 }
+            \$subject = if (\$sig.SignerCertificate) { \$sig.SignerCertificate.Subject } else { '(none)' };
+            Write-Host ('Status: ' + \$sig.Status + ' — Subject: ' + \$subject);
+            \$trusted = if (\$sig.Status -eq 'Valid') { 'true' } else { 'false' };
+            Add-Content -Path \$env:GITHUB_OUTPUT -Value ('trusted=' + \$trusted);
+            if (\$trusted -eq 'false') {
+              Write-Host '::warning::Installer signature is not chain-trusted (self-signed cert?) — shipping it, but latest.yml is withheld so clients do not attempt a doomed auto-update.'
+            }
           "
 
       # ── Portable zip ───────────────────────────────────────
@@ -162,18 +176,17 @@ jobs:
             -DestinationPath "wmux-${{ steps.version.outputs.version }}-win-x64.zip"
 
       # ── Generate latest.yml for electron-updater ──────────
-      # Gated on a successful SignPath submission (the download-and-verify step
-      # above is fatal, so reaching here with outcome == 'success' means the
-      # installer is signed AND verified). Rationale: `win.publisherName` is
-      # pinned to "SignPath Foundation", so electron-updater's NsisUpdater runs
-      # Authenticode verification on the downloaded installer. An UNSIGNED NSIS
-      # installer would fail that check → the update throws and never installs.
-      # So we only advertise an auto-update (publish latest.yml) when the
-      # artifact is actually signed and verifiable. Unsigned releases still ship
-      # the installer below for manual download, they just don't auto-update —
-      # a graceful no-op instead of a broken update. Once SignPath OSS quota is
-      # restored (issue #71), signing — and therefore auto-update — turns on
-      # automatically with no further changes.
+      # Gated on a CHAIN-TRUSTED signature (sign-verify sets trusted=true).
+      # Rationale: `win.publisherName` is pinned to "SignPath Foundation", so
+      # electron-updater's NsisUpdater runs Authenticode verification on the
+      # downloaded installer. An unsigned OR self-signed NSIS installer fails
+      # that check → the update throws and never installs. So we only advertise
+      # an auto-update (publish latest.yml) when the artifact carries a
+      # signature user machines will accept. Untrusted releases still ship the
+      # installer below for manual download, they just don't auto-update — a
+      # graceful no-op instead of a broken update. Once the SignPath OSS cert
+      # signs again (issue #71), auto-update turns on automatically with no
+      # further changes.
       #
       # MUST also run last, AFTER signing: SignPath rewrites the installer PE,
       # so a hash computed earlier would not match the shipped file. Points at
@@ -181,7 +194,7 @@ jobs:
       # — issue #96). No blockmap is emitted, so electron-updater does a full
       # (non-differential) download verified by the top-level sha512.
       - name: Generate latest.yml
-        if: steps.sign-submit.outcome == 'success'
+        if: steps.sign-verify.outputs.trusted == 'true'
         shell: bash
         run: |
           node -e "
