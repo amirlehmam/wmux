@@ -148,6 +148,19 @@ jobs:
             if (\$sig.Status -ne 'Valid') { exit 1 }
           "
 
+      # ── Portable zip ───────────────────────────────────────
+      # Keep shipping the portable zip alongside the NSIS installer: the docs
+      # and wmux.org tell users to grab wmux-X.Y.Z-win-x64.zip, and unsigned
+      # zips trip SmartScreen far less than unsigned installers. The NSIS build
+      # above still emits release/win-unpacked/ as an intermediate, so this is
+      # free. Auto-update (latest.yml) points at the installer, not this zip —
+      # a zip can be downloaded but never installed by NsisUpdater (issue #96).
+      - name: Create portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "release/win-unpacked/*" `
+            -DestinationPath "wmux-${{ steps.version.outputs.version }}-win-x64.zip"
+
       # ── Generate latest.yml for electron-updater ──────────
       # Gated on a successful SignPath submission (the download-and-verify step
       # above is fatal, so reaching here with outcome == 'success' means the
@@ -201,6 +214,7 @@ jobs:
           name: wmux-release
           path: |
             release/wmux-${{ steps.version.outputs.version }}-setup.exe
+            wmux-${{ steps.version.outputs.version }}-win-x64.zip
             latest.yml
 
       # ── GitHub Release ─────────────────────────────────────
@@ -211,6 +225,7 @@ jobs:
           name: wmux ${{ steps.version.outputs.tag }}
           files: |
             release/wmux-${{ steps.version.outputs.version }}-setup.exe
+            wmux-${{ steps.version.outputs.version }}-win-x64.zip
             latest.yml
           draft: false
           generate_release_notes: true
