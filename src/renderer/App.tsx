@@ -154,9 +154,22 @@ function applyShellState(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): void {
 /** Dispatch a surface-scoped metadata command to the owning workspace. */
 function handleSurfaceMetadata(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): void {
   switch (cmd.command) {
-    case 'report_pwd':
-      deps.updateWorkspaceMetadata(ws.id, { cwd: cmd.args?.[0] });
+    case 'report_pwd': {
+      const pwd = cmd.args?.[0];
+      deps.updateWorkspaceMetadata(ws.id, { cwd: pwd });
+      // Also store cwd at the surface level so the tab label can show the project folder.
+      if (pwd && cmd.surfaceId) {
+        const { updateSurface } = useStore.getState();
+        for (const paneId of getAllPaneIds(ws.splitTree)) {
+          const leaf = findLeaf(ws.splitTree, paneId);
+          if (leaf?.surfaces.some((s) => s.id === cmd.surfaceId)) {
+            updateSurface(ws.id, paneId, cmd.surfaceId, { currentCwd: pwd });
+            break;
+          }
+        }
+      }
       break;
+    }
     case 'report_git_branch':
       deps.updateWorkspaceMetadata(ws.id, { gitBranch: cmd.args?.[0], gitDirty: cmd.args?.[1] === 'dirty' });
       break;
