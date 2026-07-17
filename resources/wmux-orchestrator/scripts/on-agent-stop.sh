@@ -19,7 +19,7 @@ EXIT_CODE="${CLAUDE_EXIT_CODE:-0}"
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 if [ "$EXIT_CODE" = "0" ]; then
-  update_agent "$ORCH_DIR" "$AGENT_ID" "status=completed" "exitCode=0" "finishedAt=$NOW"
+  update_agent "$ORCH_DIR" "$AGENT_ID" "status=exited" "exitCode=0" "finishedAt=$NOW"
 else
   update_agent "$ORCH_DIR" "$AGENT_ID" "status=failed" "exitCode=$EXIT_CODE" "finishedAt=$NOW"
 fi
@@ -27,7 +27,7 @@ fi
 WAVE_IDX=$(node "$JSON_TOOL" query "$ORCH_DIR/state.json" wave-of-agent "$AGENT_ID" 2>/dev/null)
 
 if [ -n "$WAVE_IDX" ] && wave_complete "$ORCH_DIR" "$WAVE_IDX"; then
-  update_state "$ORCH_DIR" ".waves[$WAVE_IDX].status" "completed"
+  update_state "$ORCH_DIR" ".waves[$WAVE_IDX].status" "complete"
 
   if all_waves_done "$ORCH_DIR"; then
     REVIEWER_STATUS=$(read_state "$ORCH_DIR" '.reviewer.status')
@@ -37,7 +37,7 @@ if [ -n "$WAVE_IDX" ] && wave_complete "$ORCH_DIR" "$WAVE_IDX"; then
         wmux notify "All agents complete. Starting reviewer..." 2>/dev/null || true
       fi
     else
-      update_state "$ORCH_DIR" '.status' 'completed'
+      update_state "$ORCH_DIR" '.status' 'complete'
     fi
   else
     NEXT_WAVE=$(next_pending_wave "$ORCH_DIR")

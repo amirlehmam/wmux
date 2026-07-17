@@ -205,7 +205,7 @@ function cmdQuery(file, queryName, ...args) {
         break;
       }
       const agents = data.waves[waveIdx].agents || [];
-      const allDone = agents.every(a => a.status === 'completed' || a.status === 'failed');
+      const allDone = agents.every(a => a.status === 'exited' || a.status === 'failed');
       process.stdout.write(allDone ? 'true' : 'false');
       process.stdout.write('\n');
       break;
@@ -329,7 +329,7 @@ function cmdDashboard(file) {
   for (const wave of waves) {
     for (const agent of (wave.agents || [])) {
       totalAgents++;
-      if (agent.status === 'completed') completedAgents++;
+      if (agent.status === 'exited') completedAgents++;
       else if (agent.status === 'running') runningAgents++;
       else if (agent.status === 'failed') failedAgents++;
     }
