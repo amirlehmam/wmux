@@ -63,8 +63,6 @@ docs/             Planning docs
 | `claude-context.ts` | Auto-injects wmux instructions into `~/.claude/CLAUDE.md`, configures hooks, installs wmux-orchestrator plugin |
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
 | `session-persistence.ts` | Auto-save/restore window state |
-| `git-poller.ts` | Git branch/dirty status polling |
-| `pr-poller.ts` | GitHub PR status polling |
 | `port-scanner.ts` | Active port detection for running dev servers |
 | `theme-loader.ts` | Theme loading |
 | `config-loader.ts` | WT/Ghostty config import |

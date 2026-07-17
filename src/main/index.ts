@@ -5,8 +5,6 @@ import { handleBridgeV2 } from './v2-bridge';
 import { distributeAgents } from './agent-manager';
 import { PipeServer } from './pipe-server';
 import { PortScanner } from './port-scanner';
-import { GitPoller } from './git-poller';
-import { PrPoller } from './pr-poller';
 import { CDPProxy } from './cdp-proxy';
 import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken } from '../shared/instance';
@@ -118,8 +116,6 @@ const pipeToken = ensurePipeToken();
 process.env.WMUX_PIPE_TOKEN = pipeToken;
 const pipeServer = new PipeServer(getPipePath(), pipeToken);
 const portScanner = new PortScanner();
-const gitPoller = new GitPoller();
-const prPoller = new PrPoller();
 const cdpProxy = new CDPProxy();
 
 // Strip MOTW (Mark of the Web) Zone.Identifier ADS from app directory.
@@ -378,32 +374,6 @@ app.whenReady().then(() => {
           surfaceId: '',
           args: [JSON.stringify(Object.fromEntries(portsByPid))],
         });
-      }
-    });
-  });
-
-  gitPoller.onUpdate((cwd, state) => {
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
-          command: state.branch ? 'report_git_branch' : 'clear_git_branch',
-          surfaceId: '', // will be mapped via cwd → workspace
-          args: state.branch ? [state.branch, state.dirty ? 'dirty' : ''] : [],
-        });
-      }
-    });
-  });
-
-  prPoller.onUpdate((cwd, pr) => {
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed()) {
-        if (pr) {
-          win.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
-            command: 'report_pr',
-            surfaceId: '',
-            args: [String(pr.number), pr.state, pr.title],
-          });
-        }
       }
     });
   });
@@ -887,8 +857,6 @@ app.on('will-quit', () => {
   pipeServer.stop();
   cdpProxy.stop();
   portScanner.stop();
-  gitPoller.unwatchAll();
-  prPoller.stopAll();
 });
 
 app.on('window-all-closed', () => {
