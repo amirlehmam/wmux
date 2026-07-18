@@ -30,6 +30,9 @@ export interface SurfaceSlice {
   /** Close a surface; if it's the last one in the pane, the pane is removed */
   closeSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => void;
 
+  /** Close every other surface in the pane, keeping only `keepSurfaceId` */
+  closeOtherSurfaces: (workspaceId: WorkspaceId, paneId: PaneId, keepSurfaceId: SurfaceId) => void;
+
   /** Advance to the next surface in the pane (wraps around) */
   nextSurface: (workspaceId: WorkspaceId, paneId: PaneId) => void;
 
@@ -185,6 +188,33 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
       activeSurfaceIndex: newActiveIndex,
     });
 
+    updateSplitTree(workspaceId, updatedTree);
+  },
+
+  closeOtherSurfaces(workspaceId, paneId, keepSurfaceId) {
+    const { workspaces, updateSplitTree } = get();
+    const ws = workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return;
+
+    const leaf = findLeaf(ws.splitTree, paneId);
+    if (!leaf) return;
+
+    const keep = leaf.surfaces.find((s) => s.id === keepSurfaceId);
+    if (!keep) return;
+    if (leaf.surfaces.length === 1) return;
+
+    // Reap the shells we're dropping and remember them for Ctrl+Shift+T,
+    // mirroring the bookkeeping in closeSurface (issues #64, #65).
+    for (const s of leaf.surfaces) {
+      if (s.id === keepSurfaceId) continue;
+      pushClosedSurface(s);
+      killSurfacePty(s);
+    }
+
+    const updatedTree = patchLeaf(ws.splitTree, paneId, {
+      surfaces: [keep],
+      activeSurfaceIndex: 0,
+    });
     updateSplitTree(workspaceId, updatedTree);
   },
 
