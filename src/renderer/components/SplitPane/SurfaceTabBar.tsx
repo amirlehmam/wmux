@@ -17,6 +17,8 @@ interface SurfaceTabBarProps {
   onClose: (surfaceId: SurfaceId) => void;
   /** Close every tab in this pane except the given one (tab context menu). */
   onCloseOthers?: (surfaceId: SurfaceId) => void;
+  /** Close every tab positioned after the given one (tab context menu). */
+  onCloseToRight?: (surfaceId: SurfaceId) => void;
   onNew: () => void;
   onNewTyped?: (type: 'terminal' | 'browser' | 'markdown') => void;
   /** Detected shells surfaced in the `+` caret dropdown (PR #43). */
@@ -58,6 +60,7 @@ export default function SurfaceTabBar({
   onSelect,
   onClose,
   onCloseOthers,
+  onCloseToRight,
   onNew,
   onNewTyped,
   shells,
@@ -568,6 +571,15 @@ export default function SurfaceTabBar({
               onClick={() => { onCloseOthers?.(ctxMenu.surfaceId); setCtxMenu(null); }}
             >
               Close others
+            </div>
+          )}
+          {surfaces.findIndex((s) => s.id === ctxMenu.surfaceId) < surfaces.length - 1 && (
+            <div
+              className="ctx-menu__item ctx-menu__item--danger"
+              role="menuitem"
+              onClick={() => { onCloseToRight?.(ctxMenu.surfaceId); setCtxMenu(null); }}
+            >
+              Close to the right
             </div>
           )}
         </div>,
