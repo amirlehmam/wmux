@@ -79,4 +79,38 @@ describe('surface-slice', () => {
       expect(currentLeaf().surfaces).toHaveLength(2);
     });
   });
+
+  describe('closeSurfacesToRight', () => {
+    it('closes only the surfaces after the target', () => {
+      const first = currentLeaf().surfaces[0].id;
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const second = currentLeaf().surfaces[1].id;
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      expect(currentLeaf().surfaces).toHaveLength(4);
+
+      useStore.getState().closeSurfacesToRight(workspaceId, paneId, second);
+
+      const ids = currentLeaf().surfaces.map((s) => s.id);
+      expect(ids).toEqual([first, second]);
+    });
+
+    it('is a no-op when the target is the last surface', () => {
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const last = currentLeaf().surfaces[1].id;
+      useStore.getState().closeSurfacesToRight(workspaceId, paneId, last);
+      expect(currentLeaf().surfaces).toHaveLength(2);
+    });
+
+    it('clamps the active index to a surface that still exists', () => {
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const first = currentLeaf().surfaces[0].id;
+      // active index is 2 (last added); closing to the right of the first drops it
+      useStore.getState().closeSurfacesToRight(workspaceId, paneId, first);
+      const leaf = currentLeaf();
+      expect(leaf.surfaces).toHaveLength(1);
+      expect(leaf.activeSurfaceIndex).toBe(0);
+    });
+  });
 });
