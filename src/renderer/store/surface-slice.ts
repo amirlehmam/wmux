@@ -30,6 +30,13 @@ export interface SurfaceSlice {
   /** Close a surface; if it's the last one in the pane, the pane is removed */
   closeSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => void;
 
+  /**
+   * Open a copy of a surface in the same pane: same type, shell, color and
+   * (current) directory, but a fresh instance. Returns the new SurfaceId, or
+   * null if the source no longer exists.
+   */
+  duplicateSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => SurfaceId | null;
+
   /** Advance to the next surface in the pane (wraps around) */
   nextSurface: (workspaceId: WorkspaceId, paneId: PaneId) => void;
 
@@ -145,6 +152,28 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
     updateSplitTree(workspaceId, updatedTree);
     return surfaceId;
+  },
+
+  duplicateSurface(workspaceId, paneId, surfaceId) {
+    const { workspaces } = get();
+    const ws = workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return null;
+
+    const leaf = findLeaf(ws.splitTree, paneId);
+    if (!leaf) return null;
+
+    const src = leaf.surfaces.find((s) => s.id === surfaceId);
+    if (!src) return null;
+
+    // Copy the tab's config, preferring its live directory so the new terminal
+    // opens where the source currently is. Startup commands are intentionally
+    // NOT replayed — duplicating an agent tab shouldn't relaunch the agent.
+    return get().addSurface(workspaceId, paneId, src.type, {
+      shell: src.shell,
+      cwd: src.currentCwd || src.cwd,
+      colorScheme: src.colorScheme,
+      url: src.url,
+    });
   },
 
   closeSurface(workspaceId, paneId, surfaceId) {

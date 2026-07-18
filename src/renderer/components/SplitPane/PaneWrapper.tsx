@@ -49,6 +49,7 @@ export default function PaneWrapper({
   const addSurface = useStore((s) => s.addSurface);
   const updateSurface = useStore((s) => s.updateSurface);
   const closeSurface = useStore((s) => s.closeSurface);
+  const duplicateSurface = useStore((s) => s.duplicateSurface);
   const selectSurface = useStore((s) => s.selectSurface);
   const moveSurface = useStore((s) => s.moveSurface);
   const splitAndMoveSurface = useStore((s) => s.splitAndMoveSurface);
@@ -350,6 +351,13 @@ export default function PaneWrapper({
     }
   };
 
+  const handleDuplicateSurface = () => {
+    const active = surfaces[activeSurfaceIndex];
+    if (activeWorkspaceId && active) {
+      duplicateSurface(activeWorkspaceId, paneId, active.id);
+    }
+  };
+
   const handleSplitRight = () => {
     if (!activeWorkspaceId) return;
     const { workspaces, updateSplitTree } = useStore.getState();
@@ -525,6 +533,7 @@ export default function PaneWrapper({
         activeSurfaceIndex={activeSurfaceIndex}
         onSelect={handleSelectSurface}
         onClose={handleCloseSurface}
+        onDuplicate={handleDuplicateSurface}
         onNew={handleNewSurface}
         onNewTyped={handleNewSurfaceTyped}
         shells={availableShells}
