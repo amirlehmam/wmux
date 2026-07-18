@@ -15,6 +15,8 @@ interface SurfaceTabBarProps {
   activeSurfaceIndex: number;
   onSelect: (index: number) => void;
   onClose: (surfaceId: SurfaceId) => void;
+  /** Close every tab in this pane except the given one (tab context menu). */
+  onCloseOthers?: (surfaceId: SurfaceId) => void;
   onNew: () => void;
   onNewTyped?: (type: 'terminal' | 'browser' | 'markdown') => void;
   /** Detected shells surfaced in the `+` caret dropdown (PR #43). */
@@ -55,6 +57,7 @@ export default function SurfaceTabBar({
   activeSurfaceIndex,
   onSelect,
   onClose,
+  onCloseOthers,
   onNew,
   onNewTyped,
   shells,
@@ -78,6 +81,9 @@ export default function SurfaceTabBar({
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [renamingId, setRenamingId] = useState<SurfaceId | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // Right-click tab context menu (Rename / Close / Close others).
+  const [ctxMenu, setCtxMenu] = useState<{ surfaceId: SurfaceId; x: number; y: number } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
   // Which control-cluster dropdown is open, and where to anchor it (issue #34).
   // Menus render through a portal to document.body so the tab bar's
   // `overflow: hidden` can no longer clip them (the old caret-dropdown bug).
@@ -135,6 +141,35 @@ export default function SurfaceTabBar({
     setRenamingId(null);
     setRenameValue('');
   }, []);
+
+  // Start rename for a specific surface (used by the tab context menu)
+  const startRenameFor = useCallback((surfaceId: SurfaceId) => {
+    const surface = surfaces.find((s) => s.id === surfaceId);
+    if (!surface) return;
+    setRenamingId(surface.id);
+    setRenameValue(surface.customTitle || '');
+  }, [surfaces]);
+
+  // Dismiss the tab context menu on outside click, Escape, or viewport change.
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (ctxMenuRef.current?.contains(e.target as Node)) return;
+      setCtxMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCtxMenu(null); };
+    const onViewportChange = () => setCtxMenu(null);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onViewportChange, true);
+    };
+  }, [ctxMenu]);
 
   // Listen for keyboard shortcut rename event (only when focused)
   useEffect(() => {
@@ -290,6 +325,11 @@ export default function SurfaceTabBar({
               onDoubleClick={() => {
                 setRenamingId(surface.id);
                 setRenameValue(surface.customTitle || '');
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setCtxMenu({ surfaceId: surface.id, x: e.clientX, y: e.clientY });
               }}
               draggable={!isRenaming}
               onDragStart={(e) => {
@@ -491,6 +531,44 @@ export default function SurfaceTabBar({
                 </button>
               )}
             </>
+          )}
+        </div>,
+        document.body,
+      )}
+
+      {ctxMenu && createPortal(
+        <div
+          ref={ctxMenuRef}
+          className="ctx-menu"
+          role="menu"
+          style={{
+            left: Math.min(ctxMenu.x, window.innerWidth - 200),
+            top: Math.min(ctxMenu.y, window.innerHeight - 120),
+          }}
+        >
+          <div
+            className="ctx-menu__item"
+            role="menuitem"
+            onClick={() => { startRenameFor(ctxMenu.surfaceId); setCtxMenu(null); }}
+          >
+            Rename
+          </div>
+          <div className="ctx-menu__separator" />
+          <div
+            className="ctx-menu__item ctx-menu__item--danger"
+            role="menuitem"
+            onClick={() => { onClose(ctxMenu.surfaceId); setCtxMenu(null); }}
+          >
+            Close
+          </div>
+          {surfaces.length > 1 && (
+            <div
+              className="ctx-menu__item ctx-menu__item--danger"
+              role="menuitem"
+              onClick={() => { onCloseOthers?.(ctxMenu.surfaceId); setCtxMenu(null); }}
+            >
+              Close others
+            </div>
           )}
         </div>,
         document.body,
