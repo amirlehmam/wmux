@@ -429,6 +429,17 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
     print(await sendV2('surface.create', { type, ...(colorScheme ? { colorScheme } : {}) }));
   },
   'close-surface': async (args) => print(await sendV2('surface.close', { id: args[1] })),
+  // `rename-surface <id> <title>`, or `rename-surface <title>` from inside a
+  // pane (renames the current surface via WMUX_SURFACE_ID).
+  'rename-surface': async (args) => {
+    let id = args[1];
+    let title = args[2];
+    if (title === undefined && process.env.WMUX_SURFACE_ID) {
+      title = id;
+      id = process.env.WMUX_SURFACE_ID;
+    }
+    print(await sendV2('surface.rename', { id, title }));
+  },
   'focus-surface': async (args) => print(await sendV2('surface.focus', { id: args[1] })),
   'list-surfaces': async (args) => print(await sendV2('surface.list', { paneId: getFlag(args, '--pane') })),
   'set-color-scheme': cmdSetColorScheme,
@@ -574,6 +585,7 @@ Remote:     ssh [ssh options] <user@host> [--title T]   (remote terminal in a ne
 Global:     --remote host[:port] --token <T>   (drive a REMOTE wmux through an SSH tunnel;
             env equivalents: WMUX_REMOTE, WMUX_REMOTE_TOKEN)
 Surface:    new-surface [--type T] [--color-scheme NAME], close-surface, focus-surface, list-surfaces
+            rename-surface [surfaceId] <title>   (renames the current surface when run inside a pane)
             set-color-scheme [surfaceId] <scheme>, clear-color-scheme [surfaceId], list-themes
 Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-pane, zoom-pane, list-panes, tree
             pane new|close|focus|list   (verb form, mirrors issue #4 example)

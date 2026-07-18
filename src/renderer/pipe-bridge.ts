@@ -252,6 +252,23 @@ export function initPipeBridge(): void {
     }
   };
 
+  w.__wmux_renameSurface = (surfaceId: string, title: string, workspaceId?: string) => {
+    const store = useStore.getState();
+    const wsId = (workspaceId || store.activeWorkspaceId) as WorkspaceId;
+    if (!wsId) return { ok: false, error: 'No active workspace' };
+    const ws = store.workspaces.find(w => w.id === wsId);
+    if (!ws) return { ok: false, error: 'Workspace not found' };
+    const paneIds = getAllPaneIds(ws.splitTree);
+    for (const pid of paneIds) {
+      const leaf = findLeaf(ws.splitTree, pid);
+      if (leaf?.surfaces?.some(s => s.id === surfaceId)) {
+        store.renameSurface(wsId, pid, surfaceId as SurfaceId, title ?? '');
+        return { ok: true };
+      }
+    }
+    return { ok: false, error: 'Surface not found' };
+  };
+
   w.__wmux_focusSurface = (surfaceId: string, workspaceId?: string) => {
     const store = useStore.getState();
     const wsId = (workspaceId || store.activeWorkspaceId) as WorkspaceId;
