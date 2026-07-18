@@ -20,6 +20,8 @@ interface SurfaceTabBarProps {
   /** Close every tab positioned after the given one (tab context menu). */
   onCloseToRight?: (surfaceId: SurfaceId) => void;
   onNew: () => void;
+  /** Open a copy of the active tab in this pane (`+` dropdown). */
+  onDuplicate?: () => void;
   onNewTyped?: (type: 'terminal' | 'browser' | 'markdown') => void;
   /** Detected shells surfaced in the `+` caret dropdown (PR #43). */
   shells?: ShellInfo[];
@@ -62,6 +64,7 @@ export default function SurfaceTabBar({
   onCloseOthers,
   onCloseToRight,
   onNew,
+  onDuplicate,
   onNewTyped,
   shells,
   onNewShell,
@@ -231,6 +234,11 @@ export default function SurfaceTabBar({
     if (onNewTyped) onNewTyped(type);
     else onNew();
   }, [onNewTyped, onNew]);
+
+  const pickDuplicate = useCallback(() => {
+    setOpenMenu(null);
+    onDuplicate?.();
+  }, [onDuplicate]);
 
   const pickShell = useCallback((shell: ShellInfo) => {
     setOpenMenu(null);
@@ -476,6 +484,14 @@ export default function SurfaceTabBar({
         >
           {openMenu === 'new' ? (
             <>
+              {onDuplicate && (
+                <>
+                  <button role="menuitem" onClick={pickDuplicate}>
+                    <span className="surface-tab-menu__icon">⧉</span> Duplicate tab
+                  </button>
+                  <div className="surface-tab-menu__sep" role="separator" />
+                </>
+              )}
               {shells && shells.length > 0 ? (
                 <>
                   {shells.map((shell) => (
