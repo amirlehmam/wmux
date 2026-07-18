@@ -301,7 +301,7 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 - `system.identify`, `system.capabilities`, `system.tree`
 - `workspace.create`, `workspace.close`, `workspace.select`, `workspace.rename`, `workspace.list`
 - `pane.split`, `pane.close`, `pane.focus`, `pane.zoom`, `pane.list`
-- `surface.create`, `surface.close`, `surface.focus`, `surface.list`
+- `surface.create`, `surface.close`, `surface.focus`, `surface.rename`, `surface.list`
 - `surface.send_text`, `surface.send_key`, `surface.read_text`, `surface.trigger_flash`
 - `markdown.set_content`, `markdown.load_file`
 - `notification.list`, `notification.clear`
@@ -360,7 +360,7 @@ wmux --remote host[:port] --token T <any command>   # on the client (through `ss
 
 # Surfaces (tabs within a pane)
 wmux new-surface [--type terminal|browser|markdown]
-wmux close-surface | focus-surface | list-surfaces
+wmux close-surface | focus-surface | rename-surface | list-surfaces
 
 # Panes
 wmux split [--down] [--type T] | close-pane | focus-pane | zoom-pane | list-panes | tree

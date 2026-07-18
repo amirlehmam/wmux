@@ -77,6 +77,9 @@ const SPECS: Record<string, BridgeSpec> = {
   'surface.focus': {
     js: (p) => `window.__wmux_focusSurface?.(${S(p?.id || p?.surfaceId)}, ${S(p?.workspaceId)})`,
   },
+  'surface.rename': {
+    js: (p) => `window.__wmux_renameSurface?.(${S(p?.id || p?.surfaceId)}, ${S(p?.title || '')}, ${S(p?.workspaceId)})`,
+  },
   'surface.list': {
     js: (p) => `window.__wmux_listSurfaces?.(${S(p?.workspaceId)})`,
     shape: (r) => ({ surfaces: r || [] }),
