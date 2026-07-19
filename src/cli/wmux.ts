@@ -61,10 +61,17 @@ function sendV1(command: string): Promise<string> {
       client.write(line + '\n');
     });
     let data = '';
-    client.on('data', (chunk) => { data += chunk.toString(); });
-    client.on('end', () => resolve(data.trim()));
-    client.on('error', (err) => reject(err));
-    setTimeout(() => { client.end(); resolve(data.trim()); }, 5000);
+    const timer = setTimeout(() => { client.end(); resolve(data.trim()); }, 5000);
+    const finish = () => { clearTimeout(timer); resolve(data.trim()); };
+    client.on('data', (chunk) => {
+      data += chunk.toString();
+      // V1 replies are a single newline-terminated line (pong/ok/unauthorized).
+      // Resolve as soon as it arrives instead of blocking on the server closing
+      // the socket (it doesn't) — otherwise every call waited the full 5s timer.
+      if (data.includes('\n')) { client.end(); finish(); }
+    });
+    client.on('end', finish);
+    client.on('error', (err) => { clearTimeout(timer); reject(err); });
   });
 }
 
@@ -81,9 +88,11 @@ function sendV2(method: string, params: Record<string, any> = {}): Promise<any> 
       client.write(request + '\n');
     });
     let data = '';
+    const timer = setTimeout(() => { client.end(); reject(new Error('timeout')); }, 5000);
     client.on('data', (chunk) => {
       data += chunk.toString();
       if (data.includes('\n')) {
+        clearTimeout(timer);
         client.end();
         try {
           const response = JSON.parse(data.trim());
@@ -92,8 +101,7 @@ function sendV2(method: string, params: Record<string, any> = {}): Promise<any> 
         } catch { resolve(data.trim()); }
       }
     });
-    client.on('error', (err) => reject(err));
-    setTimeout(() => { client.end(); reject(new Error('timeout')); }, 5000);
+    client.on('error', (err) => { clearTimeout(timer); reject(err); });
   });
 }
 
