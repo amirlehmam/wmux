@@ -398,7 +398,7 @@ app.whenReady().then(() => {
 
     switch (request.method) {
       case 'system.identify':
-        respond({ name: 'wmux', version: '0.5.0', platform: 'win32' });
+        respond({ name: 'wmux', version: app.getVersion(), platform: 'win32' });
         break;
       case 'system.capabilities':
         respond({ protocols: ['v1', 'v2'], features: ['workspaces', 'splits', 'notifications'] });
