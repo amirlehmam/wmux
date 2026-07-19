@@ -59,6 +59,21 @@ describe('surface-slice: setMarkdownContent (issue #54)', () => {
     ).not.toThrow();
   });
 
+  it('records the file name for the tab label when one is provided', () => {
+    const surfaceId = useStore.getState().addSurface(workspaceId, paneId, 'markdown');
+    useStore.getState().setMarkdownContent(surfaceId, '# Doc', 'GUIDE.md');
+    expect(getSurface(surfaceId)?.markdownContent).toBe('# Doc');
+    expect(getSurface(surfaceId)?.markdownFileName).toBe('GUIDE.md');
+  });
+
+  it('leaves the file name untouched when content is set without one', () => {
+    const surfaceId = useStore.getState().addSurface(workspaceId, paneId, 'markdown');
+    useStore.getState().setMarkdownContent(surfaceId, '# Doc', 'GUIDE.md');
+    useStore.getState().setMarkdownContent(surfaceId, 'updated body');
+    expect(getSurface(surfaceId)?.markdownContent).toBe('updated body');
+    expect(getSurface(surfaceId)?.markdownFileName).toBe('GUIDE.md');
+  });
+
   it('finds the target surface in a non-first pane', () => {
     const ws = useStore.getState().workspaces.find((w) => w.id === workspaceId)!;
     const newPaneId = 'pane-second' as PaneId;

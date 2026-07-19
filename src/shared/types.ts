@@ -29,6 +29,10 @@ export interface SurfaceRef {
   /** Rendered markdown content for a `markdown` surface (issue #54). Persisted so
    *  the content survives split-tree restructures that remount the pane. */
   markdownContent?: string;
+  /** Basename of the file backing a `markdown` surface, shown as the tab label
+   *  instead of the generic "Markdown" so multiple markdown tabs are
+   *  distinguishable. Only set when the surface was populated from a file. */
+  markdownFileName?: string;
 }
 
 /**

@@ -77,7 +77,7 @@ export interface SurfaceSlice {
    * workspaces/panes (issue #54). Callers from the pipe bridge only know the
    * surfaceId, so this locates the owning pane itself.
    */
-  setMarkdownContent: (surfaceId: SurfaceId, content: string) => void;
+  setMarkdownContent: (surfaceId: SurfaceId, content: string, fileName?: string) => void;
 
   /** Split a pane and move a surface into the new pane (drag to edge) */
   splitAndMoveSurface: (
@@ -424,13 +424,17 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     updateSplitTree(workspaceId, updatedTree);
   },
 
-  setMarkdownContent(surfaceId, content) {
+  setMarkdownContent(surfaceId, content, fileName) {
     const { workspaces, updateSurface } = get();
     for (const ws of workspaces) {
       for (const paneId of getAllPaneIds(ws.splitTree)) {
         const leaf = findLeaf(ws.splitTree, paneId);
         if (leaf?.surfaces.some((s) => s.id === surfaceId)) {
-          updateSurface(ws.id, paneId, surfaceId, { markdownContent: content });
+          const patch: Partial<SurfaceRef> = { markdownContent: content };
+          // Only overwrite the tab label when the content came from a file;
+          // content-only setters (e.g. `wmux markdown set`) leave it untouched.
+          if (fileName) patch.markdownFileName = fileName;
+          updateSurface(ws.id, paneId, surfaceId, patch);
           return;
         }
       }
