@@ -606,7 +606,7 @@ app.whenReady().then(() => {
             const win = BrowserWindow.getAllWindows()[0];
             if (!win || win.isDestroyed()) { respondError(-32000, 'No window'); return; }
             await win.webContents.executeJavaScript(
-              `window.__wmux_setMarkdownContent?.(${JSON.stringify(request.params?.surfaceId || '')}, ${JSON.stringify(content)})`
+              `window.__wmux_setMarkdownContent?.(${JSON.stringify(request.params?.surfaceId || '')}, ${JSON.stringify(content)}, ${JSON.stringify(path.basename(filePath))})`
             );
             respond({ ok: true, length: content.length });
           } catch (err: any) { respondError(-32000, err.message); }

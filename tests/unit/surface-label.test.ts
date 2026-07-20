@@ -45,6 +45,26 @@ describe('surface labels', () => {
     expect(getSurfaceLabel(surface('surf-diff', { type: 'diff' }))).toBe('Diff');
   });
 
+  it('shows the markdown file name when the surface was opened from a file', () => {
+    expect(
+      getSurfaceLabel(surface('surf-markdown', { type: 'markdown', markdownFileName: 'README.md' })),
+    ).toBe('README.md');
+  });
+
+  it('falls back to "Markdown" for a markdown surface without a file name', () => {
+    expect(getSurfaceLabel(surface('surf-markdown', { type: 'markdown', markdownContent: '# hi' }))).toBe(
+      'Markdown',
+    );
+  });
+
+  it('prefers a custom title over the markdown file name', () => {
+    expect(
+      getSurfaceLabel(
+        surface('surf-markdown', { type: 'markdown', customTitle: 'Docs', markdownFileName: 'README.md' }),
+      ),
+    ).toBe('Docs');
+  });
+
   it('shows the folder name from currentCwd for terminal labels', () => {
     expect(
       getSurfaceLabel(

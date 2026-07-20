@@ -33,7 +33,7 @@ export function getSurfaceLabel(surface: SurfaceRef, agentLabel?: string, worksp
     case 'browser':
       return 'Browser';
     case 'markdown':
-      return 'Markdown';
+      return surface.markdownFileName || 'Markdown';
     case 'diff':
       return 'Diff';
     default:
