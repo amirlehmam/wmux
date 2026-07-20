@@ -1,5 +1,9 @@
 /* Sidebar Container */
 .sidebar {
+  /* Positioning context for .sidebar-resize-handle — without this the
+     absolutely-positioned handle anchors to the viewport instead of the
+     sidebar's right edge, making the sidebar impossible to resize (#107). */
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -302,10 +306,11 @@
   position: absolute;
   top: 0;
   right: 0;
-  width: 4px;
+  width: 6px;
   height: 100%;
   cursor: col-resize;
   z-index: 50;
+  transition: background 0.15s;
 }
 
 .sidebar-resize-handle:hover {
