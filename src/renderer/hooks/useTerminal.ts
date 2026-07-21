@@ -692,6 +692,25 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         })();
         return false; // Prevent default — we handle paste ourselves
       }
+      // Shift+Enter → newline for TUI apps (Claude Code, etc). xterm sends a
+      // plain \r for BOTH Enter and Shift+Enter, so the app can't tell them
+      // apart and treats Shift+Enter as submit. Emit ESC+CR — the same sequence
+      // Alt/Option+Enter produces and that Claude Code's /terminal-setup wires
+      // up — so Shift+Enter inserts a newline instead of submitting. Excludes
+      // Ctrl/Alt/Meta so Ctrl+Shift+Enter (zoom pane) is left untouched.
+      if (
+        event.type === 'keydown' &&
+        event.key === 'Enter' &&
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey
+      ) {
+        if (ptyIdRef.current) {
+          window.wmux.pty.write(ptyIdRef.current, '\x1b\r');
+        }
+        return false;
+      }
       return true;
     });
 
