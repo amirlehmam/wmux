@@ -41,11 +41,32 @@ describe('observer agent parsing', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it('caps tracked agents at 32', () => {
+  it('caps tracked agents at 32 with FIFO eviction', () => {
     for (let i = 0; i < 40; i++) {
       observePtyData(surf, `├─ agent-${i} · 1 tool use · 1k tokens\n`);
     }
-    expect(getActivity(surf)!.agents.length).toBeLessThanOrEqual(32);
+    const a = getActivity(surf)!;
+    expect(a.agents.length).toBe(32);
+    expect(a.agents[0].name).toBe('agent-8'); // oldest 8 of 40 evicted first
+  });
+
+  it('strips ANSI escapes before matching tool markers', () => {
+    observePtyData(surf, '\x1b[1m⏺ Bash(ls)\x1b[0m\n');
+    expect(getActivity(surf)!.lastTool).toBe('Bash');
+  });
+
+  it('marks all agents done on an "N ... agents finished" line', () => {
+    observePtyData(surf, '├─ alpha · 2 tool uses · 3k tokens\n├─ beta · 1 tool use · 1k tokens\n');
+    observePtyData(surf, '3 Explore agents finished\n');
+    expect(getActivity(surf)!.agents.every(x => x.done)).toBe(true);
+  });
+
+  it('sets isDone and clears lastTool on the response-done marker', () => {
+    observePtyData(surf, '⏺ Bash(ls)\n');
+    observePtyData(surf, '✻ Baked for 3m 10s\n');
+    const a = getActivity(surf)!;
+    expect(a.isDone).toBe(true);
+    expect(a.lastTool).toBeNull();
   });
 });
 
