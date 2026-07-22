@@ -9,6 +9,8 @@ export interface WorkspaceAgent {
   done: boolean;
   /** Set only for wmux-spawned agents that own a pane — makes the line clickable. */
   paneId?: PaneId;
+  /** Tool-use count of an observer-parsed agent — feeds the "+N more" summary. */
+  toolUses?: number;
 }
 
 /** Observer agent shape (subset of ClaudeActivity from src/main/claude-observer.ts). */
@@ -20,8 +22,10 @@ interface ObserverActivity {
 const OBSERVER_TTL_MS = 5 * 60 * 1000; // stale observer data never renders (ghost guard)
 const MAX_LINES = 4;
 export const AGENT_LINGER_MS = 10_000;
+/** Key of the synthetic "+N more" summary line appended when the list overflows. */
+export const MORE_KEY = '__more';
 
-function collectSurfacePanes(tree: SplitNode, out: Array<{ surfaceId: string; paneId: PaneId }>): void {
+function collectSurfacePanes(tree: SplitNode, out: Array<{ surfaceId: SurfaceId; paneId: PaneId }>): void {
   if (tree.type === 'leaf') {
     for (const s of tree.surfaces) out.push({ surfaceId: s.id, paneId: tree.paneId });
     return;
@@ -37,27 +41,25 @@ function observerLines(surfaceId: string, activity: ObserverActivity | undefined
     name: a.name,
     detail: a.done ? '✓' : `⚒${a.toolUses} · ${a.tokens}`,
     done: a.done,
+    toolUses: a.toolUses,
   }));
 }
 
-function wmuxLine(surfaceId: string, paneId: PaneId, meta: AgentMeta | undefined): WorkspaceAgent[] {
-  if (!meta) return [];
+function wmuxLine(surfaceId: string, paneId: PaneId, meta: AgentMeta | undefined): WorkspaceAgent | null {
+  if (!meta) return null;
   const done = meta.status === 'exited';
-  return [{ key: `wmux:${surfaceId}`, name: meta.label, detail: done ? '✓' : '', done, paneId }];
-}
-
-function toolCountOf(detail: string): number {
-  const m = /⚒(\d+)/.exec(detail);
-  return m ? parseInt(m[1], 10) : 0;
+  return { key: `wmux:${surfaceId}`, name: meta.label, detail: done ? '✓' : '', done, paneId };
 }
 
 function summarize(ordered: WorkspaceAgent[]): WorkspaceAgent[] {
   if (ordered.length <= MAX_LINES) return ordered;
   const shown = ordered.slice(0, MAX_LINES - 1);
   const hidden = ordered.slice(MAX_LINES - 1);
-  const hiddenTools = hidden.reduce((sum, a) => sum + toolCountOf(a.detail), 0);
+  // Done observer agents contribute their toolUses too — the summary reads
+  // "work done by hidden agents", not "work in flight".
+  const hiddenTools = hidden.reduce((sum, a) => sum + (a.toolUses ?? 0), 0);
   shown.push({
-    key: '__more',
+    key: MORE_KEY,
     name: `+${hidden.length} more`,
     detail: hiddenTools > 0 ? `⚒${hiddenTools}` : '',
     done: hidden.every(a => a.done),
@@ -76,13 +78,14 @@ export function agentsForWorkspace(
   agentMeta: Map<SurfaceId, AgentMeta>,
   now: number,
 ): WorkspaceAgent[] {
-  const pairs: Array<{ surfaceId: string; paneId: PaneId }> = [];
+  const pairs: Array<{ surfaceId: SurfaceId; paneId: PaneId }> = [];
   collectSurfacePanes(splitTree, pairs);
 
   const merged: WorkspaceAgent[] = [];
   for (const { surfaceId, paneId } of pairs) {
     merged.push(...observerLines(surfaceId, claudeActivity[surfaceId], now));
-    merged.push(...wmuxLine(surfaceId, paneId, agentMeta.get(surfaceId as SurfaceId)));
+    const wmux = wmuxLine(surfaceId, paneId, agentMeta.get(surfaceId));
+    if (wmux) merged.push(wmux);
   }
 
   // Stable partition: running agents first, done ones after.
