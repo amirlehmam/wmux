@@ -44,7 +44,6 @@ interface WorkspaceRowProps {
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   isDragOver?: boolean;
-  agentCount?: number;
   hookActivity?: { lastTool: string; toolCount: number; lastSeen: number };
   claudeActivity?: Record<string, any>;
   onFocusAgentPane?: (paneId: PaneId) => void;
@@ -63,7 +62,6 @@ export default function WorkspaceRow({
   onDrop,
   onDragEnd,
   isDragOver = false,
-  agentCount = 0,
   hookActivity,
   claudeActivity,
   onFocusAgentPane,

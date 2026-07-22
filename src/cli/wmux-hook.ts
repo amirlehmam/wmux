@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
  * wmux hook helper — sends a hook event to the wmux pipe.
- * Called by Claude Code hooks (PostToolUse, Notification, Stop).
+ * Called by Claude Code hooks (PostToolUse, Notification, Stop, SubagentStop).
  *
  * Usage:
  *   node wmux-hook.js <tool-name>        # PostToolUse — sidebar/diff tracking
- *   node wmux-hook.js --event <Event>    # Notification / Stop — fires a wmux notification
+ *   node wmux-hook.js --event <Event>    # Notification/Stop fire a wmux notification;
+ *                                        # Stop/SubagentStop also drive sidebar agent lifecycle
  *
  * Reads stdin for the Claude Code hook payload (JSON):
  *   - PostToolUse Edit/Write → extracts tool_input.file_path

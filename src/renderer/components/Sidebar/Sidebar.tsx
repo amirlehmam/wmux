@@ -55,28 +55,7 @@ export default function Sidebar({
   const [draggedId, setDraggedId] = useState<WorkspaceId | null>(null);
   const [dragOverId, setDragOverId] = useState<WorkspaceId | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [sessionMenuMode, setSessionMenuMode] = useState<'load' | 'save' | null>(null);
-
-  useEffect(() => {
-    let polling = false;
-    const interval = setInterval(async () => {
-      if (polling || !window.wmux?.agent?.list) return;
-      polling = true;
-      try {
-        const agents = await window.wmux.agent.list();
-        const counts: Record<string, number> = {};
-        for (const agent of agents || []) {
-          if (agent.status === 'running') {
-            counts[agent.workspaceId] = (counts[agent.workspaceId] || 0) + 1;
-          }
-        }
-        setAgentCounts(counts);
-      } catch {}
-      polling = false;
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
   // ── Orchestration IPC subscription ──────────────────────────────────────
   // Main process pushes wmux-orchestrator state.json updates; we mirror them
@@ -289,7 +268,6 @@ export default function Sidebar({
             onDrop={(e) => handleDrop(e, ws.id)}
             onDragEnd={handleDragEnd}
             isDragOver={dragOverId === ws.id}
-            agentCount={agentCounts[ws.id] || 0}
             hookActivity={hookActivity?.[ws.id]}
             claudeActivity={claudeActivity}
             onFocusAgentPane={(paneId) => onFocusAgentPane?.(ws.id, paneId)}
