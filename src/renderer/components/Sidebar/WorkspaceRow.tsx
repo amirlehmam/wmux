@@ -194,7 +194,7 @@ export default function WorkspaceRow({
 
     // Priority 0.5: agents are running — show the orchestration summary
     if (runningAgentCount > 0) {
-      return `Orchestrating · ${wsAgents.total} agents`;
+      return `Orchestrating · ${wsAgents.total} agent${wsAgents.total > 1 ? 's' : ''}`;
     }
 
     // Priority 1: Claude is actively using a tool

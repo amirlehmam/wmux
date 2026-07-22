@@ -79,6 +79,20 @@ function spawnAgentBatch(
 
 const windowManager = new WindowManager();
 
+// Agent exit → renderer. Without this broadcast, sidebar agent lines would
+// pulse "running" forever: agentMeta is only written at spawn, and the old
+// 3s agent.list poll that used to sync statuses is gone. Mirrors the
+// 'spawned' AGENT_UPDATE emissions above.
+agentManager.setOnAgentExit((info) => {
+  BrowserWindow.getAllWindows().forEach((w) => {
+    if (!w.isDestroyed()) {
+      w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, {
+        type: 'exited', surfaceId: info.surfaceId, exitCode: info.exitCode,
+      });
+    }
+  });
+});
+
 // window.* V2 methods (issue #78) run entirely in the main process against
 // windowManager — no renderer bridge involved. Returns true when handled so
 // the main dispatch switch can be skipped.

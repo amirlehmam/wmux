@@ -24,9 +24,16 @@ export function distributeAgents(count: number, panes: PaneLoadInfo[]): string[]
 export class AgentManager {
   private agents = new Map<AgentId, AgentInfo>();
   private ptyManager: PtyManager;
+  /** Notified exactly once per agent when it transitions to 'exited' (PTY exit or kill). */
+  private onAgentExit?: (info: AgentInfo) => void;
 
   constructor(ptyManager: PtyManager) {
     this.ptyManager = ptyManager;
+  }
+
+  /** Wire the exit broadcast — the caller owns window access (mirrors how 'spawned' is emitted). */
+  setOnAgentExit(cb: (info: AgentInfo) => void): void {
+    this.onAgentExit = cb;
   }
 
   spawn(params: AgentSpawnParams & { paneId: PaneId; workspaceId: WorkspaceId }): { agentId: AgentId; surfaceId: SurfaceId } {
@@ -83,7 +90,13 @@ export class AgentManager {
 
     this.ptyManager.onExit(surfaceId, (code) => {
       const agent = this.agents.get(agentId);
-      if (agent) { agent.status = 'exited'; agent.exitCode = code; }
+      // Transition guard: kill() marks 'exited' first, so a subsequent PTY
+      // exit must not fire a duplicate broadcast.
+      if (agent && agent.status !== 'exited') {
+        agent.status = 'exited';
+        agent.exitCode = code;
+        this.onAgentExit?.(agent);
+      }
     });
 
     return { agentId, surfaceId };
@@ -99,9 +112,13 @@ export class AgentManager {
   kill(agentId: AgentId): boolean {
     const agent = this.agents.get(agentId);
     if (!agent) return false;
-    this.ptyManager.kill(agent.surfaceId);
+    // Mark exited BEFORE killing the PTY so the PTY exit callback's transition
+    // guard sees 'exited' and skips a duplicate broadcast.
+    const wasRunning = agent.status !== 'exited';
     agent.status = 'exited';
     agent.exitCode = -1;
+    this.ptyManager.kill(agent.surfaceId);
+    if (wasRunning) this.onAgentExit?.(agent);
     return true;
   }
 

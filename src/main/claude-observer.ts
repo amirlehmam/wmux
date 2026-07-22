@@ -97,6 +97,10 @@ function handleResponseDone(activity: ClaudeActivity, trimmed: string): boolean 
 
 function handleAgentBatchStart(activity: ClaudeActivity, trimmed: string): boolean {
   if (!PATTERNS.agentBatchStart.test(trimmed)) return false;
+  // Known parsing-drift class (accepted): a repainted OLD "Running N agents"
+  // frame re-enters here and resets the list, resurrecting already-finished
+  // agents until the next hook event or the observer TTL. Backstopped by the
+  // Stop hook and the 5-minute TTL in agent-view.
   activity.agents = [];
   activity.isDone = false;
   return true;

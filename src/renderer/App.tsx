@@ -498,6 +498,14 @@ export default function App() {
   useEffect(() => {
     if (!window.wmux?.agent?.onUpdate) return;
     const unsub = window.wmux.agent.onUpdate((event: any) => {
+      if (event.type === 'exited') {
+        // Flip the sidebar agent line to done; no-op for unknown surfaces.
+        const existing = useStore.getState().agentMeta.get(event.surfaceId);
+        if (existing && existing.status !== 'exited') {
+          setAgentMeta(event.surfaceId, { ...existing, status: 'exited', exitCode: event.exitCode });
+        }
+        return;
+      }
       if (event.type === 'spawned') {
         const { surfaceId, paneId, workspaceId, label } = event;
         const state = useStore.getState();
