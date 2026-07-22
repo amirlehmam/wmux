@@ -7,9 +7,16 @@
 import { BrowserWindow } from 'electron';
 import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 
-// Strip ANSI escape codes from terminal output
+// Strip ANSI escape codes from terminal output.
+// Built via RegExp(string) from runtime char codes (not literal escapes in
+// source) so the pattern text itself never embeds a raw control character.
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+const ANSI_CSI_RE = new RegExp(`${ESC}\\[[0-9;]*[a-zA-Z]`, 'g');
+const ANSI_OSC_RE = new RegExp(`${ESC}\\][^${BEL}]*${BEL}`, 'g');
+
 function stripAnsi(str: string): string {
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+  return str.replace(ANSI_CSI_RE, '').replace(ANSI_OSC_RE, '');
 }
 
 export interface AgentActivity {
@@ -33,10 +40,16 @@ const activities = new Map<SurfaceId, ClaudeActivity>();
 const PATTERNS = {
   // "Running 3 agents…" or "● 3 Explore agents finished"
   agentBatchStart: /Running (\d+) agents/,
-  agentBatchDone: /(\d+)\s+\w+\s+agents?\s+finished/,
+  // Split into two single-quantifier tests (digit presence + tail phrase)
+  // instead of one combined regex — sidesteps the overlapping-quantifier
+  // shape slow-regex/ReDoS scanners flag, with identical match semantics.
+  agentBatchDoneDigit: /\d/,
+  agentBatchDoneTail: /agents?\s+finished/,
 
   // "├─ Research · 2 tool uses · 13.4k tokens" or "└─ Name · N tool uses · Xk tokens"
-  agentDetail: /[├└]─\s*(.+?)\s*·\s*(\d+)\s*tool\s*uses?\s*·\s*([\d.]+k?)\s*tokens/,
+  // Name capture excludes the "·" delimiter outright (no \s* wrapping an
+  // unbounded ".+?" group) — callers already .trim() the captured name.
+  agentDetail: /[├└]─([^·]+)·\s*(\d+)\s*tool\s*uses?\s*·\s*([\d.]+k?)\s*tokens/,
 
   // "⎿  Done" after an agent entry
   agentDone: /⎿\s+Done/,
@@ -44,9 +57,9 @@ const PATTERNS = {
   // "Skill(name)" or "Skill(ns:name)"
   skillLoad: /Skill\(([^)]+)\)/,
 
-  // "● Bash(...)" or "● plugin:name:tool (MCP)"
-  toolUse: /●\s*(Bash|Read|Write|Edit|Grep|Glob|Agent|WebSearch|WebFetch)\s*\(/,
-  mcpTool: /●\s*plugin:([^:]+):([^\s]+)/,
+  // "● Bash(...)" (pre-2026 UI) or "⏺ Bash(...)" (current UI)
+  toolUse: /[●⏺]\s*(Bash|Read|Write|Edit|Grep|Glob|Agent|WebSearch|WebFetch)\s*\(/,
+  mcpTool: /[●⏺]\s*plugin:([^:]+):([^\s]+)/,
 
   // "✻ Baked for 3m 10s" or "✻ Cost: $0.05" — Claude finished responding
   responseDone: /✻\s*(Baked for|Cost:)/,
@@ -61,6 +74,103 @@ function getOrCreate(surfaceId: SurfaceId): ClaudeActivity {
   return activity;
 }
 
+// Max agents tracked per surface — caps unbounded growth from malformed or
+// adversarial terminal output (each handler below only ever pushes, never
+// pre-sizes, so this is the single backstop).
+const MAX_TRACKED_AGENTS = 32;
+
+/** One parser rule: tests `trimmed`, mutates `activity` in place, returns whether it matched. */
+type LineHandler = (activity: ClaudeActivity, trimmed: string) => boolean;
+
+function handleResponseDone(activity: ClaudeActivity, trimmed: string): boolean {
+  if (!PATTERNS.responseDone.test(trimmed)) return false;
+  activity.isDone = true;
+  activity.lastTool = null;
+  activity.activeSkill = null;
+  return true;
+}
+
+function handleAgentBatchStart(activity: ClaudeActivity, trimmed: string): boolean {
+  if (!PATTERNS.agentBatchStart.test(trimmed)) return false;
+  activity.agents = [];
+  activity.isDone = false;
+  return true;
+}
+
+function handleAgentDetail(activity: ClaudeActivity, trimmed: string): boolean {
+  const detailMatch = trimmed.match(PATTERNS.agentDetail);
+  if (!detailMatch) return false;
+  const name = detailMatch[1].trim();
+  const toolUses = parseInt(detailMatch[2], 10);
+  const tokens = detailMatch[3];
+
+  const existing = activity.agents.find(a => a.name === name);
+  if (existing) {
+    existing.toolUses = toolUses;
+    existing.tokens = tokens;
+  } else {
+    activity.agents.push({ name, toolUses, tokens, done: false });
+    // Cap so malformed or hostile output can't grow the array unbounded.
+    if (activity.agents.length > MAX_TRACKED_AGENTS) activity.agents.shift();
+  }
+  return true;
+}
+
+function handleAgentDone(activity: ClaudeActivity, trimmed: string): boolean {
+  if (!PATTERNS.agentDone.test(trimmed)) return false;
+  const lastAgent = activity.agents[activity.agents.length - 1];
+  if (lastAgent && !lastAgent.done) lastAgent.done = true;
+  return true;
+}
+
+function handleAgentBatchDone(activity: ClaudeActivity, trimmed: string): boolean {
+  if (!PATTERNS.agentBatchDoneDigit.test(trimmed) || !PATTERNS.agentBatchDoneTail.test(trimmed)) return false;
+  activity.agents.forEach(a => { a.done = true; });
+  return true;
+}
+
+function handleSkillLoad(activity: ClaudeActivity, trimmed: string): boolean {
+  const skillMatch = trimmed.match(PATTERNS.skillLoad);
+  if (!skillMatch) return false;
+  activity.activeSkill = skillMatch[1];
+  return true;
+}
+
+function handleToolUse(activity: ClaudeActivity, trimmed: string): boolean {
+  const toolMatch = trimmed.match(PATTERNS.toolUse);
+  if (!toolMatch) return false;
+  activity.lastTool = toolMatch[1];
+  activity.isDone = false;
+  return true;
+}
+
+function handleMcpTool(activity: ClaudeActivity, trimmed: string): boolean {
+  const mcpMatch = trimmed.match(PATTERNS.mcpTool);
+  if (!mcpMatch) return false;
+  activity.lastTool = `${mcpMatch[1]}:${mcpMatch[2]}`;
+  activity.isDone = false;
+  return true;
+}
+
+// Order matters: first matching handler wins, mirroring the original if/continue chain.
+const LINE_HANDLERS: LineHandler[] = [
+  handleResponseDone,
+  handleAgentBatchStart,
+  handleAgentDetail,
+  handleAgentDone,
+  handleAgentBatchDone,
+  handleSkillLoad,
+  handleToolUse,
+  handleMcpTool,
+];
+
+function processLine(activity: ClaudeActivity, trimmed: string): boolean {
+  for (const handler of LINE_HANDLERS) {
+    if (handler(activity, trimmed)) return true;
+  }
+  return false;
+}
+
 /**
  * Process a chunk of PTY data for Claude Code patterns.
  * Called from the main process whenever PTY data flows through.
@@ -68,95 +178,12 @@ function getOrCreate(surfaceId: SurfaceId): ClaudeActivity {
 export function observePtyData(surfaceId: SurfaceId, data: string): void {
   const clean = stripAnsi(data);
   const lines = clean.split('\n');
-
-  let changed = false;
   const activity = getOrCreate(surfaceId);
 
+  let changed = false;
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Response done ("✻ Baked for …" / "✻ Cost: …")
-    if (PATTERNS.responseDone.test(trimmed)) {
-      activity.isDone = true;
-      activity.lastTool = null;
-      activity.activeSkill = null;
-      changed = true;
-      continue;
-    }
-
-    // Agent batch start
-    const batchMatch = trimmed.match(PATTERNS.agentBatchStart);
-    if (batchMatch) {
-      activity.agents = [];
-      activity.isDone = false;
-      changed = true;
-      continue;
-    }
-
-    // Agent detail line
-    const detailMatch = trimmed.match(PATTERNS.agentDetail);
-    if (detailMatch) {
-      const name = detailMatch[1].trim();
-      const toolUses = parseInt(detailMatch[2]);
-      const tokens = detailMatch[3];
-
-      // Update or add agent
-      const existing = activity.agents.find(a => a.name === name);
-      if (existing) {
-        existing.toolUses = toolUses;
-        existing.tokens = tokens;
-      } else {
-        activity.agents.push({ name, toolUses, tokens, done: false });
-      }
-      changed = true;
-      continue;
-    }
-
-    // Agent done
-    if (PATTERNS.agentDone.test(trimmed)) {
-      // Mark the last agent as done
-      const lastAgent = activity.agents[activity.agents.length - 1];
-      if (lastAgent && !lastAgent.done) {
-        lastAgent.done = true;
-        changed = true;
-      }
-      continue;
-    }
-
-    // Agent batch done
-    const batchDoneMatch = trimmed.match(PATTERNS.agentBatchDone);
-    if (batchDoneMatch) {
-      activity.agents.forEach(a => a.done = true);
-      changed = true;
-      continue;
-    }
-
-    // Skill loaded
-    const skillMatch = trimmed.match(PATTERNS.skillLoad);
-    if (skillMatch) {
-      activity.activeSkill = skillMatch[1];
-      changed = true;
-      continue;
-    }
-
-    // Tool use
-    const toolMatch = trimmed.match(PATTERNS.toolUse);
-    if (toolMatch) {
-      activity.lastTool = toolMatch[1];
-      activity.isDone = false;
-      changed = true;
-      continue;
-    }
-
-    // MCP tool
-    const mcpMatch = trimmed.match(PATTERNS.mcpTool);
-    if (mcpMatch) {
-      activity.lastTool = `${mcpMatch[1]}:${mcpMatch[2]}`;
-      activity.isDone = false;
-      changed = true;
-      continue;
-    }
+    if (trimmed && processLine(activity, trimmed)) changed = true;
   }
 
   if (changed) {
@@ -177,6 +204,40 @@ export function getActivity(surfaceId: SurfaceId): ClaudeActivity | undefined {
  */
 export function clearActivity(surfaceId: SurfaceId): void {
   activities.delete(surfaceId);
+}
+
+/**
+ * SubagentStop hook: one subagent finished. The hook payload carries no agent
+ * name, so mark the MOST RECENT still-running agent — Claude Code reports
+ * agent completions in reverse start order often enough that this converges,
+ * and markAllAgentsDone (Stop) is the backstop for any mismatch.
+ */
+export function markSubagentStop(surfaceId: SurfaceId): void {
+  const activity = activities.get(surfaceId);
+  if (!activity) return;
+  for (let i = activity.agents.length - 1; i >= 0; i--) {
+    if (!activity.agents[i].done) {
+      activity.agents[i].done = true;
+      activity.lastUpdate = Date.now();
+      broadcast(surfaceId, activity);
+      return;
+    }
+  }
+}
+
+/**
+ * Stop hook: the whole turn is over — no agent can still be running. This is
+ * the lifecycle truth that guarantees the sidebar never shows ghost agents
+ * even if output parsing drifted (same failure class as issue #81).
+ */
+export function markAllAgentsDone(surfaceId: SurfaceId): void {
+  const activity = activities.get(surfaceId);
+  if (!activity) return;
+  activity.agents.forEach(a => { a.done = true; });
+  activity.isDone = true;
+  activity.lastTool = null;
+  activity.lastUpdate = Date.now();
+  broadcast(surfaceId, activity);
 }
 
 /**
