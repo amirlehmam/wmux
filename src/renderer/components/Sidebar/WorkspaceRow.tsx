@@ -3,6 +3,7 @@ import { WorkspaceInfo, SplitNode, PaneId } from '../../../shared/types';
 import { useStore } from '../../store';
 import { aggregateProgress } from '../../store/progress-slice';
 import { agentsForWorkspace, resolveAgentLinger, WorkspaceAgentsView } from '../../store/agent-view';
+import { claudeSessionsForWorkspace, HookActivityEntry } from '../../store/claude-session-view';
 import UnreadBadge from './UnreadBadge';
 import PrStatusIcon from './PrStatusIcon';
 
@@ -31,6 +32,73 @@ function getToolLabel(tool: string): string {
   }
 }
 
+/** Detail text of one Claude session sub-line. */
+function sessionDetailText(working: boolean, tool: string | null): string {
+  if (!working) return 'Idle';
+  return tool ? getToolLabel(tool) : 'Running…';
+}
+
+interface StatusTextInputs {
+  statusOverride?: 'running' | 'idle';
+  runningAgentCount: number;
+  agentTotal: number;
+  sessionCount: number;
+  workingSessions: number;
+  currentToolLabel: string | null;
+  claudeIsIdle: boolean;
+  shellState?: string;
+  notificationText?: string;
+}
+
+/** Priorities 0–2: Claude-derived signals. Null → fall through to shell state. */
+function claudeStatusText(s: StatusTextInputs): string | null {
+  // Priority 0: user pinned the status by hand (issue #81) — detection
+  // heuristics can misread tools that keep the shell "running" while idle.
+  if (s.statusOverride) {
+    return s.statusOverride === 'running' ? 'Running' : 'Idle';
+  }
+
+  // Priority 0.5: agents are running — show the orchestration summary
+  if (s.runningAgentCount > 0) {
+    return `Orchestrating · ${s.agentTotal} agent${s.agentTotal > 1 ? 's' : ''}`;
+  }
+
+  // Priority 0.75: several Claude sessions in this workspace — summarize;
+  // the per-session sub-lines below the status carry the detail.
+  if (s.sessionCount >= 2) {
+    return s.workingSessions > 0
+      ? `Claude · ${s.workingSessions}/${s.sessionCount} running`
+      : 'Idle';
+  }
+
+  // Priority 1: Claude is actively using a tool
+  if (s.currentToolLabel) return s.currentToolLabel;
+
+  // Priority 2: Claude was working but stopped → idle, not "Running"
+  if (s.claudeIsIdle) return 'Idle';
+
+  return null;
+}
+
+/** Status line priority chain: override > agents > sessions > tool > idle > shell > notification. */
+function resolveStatusText(s: StatusTextInputs): string {
+  const claude = claudeStatusText(s);
+  if (claude) return claude;
+
+  // Priority 3: Shell state from shell integration
+  if (s.shellState === 'running') return 'Running';
+  if (s.shellState === 'interrupted') return 'Interrupted';
+  if (s.shellState === 'idle') {
+    return s.notificationText ? `Done: ${s.notificationText}` : 'Idle';
+  }
+
+  // Priority 4: Notification text without shell state
+  if (s.notificationText) return s.notificationText;
+
+  // Priority 5: Default — always show something
+  return 'Idle';
+}
+
 interface WorkspaceRowProps {
   workspace: WorkspaceInfo;
   isActive: boolean;
@@ -44,7 +112,8 @@ interface WorkspaceRowProps {
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
   isDragOver?: boolean;
-  hookActivity?: { lastTool: string; toolCount: number; lastSeen: number };
+  /** Full hook-activity map — keyed by surface id (per Claude session) or workspace id (legacy). */
+  hookActivity?: Record<string, HookActivityEntry>;
   claudeActivity?: Record<string, any>;
   onFocusAgentPane?: (paneId: PaneId) => void;
 }
@@ -149,76 +218,70 @@ export default function WorkspaceRow({
   // How long a tool label persists after the last hook/observer event (ms)
   const ACTIVITY_TTL = 5000;
 
+  // ── Per-surface Claude sessions (2 claude panes = 2 independent states) ──
+  const sessionsView = useMemo(
+    () => claudeSessionsForWorkspace(workspace.splitTree, claudeActivity ?? {}, hookActivity ?? {}, Date.now()),
+    [workspace.splitTree, claudeActivity, hookActivity, tick],
+  );
+  const sessions = sessionsView.sessions;
+  const workingSessions = sessionsView.working;
+
+  // Legacy workspace-keyed entry — only written by hook events with no surfaceId.
+  const legacyHook = hookActivity?.[workspace.id];
+
   // ── Determine if Claude is actively working (recent hook or observer data) ──
   const isClaudeActive = useMemo(() => {
+    if (workingSessions > 0) return true;
     const now = Date.now();
-    if (hookActivity && now - hookActivity.lastSeen < ACTIVITY_TTL) return true;
+    if (legacyHook && now - legacyHook.lastSeen < ACTIVITY_TTL) return true;
     if (wsActivity && now - wsActivity.lastUpdate < ACTIVITY_TTL) return true;
     return false;
-  }, [hookActivity, wsActivity, tick]);
+  }, [workingSessions, legacyHook, wsActivity, tick]);
 
   // ── Current tool label (from observer or hooks) ──
   const currentToolLabel = useMemo(() => {
+    // Prefer per-session state — first working session with a known tool.
+    const active = sessions.find(s => s.working && s.tool);
+    if (active?.tool) return getToolLabel(active.tool);
     const now = Date.now();
-    // Prefer observer data (more specific — comes from PTY output parsing)
     if (wsActivity?.lastTool && now - wsActivity.lastUpdate < ACTIVITY_TTL) {
       return getToolLabel(wsActivity.lastTool);
     }
-    // Fall back to hook data
-    if (hookActivity?.lastTool && now - hookActivity.lastSeen < ACTIVITY_TTL) {
-      return getToolLabel(hookActivity.lastTool);
+    if (legacyHook?.lastTool && now - legacyHook.lastSeen < ACTIVITY_TTL) {
+      return getToolLabel(legacyHook.lastTool);
     }
     return null;
-  }, [wsActivity, hookActivity, tick]);
+  }, [sessions, wsActivity, legacyHook, tick]);
 
   // ── Detect "Claude was active but stopped" (shell still says running) ──
   const claudeIsIdle = useMemo(() => {
     if (workspace.shellState !== 'running') return false;
+    // Sessions tracked per surface: idle only when EVERY session stopped —
+    // one busy claude pane never reads as workspace-wide idle, and one idle
+    // claude pane never keeps the row on "Running" (the 2-window bug).
+    if (sessions.length > 0) return workingSessions === 0;
     // Observer saw "Baked for" / "Cost:" — Claude explicitly finished
     if (wsActivity?.isDone) return true;
     // Hook activity went stale — Claude stopped using tools
-    if (hookActivity) {
+    if (legacyHook) {
       const now = Date.now();
-      return now - hookActivity.lastSeen >= ACTIVITY_TTL;
+      return now - legacyHook.lastSeen >= ACTIVITY_TTL;
     }
     return false;
-  }, [workspace.shellState, wsActivity, hookActivity, tick]);
+  }, [workspace.shellState, sessions, workingSessions, wsActivity, legacyHook, tick]);
 
   // ── Status text: manual override > tool activity > shell state > default ──
-  const statusText = useMemo(() => {
-    // Priority 0: user pinned the status by hand (issue #81) — detection
-    // heuristics can misread tools that keep the shell "running" while idle.
-    if (workspace.statusOverride) {
-      return workspace.statusOverride === 'running' ? 'Running' : 'Idle';
-    }
-
-    // Priority 0.5: agents are running — show the orchestration summary
-    if (runningAgentCount > 0) {
-      return `Orchestrating · ${wsAgents.total} agent${wsAgents.total > 1 ? 's' : ''}`;
-    }
-
-    // Priority 1: Claude is actively using a tool
-    if (currentToolLabel) return currentToolLabel;
-
-    // Priority 2: Claude was working but stopped → idle, not "Running"
-    if (claudeIsIdle) return 'Idle';
-
-    // Priority 3: Shell state from shell integration
-    const state = workspace.shellState;
-    if (state === 'running') return 'Running';
-    if (state === 'interrupted') return 'Interrupted';
-    if (state === 'idle') {
-      return workspace.notificationText
-        ? `Done: ${workspace.notificationText}`
-        : 'Idle';
-    }
-
-    // Priority 4: Notification text without shell state
-    if (workspace.notificationText) return workspace.notificationText;
-
-    // Priority 5: Default — always show something
-    return 'Idle';
-  }, [workspace.statusOverride, runningAgentCount, wsAgents, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
+  const statusText = useMemo(() => resolveStatusText({
+    statusOverride: workspace.statusOverride,
+    runningAgentCount,
+    agentTotal: wsAgents.total,
+    sessionCount: sessions.length,
+    workingSessions,
+    currentToolLabel,
+    claudeIsIdle,
+    shellState: workspace.shellState,
+    notificationText: workspace.notificationText,
+  }), [workspace.statusOverride, runningAgentCount, wsAgents, sessions, workingSessions, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
 
   // ── Status color class ──
   const statusClass = useMemo(() => {
@@ -228,6 +291,9 @@ export default function WorkspaceRow({
         : 'workspace-row__status--idle';
     }
     if (runningAgentCount > 0) return 'workspace-row__status--working';
+    if (sessions.length >= 2) {
+      return workingSessions > 0 ? 'workspace-row__status--working' : 'workspace-row__status--idle';
+    }
     if (currentToolLabel) return 'workspace-row__status--working';
     if (claudeIsIdle) return 'workspace-row__status--idle';
     const state = workspace.shellState;
@@ -350,6 +416,34 @@ export default function WorkspaceRow({
       <div className={`workspace-row__status ${statusClass}`}>
         {statusText}
       </div>
+
+      {/* Per-Claude-session sub-lines — one per pane running Claude Code,
+          shown as soon as the workspace hosts 2+ sessions (click → focus pane) */}
+      {sessions.length >= 2 && (
+        <div className="workspace-row__agents workspace-row__sessions">
+          {sessions.map((s, i) => (
+            <div
+              key={s.surfaceId}
+              className={[
+                'workspace-row__agent',
+                'workspace-row__agent--clickable',
+                s.working ? '' : 'workspace-row__session--idle',
+              ].filter(Boolean).join(' ')}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFocusAgentPane?.(s.paneId);
+              }}
+            >
+              <span className="workspace-row__agent-glyph" aria-hidden="true">{i === sessions.length - 1 ? '└' : '├'}</span>
+              {s.working && <span className="workspace-row__agent-dot" />}
+              <span className="workspace-row__agent-name">{s.label}</span>
+              <span className="workspace-row__agent-detail">
+                {sessionDetailText(s.working, s.tool)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Agent sub-lines — only while agents run (+10s linger with ✓) */}
       {wsAgents.lines.length > 0 && (

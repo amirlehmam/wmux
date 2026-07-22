@@ -592,6 +592,13 @@
 .workspace-row__agent--done { opacity: 0.55; }
 .workspace-row__agent--done .workspace-row__agent-detail { color: #4caf50; opacity: 1; }
 
+/* ── Per-Claude-session sub-lines (2+ claude panes in one workspace) ── */
+.workspace-row__sessions {
+  animation: none; /* always-on block — the slide-in is for transient agent lines */
+}
+.workspace-row__session--idle { opacity: 0.55; }
+.workspace-row__session--idle .workspace-row__agent-detail { opacity: 0.8; }
+
 .workspace-row__skill {
   color: rgba(0, 145, 255, 0.5);
   font-size: 10px;

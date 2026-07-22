@@ -268,7 +268,7 @@ export default function Sidebar({
             onDrop={(e) => handleDrop(e, ws.id)}
             onDragEnd={handleDragEnd}
             isDragOver={dragOverId === ws.id}
-            hookActivity={hookActivity?.[ws.id]}
+            hookActivity={hookActivity}
             claudeActivity={claudeActivity}
             onFocusAgentPane={(paneId) => onFocusAgentPane?.(ws.id, paneId)}
           />

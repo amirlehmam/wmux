@@ -106,19 +106,20 @@ type HookActivityMap = Record<string, { lastTool: string; toolCount: number; las
  * upsert the entry so turns with zero tool uses (pure text generation) still
  * register as "Claude ran here and finished" — otherwise WorkspaceRow falls
  * back to the shell's perpetual "Running" while the TUI sits idle (issue #81).
+ *
+ * Keyed by SURFACE, not workspace: two Claude sessions split inside one
+ * workspace must not zero each other's freshness. Only surfaceId-less legacy
+ * events fall back to the active workspace's id as key.
  */
-function markWorkspaceIdleOnStop(
+function markSessionIdleOnStop(
   surfaceId: string,
   setHookActivity: React.Dispatch<React.SetStateAction<HookActivityMap>>,
 ): void {
-  const state = useStore.getState();
-  const ownerWs = workspaceForSurface(surfaceId)
-    ?? state.workspaces.find(w => w.id === state.activeWorkspaceId);
-  if (!ownerWs) return;
-  const wsId = ownerWs.id;
+  const key = surfaceId || useStore.getState().activeWorkspaceId;
+  if (!key) return;
   setHookActivity(prev => {
-    const existing = prev[wsId] || { lastTool: '', toolCount: 0, lastSeen: 0 };
-    return { ...prev, [wsId]: { ...existing, lastSeen: 0 } };
+    const existing = prev[key] || { lastTool: '', toolCount: 0, lastSeen: 0 };
+    return { ...prev, [key]: { ...existing, lastSeen: 0 } };
   });
 }
 
@@ -569,26 +570,22 @@ export default function App() {
       // Stop = agent finished its turn. These have no `tool`, so handle first.
       if (event?.event === 'Notification' || event?.event === 'Stop') {
         handleAgentLifecycleEvent(event, addNotification);
-        if (event.event === 'Stop') markWorkspaceIdleOnStop(event.surfaceId, setHookActivity);
+        if (event.event === 'Stop') markSessionIdleOnStop(event.surfaceId, setHookActivity);
         return;
       }
       if (!event?.tool) return;
       const state = useStore.getState();
-      // Resolve the workspace that OWNS the agent's pane (issue #63), so the
-      // diff tab and sidebar activity attach to the agent's workspace — not
-      // whichever workspace happens to be focused. Fall back to the active
-      // workspace only when the event carries no surfaceId (legacy hooks).
-      const ownerWs = workspaceForSurface(event.surfaceId)
-        ?? state.workspaces.find(w => w.id === state.activeWorkspaceId);
-      if (!ownerWs) return;
-      const wsId = ownerWs.id;
-
-      // Track hook activity for sidebar display
+      // Key hook activity by SURFACE when the event carries one — each Claude
+      // session (pane) tracks its own freshness, so two sessions in the same
+      // workspace can't clobber each other into a stuck "Running"/false "Idle".
+      // Legacy events without surfaceId fall back to the active workspace id.
+      const key = event.surfaceId || state.activeWorkspaceId;
+      if (!key) return;
       setHookActivity(prev => {
-        const existing = prev[wsId] || { lastTool: '', toolCount: 0, lastSeen: 0 };
+        const existing = prev[key] || { lastTool: '', toolCount: 0, lastSeen: 0 };
         return {
           ...prev,
-          [wsId]: {
+          [key]: {
             lastTool: event.tool,
             toolCount: existing.toolCount + 1,
             lastSeen: Date.now(),
@@ -596,12 +593,19 @@ export default function App() {
         };
       });
 
-      maybeAutoOpenDiffTab(event.tool, ownerWs);
+      // Diff tab opens in the workspace that OWNS the pane (issue #63). A
+      // surfaceId that doesn't resolve here belongs to another window —
+      // opening a diff tab in whatever workspace is focused would misfire.
+      const ownerWs = event.surfaceId
+        ? workspaceForSurface(event.surfaceId)
+        : state.workspaces.find(w => w.id === state.activeWorkspaceId);
+      if (ownerWs) maybeAutoOpenDiffTab(event.tool, ownerWs);
     });
     return unsub;
   }, []);
 
   // NOTE: hookActivity entries are intentionally kept forever (not cleaned up).
+  // Keys are surface ids (per Claude session) or workspace ids (legacy events).
   // WorkspaceRow uses the lastSeen timestamp + TTL to decide what to display.
   // Keeping stale entries lets us distinguish "Claude was active but stopped"
   // (idle) from "a regular shell command is running" (no hookActivity at all).
