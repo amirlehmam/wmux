@@ -564,7 +564,7 @@
   gap: 4px;
   font-size: 10px;
   line-height: 16px;
-  color: var(--text-secondary, #9aa0a6);
+  color: var(--ui-text-secondary, #9aa0a6);
   white-space: nowrap;
 }
 .workspace-row__agent--clickable { cursor: pointer; }

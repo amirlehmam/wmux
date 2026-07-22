@@ -67,17 +67,28 @@ function summarize(ordered: WorkspaceAgent[]): WorkspaceAgent[] {
   return shown;
 }
 
+/** Agent list of one workspace, plus true counts unaffected by the display cap. */
+export interface WorkspaceAgentsView {
+  /** Display lines, running first, capped at MAX_LINES (last may be "+N more"). */
+  lines: WorkspaceAgent[];
+  /** True number of merged agents, before summarize() truncates. */
+  total: number;
+  /** True number of still-running agents, before summarize() truncates. */
+  running: number;
+}
+
 /**
  * Merge observer-parsed subagents and wmux-spawned agents of one workspace
  * into a single display list, running first, capped at MAX_LINES (3 agents +
- * one "+N more" summary when overflowing).
+ * one "+N more" summary when overflowing). `total`/`running` count the full
+ * merged list so callers can report real numbers despite the cap.
  */
 export function agentsForWorkspace(
   splitTree: SplitNode,
   claudeActivity: Record<string, ObserverActivity | undefined>,
   agentMeta: Map<SurfaceId, AgentMeta>,
   now: number,
-): WorkspaceAgent[] {
+): WorkspaceAgentsView {
   const pairs: Array<{ surfaceId: SurfaceId; paneId: PaneId }> = [];
   collectSurfacePanes(splitTree, pairs);
 
@@ -89,8 +100,9 @@ export function agentsForWorkspace(
   }
 
   // Stable partition: running agents first, done ones after.
-  const ordered = [...merged.filter(a => !a.done), ...merged.filter(a => a.done)];
-  return summarize(ordered);
+  const runningAgents = merged.filter(a => !a.done);
+  const ordered = [...runningAgents, ...merged.filter(a => a.done)];
+  return { lines: summarize(ordered), total: merged.length, running: runningAgents.length };
 }
 
 /**

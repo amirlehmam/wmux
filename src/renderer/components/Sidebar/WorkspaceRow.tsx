@@ -2,9 +2,12 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { WorkspaceInfo, SplitNode, PaneId } from '../../../shared/types';
 import { useStore } from '../../store';
 import { aggregateProgress } from '../../store/progress-slice';
-import { agentsForWorkspace, resolveAgentLinger, WorkspaceAgent, MORE_KEY } from '../../store/agent-view';
+import { agentsForWorkspace, resolveAgentLinger, WorkspaceAgentsView } from '../../store/agent-view';
 import UnreadBadge from './UnreadBadge';
 import PrStatusIcon from './PrStatusIcon';
+
+/** Stable empty view — avoids allocating a fresh object every collapsed tick. */
+const EMPTY_AGENTS_VIEW: WorkspaceAgentsView = { lines: [], total: 0, running: 0 };
 
 function getAllSurfaceIds(tree: SplitNode): string[] {
   if (tree.type === 'leaf') return tree.surfaces.map(s => s.id);
@@ -124,15 +127,19 @@ export default function WorkspaceRow({
   // ── Unified agent list (observer subagents + wmux-spawned agents) ──
   const agentMeta = useStore((state) => state.agentMeta);
   const doneAtRef = useRef<number | null>(null);
-  const wsAgents = useMemo<WorkspaceAgent[]>(() => {
+  const wsAgents = useMemo<WorkspaceAgentsView>(() => {
     const now = Date.now();
-    const list = agentsForWorkspace(workspace.splitTree, claudeActivity ?? {}, agentMeta, now);
-    if (list.length === 0) { doneAtRef.current = null; return []; }
-    const linger = resolveAgentLinger(list.every(a => a.done), doneAtRef.current, now);
+    const view = agentsForWorkspace(workspace.splitTree, claudeActivity ?? {}, agentMeta, now);
+    if (view.lines.length === 0) { doneAtRef.current = null; return EMPTY_AGENTS_VIEW; }
+    const linger = resolveAgentLinger(view.running === 0, doneAtRef.current, now);
+    // The ref write lives in the memo, not an effect: the linger decision must
+    // resolve synchronously with the list it gates (an effect would apply the
+    // doneAt stamp one render late). Idempotent, so a StrictMode double render
+    // lands on the same state.
     doneAtRef.current = linger.doneAt;
-    return linger.visible ? list : [];
+    return linger.visible ? view : EMPTY_AGENTS_VIEW;
   }, [workspace.splitTree, claudeActivity, agentMeta, tick]);
-  const runningAgentCount = wsAgents.filter(a => !a.done && a.key !== MORE_KEY).length;
+  const runningAgentCount = wsAgents.running;
 
   let rowStyle: React.CSSProperties = {};
   if (isActive) {
@@ -189,7 +196,7 @@ export default function WorkspaceRow({
 
     // Priority 0.5: agents are running — show the orchestration summary
     if (runningAgentCount > 0) {
-      return `Orchestrating · ${wsAgents.filter(a => a.key !== MORE_KEY).length} agents`;
+      return `Orchestrating · ${wsAgents.total} agents`;
     }
 
     // Priority 1: Claude is actively using a tool
@@ -347,9 +354,9 @@ export default function WorkspaceRow({
       </div>
 
       {/* Agent sub-lines — only while agents run (+10s linger with ✓) */}
-      {wsAgents.length > 0 && (
+      {wsAgents.lines.length > 0 && (
         <div className="workspace-row__agents">
-          {wsAgents.map((agent, i) => (
+          {wsAgents.lines.map((agent, i) => (
             <div
               key={agent.key}
               className={[
@@ -359,11 +366,10 @@ export default function WorkspaceRow({
               ].filter(Boolean).join(' ')}
               onClick={agent.paneId ? (e) => {
                 e.stopPropagation();
-                onSelect();
                 onFocusAgentPane?.(agent.paneId!);
               } : undefined}
             >
-              <span className="workspace-row__agent-glyph">{i === wsAgents.length - 1 ? '└' : '├'}</span>
+              <span className="workspace-row__agent-glyph" aria-hidden="true">{i === wsAgents.lines.length - 1 ? '└' : '├'}</span>
               {!agent.done && <span className="workspace-row__agent-dot" />}
               <span className="workspace-row__agent-name">{agent.name}</span>
               <span className="workspace-row__agent-detail">{agent.detail}</span>
