@@ -118,9 +118,16 @@ function handleAgentDetail(activity: ClaudeActivity, trimmed: string): boolean {
 
 function handleAgentDone(activity: ClaudeActivity, trimmed: string): boolean {
   if (!PATTERNS.agentDone.test(trimmed)) return false;
+  // Only report a change on an actual not-done → done transition. Claude Code
+  // repaints its TUI frame constantly, so a finished frame containing "⎿ Done"
+  // reappears on every repaint — rebroadcasting each time would spam IPC and
+  // keep lastUpdate artificially fresh (which linger/TTL logic reads).
   const lastAgent = activity.agents[activity.agents.length - 1];
-  if (lastAgent && !lastAgent.done) lastAgent.done = true;
-  return true;
+  if (lastAgent && !lastAgent.done) {
+    lastAgent.done = true;
+    return true;
+  }
+  return false;
 }
 
 function handleAgentBatchDone(activity: ClaudeActivity, trimmed: string): boolean {

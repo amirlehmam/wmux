@@ -33,6 +33,14 @@ describe('observer agent parsing', () => {
     expect(getActivity(surf)!.lastTool).toBe('Grep');
   });
 
+  it('repeated Done lines do not rebroadcast once the agent is already done', () => {
+    observePtyData(surf, '├─ alpha · 2 tool uses · 3k tokens\n');
+    observePtyData(surf, '⎿  Done\n');
+    sendMock.mockClear();
+    observePtyData(surf, '⎿  Done\n');
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   it('caps tracked agents at 32', () => {
     for (let i = 0; i < 40; i++) {
       observePtyData(surf, `├─ agent-${i} · 1 tool use · 1k tokens\n`);
