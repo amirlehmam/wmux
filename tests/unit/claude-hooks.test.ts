@@ -54,4 +54,17 @@ describe('applyWmuxHooks (issue #53)', () => {
     applyWmuxHooks(input, HOOK);
     expect(JSON.stringify(input)).toBe(snapshot);
   });
+
+  it('adds a SubagentStop hook entry alongside Notification and Stop', () => {
+    const result = applyWmuxHooks({}, '/abs/wmux-hook.js');
+    const entries = result.hooks.SubagentStop;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].hooks[0].command).toContain('--event SubagentStop');
+  });
+
+  it('replaces a prior wmux SubagentStop entry instead of duplicating it', () => {
+    const once = applyWmuxHooks({}, '/abs/wmux-hook.js');
+    const twice = applyWmuxHooks(once, '/abs/wmux-hook.js');
+    expect(twice.hooks.SubagentStop).toHaveLength(1);
+  });
 });

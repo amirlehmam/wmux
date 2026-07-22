@@ -14,7 +14,7 @@ import { initAutoUpdater } from './updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
 import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig, ensureOrchestratorPlugin } from './claude-context';
 import { ensureOpencodeContext, ensureOpencodePlugin } from './opencode-context';
-import { applyExternalActivity } from './claude-observer';
+import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
 import { startOrchestrationWatcher } from './orchestration-watcher';
 import fs from 'fs';
 import path from 'path';
@@ -301,6 +301,16 @@ function hardenWebContents(): void {
       });
     }
   });
+}
+
+// Lifecycle truth for sidebar agent lines: hooks, not output parsing, decide
+// when agents are finished (spec 2026-07-22, issue #81 class). SubagentStop
+// marks a single parallel subagent done; Stop marks the whole surface done.
+function applyHookLifecycle(params: any): void {
+  const sid = params?.surfaceId as SurfaceId | undefined;
+  if (!sid) return;
+  if (params.event === 'SubagentStop') markSubagentStop(sid);
+  else if (params.event === 'Stop') markAllAgentsDone(sid);
 }
 
 app.whenReady().then(() => {
@@ -790,6 +800,7 @@ app.whenReady().then(() => {
         BrowserWindow.getAllWindows().forEach(w => {
           if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.HOOK_EVENT, request.params);
         });
+        applyHookLifecycle(request.params);
         // Always push diff update for Edit/Write hooks (even without file path).
         // Delay slightly so the renderer has time to mount the DiffPane
         // (HOOK_EVENT triggers diff tab creation; DIFF_UPDATE needs to arrive after mount).

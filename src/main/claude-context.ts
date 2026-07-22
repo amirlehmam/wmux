@@ -113,10 +113,10 @@ const TRACKED_TOOLS = ['Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob', 'Agent',
 /**
  * Pure builder for the wmux hook blocks. Given the parsed settings object and
  * the absolute path to wmux-hook.js, returns a new settings object whose
- * `hooks` contains fresh wmux PostToolUse/Notification/Stop entries, with any
- * prior wmux entries replaced and all non-wmux (user) hooks preserved.
- * Extracted so the merge logic is unit-testable without touching the fs
- * (issue #53).
+ * `hooks` contains fresh wmux PostToolUse/Notification/Stop/SubagentStop
+ * entries, with any prior wmux entries replaced and all non-wmux (user) hooks
+ * preserved. Extracted so the merge logic is unit-testable without touching
+ * the fs (issue #53).
  */
 export function applyWmuxHooks(settings: any, hookScript: string): any {
   const next = { ...(settings || {}) };
@@ -155,14 +155,21 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
     { hooks: [{ type: 'command', command: makeEventCmd('Stop') }] },
   ];
 
+  // SubagentStop — one parallel subagent finished (drives sidebar agent lines).
+  next.hooks.SubagentStop = [
+    ...stripWmux(next.hooks.SubagentStop),
+    { hooks: [{ type: 'command', command: makeEventCmd('SubagentStop') }] },
+  ];
+
   return next;
 }
 
 /**
  * Ensures Claude Code's ~/.claude/settings.json has the wmux hooks:
- *  - PostToolUse  → drives the sidebar/diff view (tool activity)
- *  - Notification → fires a wmux notification when the agent needs input/permission
- *  - Stop         → fires a wmux notification when the agent finishes its turn
+ *  - PostToolUse   → drives the sidebar/diff view (tool activity)
+ *  - Notification  → fires a wmux notification when the agent needs input/permission
+ *  - Stop          → fires a wmux notification when the agent finishes its turn
+ *  - SubagentStop  → fires when one parallel subagent finishes (sidebar agent lines)
  * Uses absolute CLI paths (not env var). Never touches non-wmux hook entries
  * (issue #53): existing user hooks in each array are preserved.
  */
@@ -194,7 +201,7 @@ export function ensureClaudeHooks(): void {
 
     const updated = applyWmuxHooks(settings, hookScript);
     fs.writeFileSync(settingsPath, JSON.stringify(updated, null, 2), 'utf-8');
-    console.log('[wmux] Configured PostToolUse/Notification/Stop hooks in ~/.claude/settings.json');
+    console.log('[wmux] Configured PostToolUse/Notification/Stop/SubagentStop hooks in ~/.claude/settings.json');
   } catch (err) {
     console.warn('[wmux] Failed to update Claude hooks:', err);
   }
