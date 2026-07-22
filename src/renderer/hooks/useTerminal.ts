@@ -706,9 +706,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         !event.altKey &&
         !event.metaKey
       ) {
-        if (ptyIdRef.current) {
-          window.wmux.pty.write(ptyIdRef.current, '\x1b\r');
-        }
+        // Route through terminal.input() (→ onData) rather than pty.write so
+        // broadcast-input mode (issue #64) fans the newline out like any key.
+        terminal.input('\x1b\r', true);
         return false;
       }
       return true;
