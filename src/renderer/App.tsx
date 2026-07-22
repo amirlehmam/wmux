@@ -98,6 +98,47 @@ function workspaceForSurface(surfaceId: string): WorkspaceInfo | undefined {
   return useStore.getState().workspaces.find(ws => getAllSurfaces(ws.splitTree).includes(surfaceId));
 }
 
+type HookActivityMap = Record<string, { lastTool: string; toolCount: number; lastSeen: number }>;
+
+/**
+ * Stop hook = the turn is over. Zero out lastSeen so the sidebar flips to
+ * "Idle" immediately instead of waiting out the ACTIVITY_TTL window, and
+ * upsert the entry so turns with zero tool uses (pure text generation) still
+ * register as "Claude ran here and finished" — otherwise WorkspaceRow falls
+ * back to the shell's perpetual "Running" while the TUI sits idle (issue #81).
+ */
+function markWorkspaceIdleOnStop(
+  surfaceId: string,
+  setHookActivity: React.Dispatch<React.SetStateAction<HookActivityMap>>,
+): void {
+  const state = useStore.getState();
+  const ownerWs = workspaceForSurface(surfaceId)
+    ?? state.workspaces.find(w => w.id === state.activeWorkspaceId);
+  if (!ownerWs) return;
+  const wsId = ownerWs.id;
+  setHookActivity(prev => {
+    const existing = prev[wsId] || { lastTool: '', toolCount: 0, lastSeen: 0 };
+    return { ...prev, [wsId]: { ...existing, lastSeen: 0 } };
+  });
+}
+
+/**
+ * Auto-open a diff tab in the workspace's BOTTOM pane when Claude edits/writes
+ * files. Opt-out via Settings → Workspace (issue #66): users who find the tab
+ * popping up and stealing focus disruptive can turn it off entirely.
+ */
+function maybeAutoOpenDiffTab(tool: string, ownerWs: WorkspaceInfo): void {
+  const state = useStore.getState();
+  if ((tool !== 'Edit' && tool !== 'Write') || !state.workspacePrefs.autoOpenDiffTab) return;
+  const bottomPaneId = findBottomPane(ownerWs.splitTree);
+  if (!bottomPaneId) return;
+  const bottomLeaf = findLeafFromTree(ownerWs.splitTree, bottomPaneId);
+  // Only add diff tab if bottom pane doesn't already have one
+  if (bottomLeaf && !bottomLeaf.surfaces.some(s => s.type === 'diff')) {
+    state.addSurface(ownerWs.id, bottomPaneId, 'diff');
+  }
+}
+
 function handlePortsUpdate(cmd: any, updateWorkspaceMetadata: StoreAction): void {
   try {
     const portsByPid = JSON.parse(cmd.args?.[0] || '{}');
@@ -142,9 +183,12 @@ function applyShellState(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): void {
   delete deps.runningStartTimes.current[ws.id];
   if (elapsed < 5) return;
 
-  const duration = elapsed >= 60
-    ? `${Math.floor(elapsed / 60)}m${Math.round(elapsed % 60)}s`
-    : `${Math.round(elapsed)}s`;
+  // Round to whole seconds BEFORE splitting into minutes — rounding the
+  // remainder independently yields "3m60s" for 239.6s elapsed.
+  const totalSeconds = Math.round(elapsed);
+  const duration = totalSeconds >= 60
+    ? `${Math.floor(totalSeconds / 60)}m${totalSeconds % 60}s`
+    : `${totalSeconds}s`;
   const msg = newState === 'interrupted'
     ? `Interrupted in ${ws.title} (${duration})`
     : `Finished in ${ws.title} (${duration})`;
@@ -517,6 +561,7 @@ export default function App() {
       // Stop = agent finished its turn. These have no `tool`, so handle first.
       if (event?.event === 'Notification' || event?.event === 'Stop') {
         handleAgentLifecycleEvent(event, addNotification);
+        if (event.event === 'Stop') markWorkspaceIdleOnStop(event.surfaceId, setHookActivity);
         return;
       }
       if (!event?.tool) return;
@@ -543,22 +588,7 @@ export default function App() {
         };
       });
 
-      // Auto-open diff tab in the BOTTOM pane when Claude edits/writes files.
-      // Opt-out via Settings → Workspace (issue #66): users who find the tab
-      // popping up and stealing focus disruptive can turn it off entirely.
-      if ((event.tool === 'Edit' || event.tool === 'Write') && state.workspacePrefs.autoOpenDiffTab) {
-        const ws = ownerWs;
-        if (ws) {
-          const bottomPaneId = findBottomPane(ws.splitTree);
-          if (bottomPaneId) {
-            const bottomLeaf = findLeafFromTree(ws.splitTree, bottomPaneId);
-            // Only add diff tab if bottom pane doesn't already have one
-            if (bottomLeaf && !bottomLeaf.surfaces.some(s => s.type === 'diff')) {
-              state.addSurface(wsId, bottomPaneId, 'diff');
-            }
-          }
-        }
-      }
+      maybeAutoOpenDiffTab(event.tool, ownerWs);
     });
     return unsub;
   }, []);

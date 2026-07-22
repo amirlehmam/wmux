@@ -204,6 +204,7 @@ cp resources/icon.png ../wmux-release-staging/resources/
 rm -rf ../wmux-release-staging/resources/themes && cp -r resources/themes ../wmux-release-staging/resources/themes
 rm -rf ../wmux-release-staging/resources/sounds && cp -r resources/sounds ../wmux-release-staging/resources/sounds
 mkdir -p ../wmux-release-staging/resources/cli && cp dist/cli/wmux.js ../wmux-release-staging/resources/cli/wmux.js
+cp dist/cli/wmux-hook.js ../wmux-release-staging/resources/cli/wmux-hook.js   # Claude hooks exec this via bare node — MUST ship outside the asar (missing until 0.29.1 → sidebar stuck on "Running", issue #81)
 rm -rf ../wmux-release-staging/resources/shell-integration && mkdir -p ../wmux-release-staging/resources/shell-integration
 cp -r src/shell-integration/* ../wmux-release-staging/resources/shell-integration/
 rm -rf ../wmux-release-staging/resources/wmux-orchestrator && cp -r resources/wmux-orchestrator ../wmux-release-staging/resources/wmux-orchestrator
