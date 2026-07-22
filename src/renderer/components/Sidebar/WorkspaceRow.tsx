@@ -1,7 +1,8 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { WorkspaceInfo, SplitNode } from '../../../shared/types';
+import { WorkspaceInfo, SplitNode, PaneId } from '../../../shared/types';
 import { useStore } from '../../store';
 import { aggregateProgress } from '../../store/progress-slice';
+import { agentsForWorkspace, resolveAgentLinger, WorkspaceAgent, MORE_KEY } from '../../store/agent-view';
 import UnreadBadge from './UnreadBadge';
 import PrStatusIcon from './PrStatusIcon';
 
@@ -43,6 +44,7 @@ interface WorkspaceRowProps {
   agentCount?: number;
   hookActivity?: { lastTool: string; toolCount: number; lastSeen: number };
   claudeActivity?: Record<string, any>;
+  onFocusAgentPane?: (paneId: PaneId) => void;
 }
 
 export default function WorkspaceRow({
@@ -61,6 +63,7 @@ export default function WorkspaceRow({
   agentCount = 0,
   hookActivity,
   claudeActivity,
+  onFocusAgentPane,
 }: WorkspaceRowProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(workspace.title);
@@ -118,6 +121,19 @@ export default function WorkspaceRow({
     return null;
   }, [claudeActivity, workspace.splitTree]);
 
+  // ── Unified agent list (observer subagents + wmux-spawned agents) ──
+  const agentMeta = useStore((state) => state.agentMeta);
+  const doneAtRef = useRef<number | null>(null);
+  const wsAgents = useMemo<WorkspaceAgent[]>(() => {
+    const now = Date.now();
+    const list = agentsForWorkspace(workspace.splitTree, claudeActivity ?? {}, agentMeta, now);
+    if (list.length === 0) { doneAtRef.current = null; return []; }
+    const linger = resolveAgentLinger(list.every(a => a.done), doneAtRef.current, now);
+    doneAtRef.current = linger.doneAt;
+    return linger.visible ? list : [];
+  }, [workspace.splitTree, claudeActivity, agentMeta, tick]);
+  const runningAgentCount = wsAgents.filter(a => !a.done && a.key !== MORE_KEY).length;
+
   let rowStyle: React.CSSProperties = {};
   if (isActive) {
     rowStyle = { backgroundColor: activeBackground };
@@ -171,6 +187,11 @@ export default function WorkspaceRow({
       return workspace.statusOverride === 'running' ? 'Running' : 'Idle';
     }
 
+    // Priority 0.5: agents are running — show the orchestration summary
+    if (runningAgentCount > 0) {
+      return `Orchestrating · ${wsAgents.filter(a => a.key !== MORE_KEY).length} agents`;
+    }
+
     // Priority 1: Claude is actively using a tool
     if (currentToolLabel) return currentToolLabel;
 
@@ -192,7 +213,7 @@ export default function WorkspaceRow({
 
     // Priority 5: Default — always show something
     return 'Idle';
-  }, [workspace.statusOverride, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
+  }, [workspace.statusOverride, runningAgentCount, wsAgents, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
 
   // ── Status color class ──
   const statusClass = useMemo(() => {
@@ -201,6 +222,7 @@ export default function WorkspaceRow({
         ? 'workspace-row__status--running'
         : 'workspace-row__status--idle';
     }
+    if (runningAgentCount > 0) return 'workspace-row__status--working';
     if (currentToolLabel) return 'workspace-row__status--working';
     if (claudeIsIdle) return 'workspace-row__status--idle';
     const state = workspace.shellState;
@@ -208,7 +230,7 @@ export default function WorkspaceRow({
     if (state === 'interrupted') return 'workspace-row__status--interrupted';
     if (state === 'idle') return 'workspace-row__status--done';
     return 'workspace-row__status--idle';
-  }, [workspace.statusOverride, currentToolLabel, claudeIsIdle, workspace.shellState]);
+  }, [workspace.statusOverride, runningAgentCount, currentToolLabel, claudeIsIdle, workspace.shellState]);
 
   // ── Context line: "branch* · ~/path/to/dir" ──
   const contextLine = useMemo(() => {
@@ -324,6 +346,32 @@ export default function WorkspaceRow({
         {statusText}
       </div>
 
+      {/* Agent sub-lines — only while agents run (+10s linger with ✓) */}
+      {wsAgents.length > 0 && (
+        <div className="workspace-row__agents">
+          {wsAgents.map((agent, i) => (
+            <div
+              key={agent.key}
+              className={[
+                'workspace-row__agent',
+                agent.done ? 'workspace-row__agent--done' : '',
+                agent.paneId ? 'workspace-row__agent--clickable' : '',
+              ].filter(Boolean).join(' ')}
+              onClick={agent.paneId ? (e) => {
+                e.stopPropagation();
+                onSelect();
+                onFocusAgentPane?.(agent.paneId!);
+              } : undefined}
+            >
+              <span className="workspace-row__agent-glyph">{i === wsAgents.length - 1 ? '└' : '├'}</span>
+              {!agent.done && <span className="workspace-row__agent-dot" />}
+              <span className="workspace-row__agent-name">{agent.name}</span>
+              <span className="workspace-row__agent-detail">{agent.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* OSC 9;4 progress bar — only while a terminal reports progress */}
       {wsProgress && (
         <div className="workspace-row__progress" title={
@@ -358,19 +406,6 @@ export default function WorkspaceRow({
       {contextLine && (
         <div className="workspace-row__context">
           {contextLine}
-        </div>
-      )}
-
-      {/* Claude agent activity — sub-agents with status */}
-      {wsActivity?.agents?.length > 0 && (
-        <div className="workspace-row__claude-activity">
-          {wsActivity.agents.map((agent: any, i: number) => (
-            <div key={i} className="workspace-row__agent-line">
-              <span className={`workspace-row__agent-dot ${agent.done ? 'workspace-row__agent-dot--done' : 'workspace-row__agent-dot--working'}`} />
-              <span className="workspace-row__agent-name">{agent.name}</span>
-              <span className="workspace-row__agent-tokens">{agent.tokens}tok</span>
-            </div>
-          ))}
         </div>
       )}
 

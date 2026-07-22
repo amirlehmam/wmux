@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { WorkspaceInfo, WorkspaceId } from '../../../shared/types';
+import { WorkspaceInfo, WorkspaceId, PaneId } from '../../../shared/types';
 import WorkspaceRow from './WorkspaceRow';
 import SidebarResizeHandle from './SidebarResizeHandle';
 import WorkspaceContextMenu from './WorkspaceContextMenu';
@@ -31,6 +31,7 @@ interface SidebarProps {
   onSaveSession?: (name: string) => void;
   onLoadSession?: (name: string) => void;
   onCollapse?: () => void;
+  onFocusAgentPane?: (wsId: WorkspaceId, paneId: PaneId) => void;
 }
 
 export default function Sidebar({
@@ -49,6 +50,7 @@ export default function Sidebar({
   onSaveSession,
   onLoadSession,
   onCollapse,
+  onFocusAgentPane,
 }: SidebarProps) {
   const [draggedId, setDraggedId] = useState<WorkspaceId | null>(null);
   const [dragOverId, setDragOverId] = useState<WorkspaceId | null>(null);
@@ -290,6 +292,7 @@ export default function Sidebar({
             agentCount={agentCounts[ws.id] || 0}
             hookActivity={hookActivity?.[ws.id]}
             claudeActivity={claudeActivity}
+            onFocusAgentPane={(paneId) => onFocusAgentPane?.(ws.id, paneId)}
           />
         ))}
       </div>

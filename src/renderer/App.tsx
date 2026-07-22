@@ -929,6 +929,10 @@ export default function App() {
             onSaveSession={handleSaveSession}
             onLoadSession={handleLoadSession}
             onCollapse={toggleSidebar}
+            onFocusAgentPane={(wsId, paneId) => {
+              selectWorkspace(wsId);
+              setFocusedPaneId(paneId);
+            }}
           />
         ) : (
           <div
