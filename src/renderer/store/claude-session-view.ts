@@ -23,7 +23,7 @@ export const SESSION_ACTIVITY_TTL_MS = 5000;
 export interface ClaudeSessionView {
   surfaceId: SurfaceId;
   paneId: PaneId;
-  /** Folder name of the pane's cwd — distinguishes sessions at a glance. */
+  /** User-set tab title, else folder name of the pane's cwd — distinguishes sessions at a glance. */
   label: string;
   working: boolean;
   /** Raw tool name while working, null when idle or unknown. */
@@ -42,12 +42,18 @@ interface SurfaceEntry {
   surfaceId: SurfaceId;
   paneId: PaneId;
   currentCwd?: string;
+  customTitle?: string;
 }
 
 function collectTerminalSurfaces(tree: SplitNode, out: SurfaceEntry[]): void {
   if (tree.type === 'leaf') {
     for (const s of tree.surfaces) {
-      out.push({ surfaceId: s.id, paneId: tree.paneId, currentCwd: (s as { currentCwd?: string }).currentCwd });
+      out.push({
+        surfaceId: s.id,
+        paneId: tree.paneId,
+        currentCwd: (s as { currentCwd?: string }).currentCwd,
+        customTitle: s.customTitle,
+      });
     }
     return;
   }
@@ -85,7 +91,7 @@ export function claudeSessionsForWorkspace(
   const sessions: ClaudeSessionView[] = [];
   let working = 0;
 
-  for (const { surfaceId, paneId, currentCwd } of surfaces) {
+  for (const { surfaceId, paneId, currentCwd, customTitle } of surfaces) {
     const hook = hookActivity[surfaceId];
     const observed = claudeActivity[surfaceId];
     if (!hook && !observed) continue;
@@ -102,7 +108,8 @@ export function claudeSessionsForWorkspace(
     sessions.push({
       surfaceId,
       paneId,
-      label: cwdBasename(currentCwd) ?? 'Claude',
+      // User-set tab title wins (rename must reflect here); cwd folder second.
+      label: customTitle ?? cwdBasename(currentCwd) ?? 'Claude',
       working: isWorking,
       tool,
       skill: observed?.activeSkill ?? null,

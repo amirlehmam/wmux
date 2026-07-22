@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { claudeSessionsForWorkspace } from '../../src/renderer/store/claude-session-view';
 import { SplitNode, PaneId } from '../../src/shared/types';
 
-const leaf = (paneId: string, surfaces: Array<{ id: string; currentCwd?: string }>): SplitNode => ({
+const leaf = (paneId: string, surfaces: Array<{ id: string; currentCwd?: string; customTitle?: string }>): SplitNode => ({
   type: 'leaf',
   paneId: paneId as PaneId,
-  surfaces: surfaces.map(s => ({ id: s.id, type: 'terminal', currentCwd: s.currentCwd } as any)),
+  surfaces: surfaces.map(s => ({ id: s.id, type: 'terminal', currentCwd: s.currentCwd, customTitle: s.customTitle } as any)),
   activeSurfaceIndex: 0,
 } as SplitNode);
 
@@ -98,6 +98,12 @@ describe('claudeSessionsForWorkspace', () => {
       'ws-1234': hook('Bash', NOW),
     }, NOW);
     expect(out).toEqual({ sessions: [], working: 0 });
+  });
+
+  it('prefers the user-set surface title over the cwd basename (rename bug)', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a', currentCwd: 'C:\\dev\\wmux', customTitle: 'captely' }]);
+    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Edit', NOW - 1000) }, NOW);
+    expect(out.sessions[0].label).toBe('captely');
   });
 
   it('falls back to a generic label without a cwd and exposes the active skill', () => {
