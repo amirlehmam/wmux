@@ -158,7 +158,7 @@ jobs:
             \$trusted = if (\$sig.Status -eq 'Valid') { 'true' } else { 'false' };
             Add-Content -Path \$env:GITHUB_OUTPUT -Value ('trusted=' + \$trusted);
             if (\$trusted -eq 'false') {
-              Write-Host '::warning::Installer signature is not chain-trusted (self-signed cert?) — shipping it, but latest.yml is withheld so clients do not attempt a doomed auto-update.'
+              Write-Host '::warning::Installer signature is not chain-trusted (self-signed cert?). Shipping anyway — clients no longer pin publisherName, so auto-update still works (integrity via latest.yml sha512).'
             }
           "
 
@@ -176,25 +176,26 @@ jobs:
             -DestinationPath "wmux-${{ steps.version.outputs.version }}-win-x64.zip"
 
       # ── Generate latest.yml for electron-updater ──────────
-      # Gated on a CHAIN-TRUSTED signature (sign-verify sets trusted=true).
-      # Rationale: `win.publisherName` is pinned to "SignPath Foundation", so
-      # electron-updater's NsisUpdater runs Authenticode verification on the
-      # downloaded installer. An unsigned OR self-signed NSIS installer fails
-      # that check → the update throws and never installs. So we only advertise
-      # an auto-update (publish latest.yml) when the artifact carries a
-      # signature user machines will accept. Untrusted releases still ship the
-      # installer below for manual download, they just don't auto-update — a
-      # graceful no-op instead of a broken update. Once the SignPath OSS cert
-      # signs again (issue #71), auto-update turns on automatically with no
-      # further changes.
+      # ALWAYS published. The `win.publisherName` pin was removed from
+      # electron-builder.json: with no pin, NsisUpdater skips Authenticode
+      # verification, so unsigned/self-signed installers install fine —
+      # integrity comes from the sha512 below, and the client-side quarantine
+      # window + explicit install dialog (updater.ts) remain the safety net.
+      # History: while the pin existed, latest.yml was gated on a chain-trusted
+      # signature; since SignPath fell back to a self-signed cert, that gate
+      # silently stranded every install on its current version (no latest.yml
+      # → 404 → no update ever). If chain-trusted signing returns, re-add the
+      # pin AND re-gate this step together.
+      # Installs ≤0.31 still carry the pin in their local app-update.yml and
+      # will fail verification silently; the notify-only checker
+      # (update-checker.ts) tells those users to update manually once.
       #
-      # MUST also run last, AFTER signing: SignPath rewrites the installer PE,
-      # so a hash computed earlier would not match the shipped file. Points at
-      # the NSIS installer (the old zip could be downloaded but never installed
-      # — issue #96). No blockmap is emitted, so electron-updater does a full
+      # MUST run last, AFTER signing: SignPath rewrites the installer PE, so a
+      # hash computed earlier would not match the shipped file. Points at the
+      # NSIS installer (a zip can be downloaded but never installed — issue
+      # #96). No blockmap is emitted, so electron-updater does a full
       # (non-differential) download verified by the top-level sha512.
       - name: Generate latest.yml
-        if: steps.sign-verify.outputs.trusted == 'true'
         shell: bash
         run: |
           node -e "

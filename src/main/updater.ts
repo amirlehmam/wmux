@@ -16,11 +16,15 @@ import { fetchLatestRelease } from './update-checker';
 //      must explicitly confirm the install via a dialog.
 //
 // Authenticode signing is wired in CI (issue #71): release.yml signs wmux.exe
-// via SignPath once the SIGNPATH_* secrets are configured, and electron-builder
-// pins publisherName ("SignPath Foundation") so signed exe/NSIS update flows
-// verify the publisher. The current zip-based update artifact cannot itself be
-// Authenticode-verified by electron-updater, so the quarantine window below
-// remains the primary client-side control until the artifact format changes.
+// via SignPath when the SIGNPATH_* secrets are configured. The publisherName
+// pin was REMOVED from electron-builder.json: SignPath fell back to a
+// self-signed cert, and a pin combined with non-chain-trusted artifacts made
+// every client reject every update (which is why latest.yml was withheld for
+// 0.26–0.31, stranding all installs). Without the pin, NsisUpdater skips
+// Authenticode verification; download integrity comes from the latest.yml
+// sha512, and the quarantine window + explicit install dialog below are the
+// primary client-side controls. Re-add the pin only together with reliable
+// chain-trusted signing.
 
 const DEFAULT_MIN_RELEASE_AGE_DAYS = 3;
 const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;

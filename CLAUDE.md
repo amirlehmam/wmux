@@ -235,9 +235,14 @@ node -e "
 # 9. Create zip
 powershell -NoProfile -Command "Compress-Archive -Path '..\wmux-release-staging\*' -DestinationPath '..\wmux-<VERSION>-win-x64.zip' -CompressionLevel Optimal"
 
-# 9b. Generate latest.yml (REQUIRED — electron-updater 404s on every launch
-# without it; issue #68. The CI workflow does this automatically, but manual
-# releases MUST do it too.)
+# 9b. latest.yml — DO NOT generate one pointing at the zip for a manual
+# release. Installed clients use NsisUpdater: a zip in latest.yml downloads
+# but never installs (endless update loop, issue #96). latest.yml must point
+# at an NSIS setup.exe, which only the CI build produces — so for a full
+# release, prefer tagging and letting CI ship setup.exe + zip + latest.yml.
+# A manual zip-only release simply ships WITHOUT latest.yml (the updater
+# handles its absence gracefully since 0.28; the notify-only checker still
+# surfaces the new version). Legacy snippet kept for reference:
 node -e "
   const crypto = require('crypto'); const fs = require('fs');
   const version = '<VERSION>';

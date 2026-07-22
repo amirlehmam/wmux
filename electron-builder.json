@@ -25,7 +25,6 @@
   ],
   "win": {
     "icon": "resources/icons/icon.ico",
-    "signtoolOptions": { "publisherName": ["SignPath Foundation"] },
     "target": [
       { "target": "nsis", "arch": ["x64"] }
     ]
