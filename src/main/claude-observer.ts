@@ -68,7 +68,38 @@ const PATTERNS = {
 
   // "✻ Baked for 3m 10s" or "✻ Cost: $0.05" — Claude finished responding
   responseDone: /✻\s*(Baked for|Cost:)/,
+
 };
+
+// ── Workflow tool panel (box-drawing TUI) ──
+// Agent rows look like (two columns per box row — phases left, agents right):
+//   "│ > 1 Écrire 1/3 │  ● write:pilote  Opus 4.8 (1M context)  82.9k tok · 17 tools │"
+//   "│   3 Corriger   │  √ write:mcp-page  Opus 4.8 (1M context)  78.9k tok · 16 tools · 2m 23s │"
+// The " tok · N tools" stats tail is the anchor — it only ever appears on
+// workflow agent rows. Parsed with index scans, not regexes: unanchored
+// quantified patterns on arbitrary PTY data are exactly the slow-regex shape
+// the sonar gate rejects (same constraint that shaped agentBatchDoneDigit).
+const WORKFLOW_TOK_SEP = ' tok · ';
+const WORKFLOW_RUNNING_GLYPHS = ['●', '○'];
+// ✓-family and ✗-family both mean "no longer running" for sidebar purposes.
+const WORKFLOW_DONE_GLYPHS = ['√', '✓', '✔', '✗', '×'];
+const NUMBER_CHARS = '0123456789.kM';
+
+/** Number token (e.g. "82.9k") ending right before index `end`, or null. */
+function numberEndingAt(line: string, end: number): string | null {
+  let start = end;
+  while (start > 0 && NUMBER_CHARS.includes(line[start - 1])) start--;
+  const token = line.slice(start, end);
+  return PATTERNS.agentBatchDoneDigit.test(token) ? token : null;
+}
+
+/** Leading run of non-whitespace characters of `s` (may be empty). */
+function firstWord(s: string): string {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === ' ' || s[i] === '\t') return s.slice(0, i);
+  }
+  return s;
+}
 
 function getOrCreate(surfaceId: SurfaceId): ClaudeActivity {
   let activity = activities.get(surfaceId);
@@ -145,6 +176,57 @@ function handleAgentBatchDone(activity: ClaudeActivity, trimmed: string): boolea
   return true;
 }
 
+/** Rightmost workflow status glyph in `head`, or null when none is present. */
+function findWorkflowGlyph(head: string): { index: number; done: boolean } | null {
+  let runningIdx = -1;
+  for (const g of WORKFLOW_RUNNING_GLYPHS) runningIdx = Math.max(runningIdx, head.lastIndexOf(g));
+  let doneIdx = -1;
+  for (const g of WORKFLOW_DONE_GLYPHS) doneIdx = Math.max(doneIdx, head.lastIndexOf(g));
+  if (runningIdx === -1 && doneIdx === -1) return null;
+  return doneIdx > runningIdx
+    ? { index: doneIdx, done: true }
+    : { index: runningIdx, done: false };
+}
+
+function handleWorkflowAgent(activity: ClaudeActivity, trimmed: string): boolean {
+  const tokIdx = trimmed.indexOf(WORKFLOW_TOK_SEP);
+  if (tokIdx === -1) return false;
+  const tokens = numberEndingAt(trimmed, tokIdx);
+  if (!tokens) return false;
+  const afterSep = trimmed.slice(tokIdx + WORKFLOW_TOK_SEP.length);
+  const toolWord = afterSep.indexOf(' tool');
+  if (toolWord === -1) return false;
+  const toolUses = parseInt(afterSep.slice(0, toolWord), 10);
+  if (Number.isNaN(toolUses)) return false;
+
+  // Glyph → run state. Rightmost wins: the phase column left of the box
+  // border carries its own markers once a phase completes.
+  const head = trimmed.slice(0, tokIdx - tokens.length);
+  const glyph = findWorkflowGlyph(head);
+  if (!glyph) return false;
+  const name = firstWord(head.slice(glyph.index + 1).trimStart());
+  if (!name || name === '│') return false;
+
+  // Upsert; report a change only on a real value transition — the TUI
+  // repaints identical frames constantly and rebroadcasting each one would
+  // spam IPC and keep lastUpdate artificially fresh (same principle as the
+  // handleAgentDone dedup).
+  const existing = activity.agents.find(a => a.name === name);
+  if (existing) {
+    if (existing.toolUses === toolUses && existing.tokens === tokens && existing.done === glyph.done) {
+      return false;
+    }
+    existing.toolUses = toolUses;
+    existing.tokens = tokens;
+    existing.done = glyph.done;
+  } else {
+    activity.agents.push({ name, toolUses, tokens, done: glyph.done });
+    if (activity.agents.length > MAX_TRACKED_AGENTS) activity.agents.shift();
+  }
+  if (!glyph.done) activity.isDone = false;
+  return true;
+}
+
 function handleSkillLoad(activity: ClaudeActivity, trimmed: string): boolean {
   const skillMatch = trimmed.match(PATTERNS.skillLoad);
   if (!skillMatch) return false;
@@ -175,6 +257,7 @@ const LINE_HANDLERS: LineHandler[] = [
   handleAgentDetail,
   handleAgentDone,
   handleAgentBatchDone,
+  handleWorkflowAgent,
   handleSkillLoad,
   handleToolUse,
   handleMcpTool,

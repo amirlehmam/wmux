@@ -70,6 +70,64 @@ describe('observer agent parsing', () => {
   });
 });
 
+describe('workflow panel parsing', () => {
+  beforeEach(() => { sendMock.mockClear(); clearActivity(surf); });
+
+  // Real lines captured from the Workflow tool's TUI panel (wmux read-screen).
+  // Each box row carries TWO columns: "│ <phase list> │ <agent row> │".
+  const RUNNING_ROW = ' │ > 1 Écrire   1/3 │  ● write:pilote             Opus 4.8 (1M context)                               82.9k tok · 17 tools │\n';
+  const RUNNING_ROW2 = ' │   2 Vérifier 0/1 │  ● write:compliance         Opus 4.8 (1M context)                               81.1k tok · 10 tools │\n';
+  const DONE_ROW = ' │   3 Corriger     │  √ write:mcp-page           Opus 4.8 (1M context)                      78.9k tok · 16 tools · 2m 23s │\n';
+
+  it('parses running workflow agent rows into the agents array', () => {
+    observePtyData(surf, RUNNING_ROW + RUNNING_ROW2);
+    const a = getActivity(surf)!;
+    expect(a.agents).toHaveLength(2);
+    expect(a.agents[0]).toMatchObject({ name: 'write:pilote', toolUses: 17, tokens: '82.9k', done: false });
+    expect(a.agents[1]).toMatchObject({ name: 'write:compliance', toolUses: 10, tokens: '81.1k', done: false });
+  });
+
+  it('marks agents with a check glyph as done', () => {
+    observePtyData(surf, RUNNING_ROW + DONE_ROW);
+    const a = getActivity(surf)!;
+    expect(a.agents.map(x => [x.name, x.done])).toEqual([
+      ['write:pilote', false],
+      ['write:mcp-page', true],
+    ]);
+  });
+
+  it('identical repaint frames do not rebroadcast', () => {
+    observePtyData(surf, RUNNING_ROW);
+    sendMock.mockClear();
+    observePtyData(surf, RUNNING_ROW);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('updates an existing agent in place when its counters change', () => {
+    observePtyData(surf, RUNNING_ROW);
+    observePtyData(surf, ' │ > 1 Écrire   1/3 │  ● write:pilote             Opus 4.8 (1M context)                               90.2k tok · 21 tools │\n');
+    const a = getActivity(surf)!;
+    expect(a.agents).toHaveLength(1);
+    expect(a.agents[0]).toMatchObject({ toolUses: 21, tokens: '90.2k' });
+  });
+
+  it('a done-glyph repaint transitions the agent to done exactly once', () => {
+    observePtyData(surf, ' │ 1 Écrire │  ● write:pilote   Opus 4.8   82.9k tok · 17 tools │\n');
+    observePtyData(surf, ' │ 1 Écrire │  √ write:pilote   Opus 4.8   82.9k tok · 17 tools · 1m 2s │\n');
+    expect(getActivity(surf)!.agents[0].done).toBe(true);
+    sendMock.mockClear();
+    observePtyData(surf, ' │ 1 Écrire │  √ write:pilote   Opus 4.8   82.9k tok · 17 tools · 1m 2s │\n');
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('does not mistake plain tool-use lines for workflow agents', () => {
+    observePtyData(surf, '● Bash(git status)\n');
+    const a = getActivity(surf)!;
+    expect(a.agents).toHaveLength(0);
+    expect(a.lastTool).toBe('Bash');
+  });
+});
+
 describe('hook-driven lifecycle', () => {
   beforeEach(() => { sendMock.mockClear(); clearActivity(surf); });
 
