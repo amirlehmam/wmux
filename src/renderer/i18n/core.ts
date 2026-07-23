@@ -233,16 +233,38 @@ export function translate(lang: Language, key: string, fallback?: string): strin
   return DICTS[lang]?.[key] ?? DICTS.en[key] ?? fallback ?? key;
 }
 
+/** "fr-FR" / "fr_FR" → "fr"; returns undefined for unsupported languages. */
+function toSupported(tag: unknown): Language | undefined {
+  const base = String(tag ?? '').toLowerCase().split(/[-_]/)[0];
+  return SUPPORTED_LANGUAGES.includes(base as Language) ? (base as Language) : undefined;
+}
+
 /**
- * Best-effort default from the OS/browser locale so first-launch users (e.g. the
+ * Best-effort default from the OS locale so first-launch users (e.g. the
  * Chinese reporter of issue #56) see their language without touching Settings.
- * Falls back to English for anything unsupported.
+ *
+ * The OS display-language list (GetUserPreferredUILanguages via the preload
+ * bridge) is consulted FIRST: navigator.language follows Chromium's locale
+ * resolution, which can pick up regional-format/Accept-Language settings and
+ * disagree with the language Windows actually displays — issue #114 was an
+ * English-display machine getting French tooltips this way. The first entry
+ * in a supported language wins; anything unsupported falls back to English.
  */
 export function detectDefaultLanguage(): Language {
   try {
-    const nav = (globalThis as any).navigator?.language ?? 'en';
-    const base = String(nav).toLowerCase().split('-')[0];
-    if (SUPPORTED_LANGUAGES.includes(base as Language)) return base as Language;
+    const preferred: unknown = (globalThis as any).window?.wmux?.settings?.getPreferredLanguagesSync?.();
+    if (Array.isArray(preferred) && preferred.length) {
+      // The OS list is authoritative when present — match the display language
+      // (entry 0), not "any supported language anywhere in the list", so a
+      // machine displaying English with French further down stays English.
+      return toSupported(preferred[0]) ?? 'en';
+    }
+  } catch {
+    /* preload bridge unavailable (tests) */
+  }
+  try {
+    const lang = toSupported((globalThis as any).navigator?.language);
+    if (lang) return lang;
   } catch {
     /* navigator unavailable (tests) */
   }

@@ -123,6 +123,16 @@ contextBridge.exposeInMainWorld('wmux', {
       }
     },
     set: (key: string, value: unknown) => ipcRenderer.send('settings:set', key, value),
+    // OS display-language list (issue #114) — synchronous for the same reason as
+    // getAllSync: first-launch language detection runs at store-creation time.
+    getPreferredLanguagesSync: (): string[] => {
+      try {
+        const langs = ipcRenderer.sendSync('system:get-preferred-languages-sync');
+        return Array.isArray(langs) ? langs : [];
+      } catch {
+        return [];
+      }
+    },
   },
   update: {
     getLatest: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_LATEST),

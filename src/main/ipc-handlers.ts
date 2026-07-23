@@ -296,6 +296,20 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     saveSetting(key, value);
   });
 
+  // OS display-language list for first-launch UI language detection (issue #114).
+  // navigator.language follows Chromium's locale resolution, which on Windows can
+  // pick up regional-format/Accept-Language settings and disagree with the actual
+  // display language — an English Windows reported French. GetUserPreferredUILanguages
+  // (what getPreferredSystemLanguages wraps) is the authoritative signal. Synchronous
+  // because the Zustand settings slice hydrates at module-load time.
+  ipcMain.on('system:get-preferred-languages-sync', (event) => {
+    try {
+      event.returnValue = app.getPreferredSystemLanguages();
+    } catch {
+      event.returnValue = [];
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE_NAMED, (_event, name: string) => {
     return deleteNamedSession(name);
   });
