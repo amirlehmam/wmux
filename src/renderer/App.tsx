@@ -77,8 +77,15 @@ function findBottomPane(node: SplitNode): PaneId | null {
 let activeDevPorts: number[] = DEFAULT_DEV_PORTS;
 let autoOpenDevPort = true;
 
-/** Apply `~/.wmux/config.toml`'s `[browser]` section: dev-port detection + auto-open. */
+/**
+ * Apply `~/.wmux/config.toml`'s `[browser]` section: dev-port detection + auto-open.
+ * Resets to the built-in defaults first so `wmux reload-config` is idempotent —
+ * deleting a key (or the whole section) from the file reverts its effect instead
+ * of leaving the previous run's values sticky until restart.
+ */
 function applyUserConfigBrowser(browser: any): void {
+  activeDevPorts = DEFAULT_DEV_PORTS;
+  autoOpenDevPort = true;
   if (!browser) return;
   if (Array.isArray(browser.devPorts) && browser.devPorts.length) {
     activeDevPorts = mergeDevPorts(DEFAULT_DEV_PORTS, browser.devPorts);
