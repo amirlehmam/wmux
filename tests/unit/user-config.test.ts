@@ -100,6 +100,39 @@ describe('loadUserConfig', () => {
     expect(out.errors?.some((e) => e.includes('cursor-style'))).toBe(true);
   });
 
+  it('maps the [browser] section: dev-ports + auto-open', () => {
+    tmpPath = writeTmp(`
+      [browser]
+      dev-ports = [8501, 4321, 9000]
+      auto-open = false
+    `);
+    const out = loadUserConfig(tmpPath);
+    expect(out.errors).toEqual([]);
+    expect(out.browser?.devPorts).toEqual([8501, 4321, 9000]);
+    expect(out.browser?.autoOpen).toBe(false);
+  });
+
+  it('accepts camelCase browser keys and drops out-of-range ports', () => {
+    tmpPath = writeTmp(`
+      [browser]
+      devPorts = [3000, 70000, 0, 5173]
+      autoOpen = true
+    `);
+    const out = loadUserConfig(tmpPath);
+    expect(out.browser?.devPorts).toEqual([3000, 5173]);
+    expect(out.browser?.autoOpen).toBe(true);
+    expect(out.errors?.some((e) => e.includes('dev-ports'))).toBe(true);
+  });
+
+  it('leaves browser undefined when the section is absent', () => {
+    tmpPath = writeTmp(`
+      [terminal]
+      font-size = 13
+    `);
+    const out = loadUserConfig(tmpPath);
+    expect(out.browser).toBeUndefined();
+  });
+
   it('clamps palette to 16 entries', () => {
     const big = Array.from({ length: 20 }, (_, i) => `"#0000${(i % 16).toString(16)}0"`).join(',');
     tmpPath = writeTmp(`

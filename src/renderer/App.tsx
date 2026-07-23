@@ -4,6 +4,7 @@ import { useStore } from './store';
 import { PaneId, SurfaceId, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import SplitContainer from './components/SplitPane/SplitContainer';
 import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface } from './store/split-utils';
+import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
 import { aggregateProgress } from './store/progress-slice';
 import Sidebar from './components/Sidebar/Sidebar';
 import Titlebar from './components/Titlebar/Titlebar';
@@ -71,7 +72,19 @@ function findBottomPane(node: SplitNode): PaneId | null {
 // adds the in-app bell entry and raises the OS toast (via the renderer → main
 // NOTIFICATION_FIRE chokepoint).
 
-const DEV_PORTS = [3000, 3001, 4000, 4200, 5000, 5173, 5174, 8000, 8080, 8888];
+// Effective runtime values — seeded from the built-in defaults, then widened/
+// toggled by ~/.wmux/config.toml at startup and on `wmux reload-config`.
+let activeDevPorts: number[] = DEFAULT_DEV_PORTS;
+let autoOpenDevPort = true;
+
+/** Apply `~/.wmux/config.toml`'s `[browser]` section: dev-port detection + auto-open. */
+function applyUserConfigBrowser(browser: any): void {
+  if (!browser) return;
+  if (Array.isArray(browser.devPorts) && browser.devPorts.length) {
+    activeDevPorts = mergeDevPorts(DEFAULT_DEV_PORTS, browser.devPorts);
+  }
+  if (typeof browser.autoOpen === 'boolean') autoOpenDevPort = browser.autoOpen;
+}
 
 type StoreAction = (...args: any[]) => void;
 type MetaDeps = {
@@ -144,13 +157,17 @@ function handlePortsUpdate(cmd: any, updateWorkspaceMetadata: StoreAction): void
   try {
     const portsByPid = JSON.parse(cmd.args?.[0] || '{}');
     const allPorts = Object.values(portsByPid).flat() as number[];
-    const devPorts = allPorts.filter((p: number) => DEV_PORTS.includes(p));
+    const devPorts = matchDevPorts(allPorts, activeDevPorts);
     if (devPorts.length > 0) {
       const currentWs = useStore.getState().activeWorkspaceId;
       const ws = useStore.getState().workspaces.find(w => w.id === currentWs);
-      // Only auto-navigate the browser to a NEW dev port.
-      if (currentWs && !(ws?.ports || []).includes(devPorts[0])) {
-        window.wmux?.browser?.navigate?.(`browser-${currentWs}`, `http://localhost:${devPorts[0]}`);
+      // Auto-navigate to a newly-appeared dev port — one this workspace hasn't seen
+      // yet — rather than blindly devPorts[0]. Otherwise a freshly-started server
+      // never opens when other recognized ports are already listening (netstat order
+      // is arbitrary), and the guard permanently suppresses navigation thereafter.
+      const newPort = firstNewDevPort(devPorts, ws?.ports || []);
+      if (autoOpenDevPort && currentWs && newPort !== undefined) {
+        window.wmux?.browser?.navigate?.(`browser-${currentWs}`, `http://localhost:${newPort}`);
       }
     }
     for (const ws of useStore.getState().workspaces) {
@@ -484,6 +501,7 @@ export default function App() {
     const apply = (result: any) => {
       const state = useStore.getState();
       applyUserConfigTerminal(state, result?.terminal);
+      applyUserConfigBrowser(result?.browser);
 
       // App UI theme override (issue #67): `[appearance] ui-theme = "..."`.
       const uiTheme = result?.appearance?.uiTheme;
