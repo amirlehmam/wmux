@@ -27,6 +27,10 @@
  *   [appearance]
  *   ui-theme = "light"   # light | dark | system (issue #67)
  *
+ *   [browser]
+ *   dev-ports = [8501, 4321]   # extra dev-server ports, merged with built-in defaults
+ *   auto-open = true           # auto-navigate the browser to a newly-detected dev port
+ *
  * File-wins-at-startup, app-wins-at-runtime: this data seeds the store
  * on boot; users can still tweak via the Settings UI afterwards.
  * A `wmux reload-config` command re-applies the file over runtime state.
@@ -61,6 +65,13 @@ export interface UserConfig {
   /** App UI theme (issue #67) — separate from the terminal color scheme. */
   appearance?: {
     uiTheme?: UiTheme;
+  };
+  /** Browser surface behavior — dev-server port detection & auto-navigation. */
+  browser?: {
+    /** Extra ports (merged with the built-in defaults) that count as dev servers. */
+    devPorts?: number[];
+    /** Auto-navigate the workspace browser to a newly-detected dev port (default true). */
+    autoOpen?: boolean;
   };
   /** Absolute path the config was read from (for diagnostics). */
   path?: string;
@@ -123,6 +134,15 @@ function asStringArray(v: TomlValue | undefined): string[] | undefined {
   const out: string[] = [];
   for (const item of v) {
     if (typeof item === 'string') out.push(item);
+  }
+  return out.length ? out : undefined;
+}
+
+function asNumberArray(v: TomlValue | undefined): number[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: number[] = [];
+  for (const item of v) {
+    if (typeof item === 'number' && Number.isFinite(item)) out.push(item);
   }
   return out.length ? out : undefined;
 }
@@ -218,6 +238,34 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
   return undefined;
 }
 
+// Browser dev-port detection: `[browser] dev-ports = [...]`, `auto-open = bool`.
+function mapBrowserSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['browser']> | undefined {
+  const browser = asTable(root.browser);
+  if (!browser) return undefined;
+
+  const out: NonNullable<UserConfig['browser']> = {};
+
+  const devPortsRaw = browser['dev-ports'] ?? browser.devPorts;
+  if (devPortsRaw !== undefined) {
+    const nums = asNumberArray(devPortsRaw);
+    if (nums) {
+      // Keep integer ports in the valid TCP range; drop the rest with a warning.
+      const valid = nums.filter(p => Number.isInteger(p) && p >= 1 && p <= 65535);
+      if (valid.length) out.devPorts = valid;
+      if (valid.length !== nums.length) {
+        errors.push('browser.dev-ports: dropped entries outside 1-65535 or non-integer');
+      }
+    } else {
+      errors.push('browser.dev-ports: expected an array of port numbers');
+    }
+  }
+
+  const autoOpen = asBool(browser['auto-open'] ?? browser.autoOpen);
+  if (autoOpen !== undefined) out.autoOpen = autoOpen;
+
+  return Object.keys(out).length ? out : undefined;
+}
+
 function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
   const out: UserConfig = {};
 
@@ -226,6 +274,9 @@ function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
 
   const appearance = mapAppearanceSection(root, errors);
   if (appearance) out.appearance = appearance;
+
+  const browser = mapBrowserSection(root, errors);
+  if (browser) out.browser = browser;
 
   return out;
 }
