@@ -124,4 +124,72 @@ describe('handleVersionChange (issue #35)', () => {
     mod.handleVersionChange('1.0.1');
     expect(mod.loadSession()).toBeNull();
   });
+
+  // Issue #113: an update must never lose the user's arranged tabs. The auto
+  // session is archived as an "Auto-backup vX.Y.Z" named session before being
+  // cleared, and the post-update startup path restores the newest named session.
+  it('archives the auto session as a named backup before clearing it', () => {
+    mod.handleVersionChange('1.0.0');
+    mod.saveSession({
+      version: 1,
+      windows: [{
+        bounds: { x: 0, y: 0, width: 1200, height: 800 },
+        sidebarWidth: 240,
+        activeWorkspaceId: 'ws-1',
+        workspaces: [
+          { id: 'ws-1', title: 'My Renamed Tab', customColor: '#ff0000', pinned: true, shell: 'pwsh.exe', cwd: 'C:\\proj', splitTree: { type: 'leaf' } },
+          { id: 'ws-2', title: 'Second', pinned: false, shell: 'bash', splitTree: { type: 'leaf' } },
+        ],
+      }],
+    } as any);
+
+    mod.handleVersionChange('1.0.1');
+    expect(mod.loadSession()).toBeNull(); // volatile session still cleared
+
+    const backup = mod.loadNamedSession('Auto-backup v1.0.0');
+    expect(backup).not.toBeNull();
+    expect(backup!.workspaces.map(w => w.title)).toEqual(['My Renamed Tab', 'Second']);
+    expect(backup!.workspaces[0].customColor).toBe('#ff0000');
+    expect(backup!.workspaces[0].cwd).toBe('C:\\proj');
+    expect(backup!.workspaces[1].cwd).toBe(''); // missing cwd normalized to string
+    expect(backup!.sidebarWidth).toBe(240);
+    // It's the newest named session, so the startup fallback will restore it.
+    expect(mod.listNamedSessions()[0].name).toBe('Auto-backup v1.0.0');
+  });
+
+  it('does not create a backup when there is no auto session or it is empty', () => {
+    mod.handleVersionChange('2.0.0'); // no session.json at all
+    expect(mod.listNamedSessions()).toEqual([]);
+
+    mod.saveSession({ version: 1, windows: [{ bounds: { x: 0, y: 0, width: 1, height: 1 }, sidebarWidth: 200, activeWorkspaceId: null, workspaces: [] }] } as any);
+    mod.handleVersionChange('2.0.1');
+    expect(mod.listNamedSessions()).toEqual([]);
+  });
+
+  it('does not touch the last-session pointer and prunes old auto-backups to 3', () => {
+    vi.useFakeTimers();
+    try {
+      mod.handleVersionChange('3.0.0');
+      mod.saveNamedSession({ name: 'Mine', savedAt: 1, workspaces: [] } as any);
+
+      const versions = ['3.0.1', '3.0.2', '3.0.3', '3.0.4', '3.0.5'];
+      for (const v of versions) {
+        vi.advanceTimersByTime(1000); // distinct savedAt per backup for prune ordering
+        mod.saveSession({
+          version: 1,
+          windows: [{ bounds: { x: 0, y: 0, width: 1, height: 1 }, sidebarWidth: 200, activeWorkspaceId: 'w', workspaces: [{ id: 'w', title: 'T', pinned: false, shell: 's', splitTree: {} }] }],
+        } as any);
+        mod.handleVersionChange(v);
+      }
+
+      const names = mod.listNamedSessions().map(s => s.name);
+      const backups = names.filter(n => n.startsWith('Auto-backup'));
+      expect(backups).toHaveLength(3);
+      expect(backups).toEqual(['Auto-backup v3.0.4', 'Auto-backup v3.0.3', 'Auto-backup v3.0.2']);
+      expect(names).toContain('Mine'); // user sessions never pruned
+      expect(mod.getLastSessionName()).toBe('Mine'); // pointer not hijacked by backups
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

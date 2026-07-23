@@ -69,13 +69,81 @@ export function getSessionPath(): string {
   return SESSION_FILE;
 }
 
+// Auto-backups created by handleVersionChange share this name prefix so they
+// can be recognized and pruned without touching user-named sessions.
+const AUTO_BACKUP_PREFIX = 'Auto-backup';
+const AUTO_BACKUP_KEEP = 3;
+
+/**
+ * Archive the volatile auto-session as a *named* session before it is cleared
+ * on a version change (issue #113: a user lost 20+ renamed tabs by updating
+ * without hitting Save). The auto-session's PTYs died with the old process,
+ * but its layout — titles, colors, splits, cwds — is exactly what a named
+ * session stores, and loading a named session re-spawns fresh PTYs. Because
+ * the post-update startup path already auto-restores the most recent named
+ * session when no auto-session exists, this backup brings the user's tabs
+ * back on the first launch of the new version with zero action on their part.
+ */
+function backupAutoSession(previousVersion: string): void {
+  try {
+    if (!fs.existsSync(SESSION_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')) as SessionData;
+    const win = data?.windows?.[0];
+    if (!win || !Array.isArray(win.workspaces) || win.workspaces.length === 0) return;
+
+    const backup = {
+      name: previousVersion ? `${AUTO_BACKUP_PREFIX} v${previousVersion}` : AUTO_BACKUP_PREFIX,
+      savedAt: Date.now(),
+      workspaces: win.workspaces.map(w => ({
+        title: w.title,
+        customColor: w.customColor,
+        shell: w.shell,
+        cwd: w.cwd || '',
+        splitTree: w.splitTree,
+      })),
+      sidebarWidth: win.sidebarWidth ?? 260,
+    };
+
+    // Write directly instead of via saveNamedSession: a safety net must not
+    // hijack the user's last-session pointer.
+    if (!fs.existsSync(SAVED_DIR)) fs.mkdirSync(SAVED_DIR, { recursive: true });
+    fs.writeFileSync(
+      path.join(SAVED_DIR, sanitizeName(backup.name) + '.json'),
+      JSON.stringify(backup, null, 2),
+      'utf-8'
+    );
+    pruneAutoBackups();
+  } catch {
+    /* best-effort — never block startup on a backup failure */
+  }
+}
+
+/** Keep only the newest AUTO_BACKUP_KEEP auto-backups so updates don't pile up clutter. */
+function pruneAutoBackups(): void {
+  try {
+    const backups = fs.readdirSync(SAVED_DIR)
+      .filter(f => f.startsWith(AUTO_BACKUP_PREFIX) && f.endsWith('.json'))
+      .map(f => {
+        const full = path.join(SAVED_DIR, f);
+        try { return { full, savedAt: Number(JSON.parse(fs.readFileSync(full, 'utf-8')).savedAt) || 0 }; }
+        catch { return { full, savedAt: 0 }; }
+      })
+      .sort((a, b) => b.savedAt - a.savedAt);
+    for (const stale of backups.slice(AUTO_BACKUP_KEEP)) {
+      try { fs.unlinkSync(stale.full); } catch {}
+    }
+  } catch {}
+}
+
 /**
  * Returns true if the app version changed (or first launch).
  *
  * Clears only the *auto-restored* session (`session.json`) so the user gets a
  * clean Session 1 on the first launch of a new version — that file can hold a
- * live layout whose PTYs died with the previous process. Explicitly **named**
- * saved sessions (issue #35) are layout-only snapshots that the user chose to
+ * live layout whose PTYs died with the previous process. Its layout is first
+ * archived as an "Auto-backup vX.Y.Z" named session (issue #113) so nothing
+ * the user arranged is ever lost to an update. Explicitly **named** saved
+ * sessions (issue #35) are layout-only snapshots that the user chose to
  * keep, so they MUST survive updates; loading one always re-spawns fresh PTYs
  * (useTerminal calls pty.create when pty.has(surfaceId) is false), so there are
  * no stale handles to freeze. The last-session pointer is preserved too, so the
@@ -86,8 +154,9 @@ export function handleVersionChange(currentVersion: string): boolean {
   try {
     const saved = fs.existsSync(VERSION_FILE) ? fs.readFileSync(VERSION_FILE, 'utf-8').trim() : '';
     if (saved === currentVersion) return false;
-    // Reset only the volatile auto-session. Named sessions (SAVED_DIR) and the
-    // last-session pointer are intentionally preserved across updates.
+    // Archive, then reset, only the volatile auto-session. Named sessions
+    // (SAVED_DIR) and the last-session pointer are intentionally preserved.
+    backupAutoSession(saved);
     try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch {}
     fs.writeFileSync(VERSION_FILE, currentVersion, 'utf-8');
     return true;
