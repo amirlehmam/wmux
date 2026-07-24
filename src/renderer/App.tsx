@@ -18,6 +18,7 @@ import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
 import { initPipeBridge } from './pipe-bridge';
 import { useUiTheme } from './hooks/useUiTheme';
+import { useUiMode } from './hooks/useUiMode';
 import type {
   SurfaceDragCommitOptions,
   SurfaceDragPayload,
@@ -368,6 +369,7 @@ export default function App() {
   } = useStore();
 
   useUiTheme();
+  useUiMode();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);

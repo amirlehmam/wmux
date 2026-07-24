@@ -1,7 +1,7 @@
 import { useStore } from '../../store';
 
 export default function SidebarSettings() {
-  const { sidebarPrefs, setSidebarPrefs } = useStore();
+  const { sidebarPrefs, setSidebarPrefs, appearancePrefs, setAppearancePrefs } = useStore();
 
   return (
     <div className="settings-section">
@@ -69,6 +69,29 @@ export default function SidebarSettings() {
 
       <div className="settings-divider" />
       <h3 className="settings-section-title">Appearance</h3>
+
+      <div className="settings-row">
+        <label className="settings-label">Sidebar mode</label>
+        <select
+          className="settings-select"
+          value={appearancePrefs.uiMode}
+          onChange={(e) =>
+            setAppearancePrefs({ uiMode: e.target.value as 'classic' | 'trace' })
+          }
+        >
+          <option value="classic">Classic</option>
+          <option value="trace">TRACE — live circuit</option>
+        </select>
+      </div>
+
+      <div className="settings-row settings-row--column">
+        <p className="settings-hint">
+          TRACE renders each Claude session as a tap on a copper bus. Current
+          flows only where work is actually happening, tool calls fire rings,
+          and the colour tells you whether an agent is reading, writing,
+          running commands or delegating. Composes with both light and dark.
+        </p>
+      </div>
 
       <div className="settings-row">
         <label className="settings-label">Active tab indicator</label>

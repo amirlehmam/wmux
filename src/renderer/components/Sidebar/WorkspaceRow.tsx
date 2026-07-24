@@ -6,6 +6,7 @@ import { agentsForWorkspace, resolveAgentLinger, WorkspaceAgentsView } from '../
 import { claudeSessionsForWorkspace, HookActivityEntry } from '../../store/claude-session-view';
 import UnreadBadge from './UnreadBadge';
 import PrStatusIcon from './PrStatusIcon';
+import { traceState, toolChannel } from './trace-signals';
 
 /** Stable empty view — avoids allocating a fresh object every collapsed tick. */
 const EMPTY_AGENTS_VIEW: WorkspaceAgentsView = { lines: [], total: 0, running: 0 };
@@ -179,6 +180,7 @@ export default function WorkspaceRow({
   // under Sidebar/ until now, which is why selecting a row was always an opaque
   // fill regardless of the preference.
   const activeTabIndicator = useStore((state) => state.sidebarPrefs.activeTabIndicator);
+  const uiMode = useStore((state) => state.appearancePrefs.uiMode);
 
   const surfaceProgress = useStore((state) => state.surfaceProgress);
   const wsProgress = useMemo(() => {
@@ -224,6 +226,49 @@ export default function WorkspaceRow({
   );
   const sessions = sessionsView.sessions;
   const workingSessions = sessionsView.working;
+
+  // ── TRACE mode (issue #118) ──────────────────────────────────────────────
+  // Rate is derived by comparing the monotonic tool counter against the
+  // previous sample. The sample is taken inside the memo that already runs on
+  // the existing 2s tick — no new timer, no rAF, no per-row interval.
+  const traceRateRef = useRef<{ toolCount: number; at: number }>({ toolCount: 0, at: 0 });
+  const rowTrace = useMemo(() => {
+    if (uiMode !== 'trace') return null;
+    const now = Date.now();
+    const ids = getAllSurfaceIds(workspace.splitTree);
+    const entries = ids.map((id) => hookActivity?.[id]).filter(Boolean) as HookActivityEntry[];
+
+    // Sum, not first-match: a workspace with several Claude panes has several
+    // counters, and the odometer is a workspace-level odometer.
+    const toolCount = entries.reduce((sum, e) => sum + (e.toolCount || 0), 0);
+    const lastSeen = entries.reduce((max, e) => Math.max(max, e.lastSeen || 0), 0);
+    const active = sessions.find((s) => s.working && s.tool);
+
+    const prev = traceRateRef.current;
+    const state = traceState({
+      working: workingSessions > 0 || isClaudeActive,
+      tool: active?.tool ?? null,
+      toolCount,
+      lastSeen,
+      prev: prev.at ? prev : undefined,
+      now,
+    });
+    // Idempotent under a StrictMode double render: same inputs, same write.
+    if (toolCount !== prev.toolCount) traceRateRef.current = { toolCount, at: now };
+
+    return { ...state, toolCount };
+  }, [uiMode, workspace.splitTree, hookActivity, sessions, workingSessions, isClaudeActive, tick]);
+
+  if (rowTrace) {
+    // Two numbers, both continuous, both read by CSS. --tr-lit is the staleness
+    // ramp and --tr-flow-dur is the dash period; keeping them as plain inline
+    // custom properties (rather than registered @property values inherited on
+    // the row) avoids forcing a style recalc of the whole row subtree on every
+    // frame of a transition.
+    const s = rowStyle as Record<string, string>;
+    s['--tr-lit'] = rowTrace.lit.toFixed(2);
+    s['--tr-flow-dur'] = `${rowTrace.flowMs}ms`;
+  }
 
   // Legacy workspace-keyed entry — only written by hook events with no surfaceId.
   const legacyHook = hookActivity?.[workspace.id];
@@ -347,6 +392,13 @@ export default function WorkspaceRow({
         isDragOver ? 'workspace-row--drag-over' : '',
       ].filter(Boolean).join(' ')}
       style={rowStyle}
+      // TRACE drives everything from attributes so the CSS owns the rendering
+      // and no style object is rebuilt per tick. Absent in classic mode, where
+      // rowTrace is null and none of these selectors exist.
+      data-tr-live={rowTrace?.live ? '1' : undefined}
+      data-tr-blocked={rowTrace?.blocked ? '1' : undefined}
+      data-tr-chan={rowTrace?.channel ?? undefined}
+      data-tr-telemetry={rowTrace?.noTelemetry ? 'none' : undefined}
       onClick={onSelect}
       onContextMenu={onContextMenu}
       draggable={draggable}
@@ -362,6 +414,17 @@ export default function WorkspaceRow({
       {/* Line 1: Title */}
       <div className="workspace-row__header">
         <span className={`workspace-row__state-dot ${stateDotClass}`} />
+        {/* One ring per tool call. Keyed on the tool counter so React remounts
+            the span and the one-shot animation replays — genuinely evented,
+            rather than a loop that runs whether or not anything happened.
+            Bucketed to cap the remount rate on a very fast agent. */}
+        {rowTrace?.live && !rowTrace.blocked && (
+          <span
+            key={`ping-${Math.floor(rowTrace.toolCount / 2)}`}
+            className="workspace-row__via-ping"
+            aria-hidden="true"
+          />
+        )}
         {isRenaming ? (
           <input
             className="workspace-row__rename-input"
@@ -402,6 +465,20 @@ export default function WorkspaceRow({
           </span>
         )}
 
+        {/* Work odometer: total tool calls this workspace's sessions have made.
+            hookActivity[].toolCount is live, monotonic and deliberately never
+            garbage-collected — and was rendered nowhere in the app until now.
+            Static text, so it is the one part of TRACE that survives a narrow
+            sidebar, reduced motion, and a screenshot. */}
+        {!!rowTrace && rowTrace.toolCount > 0 && (
+          <span
+            className="workspace-row__odometer"
+            title={`${rowTrace.toolCount} tool calls in this workspace`}
+          >
+            {rowTrace.toolCount}
+          </span>
+        )}
+
         {workspace.unreadCount > 0 && (
           <UnreadBadge count={workspace.unreadCount} isSelected={isActive} />
         )}
@@ -433,8 +510,16 @@ export default function WorkspaceRow({
               className={[
                 'workspace-row__agent',
                 'workspace-row__agent--clickable',
+                'workspace-row__session',
                 s.working ? '' : 'workspace-row__session--idle',
               ].filter(Boolean).join(' ')}
+              // Per-session channel: this is what makes "that one is REWRITING
+              // my code, that one is only reading" legible at a glance. Bound
+              // to the tool name, a closed vocabulary from the hook, so an
+              // unknown tool falls back to the neutral bus colour rather than
+              // being miscoloured as something harmless.
+              data-tr-live={uiMode === 'trace' && s.working ? '1' : undefined}
+              data-tr-chan={uiMode === 'trace' ? (toolChannel(s.tool) ?? undefined) : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 onFocusAgentPane?.(s.paneId);
@@ -443,7 +528,7 @@ export default function WorkspaceRow({
               <span className="workspace-row__agent-glyph" aria-hidden="true">{i === sessions.length - 1 ? '└' : '├'}</span>
               {s.working && <span className="workspace-row__agent-dot" />}
               <span className="workspace-row__agent-name">{s.label}</span>
-              <span className="workspace-row__agent-detail">
+              <span className={`workspace-row__agent-detail${uiMode === 'trace' ? ' workspace-row__session-tool' : ''}`}>
                 {sessionDetailText(s.working, s.tool)}
               </span>
             </div>

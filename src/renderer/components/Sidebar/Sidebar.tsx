@@ -8,6 +8,7 @@ import OrchestrationPanel from './OrchestrationPanel';
 import ErrorBoundary from '../ErrorBoundary';
 import { useStore } from '../../store';
 import '../../styles/sidebar.css';
+import '../../styles/trace.css';
 
 interface ContextMenuState {
   x: number;

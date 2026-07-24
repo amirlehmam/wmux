@@ -80,6 +80,24 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
       });
     }
 
+    // Sidebar mode toggle. Deliberately a self-executing Commands-style item
+    // rather than a ShortcutAction: the Actions path in App.tsx is a stub that
+    // only console.logs, so anything routed through it silently does nothing.
+    {
+      const nextMode = useStore.getState().appearancePrefs.uiMode === 'trace' ? 'classic' : 'trace';
+      items.push({
+        id: 'command:toggle-ui-mode',
+        label: nextMode === 'trace'
+          ? 'Mode: TRACE — live circuit sidebar'
+          : 'Mode: Classic sidebar',
+        category: t('palette.category.commands'),
+        action: () => {
+          useStore.getState().setAppearancePrefs({ uiMode: nextMode });
+          onClose();
+        },
+      });
+    }
+
     // Category: Commands — one-off actions not bound to a shortcut.
     // "Open Markdown File…" picks a file via a native dialog and renders it in a
     // new markdown view (issue #54) — the manual counterpart to `wmux markdown <file>`.

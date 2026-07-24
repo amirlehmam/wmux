@@ -1,0 +1,314 @@
+/* ─── TRACE mode ──────────────────────────────────────────────────────────────
+ *
+ * Opt-in sidebar presentation (appearancePrefs.uiMode = 'trace'). The workspace
+ * is a seated circuit board: a copper bus runs down its left edge, each Claude
+ * session taps that bus, and current flows only where work is actually
+ * happening. Tool calls fire vias. Waves and dependencies are topology, drawn
+ * in the same vocabulary as everything else.
+ *
+ * THE ONE RULE: motion is evidence. Every animation here is gated on a real
+ * signal and its rate is derived from that signal. Nothing spins to look busy.
+ * An idle row carries no `animation` declaration at all — dormancy is literal
+ * zero, not a slowed-down loop.
+ *
+ * SCOPING: every selector is anchored under `.sidebar`. The mode attribute
+ * lives on <html>, and a universal rule at that level would reach into
+ * `.xterm-rows` and tie on specificity with xterm's runtime-injected styles —
+ * a nondeterministic version of the character-measurement bug class that got
+ * the Canvas renderer deleted (#23/#30). Chrome only, never the terminal.
+ */
+
+:root[data-ui-mode='trace'] {
+  /* Copper. The unlit bus is real oxidised-copper brown so a dormant board
+     reads as *hardware that is powered down*, not as a greyed-out control. */
+  --tr-bus: #7a4f27;
+  --tr-bus-dim: #56381c;
+
+  /* Live current. Markedly lighter and less saturated than the existing
+     #ff9800 running-status amber and #f5b301 orchestration amber — those two
+     already own "saturated orange text", so current claims "near-white-hot
+     metal" instead. Without this separation an Edit packet would be invisible
+     against the bus it rides on. */
+  --tr-current: #ffc078;
+  --tr-current-hot: #fff0d6;
+
+  /* Tool channels. Deliberately cool + magenta + lime, i.e. a different hue
+     family from every status colour in the app, so a channel can never be
+     mistaken for a state. This taxonomy is the payload of the mode: it makes
+     "that agent is rewriting my code, that one is only reading" legible
+     without reading a word. */
+  --tr-chan-ingest: #37c3d6;   /* Read / Grep / Glob / WebFetch */
+  --tr-chan-mutate: #db6bd0;   /* Edit / Write — the only channel that leaves a diff */
+  --tr-chan-exec: #a6d93b;     /* Bash */
+  --tr-chan-delegate: #7a9bff; /* Task / Skill / MCP */
+
+  --tr-blocked: #ff5c5c;       /* waiting on YOU — outranks working */
+  --tr-silk: rgba(var(--ui-overlay-rgb), 0.28); /* silkscreen hairlines */
+}
+
+/* Light theme: the metaphor inverts from "lit trace on a dark board" to "ink
+   on a photoplot". Copper darkens so it reads against paper, current keeps its
+   warmth but loses its glow, and channels deepen to hold contrast on white.
+   This is a token swap plus a stroke-weight bump — not a second design. */
+:root[data-ui-theme='light'][data-ui-mode='trace'] {
+  --tr-bus: #a86a32;
+  --tr-bus-dim: #cbb59d;
+  --tr-current: #c2560d;
+  --tr-current-hot: #8a3c06;
+
+  --tr-chan-ingest: #0e7f8f;
+  --tr-chan-mutate: #a4308f;
+  --tr-chan-exec: #4f7c14;
+  --tr-chan-delegate: #3355c9;
+
+  --tr-blocked: #c62828;
+  --tr-silk: rgba(var(--ui-overlay-rgb), 0.22);
+}
+
+/* ─── Board ──────────────────────────────────────────────────────────────── */
+
+:root[data-ui-mode='trace'] .workspace-row {
+  border-radius: 3px; /* boards have corners, not pills */
+  padding-left: 18px; /* room for the bus */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Selection = the board is seated. A hairline silkscreen outline, not a fill,
+   so every status colour underneath survives (same principle as classic). */
+:root[data-ui-mode='trace'] .workspace-row--active {
+  background: color-mix(in srgb, var(--row-accent) 10%, var(--ui-bg-3));
+  box-shadow:
+    inset 0 0 0 1px var(--tr-silk),
+    inset 0 0 0 2px color-mix(in srgb, var(--row-accent) 18%, transparent);
+}
+
+/* ─── The bus ────────────────────────────────────────────────────────────────
+ * The rail becomes a copper trace. Two layers: a static substrate that is
+ * always visible (the board is always there), and a travelling-dash overlay
+ * that only exists while current is flowing.
+ */
+
+:root[data-ui-mode='trace'] .workspace-row__rail {
+  left: 7px;
+  width: 2px;
+  border-radius: 0;
+  opacity: 1;
+  background: var(--tr-bus-dim);
+  overflow: hidden;
+}
+
+/* A session that has never emitted a hook event gets a DASHED bus and cannot
+   be mistaken for a confident idle. wmux shipped exactly this failure — the
+   hook script missing from the package (issue #81) — and a broken install
+   rendered as a perfectly plausible quiet board. */
+:root[data-ui-mode='trace'] .workspace-row[data-tr-telemetry='none'] .workspace-row__rail {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--tr-bus-dim) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+/* Live current. `--tr-lit` is the staleness ramp: full while hook traffic is
+   fresh, decaying visibly to nothing across ~45s of silence, so a hung agent
+   dims itself instead of glowing a lie forever. */
+:root[data-ui-mode='trace'] .workspace-row[data-tr-live='1'] .workspace-row__rail {
+  background: color-mix(in srgb, var(--tr-current) calc(var(--tr-lit, 1) * 100%), var(--tr-bus));
+}
+
+:root[data-ui-mode='trace'] .workspace-row[data-tr-live='1'] .workspace-row__rail::after {
+  content: '';
+  position: absolute;
+  inset: -50% 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--tr-current-hot) 0 4px,
+    transparent 4px 12px
+  );
+  opacity: calc(0.25 + var(--tr-lit, 1) * 0.55);
+  /* translate3d, not background-position: compositor-only, no per-frame raster.
+     The two animations this mode replaces (workspace-row-progress-slide and its
+     splitpane clone) were the app's only per-frame raster loops, so net paint
+     work goes DOWN when TRACE is on. */
+  animation: tr-flow var(--tr-flow-dur, 2600ms) linear infinite;
+  will-change: transform;
+}
+
+@keyframes tr-flow {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, 16px, 0); }
+}
+
+/* Blocked outranks working. An agent waiting on your permission is the one
+   thing here that only you can clear, and the original spec rendered it as the
+   calmest element on screen. It gets the loudest colour and a slow, deliberate
+   breath that reads as "held", not "busy". */
+:root[data-ui-mode='trace'] .workspace-row[data-tr-blocked='1'] .workspace-row__rail {
+  background: var(--tr-blocked);
+  animation: tr-held 1.4s ease-in-out infinite;
+}
+
+:root[data-ui-mode='trace'] .workspace-row[data-tr-blocked='1'] .workspace-row__rail::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes tr-held {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+/* ─── Vias ───────────────────────────────────────────────────────────────────
+ * The state dot becomes a plated through-hole. One ring per tool call — the
+ * span is remounted with a new key on each event, so the animation fires once
+ * and is genuinely evented rather than looping.
+ */
+
+:root[data-ui-mode='trace'] .workspace-row__state-dot {
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--tr-silk);
+}
+
+:root[data-ui-mode='trace'] .workspace-row__via-ping {
+  position: absolute;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1px solid var(--tr-chan, var(--tr-current));
+  pointer-events: none;
+  animation: tr-ping 620ms ease-out 1 both;
+  will-change: transform, opacity;
+}
+
+@keyframes tr-ping {
+  from { transform: scale(0.35); opacity: 0.9; }
+  to   { transform: scale(1.9);  opacity: 0; }
+}
+
+/* ─── Channels ───────────────────────────────────────────────────────────────
+ * Five attribute selectors are the whole taxonomy.
+ */
+
+:root[data-ui-mode='trace'] [data-tr-chan='ingest']   { --tr-chan: var(--tr-chan-ingest); }
+:root[data-ui-mode='trace'] [data-tr-chan='mutate']   { --tr-chan: var(--tr-chan-mutate); }
+:root[data-ui-mode='trace'] [data-tr-chan='exec']     { --tr-chan: var(--tr-chan-exec); }
+:root[data-ui-mode='trace'] [data-tr-chan='delegate'] { --tr-chan: var(--tr-chan-delegate); }
+
+/* Session lines: the tool label carries its channel colour, monospace and
+   uppercased so the four channels are distinguishable by shape as well as hue
+   (colour alone would fail for the ~8% of men with a colour vision deficiency). */
+:root[data-ui-mode='trace'] .workspace-row__session-tool {
+  color: var(--tr-chan, var(--ui-text-muted));
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* The session's tap onto the bus. */
+:root[data-ui-mode='trace'] .workspace-row__session {
+  position: relative;
+  padding-left: 4px;
+}
+
+:root[data-ui-mode='trace'] .workspace-row__session::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  width: 5px;
+  height: 1px;
+  background: var(--tr-bus-dim);
+}
+
+:root[data-ui-mode='trace'] .workspace-row__session[data-tr-live='1']::before {
+  background: var(--tr-chan, var(--tr-current));
+}
+
+/* ─── Odometer ───────────────────────────────────────────────────────────────
+ * Total tool calls for the workspace, in tabular figures. Grafted from the
+ * COLOPHON direction, where every judge independently named it the best unused
+ * signal in the codebase: hookActivity[].toolCount is live, monotonic and
+ * deliberately never garbage-collected, and was rendered nowhere in the app.
+ *
+ * Static text on purpose. It is the one thing here that survives a narrow
+ * sidebar, reduced motion, and a still screenshot.
+ */
+:root[data-ui-mode='trace'] .workspace-row__odometer {
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tr-current);
+  opacity: 0.75;
+  letter-spacing: 0.04em;
+}
+
+:root[data-ui-mode='trace'] .workspace-row__odometer::before {
+  content: '⌗';
+  opacity: 0.55;
+  margin-right: 2px;
+}
+
+/* ─── Density ────────────────────────────────────────────────────────────────
+ * Twelve outlined boards stacked in a 232px column cancel each other out. Only
+ * the active board is fully drawn; the rest collapse to bus + name and keep
+ * their current, so the sidebar still answers "is anything running over there"
+ * without twelve competing rectangles.
+ */
+:root[data-ui-mode='trace'] .workspace-row:not(.workspace-row--active) .workspace-row__odometer {
+  display: none;
+}
+
+/* Packets are the most expensive element and the least load-bearing, so they
+   exist only on the board you are actually looking at. Worst case is now a
+   handful of animations instead of one per session line per row. */
+:root[data-ui-mode='trace'] .workspace-row:not(.workspace-row--active) .workspace-row__via-ping {
+  display: none;
+}
+
+/* ─── Narrow width ──────────────────────────────────────────────────────────
+ * Drop order is specified rather than emergent: tokens → tool label →
+ * odometer → truncate the name. The bus, the via and the name never drop —
+ * those three are the mode.
+ */
+:root[data-ui-mode='trace'] .sidebar[data-w='narrow'] .workspace-row__session-tool,
+:root[data-ui-mode='trace'] .sidebar[data-w='narrow'] .workspace-row__odometer {
+  display: none;
+}
+
+/* ─── Pause while hidden ─────────────────────────────────────────────────── */
+
+:root[data-anim='off'] .workspace-row__rail::after,
+:root[data-anim='off'] .workspace-row__rail {
+  animation-play-state: paused;
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────────
+ * The standard this mode has to meet: remove all motion, lose zero information.
+ * global.css already nukes durations app-wide; these rules restore the static
+ * tells that the motion was carrying, so nothing becomes ambiguous.
+ */
+@media (prefers-reduced-motion: reduce) {
+  /* Dashes present but frozen — "current is flowing" still reads. */
+  :root[data-ui-mode='trace'] .workspace-row[data-tr-live='1'] .workspace-row__rail::after {
+    opacity: calc(0.3 + var(--tr-lit, 1) * 0.5);
+  }
+
+  /* The ping was the tool-call tell; a permanent ring replaces it. */
+  :root[data-ui-mode='trace'] .workspace-row[data-tr-live='1'] .workspace-row__state-dot {
+    box-shadow: 0 0 0 1px var(--tr-silk), 0 0 0 3px var(--tr-chan, var(--tr-current));
+  }
+
+  /* Blocked was distinguished ONLY by its breathing, which reduced motion
+     freezes — at which point it would be indistinguishable from working. It
+     needs a non-motion tell of its own. */
+  :root[data-ui-mode='trace'] .workspace-row[data-tr-blocked='1'] .workspace-row__rail {
+    background: repeating-linear-gradient(
+      to bottom,
+      var(--tr-blocked) 0 5px,
+      transparent 5px 8px
+    );
+  }
+}

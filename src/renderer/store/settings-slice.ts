@@ -393,6 +393,15 @@ export interface AppearancePrefs {
   customBackground: string;
   /** 30–100 (%). How opaque the terminal theme background stays over the custom background. */
   terminalBgOpacity: number;
+  /**
+   * Sidebar presentation mode. 'classic' is the stock list; 'trace' is the
+   * opt-in live view that renders each Claude session as a tap on a copper bus,
+   * with motion driven by real hook traffic.
+   *
+   * A separate axis from `uiTheme` on purpose — TRACE composes with both dark
+   * and light rather than being a third theme.
+   */
+  uiMode: 'classic' | 'trace';
 }
 
 export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
@@ -403,6 +412,10 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   customBackgroundEnabled: false,
   customBackground: '',
   terminalBgOpacity: 88,
+  // Persisted state is built as { ...DEFAULTS, ...loadPersisted() }, so every
+  // existing user lands on 'classic' without a migration. The "opting in never
+  // happens by accident" guarantee is structural, not a thing to remember.
+  uiMode: 'classic',
 };
 
 // ─── Slice interface ──────────────────────────────────────────────────────────
