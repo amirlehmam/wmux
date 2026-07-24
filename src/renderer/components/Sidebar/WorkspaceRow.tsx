@@ -150,19 +150,20 @@ export default function WorkspaceRow({
     return () => document.removeEventListener('wmux:rename-workspace', handler);
   }, [isActive, workspace.title]);
 
-  const activeBackground = workspace.customColor ?? '#0091FF';
-  // 15% alpha tint for inactive colored rows. The previous 5% (`0D`) was
-  // indistinguishable from the sidebar background on dark themes (issue #80).
-  const customColorTint = workspace.customColor
-    ? `${workspace.customColor}26`
-    : undefined;
-  // Solid color rail so the assigned color reads unambiguously even where a
-  // translucent tint can't (issue #80). Skipped on the active row, whose full
-  // background is already the custom color (the CSS overlay rail stays).
-  const railStyle: React.CSSProperties | undefined =
-    workspace.customColor && !isActive
-      ? { background: workspace.customColor, opacity: 1 }
-      : undefined;
+  // Emit the workspace colour as a CUSTOM PROPERTY, not as a background.
+  //
+  // The old code set `backgroundColor` inline, which beat every class rule and
+  // so hardcoded *how* the accent was expressed: an opaque fill. That is what
+  // flattened the live agent status colours the moment a row was selected, and
+  // it is why the shipped `activeTabIndicator` preference could never take
+  // effect. An inline custom property does not beat the class rule — it feeds
+  // it, so CSS decides the treatment (rail / tint / fill) while the colour
+  // still comes from the workspace. issue #10 (customColor must win) and
+  // issue #80 (15% tint, not 5%) both survive; see sidebar.css.
+  const rowStyle: React.CSSProperties = {};
+  if (workspace.customColor) {
+    (rowStyle as Record<string, string>)['--row-accent'] = workspace.customColor;
+  }
 
   // Tick counter — forces re-evaluation of time-based memos every 2 seconds.
   // Without this, useMemo caches stale Date.now() results because the deps
@@ -174,6 +175,11 @@ export default function WorkspaceRow({
   }, []);
 
   // OSC 9;4 progress from this workspace's terminals, folded into one bar.
+  // Shipped in settings, persisted, exposed in a <select> — and read by nothing
+  // under Sidebar/ until now, which is why selecting a row was always an opaque
+  // fill regardless of the preference.
+  const activeTabIndicator = useStore((state) => state.sidebarPrefs.activeTabIndicator);
+
   const surfaceProgress = useStore((state) => state.surfaceProgress);
   const wsProgress = useMemo(() => {
     const ids = getAllSurfaceIds(workspace.splitTree);
@@ -207,13 +213,6 @@ export default function WorkspaceRow({
     return linger.visible ? view : EMPTY_AGENTS_VIEW;
   }, [workspace.splitTree, claudeActivity, agentMeta, tick]);
   const runningAgentCount = wsAgents.running;
-
-  let rowStyle: React.CSSProperties = {};
-  if (isActive) {
-    rowStyle = { backgroundColor: activeBackground };
-  } else if (customColorTint) {
-    rowStyle = { backgroundColor: customColorTint };
-  }
 
   // How long a tool label persists after the last hook/observer event (ms)
   const ACTIVITY_TTL = 5000;
@@ -340,6 +339,11 @@ export default function WorkspaceRow({
       className={[
         'workspace-row',
         isActive ? 'workspace-row--active' : '',
+        // Selection treatment now honours the shipped preference. `leftRail`
+        // (the default) is a rail + inset ring over an elevated tint;
+        // `solidFill` restores the pre-0.35 opaque block for anyone who wants it.
+        isActive && activeTabIndicator === 'solidFill' ? 'workspace-row--fill' : '',
+        workspace.customColor ? 'workspace-row--custom' : '',
         isDragOver ? 'workspace-row--drag-over' : '',
       ].filter(Boolean).join(' ')}
       style={rowStyle}
@@ -351,7 +355,9 @@ export default function WorkspaceRow({
       onDrop={onDrop}
       onDragEnd={onDragEnd}
     >
-      <span className="workspace-row__rail" style={railStyle} />
+      {/* Rail colour comes from --row-accent now, so it no longer needs an
+          inline override that the active row used to have to fight. */}
+      <span className="workspace-row__rail" />
 
       {/* Line 1: Title */}
       <div className="workspace-row__header">

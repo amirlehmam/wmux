@@ -81,18 +81,42 @@
   padding-left: 14px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+
+  /* Every accent expression in this row reads one variable. WorkspaceRow
+     overrides it inline with workspace.customColor when the user picked one
+     (issue #10); otherwise the theme accent applies. An inline custom property
+     feeds these rules instead of beating them, which is what lets CSS decide
+     the treatment while the colour still comes from the workspace. */
+  --row-accent: var(--ui-accent);
 }
 
 .workspace-row:hover {
   background: rgba(var(--ui-overlay-rgb), 0.04);
 }
 
-/* No !important: WorkspaceRow sets inline backgroundColor to workspace.customColor
-   when set, otherwise to #0091FF. Inline styles already beat class rules — leaving
-   !important here blocked user-picked colors (issue #10). */
+/* SELECTION IS NOT A FILL.
+   It used to be `background: #0091FF` — an opaque slab that buried the live
+   agent status colours, the per-session tool text and the branch line under one
+   flat plane the moment you clicked a row. Selection is now elevation plus a
+   full-strength accent rail plus a hairline ring, so everything underneath
+   survives being selected. `--fill` below restores the old look for anyone who
+   sets sidebarPrefs.activeTabIndicator back to 'solidFill'. */
 .workspace-row--active {
-  background: #0091FF;
+  background: color-mix(in srgb, var(--row-accent) 14%, var(--ui-bg-3));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--row-accent) 32%, transparent);
+}
+
+/* 15% alpha tint for inactive coloured rows. The previous 5% was
+   indistinguishable from the sidebar background on dark themes (issue #80).
+   Was an inline backgroundColor on WorkspaceRow; now derived from the token. */
+.workspace-row--custom:not(.workspace-row--active) {
+  background: color-mix(in srgb, var(--row-accent) 15%, transparent);
+}
+
+.workspace-row--fill {
+  background: var(--row-accent);
+  box-shadow: none;
 }
 
 /* Left rail indicator */
@@ -104,14 +128,24 @@
   width: 3px;
   height: calc(100% - 10px);
   border-radius: 2px;
-  background: #0091FF;
+  background: var(--row-accent);
   opacity: 0;
   transition: opacity 0.15s ease;
 }
 
-.workspace-row--active .workspace-row__rail {
-  background: rgba(var(--ui-overlay-rgb), 0.5);
+/* The rail is the selection signal, so it shows at full accent strength.
+   Selection used to REPLACE the accent rail with a flat white overlay — the one
+   element that could have carried the colour was the one element that threw it
+   away. A custom-coloured row keeps its rail even when inactive (issue #80),
+   which is what makes the assigned colour legible without any fill. */
+.workspace-row--active .workspace-row__rail,
+.workspace-row--custom .workspace-row__rail {
   opacity: 1;
+}
+
+/* Inside an opaque fill the accent rail would be invisible against itself. */
+.workspace-row--fill .workspace-row__rail {
+  background: rgba(var(--ui-overlay-rgb), 0.5);
 }
 
 /* Title row */
@@ -133,8 +167,14 @@
   line-height: 1.3;
 }
 
+/* Was `color: #ffffff` unconditionally — correct only against an opaque accent
+   fill, and invisible on the light theme once the fill went away. */
 .workspace-row--active .workspace-row__title {
-  color: #ffffff;
+  color: var(--ui-text-primary);
+}
+
+.workspace-row--fill .workspace-row__title {
+  color: var(--ui-accent-contrast);
 }
 
 /* Close button */
@@ -178,7 +218,7 @@
   flex: 1;
   min-width: 0;
   background: rgba(0, 0, 0, 0.3);
-  border: 1px solid #0091FF;
+  border: 1px solid var(--ui-accent);
   border-radius: 3px;
   color: white;
   font-size: 12.5px;
@@ -220,7 +260,12 @@
   color: #e53935;
 }
 
-.workspace-row--active .workspace-row__status {
+/* THIS was the "it flattens all of it" bug. Selecting a row replaced the
+   status colour — amber running / green done / red interrupted, the whole
+   point of the line — with one flat overlay. Status colours now survive
+   selection; only the opaque-fill variant still has to override them, because
+   there they genuinely would not be readable. */
+.workspace-row--fill .workspace-row__status {
   color: rgba(var(--ui-overlay-rgb), 0.8);
 }
 
@@ -236,7 +281,13 @@
   margin-top: 1px;
 }
 
+/* Selected rows lift the muted lines rather than repainting them, so the
+   hierarchy between title / status / context is preserved on selection. */
 .workspace-row--active .workspace-row__context {
+  color: rgba(var(--ui-overlay-rgb), 0.5);
+}
+
+.workspace-row--fill .workspace-row__context {
   color: rgba(var(--ui-overlay-rgb), 0.65);
 }
 
@@ -252,6 +303,10 @@
 }
 
 .workspace-row--active .workspace-row__meta-line {
+  color: rgba(var(--ui-overlay-rgb), 0.55);
+}
+
+.workspace-row--fill .workspace-row__meta-line {
   color: rgba(var(--ui-overlay-rgb), 0.7);
 }
 
@@ -274,7 +329,8 @@
   opacity: 0.7;
 }
 
-.workspace-row--active .workspace-row__pr {
+/* PR state is colour-coded (open/merged/draft) — same reasoning as __status. */
+.workspace-row--fill .workspace-row__pr {
   color: rgba(var(--ui-overlay-rgb), 0.85);
 }
 
@@ -283,22 +339,26 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #0091FF;
+  background: var(--row-accent, var(--ui-accent));
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
-
-.unread-badge__count {
+  /* Typography lives here, not on a __count child: UnreadBadge renders the
+     number as a bare text node, so the old .unread-badge__count rule never
+     matched anything and the count inherited the row's font size. */
   font-size: 9px;
   font-weight: 600;
-  color: white;
   line-height: 1;
+  color: var(--ui-accent-contrast);
 }
 
-.workspace-row--active .unread-badge {
+/* Only meaningful against an opaque accent fill, where an accent-coloured
+   badge would disappear into its own background. On the default treatment the
+   badge keeps the accent — it is the loudest thing in the row and should be. */
+.workspace-row--fill .unread-badge {
   background: rgba(var(--ui-overlay-rgb), 0.25);
+  color: var(--ui-accent-contrast);
 }
 
 /* Resize handle */
@@ -314,7 +374,7 @@
 }
 
 .sidebar-resize-handle:hover {
-  background: rgba(0, 145, 255, 0.3);
+  background: rgba(var(--ui-accent-rgb), 0.3);
 }
 
 /* Expand strip — shown when sidebar is collapsed */
@@ -334,7 +394,7 @@
   width: 16px;
   background: var(--ui-bg-1);
   color: rgba(var(--ui-overlay-rgb), 0.6);
-  border-right-color: rgba(0, 145, 255, 0.3);
+  border-right-color: rgba(var(--ui-accent-rgb), 0.3);
 }
 
 /* Context menu */
@@ -360,7 +420,7 @@
 }
 
 .workspace-context-menu__item:hover {
-  background: #0091FF;
+  background: var(--ui-accent);
   color: white;
 }
 
@@ -395,7 +455,7 @@
 }
 
 .workspace-row--drag-over {
-  box-shadow: 0 -2px 0 0 #0091FF;
+  box-shadow: 0 -2px 0 0 var(--ui-accent);
 }
 
 /* ─── Context menu (legacy class names used by WorkspaceContextMenu) ── */
@@ -456,7 +516,7 @@
 }
 
 .ctx-menu__rename-input:focus {
-  border-color: #0091FF;
+  border-color: var(--ui-accent);
 }
 
 /* ─── Color submenu ───────────────────────────────────────────────────────── */
@@ -600,7 +660,7 @@
 .workspace-row__session--idle .workspace-row__agent-detail { opacity: 0.8; }
 
 .workspace-row__skill {
-  color: rgba(0, 145, 255, 0.5);
+  color: rgba(var(--ui-accent-rgb), 0.5);
   font-size: 10px;
 }
 
@@ -635,14 +695,14 @@
 .workspace-row__progress-fill {
   height: 100%;
   border-radius: 2px;
-  background: #0091ff;
+  background: var(--ui-accent);
   transition: width 0.2s ease;
 }
 .workspace-row__progress-fill--s2 { background: #e53935; }
 .workspace-row__progress-fill--s4 { background: #fb8c00; }
 .workspace-row__progress-fill--s3 {
   width: 100%;
-  background: repeating-linear-gradient(90deg, #0091ff 0 8px, transparent 8px 16px);
+  background: repeating-linear-gradient(90deg, var(--ui-accent) 0 8px, transparent 8px 16px);
   animation: workspace-row-progress-slide 1s linear infinite;
 }
 @keyframes workspace-row-progress-slide {
@@ -668,7 +728,7 @@
   outline: none;
 }
 .sidebar__save-input:focus {
-  border-color: rgba(0, 145, 255, 0.5);
+  border-color: rgba(var(--ui-accent-rgb), 0.5);
 }
 
 .session-menu {

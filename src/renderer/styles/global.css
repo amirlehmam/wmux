@@ -128,7 +128,7 @@ html, body, #root {
 }
 
 .confirm-dialog__btn:focus-visible {
-  outline: 1px solid #0091ff;
+  outline: 1px solid var(--ui-accent);
   outline-offset: 1px;
 }
 
@@ -158,4 +158,28 @@ html, body, #root {
   letter-spacing: 0.02em;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   pointer-events: none;
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────────
+   The app shipped 11 @keyframes across 6 stylesheets with no prefers-reduced-
+   motion handling anywhere in src/ — the only coverage in the repo was on the
+   marketing site. This is the app-wide floor.
+
+   Deliberately a blanket rule rather than per-animation opt-outs: any animation
+   added later is covered by default, which is the failure mode that matters
+   (someone adds a spinner and never thinks about vestibular triggers).
+
+   `0.01ms` rather than `none` so animationend/transitionend listeners still
+   fire — killing them outright strands any state machine waiting on one.
+   Iteration count is capped at 1 so infinite loops settle on their end state
+   instead of freezing mid-cycle. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

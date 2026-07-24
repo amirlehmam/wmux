@@ -11,14 +11,14 @@
 .split-divider--horizontal { width: 6px; cursor: col-resize; }
 .split-divider--vertical { height: 6px; cursor: row-resize; }
 .split-divider__line { position: absolute; background: rgba(var(--ui-overlay-rgb), 0.06); transition: background 0.15s ease, transform 0.15s ease; will-change: transform, background; }
-.split-divider:hover .split-divider__line { background: rgba(0, 145, 255, 0.4); }
+.split-divider:hover .split-divider__line { background: rgba(var(--ui-accent-rgb), 0.4); }
 .split-divider--horizontal .split-divider__line { width: 2px; height: 100%; left: 50%; transform: translateX(-50%) scaleX(0.5); }
 .split-divider--vertical .split-divider__line { height: 2px; width: 100%; top: 50%; transform: translateY(-50%) scaleY(0.5); }
 .split-divider:hover .split-divider--horizontal .split-divider__line { transform: translateX(-50%) scaleX(1); }
 .split-divider:hover .split-divider--vertical .split-divider__line { transform: translateY(-50%) scaleY(1); }
 
 /* Keep the line highlighted for the whole drag, not just while hovered. */
-.split-divider--dragging .split-divider__line { background: rgba(0, 145, 255, 0.6); }
+.split-divider--dragging .split-divider__line { background: rgba(var(--ui-accent-rgb), 0.6); }
 .split-divider--dragging.split-divider--horizontal .split-divider__line { transform: translateX(-50%) scaleX(1); }
 .split-divider--dragging.split-divider--vertical .split-divider__line { transform: translateY(-50%) scaleY(1); }
 
@@ -38,7 +38,7 @@
   transition: border-color 0.15s ease;
 }
 .pane-wrapper--focused {
-  border-color: rgba(0, 145, 255, 0.3);
+  border-color: rgba(var(--ui-accent-rgb), 0.3);
 }
 .pane-wrapper__content {
   flex: 1;
@@ -99,7 +99,7 @@
   left: 0;
   bottom: 0;
   height: 2px;
-  background: #0091ff;
+  background: var(--ui-accent);
   pointer-events: none;
   transition: width 0.2s ease;
 }
@@ -107,7 +107,7 @@
 .surface-tab__progress--s4 { background: #fb8c00; }
 .surface-tab__progress--s3 {
   width: 100%;
-  background: repeating-linear-gradient(90deg, #0091ff 0 8px, transparent 8px 16px);
+  background: repeating-linear-gradient(90deg, var(--ui-accent) 0 8px, transparent 8px 16px);
   animation: surface-tab-progress-slide 1s linear infinite;
 }
 @keyframes surface-tab-progress-slide {
@@ -119,7 +119,7 @@
 .surface-tab__label { pointer-events: none; }
 .surface-tab__rename-input {
   background: rgba(var(--ui-overlay-rgb), 0.1);
-  border: 1px solid rgba(0, 145, 255, 0.5);
+  border: 1px solid rgba(var(--ui-accent-rgb), 0.5);
   color: var(--ui-text-primary);
   font-size: 11px;
   font-family: inherit;
@@ -184,7 +184,7 @@
 .surface-tab-bar__ctl:hover { background: rgba(var(--ui-overlay-rgb),0.10); color: var(--ui-text-primary); }
 /* per-control accent colors */
 .surface-tab-bar__ctl--new:hover { color: #5fb85f; background: rgba(95,184,95,0.12); }
-.surface-tab-bar__ctl--layout:hover { color: #0091ff; background: rgba(0,145,255,0.12); }
+.surface-tab-bar__ctl--layout:hover { color: var(--ui-accent); background: rgba(var(--ui-accent-rgb), 0.12); }
 .surface-tab-bar__ctl--close:hover { color: #ff6b6b; background: rgba(255,100,100,0.14); }
 
 /* ─── Control-cluster dropdowns (portalled to document.body) ─────────────── */
@@ -213,7 +213,7 @@
   border-radius: 5px;
   cursor: pointer;
 }
-.surface-tab-menu button:hover { background: rgba(0,145,255,0.18); color: var(--ui-text-primary); }
+.surface-tab-menu button:hover { background: rgba(var(--ui-accent-rgb), 0.18); color: var(--ui-text-primary); }
 .surface-tab-menu__icon {
   display: inline-flex;
   align-items: center;
@@ -247,10 +247,10 @@
 }
 
 .surface-tab--agent .surface-tab__icon {
-  color: #0091FF;
+  color: var(--ui-accent);
 }
 .surface-tab--agent .surface-tab__label {
-  color: rgba(0, 145, 255, 0.8);
+  color: rgba(var(--ui-accent-rgb), 0.8);
 }
 
 /* ─── Drag and drop ──────────────────────────────────────────────────────── */

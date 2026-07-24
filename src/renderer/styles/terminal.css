@@ -50,7 +50,7 @@
   font-size: 12px;
   outline: none;
 }
-.find-bar__input:focus { border-color: #0091FF; }
+.find-bar__input:focus { border-color: var(--ui-accent); }
 .find-bar__count { font-size: 11px; color: rgba(255,255,255,0.5); margin: 0 4px; }
 .find-bar__btn {
   width: 22px; height: 22px;
@@ -71,7 +71,7 @@
   bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0, 145, 255, 0.9);
+  background: rgba(var(--ui-accent-rgb), 0.9);
   color: white;
   padding: 4px 12px;
   border-radius: 4px;

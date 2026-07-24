@@ -137,7 +137,7 @@
 }
 
 .diff-pane__file--selected {
-  background: rgba(0, 145, 255, 0.12) !important;
+  background: rgba(var(--ui-accent-rgb), 0.12) !important;
 }
 
 .diff-pane__file-badge {

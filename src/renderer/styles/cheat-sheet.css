@@ -48,7 +48,7 @@
   outline: none;
 }
 
-.cheat-sheet__search:focus { border-color: #0091ff; }
+.cheat-sheet__search:focus { border-color: var(--ui-accent); }
 
 .cheat-sheet__close {
   background: transparent;
@@ -79,7 +79,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #0091ff;
+  color: var(--ui-accent);
 }
 
 .cheat-sheet__row {

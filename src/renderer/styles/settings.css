@@ -107,13 +107,13 @@
 }
 
 .settings-tab--active {
-  background: rgba(0, 145, 255, 0.18);
-  color: #0091FF;
+  background: rgba(var(--ui-accent-rgb), 0.18);
+  color: var(--ui-accent);
 }
 
 .settings-tab--active:hover {
-  background: rgba(0, 145, 255, 0.24);
-  color: #0091FF;
+  background: rgba(var(--ui-accent-rgb), 0.24);
+  color: var(--ui-accent);
 }
 
 /* ─── Content area ────────────────────────────────────────────────────────── */
@@ -189,7 +189,7 @@
   width: 36px;
   height: 20px;
   cursor: pointer;
-  accent-color: #0091FF;
+  accent-color: var(--ui-accent);
   flex-shrink: 0;
 }
 
@@ -207,7 +207,7 @@
 }
 
 .settings-select:focus {
-  border-color: #0091FF;
+  border-color: var(--ui-accent);
 }
 
 .settings-input {
@@ -228,13 +228,13 @@
 }
 
 .settings-input:focus {
-  border-color: #0091FF;
+  border-color: var(--ui-accent);
 }
 
 .settings-slider {
   width: 100%;
   margin-top: 8px;
-  accent-color: #0091FF;
+  accent-color: var(--ui-accent);
   cursor: pointer;
 }
 
@@ -332,14 +332,14 @@
 }
 
 .shortcut-recorder__btn:hover {
-  border-color: rgba(0, 145, 255, 0.5);
+  border-color: rgba(var(--ui-accent-rgb), 0.5);
   background: var(--ui-bg-5);
 }
 
 .shortcut-recorder__btn--recording {
-  border-color: #0091FF;
-  background: rgba(0, 145, 255, 0.1);
-  color: #0091FF;
+  border-color: var(--ui-accent);
+  background: rgba(var(--ui-accent-rgb), 0.1);
+  color: var(--ui-accent);
   animation: shortcut-pulse 1s ease-in-out infinite;
 }
 

@@ -56,7 +56,7 @@
 }
 
 .tutorial-dot--active {
-  background: #0091FF;
+  background: var(--ui-accent);
   width: 24px;
   border-radius: 4px;
 }
@@ -129,7 +129,7 @@
 }
 
 .tutorial-btn--primary {
-  background: #0091FF;
+  background: var(--ui-accent);
   color: white;
 }
 

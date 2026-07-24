@@ -303,10 +303,10 @@
 }
 
 .markdown-pane__content blockquote {
-  border-left: 3px solid #0091FF;
+  border-left: 3px solid var(--ui-accent);
   margin: 12px 0;
   padding: 8px 16px;
-  background: rgba(0, 145, 255, 0.05);
+  background: rgba(var(--ui-accent-rgb), 0.05);
   color: #b0b0b0;
 }
 

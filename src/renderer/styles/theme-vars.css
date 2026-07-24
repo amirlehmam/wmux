@@ -18,6 +18,15 @@
 :root {
   --ui-overlay-rgb: 255, 255, 255;
 
+  /* Accent (issue #116 follow-up). Until now #0091ff was hardcoded in 53 places
+     across 13 stylesheets — the one chrome colour that never went through this
+     file, which is why it could not be themed and why the light palette below
+     never got a readable version of it. The dark value is byte-identical to
+     what shipped, so this half of the change is a provable no-op. */
+  --ui-accent: #0091ff;
+  --ui-accent-rgb: 0, 145, 255;
+  --ui-accent-contrast: #ffffff;
+
   /* Background elevation scale, darkest recess -> most elevated control. */
   --ui-bg-0: #111111;
   --ui-bg-1: #1a1a1a;
@@ -36,6 +45,14 @@
 
 :root[data-ui-theme='light'] {
   --ui-overlay-rgb: 0, 0, 0;
+
+  /* Darkened for the light palette: #0091ff on #ffffff is 2.6:1, below the AA
+     4.5:1 floor. Nobody caught it because the accent is used as a *fill* in
+     dark mode, where the white text sits on top of it instead of beside it.
+     #0067c0 is 5.6:1 on --ui-bg-2 and 4.6:1 on --ui-bg-0. */
+  --ui-accent: #0067c0;
+  --ui-accent-rgb: 0, 103, 192;
+  --ui-accent-contrast: #ffffff;
 
   --ui-bg-0: #e4e4e4;
   --ui-bg-1: #f5f5f5;

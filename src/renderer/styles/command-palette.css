@@ -48,7 +48,7 @@
 }
 
 .command-palette__item--selected {
-  background: #0091FF;
+  background: var(--ui-accent);
   color: white;
 }
 
