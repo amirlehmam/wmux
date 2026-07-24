@@ -74,6 +74,42 @@ describe('surface-slice: setMarkdownContent (issue #54)', () => {
     expect(getSurface(surfaceId)?.markdownFileName).toBe('GUIDE.md');
   });
 
+  // ─── Path-aware surfaces (issue #116) ─────────────────────────────────────
+
+  it('records the backing file path when the content came from a file', () => {
+    const surfaceId = useStore.getState().addSurface(workspaceId, paneId, 'markdown');
+    useStore.getState().setMarkdownContent(surfaceId, '# Doc', {
+      fileName: 'GUIDE.md',
+      filePath: 'C:\\repo\\docs\\GUIDE.md',
+    });
+    expect(getSurface(surfaceId)?.markdownFileName).toBe('GUIDE.md');
+    expect(getSurface(surfaceId)?.markdownFilePath).toBe('C:\\repo\\docs\\GUIDE.md');
+  });
+
+  // The guard that matters: `wmux markdown set <id> --content …` against a
+  // file-backed surface must not silently re-point or clear where it came from.
+  it('leaves the file path untouched when content is pushed without one', () => {
+    const surfaceId = useStore.getState().addSurface(workspaceId, paneId, 'markdown');
+    useStore.getState().setMarkdownContent(surfaceId, '# Doc', {
+      fileName: 'GUIDE.md',
+      filePath: 'C:\\repo\\docs\\GUIDE.md',
+    });
+    useStore.getState().setMarkdownContent(surfaceId, 'pushed by an agent');
+
+    expect(getSurface(surfaceId)?.markdownContent).toBe('pushed by an agent');
+    expect(getSurface(surfaceId)?.markdownFilePath).toBe('C:\\repo\\docs\\GUIDE.md');
+    expect(getSurface(surfaceId)?.markdownFileName).toBe('GUIDE.md');
+  });
+
+  // The main process emits an executeJavaScript call that may come from an
+  // older build during a hot-swap, so the positional form has to keep working.
+  it('still accepts a bare string as the file name', () => {
+    const surfaceId = useStore.getState().addSurface(workspaceId, paneId, 'markdown');
+    useStore.getState().setMarkdownContent(surfaceId, '# Doc', 'LEGACY.md');
+    expect(getSurface(surfaceId)?.markdownFileName).toBe('LEGACY.md');
+    expect(getSurface(surfaceId)?.markdownFilePath).toBeUndefined();
+  });
+
   it('finds the target surface in a non-first pane', () => {
     const ws = useStore.getState().workspaces.find((w) => w.id === workspaceId)!;
     const newPaneId = 'pane-second' as PaneId;

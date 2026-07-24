@@ -96,9 +96,13 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
             const created = (window as any).__wmux_createSurface?.({ type: 'markdown' });
             const surfaceId = created?.surfaceId as string | undefined;
             if (surfaceId) {
-              // Derive the basename for the tab label (renderer has no `path`).
-              const fileName = String(res.filePath || '').replace(/\\/g, '/').split('/').pop() || undefined;
-              useStore.getState().setMarkdownContent(surfaceId as SurfaceId, res.content, fileName);
+              // Derive the basename for the tab label (renderer has no `path`),
+              // and keep the full path so the surface is path-aware (issue #116).
+              // A file picked from a native dialog is exactly the case where the
+              // user may not know where it lives.
+              const filePath = String(res.filePath || '') || undefined;
+              const fileName = (filePath || '').replace(/\\/g, '/').split('/').pop() || undefined;
+              useStore.getState().setMarkdownContent(surfaceId as SurfaceId, res.content, { fileName, filePath });
             }
           } catch {
             // Dialog/read failures are surfaced via the returned { error }; ignore here.

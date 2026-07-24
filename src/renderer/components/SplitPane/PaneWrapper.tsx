@@ -239,7 +239,26 @@ export default function PaneWrapper({
               }}
             />
           )}
-          {surface.type === 'markdown' && <MarkdownPane surfaceId={surface.id} content={surface.markdownContent} />}
+          {surface.type === 'markdown' && (
+            <MarkdownPane
+              surfaceId={surface.id}
+              content={surface.markdownContent}
+              filePath={surface.markdownFilePath}
+              viewMode={surface.markdownViewMode}
+              cwd={workspace?.cwd}
+              // Both persist onto the surface (issue #116) so they survive the
+              // remount that a split-tree restructure causes, exactly like
+              // markdownContent itself.
+              onViewModeChange={(mode) =>
+                updateSurface(workspaceId, paneId, surface.id, { markdownViewMode: mode })}
+              onFileLoaded={({ content, filePath, fileName }) =>
+                updateSurface(workspaceId, paneId, surface.id, {
+                  markdownContent: content,
+                  markdownFilePath: filePath,
+                  markdownFileName: fileName,
+                })}
+            />
+          )}
           {surface.type === 'diff' && <DiffPane surfaceId={surface.id} cwd={workspace?.cwd} />}
         </div>
       );

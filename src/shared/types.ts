@@ -33,6 +33,16 @@ export interface SurfaceRef {
    *  instead of the generic "Markdown" so multiple markdown tabs are
    *  distinguishable. Only set when the surface was populated from a file. */
   markdownFileName?: string;
+  /** Absolute path of the file backing a `markdown` surface (issue #116). Shown
+   *  in the pane toolbar, copyable, and what "reload from disk" re-reads.
+   *  Deliberately absent for content pushed via `markdown.set_content` or an
+   *  empty Ctrl+Shift+M scratch surface — pathless is a first-class state, not
+   *  an error, since agent-pushed content is the original use case. */
+  markdownFilePath?: string;
+  /** Preview (rendered) vs source (raw, line-numbered) view of a `markdown`
+   *  surface (issue #116). Persisted for the same reason as `markdownContent`:
+   *  split-tree restructures remount the pane and would otherwise reset it. */
+  markdownViewMode?: 'preview' | 'source';
 }
 
 /**
@@ -337,6 +347,12 @@ export const IPC_CHANNELS = {
   DIFF_UPDATE: 'diff:update',
   // Markdown viewer (issue #54) — file picker for the manual "open markdown" UI
   MARKDOWN_OPEN_FILE: 'markdown:open-file',
+  // Markdown viewer (issue #116) — path-aware surfaces: re-read a known file
+  // (reload / drag-and-drop) plus the two read-only shell actions. All three go
+  // through the guards in main/markdown-file.ts.
+  MARKDOWN_READ_FILE: 'markdown:read-file',
+  MARKDOWN_REVEAL: 'markdown:reveal',
+  MARKDOWN_OPEN_IN_APP: 'markdown:open-in-app',
   // Orchestration (wmux-orchestrator plugin state broadcast)
   ORCHESTRATION_UPDATE: 'orchestration:update',
   ORCHESTRATION_CLEAR: 'orchestration:clear',

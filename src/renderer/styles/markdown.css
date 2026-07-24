@@ -1,13 +1,251 @@
+/* The pane owns the toolbar and delegates scrolling to __body (issue #116).
+   It used to be the scroll container itself, which would have scrolled the
+   toolbar away with the content. */
 .markdown-pane {
   width: 100%;
   height: 100%;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--ui-bg-2);
   color: #d4d4d4;
-  padding: 24px 32px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.markdown-pane__body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 24px 32px;
+}
+
+.markdown-pane__empty {
+  opacity: 0.5;
+}
+
+/* ─── Toolbar ─────────────────────────────────────────────────────────────────
+   Uses the theme variables the diff pane already uses rather than the
+   hard-coded hex values further down this file; those are a pre-existing wart
+   and not something to propagate into new chrome. */
+
+.markdown-pane__toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  background: var(--ui-bg-2);
+  border-bottom: 1px solid rgba(var(--ui-overlay-rgb), 0.1);
+  font-size: 11px;
+}
+
+.markdown-pane__path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--ui-text-secondary);
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.markdown-pane__path:hover {
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: var(--ui-text-primary);
+}
+
+.markdown-pane__path--none {
+  cursor: default;
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.markdown-pane__path--none:hover {
+  background: transparent;
+  color: var(--ui-text-secondary);
+}
+
+.markdown-pane__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.markdown-pane__segmented {
+  display: flex;
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.markdown-pane__segment {
+  background: transparent;
+  border: none;
+  color: var(--ui-text-muted);
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.markdown-pane__segment:hover {
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: var(--ui-text-primary);
+}
+
+.markdown-pane__segment--active {
+  background: rgba(var(--ui-overlay-rgb), 0.16);
+  color: var(--ui-text-primary);
+}
+
+.markdown-pane__btn {
+  background: transparent;
+  border: none;
+  color: var(--ui-text-muted);
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.markdown-pane__btn:hover:not(:disabled) {
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: var(--ui-text-primary);
+}
+
+.markdown-pane__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.markdown-pane__btn--icon {
+  padding: 2px 6px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.markdown-pane__menu-wrap {
+  position: relative;
+}
+
+.markdown-pane__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--ui-bg-1, var(--ui-bg-2));
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.15);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.markdown-pane__menu button {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 3px;
+  color: var(--ui-text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.markdown-pane__menu button:hover:not(:disabled) {
+  background: rgba(var(--ui-overlay-rgb), 0.12);
+}
+
+.markdown-pane__menu button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.markdown-pane__error {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  background: rgba(220, 80, 80, 0.12);
+  border-bottom: 1px solid rgba(220, 80, 80, 0.3);
+  color: #ff9c9c;
+  font-size: 11px;
+}
+
+/* ─── Source view ─────────────────────────────────────────────────────────── */
+
+.markdown-pane__source {
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  /* `pre` rather than `pre-wrap`: wrapping would break the line-accurate
+     selection that the source view exists to provide. */
+  white-space: pre;
+  min-width: max-content;
+}
+
+.markdown-pane__source--plain {
+  margin: 0;
+  color: #d4d4d4;
+}
+
+.markdown-pane__source-line {
+  display: flex;
+  align-items: flex-start;
+}
+
+.markdown-pane__source-gutter {
+  flex: 0 0 auto;
+  width: 44px;
+  padding-right: 12px;
+  text-align: right;
+  color: var(--ui-text-muted);
+  opacity: 0.5;
+  /* Excluded from selection so double-click / drag across lines copies the
+     source without the line numbers interleaved. */
+  user-select: none;
+}
+
+.markdown-pane__source-text {
+  flex: 1 1 auto;
+  color: #d4d4d4;
+}
+
+/* ─── Per-code-block copy button ──────────────────────────────────────────── */
+
+.markdown-pane__content pre.markdown-pane__code-block {
+  position: relative;
+}
+
+.markdown-pane__code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  background: rgba(var(--ui-overlay-rgb), 0.14);
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.18);
+  border-radius: 3px;
+  color: var(--ui-text-primary);
+  font-size: 10px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+
+.markdown-pane__code-block:hover .markdown-pane__code-copy,
+.markdown-pane__code-copy:focus-visible {
+  opacity: 1;
 }
 
 .markdown-pane__content h1,
@@ -114,7 +352,15 @@
   margin: 24px 0;
 }
 
-/* Task list checkboxes (GFM) */
-.markdown-pane__content input[type="checkbox"] {
+/* Task list checkboxes (GFM). Rendered as ☐/☑ glyphs by the marked renderer
+   override in MarkdownPane, because the sanitizer forbids `input` wholesale.
+   This rule previously targeted an <input> that DOMPurify always stripped, so
+   task lists showed as bare bullets (issue #116). */
+.markdown-pane__task {
   margin-right: 6px;
+  color: var(--ui-text-muted);
+}
+
+.markdown-pane__task--done {
+  color: #4ec9b0;
 }

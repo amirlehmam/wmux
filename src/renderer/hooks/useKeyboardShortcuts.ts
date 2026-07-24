@@ -4,6 +4,7 @@ import { ShortcutBinding, ShortcutAction } from '../store/settings-slice';
 import { splitNode, removeLeaf, getAllPaneIds, findLeaf, adjustPaneRatio } from '../store/split-utils';
 import { PaneId, SplitNode } from '../../shared/types';
 import { trimTrailingWhitespace } from '../utils/copy-text';
+import { GLOBAL_IN_EDITOR, isEditableTarget } from './shortcut-target';
 import { v4 as uuid } from 'uuid';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ function isSafeToIntercept(e: KeyboardEvent): boolean {
 
   return false;
 }
+
 
 // ─── Spatial pane navigation ─────────────────────────────────────────────────
 
@@ -347,15 +349,36 @@ export function useKeyboardShortcuts(
       togglePinWorkspace,
       markWorkspaceRead,
       toggleShortcutCheatSheet: () => fire('wmux:toggle-cheatsheet'),
+      // ── issue #116 ───────────────────────────────────────────────────────
+      // View mode lives on the SurfaceRef, so this flips store state directly
+      // rather than going through a CustomEvent. A no-op unless the focused
+      // pane's *active* surface is markdown — toggling a background tab the
+      // user can't see would be invisible and confusing.
+      toggleMarkdownSource: () => {
+        if (!activeWorkspaceId || !focusedPaneId) return;
+        const st = useStore.getState();
+        const ws = st.workspaces.find((w) => w.id === activeWorkspaceId);
+        const leaf = ws && findLeaf(ws.splitTree, focusedPaneId);
+        const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+        if (!surface || surface.type !== 'markdown') return;
+        st.updateSurface(activeWorkspaceId, focusedPaneId, surface.id, {
+          markdownViewMode: surface.markdownViewMode === 'source' ? 'preview' : 'source',
+        });
+      },
     };
 
     function handleKeyDown(e: KeyboardEvent): void {
       if (!isSafeToIntercept(e)) return;
 
+      const inEditor = isEditableTarget(e.target as HTMLElement | null);
       const shortcutEntries = Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][];
 
       for (const [action, binding] of shortcutEntries) {
         if (!matchesBinding(e, binding)) continue;
+
+        // Typing in a text field wins over all but a few global actions, and we
+        // must return *without* preventDefault so the field still gets the key.
+        if (inEditor && !GLOBAL_IN_EDITOR.has(action)) return;
 
         // find and copyMode are handled at PaneWrapper level — don't block them
         if (action === 'find' || action === 'copyMode') return;

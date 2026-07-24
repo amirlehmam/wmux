@@ -350,12 +350,14 @@ export function initPipeBridge(): void {
 
   // ─── Markdown ───────────────────────────────────────────────────────────────
 
-  w.__wmux_setMarkdownContent = (surfaceId: string, markdown: string, fileName?: string) => {
+  w.__wmux_setMarkdownContent = (surfaceId: string, markdown: string, fileName?: string, filePath?: string) => {
     // Persist into the store so MarkdownPane (re)renders the content. The old
     // `wmux:markdown-update` CustomEvent had no listener, so content never
     // displayed (issue #54). `fileName`, when the content came from a file, is
-    // used as the tab label so multiple markdown tabs stay distinguishable.
-    useStore.getState().setMarkdownContent(surfaceId as SurfaceId, markdown ?? '', fileName);
+    // used as the tab label so multiple markdown tabs stay distinguishable;
+    // `filePath` makes the surface path-aware (issue #116) so the pane can show
+    // the path, copy it, reveal it, and reload from it.
+    useStore.getState().setMarkdownContent(surfaceId as SurfaceId, markdown ?? '', { fileName, filePath });
     return { ok: true };
   };
 

@@ -18,6 +18,7 @@ import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
 import { loadSettings, saveSetting } from './settings-store';
 import { getChangedFiles, getFileDiff } from './diff-provider';
+import { readMarkdownFile, isAllowedMarkdownPath, MD_DIALOG_EXTENSIONS } from './markdown-file';
 
 const ptyManager = new PtyManager();
 const notificationManager = new NotificationManager();
@@ -333,36 +334,45 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // the file applying the SAME guards as the markdown.load_file pipe handler
   // (extension whitelist + 5 MB cap) so the manual path can't slurp secrets.
   ipcMain.handle(IPC_CHANNELS.MARKDOWN_OPEN_FILE, async (event) => {
-    const ALLOWED_MD_EXT = new Set(['.md', '.markdown', '.mdx', '.txt', '.text', '.rst']);
-    const MAX_MD_BYTES = 5 * 1024 * 1024;
     const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
     const result = await dialog.showOpenDialog(win as BrowserWindow, {
       title: 'Open Markdown File',
       properties: ['openFile'],
       filters: [
-        { name: 'Markdown / Text', extensions: ['md', 'markdown', 'mdx', 'txt', 'text', 'rst'] },
+        { name: 'Markdown / Text', extensions: MD_DIALOG_EXTENSIONS },
         { name: 'All Files', extensions: ['*'] },
       ],
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { canceled: true };
     }
-    const filePath = result.filePaths[0];
-    const ext = path.extname(filePath).toLowerCase();
-    if (!ALLOWED_MD_EXT.has(ext)) {
-      return { error: `Unsupported file type: ${ext || '(none)'}` };
-    }
-    let stat: fs.Stats;
-    try { stat = fs.statSync(filePath); } catch { return { error: 'File not found' }; }
-    if (!stat.isFile() || stat.size > MAX_MD_BYTES) {
-      return { error: 'File is not a regular file or exceeds 5MB limit' };
-    }
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      return { filePath, content };
-    } catch (err: any) {
-      return { error: err?.message || 'Failed to read file' };
-    }
+    // The "All Files" filter lets the user pick anything, so the whitelist still
+    // has to be enforced after the dialog — the filter is a convenience, not a guard.
+    return readMarkdownFile(result.filePaths[0]);
+  });
+
+  // Markdown viewer (issue #116): re-read a file the pane already knows about.
+  // Backs "Reload from disk" (agents rewrite files under the pane constantly)
+  // and drag-and-drop of a file onto a markdown pane. Same guards as every
+  // other read — the renderer supplies the path, so it is treated as untrusted.
+  ipcMain.handle(IPC_CHANNELS.MARKDOWN_READ_FILE, async (_event, filePath: string) => {
+    return readMarkdownFile(filePath);
+  });
+
+  // Markdown viewer (issue #116): the two read-only shell actions on the backing
+  // file. Both are gated on the extension whitelist — without it, `openPath` on
+  // a renderer-supplied path is an arbitrary-program launcher, which is a much
+  // bigger capability than "open the doc I'm reading in Typora".
+  ipcMain.handle(IPC_CHANNELS.MARKDOWN_REVEAL, async (_event, filePath: string) => {
+    if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type' };
+    shell.showItemInFolder(filePath);
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MARKDOWN_OPEN_IN_APP, async (_event, filePath: string) => {
+    if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type' };
+    const err = await shell.openPath(filePath);
+    return err ? { error: err } : { ok: true };
   });
 
   // Folder picker (issue #64): backs the `openFolder` shortcut (Ctrl+O). Shows a

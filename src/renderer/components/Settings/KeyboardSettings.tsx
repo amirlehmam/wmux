@@ -43,6 +43,7 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   openSettings: 'Open settings',
   commandPalette: 'Command palette',
   openMarkdownPanel: 'Open markdown panel',
+  toggleMarkdownSource: 'Toggle markdown source view',
   openDiffPanel: 'Open diff panel',
   reopenClosedSurface: 'Reopen closed tab',
   findNext: 'Find next',

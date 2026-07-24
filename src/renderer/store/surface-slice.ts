@@ -76,8 +76,18 @@ export interface SurfaceSlice {
    * Set rendered markdown content on a surface, found by id across all
    * workspaces/panes (issue #54). Callers from the pipe bridge only know the
    * surfaceId, so this locates the owning pane itself.
+   *
+   * Takes an options object rather than positional args (issue #116) so the
+   * next field doesn't become a fourth parameter. A bare string is still
+   * accepted as `fileName` for compatibility with the `executeJavaScript`
+   * call the main process emits, which may be from an older build during a
+   * hot-swap.
    */
-  setMarkdownContent: (surfaceId: SurfaceId, content: string, fileName?: string) => void;
+  setMarkdownContent: (
+    surfaceId: SurfaceId,
+    content: string,
+    options?: string | { fileName?: string; filePath?: string },
+  ) => void;
 
   /** Split a pane and move a surface into the new pane (drag to edge) */
   splitAndMoveSurface: (
@@ -424,16 +434,20 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     updateSplitTree(workspaceId, updatedTree);
   },
 
-  setMarkdownContent(surfaceId, content, fileName) {
+  setMarkdownContent(surfaceId, content, options) {
     const { workspaces, updateSurface } = get();
+    const opts = typeof options === 'string' ? { fileName: options } : (options || {});
     for (const ws of workspaces) {
       for (const paneId of getAllPaneIds(ws.splitTree)) {
         const leaf = findLeaf(ws.splitTree, paneId);
         if (leaf?.surfaces.some((s) => s.id === surfaceId)) {
           const patch: Partial<SurfaceRef> = { markdownContent: content };
-          // Only overwrite the tab label when the content came from a file;
-          // content-only setters (e.g. `wmux markdown set`) leave it untouched.
-          if (fileName) patch.markdownFileName = fileName;
+          // Only overwrite the tab label and backing path when the content came
+          // from a file. Content-only setters (`wmux markdown set --content`)
+          // leave both untouched, so pushing text into a file-backed surface
+          // can't silently re-point or clear the path it saves/reloads from.
+          if (opts.fileName) patch.markdownFileName = opts.fileName;
+          if (opts.filePath) patch.markdownFilePath = opts.filePath;
           updateSurface(ws.id, paneId, surfaceId, patch);
           return;
         }

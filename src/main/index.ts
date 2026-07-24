@@ -16,6 +16,7 @@ import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig, ens
 import { ensureOpencodeContext, ensureOpencodePlugin } from './opencode-context';
 import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
 import { startOrchestrationWatcher } from './orchestration-watcher';
+import { readMarkdownFile } from './markdown-file';
 import fs from 'fs';
 import path from 'path';
 
@@ -608,31 +609,31 @@ app.whenReady().then(() => {
       case 'markdown.load_file': {
         (async () => {
           try {
-            const filePath = request.params?.filePath || request.params?.path || request.params?.file;
-            if (!filePath) { respondError(-32000, 'No file path provided'); return; }
+            const requested = request.params?.filePath || request.params?.path || request.params?.file;
+            if (!requested) { respondError(-32000, 'No file path provided'); return; }
             // Defense-in-depth: even with a valid pipe token, only render plain
             // text/markdown files and cap the size, so this can't be used to
-            // slurp secrets (e.g. id_rsa, .env) into the markdown viewer.
-            const ALLOWED_MD_EXT = new Set(['.md', '.markdown', '.mdx', '.txt', '.text', '.rst']);
-            const ext = path.extname(filePath).toLowerCase();
-            if (!ALLOWED_MD_EXT.has(ext)) {
-              respondError(-32602, `Unsupported file type for markdown.load_file: ${ext || '(none)'}`);
+            // slurp secrets (e.g. id_rsa, .env) into the markdown viewer. The
+            // guards live in ./markdown-file so every entry point shares them.
+            //
+            // Normalize to an absolute path before handing it to the renderer:
+            // a path-aware surface (issue #116) has to show and reload something
+            // unambiguous. The CLI already resolves against the caller's cwd
+            // (src/cli/wmux.ts), so this only normalizes; a raw pipe client that
+            // sends a relative path gets the same main-cwd resolution fs would
+            // have applied anyway, just made explicit and visible in the pane.
+            const filePath = path.resolve(requested);
+            const read = readMarkdownFile(filePath);
+            if ('error' in read) {
+              respondError(-32602, `markdown.load_file: ${read.error}`);
               return;
             }
-            let stat: fs.Stats;
-            try { stat = fs.statSync(filePath); } catch { respondError(-32000, 'File not found'); return; }
-            const MAX_MD_BYTES = 5 * 1024 * 1024;
-            if (!stat.isFile() || stat.size > MAX_MD_BYTES) {
-              respondError(-32602, 'File is not a regular file or exceeds 5MB limit');
-              return;
-            }
-            const content = fs.readFileSync(filePath, 'utf-8');
             const win = BrowserWindow.getAllWindows()[0];
             if (!win || win.isDestroyed()) { respondError(-32000, 'No window'); return; }
             await win.webContents.executeJavaScript(
-              `window.__wmux_setMarkdownContent?.(${JSON.stringify(request.params?.surfaceId || '')}, ${JSON.stringify(content)}, ${JSON.stringify(path.basename(filePath))})`
+              `window.__wmux_setMarkdownContent?.(${JSON.stringify(request.params?.surfaceId || '')}, ${JSON.stringify(read.content)}, ${JSON.stringify(path.basename(filePath))}, ${JSON.stringify(filePath)})`
             );
-            respond({ ok: true, length: content.length });
+            respond({ ok: true, length: read.content.length, filePath });
           } catch (err: any) { respondError(-32000, err.message); }
         })();
         break;

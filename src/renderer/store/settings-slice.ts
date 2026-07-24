@@ -170,7 +170,9 @@ export type ShortcutAction =
   | 'broadcastInput'
   | 'togglePinWorkspace'
   | 'markWorkspaceRead'
-  | 'toggleShortcutCheatSheet';
+  | 'toggleShortcutCheatSheet'
+  // ─── issue #116 ───────────────────────────────────────────────────────────
+  | 'toggleMarkdownSource';
 
 // ─── Default shortcuts ────────────────────────────────────────────────────────
 
@@ -230,6 +232,11 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   togglePinWorkspace:     { key: 'p', ctrl: true, alt: true },
   markWorkspaceRead:      { key: 'r', ctrl: true, alt: true },
   toggleShortcutCheatSheet: { key: 'F1' },
+  // ─── issue #116 ─────────────────────────────────────────────────────────────
+  // Ctrl+Shift+E was unbound. Shift-modified, so isSafeToIntercept lets it
+  // through without touching SAFE_CTRL_KEYS; a no-op unless the focused pane's
+  // active surface is markdown.
+  toggleMarkdownSource:   { key: 'e', ctrl: true, shift: true },
 };
 
 // ─── Sidebar settings ─────────────────────────────────────────────────────────
