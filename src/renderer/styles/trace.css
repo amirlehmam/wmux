@@ -82,6 +82,16 @@
     inset 0 0 0 2px color-mix(in srgb, var(--row-accent) 18%, transparent);
 }
 
+/* The two preferences are orthogonal and both are user choices, so
+   `solidFill` still fills in TRACE. Without this rule the mode-scoped
+   selector above (0,2,0) silently outranks `.workspace-row--fill` (0,1,0)
+   and the preference does nothing — the same class of bug as the
+   never-wired activeTabIndicator this release just fixed. */
+:root[data-ui-mode='trace'] .workspace-row--fill {
+  background: var(--row-accent);
+  box-shadow: none;
+}
+
 /* ─── The bus ────────────────────────────────────────────────────────────────
  * The rail becomes a copper trace. Two layers: a static substrate that is
  * always visible (the board is always there), and a travelling-dash overlay
