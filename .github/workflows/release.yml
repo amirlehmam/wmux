@@ -37,6 +37,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ── Gate ───────────────────────────────────────────────
+      # A tag push used to go straight from `npm ci` to a published release with
+      # no test or typecheck run anywhere in between. 0.35.0 shipped a renderer
+      # that threw on first paint for every user (a TDZ read in a useMemo deps
+      # array, which `tsc` reports as TS2448 in under two seconds) because
+      # nothing here ever asked. Failing the release is the point: a tag that
+      # cannot pass its own tests must not become a download.
+      - name: Test
+        run: npm test
+
       # ── Build ──────────────────────────────────────────────
       - name: Build main + preload + CLI
         run: npm run build:main

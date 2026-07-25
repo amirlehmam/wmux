@@ -12,11 +12,19 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "baseUrl": ".",
+    // No baseUrl: it is deprecated (TS5101 aborts the whole check before a
+    // single file is looked at, which is how this project came to have an
+    // unchecked renderer), and `paths` has resolved relative to the tsconfig
+    // without it for years. Mirrors vite.config.ts `resolve.alias`.
     "paths": {
-      "@renderer/*": ["src/renderer/*"],
-      "@shared/*": ["src/shared/*"]
+      "@renderer/*": ["./src/renderer/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*"]
+  "include": ["src/renderer/**/*", "src/shared/**/*"],
+  // instance.ts lives in src/shared but is node-only (fs/os/path/crypto) and is
+  // imported solely by main/ and cli/. It is typechecked by tsconfig.node.json,
+  // which has @types/node; the renderer project deliberately has no node types,
+  // so including it here yields 9 phantom errors that would drown out real ones.
+  "exclude": ["src/shared/instance.ts"]
 }

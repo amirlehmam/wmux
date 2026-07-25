@@ -227,10 +227,30 @@ export default function WorkspaceRow({
   const sessions = sessionsView.sessions;
   const workingSessions = sessionsView.working;
 
+  // Legacy workspace-keyed entry — only written by hook events with no surfaceId.
+  const legacyHook = hookActivity?.[workspace.id];
+
+  // ── Determine if Claude is actively working (recent hook or observer data) ──
+  const isClaudeActive = useMemo(() => {
+    if (workingSessions > 0) return true;
+    const now = Date.now();
+    if (legacyHook && now - legacyHook.lastSeen < ACTIVITY_TTL) return true;
+    if (wsActivity && now - wsActivity.lastUpdate < ACTIVITY_TTL) return true;
+    return false;
+  }, [workingSessions, legacyHook, wsActivity, tick]);
+
   // ── TRACE mode (issue #118) ──────────────────────────────────────────────
   // Rate is derived by comparing the monotonic tool counter against the
   // previous sample. The sample is taken inside the memo that already runs on
   // the existing 2s tick — no new timer, no rAF, no per-row interval.
+  //
+  // MUST stay below `isClaudeActive`: it reads that binding in its dependency
+  // array, and a deps array is a plain array literal evaluated at the call site
+  // — only the callback is deferred. Declared above, the read hit the temporal
+  // dead zone on *every* render including classic mode, and 0.35.0 shipped with
+  // every workspace row throwing straight into the ErrorBoundary. tsc catches
+  // this as TS2448; see tests/unit/renderer-typecheck.test.ts, which is why the
+  // renderer now has a type gate at all.
   const traceRateRef = useRef<{ toolCount: number; at: number }>({ toolCount: 0, at: 0 });
   const rowTrace = useMemo(() => {
     if (uiMode !== 'trace') return null;
@@ -265,22 +285,12 @@ export default function WorkspaceRow({
     // custom properties (rather than registered @property values inherited on
     // the row) avoids forcing a style recalc of the whole row subtree on every
     // frame of a transition.
+    //
+    // Still mutates `rowStyle` before the JSX below consumes it as `style=`.
     const s = rowStyle as Record<string, string>;
     s['--tr-lit'] = rowTrace.lit.toFixed(2);
     s['--tr-flow-dur'] = `${rowTrace.flowMs}ms`;
   }
-
-  // Legacy workspace-keyed entry — only written by hook events with no surfaceId.
-  const legacyHook = hookActivity?.[workspace.id];
-
-  // ── Determine if Claude is actively working (recent hook or observer data) ──
-  const isClaudeActive = useMemo(() => {
-    if (workingSessions > 0) return true;
-    const now = Date.now();
-    if (legacyHook && now - legacyHook.lastSeen < ACTIVITY_TTL) return true;
-    if (wsActivity && now - wsActivity.lastUpdate < ACTIVITY_TTL) return true;
-    return false;
-  }, [workingSessions, legacyHook, wsActivity, tick]);
 
   // ── Current tool label (from observer or hooks) ──
   const currentToolLabel = useMemo(() => {

@@ -1,6 +1,6 @@
 {
   "name": "wmux",
-  "version": "0.35.0",
+  "version": "0.35.1",
   "description": "Windows terminal multiplexer for AI agents",
   "license": "MIT",
   "main": "dist/main/index.js",
@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.node.json && vite build && electron-builder",
     "build:main": "tsc -p tsconfig.node.json",
     "build:renderer": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/"
