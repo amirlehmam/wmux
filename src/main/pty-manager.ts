@@ -460,13 +460,23 @@ export class PtyManager {
 
   resize(id: SurfaceId, cols: number, rows: number): void {
     const entry = this.ptys.get(id);
-    if (!entry) return;
+    // `alive`, not just presence: the exit handler clears the flag before the
+    // entry leaves the map, and node-pty throws "Cannot resize a pty that has
+    // already exited" for anything in that window. A pane reflowing while its
+    // shell exits hits it, and this runs in the main process, where an
+    // unhandled throw is a crash rather than a warning. write() has guarded
+    // this way for a while; resize() was the one PTY entry point that didn't.
+    if (!entry || !entry.alive) return;
     // Drop no-op resizes: a same-size resize still makes the shell redraw its
     // prompt (doubled-prompt cause). Only forward genuine size changes.
     if (cols === entry.cols && rows === entry.rows) return;
     entry.cols = cols;
     entry.rows = rows;
-    entry.pty.resize(cols, rows);
+    try {
+      entry.pty.resize(cols, rows);
+    } catch {
+      // Exited between the liveness check and the call — nothing to resize.
+    }
   }
 
   kill(id: SurfaceId): void {

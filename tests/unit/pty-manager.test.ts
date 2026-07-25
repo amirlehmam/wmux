@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { PtyManager, parseShellSpec, resolveSpawnCwd } from '../../src/main/pty-manager';
+import type { SurfaceId } from '../../src/shared/types';
 
 const TEST_SHELL = 'cmd.exe';
 const TEST_ENV = Object.fromEntries(
@@ -16,6 +17,27 @@ describe('PtyManager', () => {
     const m = new PtyManager();
     managers.push(m);
     return m;
+  }
+
+  /**
+   * Resolves once the pty has emitted anything, which on Windows is the signal
+   * that node-pty's socket is connected and no longer deferring calls.
+   *
+   * Resolves rather than rejects on timeout: this is a readiness barrier, not
+   * an assertion, and a slow CI runner should not turn into a hang.
+   */
+  function firstData(manager: PtyManager, id: SurfaceId, timeoutMs = 5000): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        unsub();
+        resolve();
+      }, timeoutMs);
+      const unsub = manager.onData(id, () => {
+        clearTimeout(timer);
+        unsub();
+        resolve();
+      });
+    });
   }
 
   afterEach(() => {
@@ -72,13 +94,27 @@ describe('PtyManager', () => {
     await new Promise((r) => setTimeout(r, 50));
   });
 
-  it('resize does not throw', () => {
+  it('resize does not throw', async () => {
     const manager = makeManager();
     const { id } = manager.create({
       shell: TEST_SHELL,
       cwd: process.env.USERPROFILE || 'C:\\',
       env: TEST_ENV,
     });
+    // Wait for the pty to actually connect before resizing.
+    //
+    // On Windows, node-pty DEFERS any call made before its socket is up and
+    // replays it on connect. Resizing a just-created pty therefore queued a
+    // resize that afterEach's killAll() outran: the socket connected after the
+    // pty was dead, the replayed resize threw "Cannot resize a pty that has
+    // already exited" from inside node-pty's socket callback, and because that
+    // throw is asynchronous no try/catch here or in PtyManager could ever see
+    // it. Vitest reported it as an unhandled error and failed the whole run —
+    // on CI only, since locally the connect usually won the race.
+    //
+    // Resizing a connected pty is also the thing this test claims to cover;
+    // the old form was accidentally exercising node-pty's deferral queue.
+    await firstData(manager, id);
     expect(() => manager.resize(id, 120, 40)).not.toThrow();
   });
 
