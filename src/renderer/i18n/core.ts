@@ -45,6 +45,13 @@ const en: Dict = {
   'settings.general.uiTheme.light': 'Light',
   'settings.general.appearanceHint':
     'Controls the sidebar, tab bar, and window chrome. Terminal colors are set separately.',
+  // Settings — General panel — Explorer context menu
+  'settings.general.shellSection': 'Windows Explorer',
+  'settings.general.contextMenu': 'Add "Open in wmux" to the folder context menu',
+  'settings.general.contextMenuLabel': 'Open in wmux',
+  'settings.general.contextMenuHint':
+    'Right-click a folder — or its empty space — to open it as a workspace, instead of pasting the path. On Windows 11 it appears under "Show more options" (Shift+F10); the modern top-level menu requires a signed MSIX package. Writes only to HKCU, so no admin rights are needed.',
+  'settings.general.contextMenuFailed': 'Could not update the context menu entry.',
   // Settings — General panel — Custom background (issue #89)
   'settings.general.customBgSection': 'Custom background',
   'settings.general.customBgEnable': 'Enable custom background',
@@ -137,6 +144,12 @@ const fr: Dict = {
   'settings.general.uiTheme.light': 'Clair',
   'settings.general.appearanceHint':
     "Contrôle la barre latérale, la barre d'onglets et le cadre de la fenêtre. Les couleurs du terminal se règlent séparément.",
+  'settings.general.shellSection': 'Explorateur Windows',
+  'settings.general.contextMenu': 'Ajouter « Ouvrir dans wmux » au menu contextuel des dossiers',
+  'settings.general.contextMenuLabel': 'Ouvrir dans wmux',
+  'settings.general.contextMenuHint':
+    "Clic droit sur un dossier — ou dans son espace vide — pour l'ouvrir comme workspace, au lieu de coller le chemin. Sous Windows 11, l'entrée apparaît dans « Afficher d'autres options » (Maj+F10) ; le menu moderne exige un paquet MSIX signé. N'écrit que dans HKCU, aucun droit administrateur requis.",
+  'settings.general.contextMenuFailed': "Impossible de mettre à jour l'entrée du menu contextuel.",
   'settings.general.customBgSection': 'Arrière-plan personnalisé',
   'settings.general.customBgEnable': "Activer l'arrière-plan personnalisé",
   'settings.general.customBgCss': 'Arrière-plan (CSS)',
@@ -221,6 +234,12 @@ const zh: Dict = {
   'settings.general.uiTheme.dark': '深色',
   'settings.general.uiTheme.light': '浅色',
   'settings.general.appearanceHint': '控制侧边栏、标签栏和窗口外框。终端颜色需单独设置。',
+  'settings.general.shellSection': 'Windows 资源管理器',
+  'settings.general.contextMenu': '在文件夹右键菜单中添加"在 wmux 中打开"',
+  'settings.general.contextMenuLabel': '在 wmux 中打开',
+  'settings.general.contextMenuHint':
+    '右键点击文件夹或其空白处，即可将其作为工作区打开，无需粘贴路径。在 Windows 11 上该项位于"显示更多选项"（Shift+F10）中；新版顶层菜单需要已签名的 MSIX 包。仅写入 HKCU，无需管理员权限。',
+  'settings.general.contextMenuFailed': '无法更新右键菜单项。',
   'settings.general.customBgSection': '自定义背景',
   'settings.general.customBgEnable': '启用自定义背景',
   'settings.general.customBgCss': '背景（CSS）',

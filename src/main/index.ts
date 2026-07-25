@@ -17,6 +17,7 @@ import { ensureOpencodeContext, ensureOpencodePlugin } from './opencode-context'
 import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
 import { startOrchestrationWatcher } from './orchestration-watcher';
 import { readMarkdownFile } from './markdown-file';
+import { directoryFromArgv } from './shell-context-menu';
 import fs from 'fs';
 import path from 'path';
 
@@ -260,15 +261,46 @@ if (process.env.WMUX_INSTANCE?.trim()) {
   app.setPath('userData', getAppDataDir());
 }
 const gotInstanceLock = app.requestSingleInstanceLock();
+
+/**
+ * Open a folder as a new workspace, for the Explorer context-menu verb
+ * ("Open in wmux" — see shell-context-menu.ts, which registers
+ * `"wmux.exe" "%V"`).
+ *
+ * Routed through the same `__wmux_createWorkspace` bridge the CLI's
+ * `new-workspace --cwd` uses, so Explorer, the CLI and the UI all land on one
+ * store action rather than a fourth way to make a workspace.
+ */
+async function openDirectoryAsWorkspace(dirPath: string): Promise<void> {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win || win.isDestroyed()) return;
+  try {
+    await win.webContents.executeJavaScript(
+      `window.__wmux_createWorkspace?.(${JSON.stringify({ title: path.basename(dirPath) || dirPath, cwd: dirPath })})`,
+    );
+  } catch {
+    // Renderer not ready or bridge missing — the window is still up, which is
+    // better than failing the launch outright.
+  }
+}
+
+const isDirectory = (p: string): boolean => fs.statSync(p).isDirectory();
+
 if (!gotInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  // Explorer launches `wmux.exe "C:\folder"`. With the single-instance lock held
+  // that becomes a second-instance event on the RUNNING window, carrying the new
+  // process's argv — so the folder has to be read from the event, not from our
+  // own process.argv, which still holds the original launch.
+  app.on('second-instance', (_event, argv) => {
     const win = BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) {
       if (win.isMinimized()) win.restore();
       win.focus();
     }
+    const dir = directoryFromArgv(argv, isDirectory);
+    if (dir) void openDirectoryAsWorkspace(dir);
   });
 }
 
@@ -363,6 +395,20 @@ app.whenReady().then(() => {
   const savedSession = loadSession();
   const savedWindow = savedSession?.windows?.[0];
   windowManager.createWindow(savedWindow?.bounds, savedWindow?.maximized);
+
+  // Cold launch from the Explorer verb: no instance was running, so there is no
+  // second-instance event — the folder is in our own argv. Wait for the renderer
+  // to finish loading, otherwise the __wmux_* bridge is not defined yet and the
+  // folder is silently dropped.
+  const launchDir = directoryFromArgv(process.argv, isDirectory);
+  if (launchDir) {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && !win.isDestroyed()) {
+      win.webContents.once('did-finish-load', () => {
+        void openDirectoryAsWorkspace(launchDir);
+      });
+    }
+  }
 
   // Initialize auto-updater only when packaged (avoids errors in dev)
   if (app.isPackaged) {

@@ -8,6 +8,7 @@ import { PtyManager } from './pty-manager';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
 import { listSystemFonts } from './font-detector';
+import { isContextMenuInstalled, installContextMenu, uninstallContextMenu } from './shell-context-menu';
 import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-loader';
 import { parseWindowsTerminalConfig, parseGhosttyConfig, loadProjectProfiles, importWindowsTerminalProfiles } from './config-loader';
 import { loadUserConfig, getConfigPath } from './user-config';
@@ -378,6 +379,32 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Folder picker (issue #64): backs the `openFolder` shortcut (Ctrl+O). Shows a
   // native directory dialog and returns the chosen path; the renderer opens a new
   // workspace rooted there. Previously `openFolder` was a bound-but-no-op stub.
+  // "Open in wmux" Explorer verb (HKCU shell keys — see shell-context-menu.ts).
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_CONTEXT_MENU, () => {
+    try {
+      return isContextMenuInstalled();
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_SET_CONTEXT_MENU, (_event, enabled: boolean, label?: string) => {
+    try {
+      if (enabled) {
+        // app.getPath('exe') is Electron's own binary in dev, which is correct:
+        // the verb then launches the dev build, and the user gets what they see.
+        installContextMenu(app.getPath('exe'), label || 'Open in wmux');
+      } else {
+        uninstallContextMenu();
+      }
+      // Report the state actually achieved, not the state requested — a partial
+      // registry write must not leave the toggle claiming success.
+      return { ok: true, enabled: isContextMenuInstalled() };
+    } catch (err) {
+      return { ok: false, enabled: isContextMenuInstalled(), error: (err as Error).message };
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.SYSTEM_PICK_FOLDER, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
     const result = await dialog.showOpenDialog(win as BrowserWindow, {

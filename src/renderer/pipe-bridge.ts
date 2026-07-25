@@ -3,8 +3,7 @@
  * so the main process can call them via executeJavaScript from V2 pipe handlers.
  */
 import { useStore } from './store';
-import { splitNode, removeLeaf, getAllPaneIds, findLeaf, buildGridLayout } from './store/split-utils';
-import { killSurfacePty } from './store/pty-teardown';
+import { splitNode, getAllPaneIds, findLeaf, buildGridLayout } from './store/split-utils';
 import { surfaceTerminalRegistry } from './hooks/useTerminal';
 import { PaneId, SurfaceId, WorkspaceId, SurfaceType } from '../shared/types';
 import { v4 as uuid } from 'uuid';
@@ -117,18 +116,9 @@ export function initPipeBridge(): void {
     const ws = store.workspaces.find(w => w.id === wsId);
     if (!ws) return;
 
-    // Reap the pane's shells before removing it (issue #65). `wmux close-pane`
-    // dropped the leaf without killing any PTY (mirrors PaneWrapper.handleClosePane,
-    // the UI path that always did kill its terminals).
-    const leaf = findLeaf(ws.splitTree, paneId as PaneId);
-    if (leaf) {
-      for (const surface of leaf.surfaces) killSurfacePty(surface);
-    }
-
-    const newTree = removeLeaf(ws.splitTree, paneId as PaneId);
-    if (newTree) {
-      store.updateSplitTree(wsId, newTree);
-    }
+    // Reaping + tree surgery live in the store action (issue #65 fixed the
+    // missing reap here; the last-pane case was still wrong in all three copies).
+    store.closePane(wsId, paneId as PaneId);
   };
 
   w.__wmux_layoutGrid = (params: { count: number; type?: string; anchorSurfaceId?: string; anchorPaneId?: string; workspaceId?: string }) => {

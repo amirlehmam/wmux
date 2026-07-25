@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { PaneId, SplitNode, SurfaceId, WorkspaceId, QuickLaunchProfile, ShellInfo } from '../../../shared/types';
-import { findLeaf, removeLeaf, splitNode } from '../../store/split-utils';
+import { findLeaf, splitNode } from '../../store/split-utils';
 import TerminalPane from '../Terminal/TerminalPane';
 import BrowserPane from '../Browser/BrowserPane';
 import MarkdownPane from '../Markdown/MarkdownPane';
@@ -415,19 +415,11 @@ export default function PaneWrapper({
 
   const handleClosePane = () => {
     if (!activeWorkspaceId) return;
-    // Kill all PTYs in this pane first
-    for (const surface of surfaces) {
-      if (surface.type === 'terminal') {
-        window.wmux?.pty?.kill(surface.id);
-      }
-    }
-    // Remove the pane atomically (not surface-by-surface, which corrupts state)
-    const { workspaces, updateSplitTree } = useStore.getState();
-    const ws = workspaces.find(w => w.id === activeWorkspaceId);
-    if (ws) {
-      const newTree = removeLeaf(ws.splitTree, paneId);
-      if (newTree) updateSplitTree(activeWorkspaceId, newTree);
-    }
+    // Reaping and tree surgery both live in the store action now — this button,
+    // `wmux close-pane` and closeSurface's last-tab path had each grown their own
+    // copy, and all three killed the shells before discovering they were not
+    // going to remove anything (a one-pane workspace). See surface-slice.closePane.
+    useStore.getState().closePane(activeWorkspaceId, paneId);
   };
 
   const getSourceLeaf = (sourcePaneId: PaneId) => {

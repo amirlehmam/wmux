@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { LANGUAGES, Language, useT } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
@@ -39,6 +40,41 @@ export default function GeneralSettings() {
   const setAppearancePrefs = useStore((s) => s.setAppearancePrefs);
   const t = useT();
 
+  // The Explorer verb's state lives in the registry, NOT in wmux's prefs — the
+  // user can remove the keys with regedit or another tool, and a persisted
+  // boolean would then confidently show a checkbox that matches nothing. Read
+  // the real thing on mount, and re-read whatever the write actually achieved.
+  const [contextMenu, setContextMenu] = useState(false);
+  const [contextMenuBusy, setContextMenuBusy] = useState(false);
+  const [contextMenuError, setContextMenuError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.wmux?.system?.getContextMenu?.()
+      .then((on: boolean) => { if (!cancelled) setContextMenu(!!on); })
+      .catch(() => { /* registry unreadable — leave the toggle showing off */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const applyContextMenu = async (next: boolean) => {
+    setContextMenuBusy(true);
+    setContextMenuError(false);
+    try {
+      const res = await window.wmux?.system?.setContextMenu?.(
+        next,
+        t('settings.general.contextMenuLabel'),
+      );
+      // Trust the reported state over the requested one: a half-written set of
+      // registry keys must leave the checkbox showing what is actually there.
+      setContextMenu(res ? res.enabled : next);
+      setContextMenuError(!!res && !res.ok);
+    } catch {
+      setContextMenuError(true);
+    } finally {
+      setContextMenuBusy(false);
+    }
+  };
+
   const activePreset = BG_PRESETS.find((p) => p.css === appearancePrefs.customBackground)?.name ?? '';
 
   return (
@@ -78,6 +114,23 @@ export default function GeneralSettings() {
       </div>
 
       <p className="settings-hint">{t('settings.general.appearanceHint')}</p>
+
+      <h3 className="settings-section-title">{t('settings.general.shellSection')}</h3>
+
+      <div className="settings-row">
+        <label className="settings-label">{t('settings.general.contextMenu')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={contextMenu}
+          disabled={contextMenuBusy}
+          onChange={(e) => { applyContextMenu(e.target.checked); }}
+        />
+      </div>
+
+      <p className="settings-hint">
+        {contextMenuError ? t('settings.general.contextMenuFailed') : t('settings.general.contextMenuHint')}
+      </p>
 
       <h3 className="settings-section-title">{t('settings.general.customBgSection')}</h3>
 

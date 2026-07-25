@@ -64,6 +64,7 @@ docs/             Planning docs
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
 | `session-persistence.ts` | Auto-save/restore window state |
 | `port-scanner.ts` | Active port detection for running dev servers |
+| `shell-context-menu.ts` | "Open in wmux" Explorer verb — HKCU shell keys for Directory/Directory\Background/Drive, plus `directoryFromArgv` for the launch path. Win11 places it under "Show more options"; the modern menu needs a signed MSIX, which unsigned wmux cannot ship |
 | `theme-loader.ts` | Theme loading |
 | `config-loader.ts` | WT/Ghostty config import |
 | `shell-detector.ts` | Available shells detection |
@@ -103,7 +104,8 @@ docs/             Planning docs
 
 ```
 pty:      create, write, resize, kill, has, onData, onExit
-system:   platform, getShells, openExternal, toggleDevTools
+system:   platform, getShells, openExternal, toggleDevTools, pickFolder,
+          getContextMenu, setContextMenu   # "Open in wmux" Explorer verb (HKCU)
 config:   getTheme, getThemeList, importWindowsTerminal, importGhostty
 metadata: onUpdate
 notification: fire, onFocusSurface

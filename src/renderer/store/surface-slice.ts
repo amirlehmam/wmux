@@ -31,6 +31,21 @@ export interface SurfaceSlice {
   closeSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => void;
 
   /**
+   * Close a whole pane, reaping every shell it holds.
+   *
+   * Lives in the store rather than in PaneWrapper so the UI button, `wmux
+   * close-pane` and closeSurface's last-tab path share ONE implementation —
+   * the same reasoning pty-teardown.ts records for PTY reaping. The three
+   * copies this replaces had each independently gotten the last-pane case
+   * wrong, in the same way.
+   *
+   * Closing the workspace's only pane closes the workspace: a workspace with
+   * zero panes cannot be rendered, and `removeLeaf` correctly reports that
+   * nothing is left.
+   */
+  closePane: (workspaceId: WorkspaceId, paneId: PaneId) => void;
+
+  /**
    * Open a copy of a surface in the same pane: same type, shell, color and
    * (current) directory, but a fresh instance. Returns the new SurfaceId, or
    * null if the source no longer exists.
@@ -213,13 +228,12 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     const newSurfaces = leaf.surfaces.filter((s) => s.id !== surfaceId);
 
     if (newSurfaces.length === 0) {
-      // No surfaces left — remove the pane entirely
-      const newTree = removeLeaf(ws.splitTree, paneId);
-      if (newTree) {
-        updateSplitTree(workspaceId, newTree);
-      }
-      // If newTree is null the workspace has no panes; leave it intact
-      // (workspace-level empty state is handled elsewhere)
+      // Last tab in the pane — this is a pane close, so use the pane close.
+      // It was previously inlined here and got the single-pane case wrong:
+      // removeLeaf returns null for a one-leaf tree, `if (newTree)` skipped the
+      // update, and the function returned having ALREADY reaped the shell above
+      // — leaving a dead tab that could never be closed.
+      get().closePane(workspaceId, paneId);
       return;
     }
 
@@ -231,6 +245,35 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     });
 
     updateSplitTree(workspaceId, updatedTree);
+  },
+
+  closePane(workspaceId, paneId) {
+    const { workspaces, updateSplitTree, closeWorkspace } = get();
+    const ws = workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return;
+
+    const leaf = findLeaf(ws.splitTree, paneId);
+    if (!leaf) return;
+
+    // ORDER IS THE WHOLE FIX: decide BEFORE destroying anything.
+    //
+    // All three previous copies killed the pane's PTYs first and only then asked
+    // removeLeaf what the tree should become. When the answer was null — the
+    // pane was the workspace's only one, which is what `wmux new-workspace`
+    // creates — they read it as "nothing to do" and returned, having already
+    // killed a dev server, an agent and every shell in the pane. The UI was
+    // unchanged, so nothing told the user it had happened.
+    const newTree = removeLeaf(ws.splitTree, paneId);
+
+    if (!newTree) {
+      // Nothing would be left. A workspace with zero panes cannot be rendered,
+      // so this closes the workspace — which reaps the whole subtree itself.
+      closeWorkspace(workspaceId);
+      return;
+    }
+
+    for (const surface of leaf.surfaces) killSurfacePty(surface);
+    updateSplitTree(workspaceId, newTree);
   },
 
   closeOtherSurfaces(workspaceId, paneId, keepSurfaceId) {
