@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import { QuickLaunchProfile } from '../../shared/types';
-import { Language, detectDefaultLanguage } from '../i18n/core';
+import { Language, detectDefaultLanguage, isLanguage } from '../i18n/core';
 
 // ─── Persistence helpers (issue #12 + issue #15 + issue #19) ─────────────────
 // Zustand has no persistence middleware here, so any pref that lives only in
@@ -93,7 +93,9 @@ function loadPersistedLanguage(): Language {
       }
     } catch { /* localStorage unavailable */ }
   }
-  if (candidate === 'en' || candidate === 'fr' || candidate === 'zh') return candidate;
+  // isLanguage() derives from the i18n registry: a newly shipped language is
+  // accepted here automatically instead of silently resetting on next launch.
+  if (isLanguage(candidate)) return candidate;
   return detectDefaultLanguage();
 }
 
