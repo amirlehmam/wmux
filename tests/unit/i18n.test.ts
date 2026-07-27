@@ -33,9 +33,11 @@ describe('i18n: translate (issue #56)', () => {
     expect(translate('en', missing)).toBe('nonexistent.key');
   });
 
-  it('exposes the three shipped languages', () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'zh']);
-    expect(LANGUAGES.map((l) => l.label)).toEqual(['English', 'Français', '中文']);
+  it('exposes the shipped languages', () => {
+    // Pinned on purpose: adding a language must be a deliberate edit here, so
+    // the shipped set can never grow (or shrink) unnoticed.
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'it', 'zh']);
+    expect(LANGUAGES.map((l) => l.label)).toEqual(['English', 'Français', 'Italiano', '中文']);
   });
 });
 

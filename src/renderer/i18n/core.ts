@@ -12,6 +12,7 @@
 
 import { en, type Translation, type TranslationKey } from './locales/en';
 import { fr } from './locales/fr';
+import { it } from './locales/it';
 import { zh } from './locales/zh';
 
 // Adding a language = one ./locales/xx.ts file + one row here. `Language`,
@@ -20,6 +21,7 @@ import { zh } from './locales/zh';
 const REGISTRY = [
   { code: 'en', label: 'English', dict: en as Translation },
   { code: 'fr', label: 'Français', dict: fr },
+  { code: 'it', label: 'Italiano', dict: it },
   { code: 'zh', label: '中文', dict: zh },
 ] as const;
 
