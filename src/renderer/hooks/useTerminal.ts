@@ -14,6 +14,7 @@ import { UserColorScheme } from '../store/settings-slice';
 import { openInWmuxBrowser } from '../utils/open-in-browser';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { trimTrailingWhitespace } from '../utils/copy-text';
+import { handleShiftEnter, isShiftEnter } from './terminal-keys';
 import '@xterm/xterm/css/xterm.css';
 
 declare global {
@@ -692,24 +693,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         })();
         return false; // Prevent default — we handle paste ourselves
       }
-      // Shift+Enter → newline for TUI apps (Claude Code, etc). xterm sends a
-      // plain \r for BOTH Enter and Shift+Enter, so the app can't tell them
-      // apart and treats Shift+Enter as submit. Emit ESC+CR — the same sequence
-      // Alt/Option+Enter produces and that Claude Code's /terminal-setup wires
-      // up — so Shift+Enter inserts a newline instead of submitting. Excludes
-      // Ctrl/Alt/Meta so Ctrl+Shift+Enter (zoom pane) is left untouched.
-      if (
-        event.type === 'keydown' &&
-        event.key === 'Enter' &&
-        event.shiftKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey
-      ) {
-        // Route through terminal.input() (→ onData) rather than pty.write so
-        // broadcast-input mode (issue #64) fans the newline out like any key.
-        terminal.input('\x1b\r', true);
-        return false;
+      // Shift+Enter → newline for TUI apps (Claude Code, etc). See
+      // ./terminal-keys for why this cancels the event as well as returning
+      // false (issue #119). Routed through terminal.input() (→ onData) rather
+      // than pty.write so broadcast-input mode (issue #64) fans the newline out
+      // like any other key.
+      if (isShiftEnter(event)) {
+        return handleShiftEnter(event, (data) => terminal.input(data, true));
       }
       return true;
     });
