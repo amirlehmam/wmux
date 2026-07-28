@@ -378,8 +378,8 @@ wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]
 wmux read-screen [--lines N] [--surface <id>] | trigger-flash
 
 # Browser (CDP)
-wmux browser open <url> | snapshot | click @eN | type @eN <text>
-wmux browser fill @eN <value> | get-text | screenshot | eval <js>
+wmux browser open <url> | snapshot | click eN | type eN <text>
+wmux browser fill eN <value> | get-text | screenshot | eval <js>
 wmux browser back | forward | reload
 
 # Agents

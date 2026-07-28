@@ -308,10 +308,10 @@ wmux read-screen --lines 50        # Read terminal content
 
 # Browser (CDP-powered)
 wmux browser open http://localhost:3000
-wmux browser snapshot              # Accessibility tree with @eN refs
-wmux browser click @e5             # Click element by ref
-wmux browser type @e3 "hello"      # Type into input by ref
-wmux browser fill @e3 "value"      # Set input value directly
+wmux browser snapshot              # Accessibility tree with eN refs
+wmux browser click e5             # Click element by ref
+wmux browser type e3 "hello"      # Type into input by ref
+wmux browser fill e3 "value"      # Set input value directly
 wmux browser screenshot            # Base64 PNG screenshot
 wmux browser eval "document.title" # Run JavaScript
 
@@ -359,7 +359,7 @@ ping
 // Browser control (CDP-powered)
 {"method": "browser.navigate", "params": {"url": "http://localhost:3000"}}
 {"method": "browser.snapshot", "params": {}}
-{"method": "browser.click", "params": {"ref": "@e5"}}
+{"method": "browser.click", "params": {"ref": "e5"}}
 {"method": "browser.screenshot", "params": {"fullPage": true}}
 {"method": "browser.eval", "params": {"js": "document.title"}}
 

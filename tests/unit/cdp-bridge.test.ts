@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
   webContents: { fromId: (id: number) => fakeContents.get(id) },
 }));
 
-import { buildAccessibilityTree, resolveRef, CDPBridge } from '../../src/main/cdp-bridge';
+import { buildAccessibilityTree, resolveRef, normalizeRef, CDPBridge } from '../../src/main/cdp-bridge';
 
 describe('CDP Bridge', () => {
   describe('buildAccessibilityTree', () => {
@@ -57,6 +57,47 @@ describe('CDP Bridge', () => {
 
     it('returns null for invalid ref', () => {
       expect(resolveRef(new Map(), '@e99')).toBeNull();
+    });
+
+    // Issue #121: the map is keyed with the display form `@eN`, but the CLI,
+    // the orchestrator reference and every doc example pass the bare `eN` — so
+    // click / type / fill / get_text / wait ALL failed with ref_not_found on
+    // refs a snapshot had just minted. Both spellings must resolve; the bare
+    // form stays the documented one because PowerShell eats a leading `@`.
+    it('resolves the bare ref the CLI actually sends', () => {
+      const refMap = new Map([['@e12', { nodeId: 5, backendNodeId: 10 }]]);
+      expect(resolveRef(refMap, 'e12')).toEqual({ nodeId: 5, backendNodeId: 10 });
+      expect(resolveRef(refMap, '@e12')).toEqual({ nodeId: 5, backendNodeId: 10 });
+      expect(resolveRef(refMap, '12')).toEqual({ nodeId: 5, backendNodeId: 10 });
+      expect(resolveRef(refMap, ' E12 ')).toEqual({ nodeId: 5, backendNodeId: 10 });
+    });
+
+    it('normalizes every accepted spelling onto the snapshot key', () => {
+      expect(normalizeRef('e7')).toBe('@e7');
+      expect(normalizeRef('@e7')).toBe('@e7');
+      expect(normalizeRef('7')).toBe('@e7');
+      expect(normalizeRef(7)).toBe('@e7');
+      // Leading zeros are a spelling of the same ref, not a different one.
+      expect(normalizeRef('e007')).toBe('@e7');
+    });
+
+    it('rejects things that are not refs rather than guessing', () => {
+      expect(normalizeRef('')).toBeNull();
+      expect(normalizeRef('button')).toBeNull();
+      expect(normalizeRef('e1x')).toBeNull();
+      expect(normalizeRef('@@e1')).toBeNull();
+      expect(normalizeRef(undefined)).toBeNull();
+      // A tree never mints @e0, so accepting it would only mask a caller bug.
+      expect(normalizeRef(0)).toBeNull();
+    });
+
+    it('resolves refs a real snapshot produced, in the form the CLI sends', () => {
+      const { refMap, refCount } = buildAccessibilityTree([
+        { nodeId: 1, role: { value: 'document' }, name: { value: 'Page' }, childIds: [2] },
+        { nodeId: 2, role: { value: 'button' }, name: { value: 'Submit' }, childIds: [] },
+      ]);
+      expect(refCount).toBe(2);
+      expect(resolveRef(refMap, 'e2')).toEqual({ nodeId: 2, backendNodeId: 2 });
     });
   });
 

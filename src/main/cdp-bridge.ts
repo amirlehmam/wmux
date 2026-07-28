@@ -50,8 +50,29 @@ export function buildAccessibilityTree(
   return { tree: lines.join('\n'), refCount: refCounter, refMap };
 }
 
+/**
+ * Canonical key form for the ref map: `@e<n>`, matching what the snapshot tree
+ * prints. Everything else a caller might plausibly send is folded onto it.
+ *
+ * Refs used to be looked up verbatim, so only the exact `@e12` matched — while
+ * the CLI, the orchestrator reference and every doc example pass the bare `e12`.
+ * The result was that *every* ref-consuming command (`click`, `type`, `fill`,
+ * `get_text`, `wait`) failed with `ref_not_found` immediately after a snapshot
+ * that had just minted that very ref (issue #121). And `@e12` isn't a usable
+ * workaround from PowerShell, where a leading `@` is the splatting operator and
+ * the argument is mangled before wmux sees it — which is exactly why the docs
+ * told callers to drop it. Both spellings (and a bare number) now resolve.
+ */
+export function normalizeRef(ref: unknown): string | null {
+  if (typeof ref === 'number' && Number.isInteger(ref) && ref > 0) return `@e${ref}`;
+  if (typeof ref !== 'string') return null;
+  const match = /^\s*@?e?(\d+)\s*$/i.exec(ref);
+  return match ? `@e${Number(match[1])}` : null;
+}
+
 export function resolveRef(refMap: Map<string, RefEntry>, ref: string): RefEntry | null {
-  return refMap.get(ref) ?? null;
+  const key = normalizeRef(ref);
+  return key ? refMap.get(key) ?? null : null;
 }
 
 // One attached browser webContents. Each agent/caller gets its own target so
@@ -180,10 +201,27 @@ export class CDPBridge {
     return { tree, refCount };
   }
 
+  /**
+   * Resolve a ref or fail with a message that says what went wrong. The bare
+   * `ref_not_found` sent people hunting connection lifetimes and timing (issue
+   * #121) when the real answers are "you never snapshotted this browser" or
+   * "that ref is past the end of the tree".
+   */
+  private requireRef(target: CDPTarget, ref: string): RefEntry {
+    const entry = resolveRef(target.refMap, ref);
+    if (entry) return entry;
+    if (normalizeRef(ref) === null) {
+      throw new Error(`ref_not_found: "${ref}" is not a ref — expected e12 or @e12`);
+    }
+    if (target.refMap.size === 0) {
+      throw new Error('ref_not_found: no snapshot yet for this browser — run browser.snapshot first');
+    }
+    throw new Error(`ref_not_found: ${ref} — the last snapshot of this browser has @e1..@e${target.refMap.size}`);
+  }
+
   async click(ref: string, wcId?: number): Promise<void> {
     const target = this.resolveTarget(wcId);
-    const entry = resolveRef(target.refMap, ref);
-    if (!entry) throw new Error('ref_not_found');
+    const entry = this.requireRef(target, ref);
     const { model } = await this.sendCommand(target, 'DOM.getBoxModel', { backendNodeId: entry.backendNodeId });
     const content = model.content;
     const x = (content[0] + content[2] + content[4] + content[6]) / 4;
@@ -203,8 +241,7 @@ export class CDPBridge {
 
   async fill(ref: string, value: string, wcId?: number): Promise<void> {
     const target = this.resolveTarget(wcId);
-    const entry = resolveRef(target.refMap, ref);
-    if (!entry) throw new Error('ref_not_found');
+    const entry = this.requireRef(target, ref);
     const { object } = await this.sendCommand(target, 'DOM.resolveNode', { backendNodeId: entry.backendNodeId });
     await this.sendCommand(target, 'Runtime.callFunctionOn', {
       objectId: object.objectId,
@@ -230,8 +267,7 @@ export class CDPBridge {
   async getText(ref?: string, wcId?: number): Promise<string> {
     const target = this.resolveTarget(wcId);
     if (ref) {
-      const entry = resolveRef(target.refMap, ref);
-      if (!entry) throw new Error('ref_not_found');
+      const entry = this.requireRef(target, ref);
       const { object } = await this.sendCommand(target, 'DOM.resolveNode', { backendNodeId: entry.backendNodeId });
       const result = await this.sendCommand(target, 'Runtime.callFunctionOn', {
         objectId: object.objectId, functionDeclaration: 'function() { return this.innerText || this.textContent || ""; }', returnByValue: true,

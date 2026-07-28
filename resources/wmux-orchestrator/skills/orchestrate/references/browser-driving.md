@@ -18,8 +18,10 @@ wmux browser screenshot      # capture PNG
 
 ## Sharp edges
 
-- **Refs take NO `@` prefix.** `wmux browser click e45` — passing `@e45` fails with
-  `Invalid parameters`. (Docs elsewhere may show `@eN`; the CLI wants the bare ref.)
+- **Write refs bare: `wmux browser click e45`.** Both `e45` and `@e45` resolve since 0.36.0 (before
+  that, only the `@` form did — which is why every ref command used to fail, issue #121). Keep using
+  the bare form anyway: in PowerShell a leading `@` is the splatting operator, so `@e45` is mangled
+  by the shell before wmux ever sees it.
 
 - **Refs can go stale on SPAs.** Against client-rendered apps (React/Vue with re-renders), even a
   fresh-from-snapshot ref may return `ref_not_found`. Reliable fallback: `wmux browser eval` with
