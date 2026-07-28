@@ -9,6 +9,7 @@ import { CDPProxy } from './cdp-proxy';
 import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken } from '../shared/instance';
 import { loadSession, saveSession, handleVersionChange, SessionData } from './session-persistence';
+import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
 import { WindowManager } from './window-manager';
 import { initAutoUpdater } from './updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
@@ -80,6 +81,17 @@ function spawnAgentBatch(
 }
 
 const windowManager = new WindowManager();
+
+// Closing a window should forget its saved workspaces — otherwise the merged
+// session file keeps them and they reappear as a ghost window next launch
+// (issue #118). Two cases deliberately do NOT prune: shutdown, and closing the
+// *last* window, which is how most people quit wmux and must still persist
+// everything for the next launch.
+windowManager.onWindowClosed = (id) => {
+  if (isQuitting || windowManager.getCount() === 0) return;
+  sessionWindows.forget(id);
+  saveSession({ version: 1, windows: sessionWindows.toArray() });
+};
 
 // Agent exit → renderer. Without this broadcast, sidebar agent lines would
 // pulse "running" forever: agentMeta is only written at spawn, and the old
@@ -157,6 +169,10 @@ function stripMotw(): void {
 
 // Auto-save debounce handle
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+// Set on before-quit so the final round of session:save replies is merged
+// instead of pruned — during shutdown every window is being destroyed, and
+// "forget windows that no longer exist" would erase the whole file (issue #118).
+let isQuitting = false;
 const AUTO_SAVE_INTERVAL_MS = 30_000;
 
 function scheduleAutoSave(): void {
@@ -372,17 +388,37 @@ app.whenReady().then(() => {
   ensureOpencodeContext();
   ensureOpencodePlugin();
 
-  // IPC: renderer pushes session state (auto-save response or explicit save)
+  // IPC: renderer pushes session state (auto-save response or explicit save).
+  // Every window answers the same broadcast, each with a one-entry `windows`
+  // array describing itself. Merging them through the registry is what stops
+  // the last responder from overwriting every other window's workspaces —
+  // before this, a second window silently cost you the first one's tabs and
+  // browser pages on the next 30s tick (issue #118).
   ipcMain.on('session:save', (event, data: SessionData) => {
-    // Augment with actual window bounds (renderer can't know these)
+    const state = data?.windows?.[0];
+    if (!state) return;
     const win = BrowserWindow.fromWebContents(event.sender);
-    if (win && !win.isDestroyed() && data.windows?.[0]) {
+    if (win && !win.isDestroyed()) {
       // Persist the maximized flag and the *normal* (pre-maximize) rectangle so a
       // relaunch can re-maximize on the right monitor and un-maximize sanely (issue #57).
-      data.windows[0].maximized = win.isMaximized();
-      data.windows[0].bounds = win.getNormalBounds();
+      state.maximized = win.isMaximized();
+      state.bounds = win.getNormalBounds();
     }
-    saveSession(data);
+
+    const windowId = windowManager.idForWebContents(event.sender);
+    if (windowId) {
+      sessionWindows.update(windowId, state);
+      // Forget windows the user closed — but never while quitting, when every
+      // window is being torn down and pruning would erase what we're saving.
+      if (!isQuitting) {
+        sessionWindows.retainOnly(windowManager.getAllWindows().map((w) => w.id));
+      }
+      saveSession({ version: 1, windows: sessionWindows.toArray() });
+    } else {
+      // Unattributable sender (a window created outside WindowManager). Better
+      // to persist its state alone than to drop the save entirely.
+      saveSession({ version: 1, windows: [state] });
+    }
     scheduleAutoSave();
   });
 
@@ -391,10 +427,20 @@ app.whenReady().then(() => {
   // Clear stale session data on version change (clean start for upgrades/fresh installs)
   handleVersionChange(app.getVersion());
 
-  // Attempt to restore last saved window bounds
+  // Reopen every window the last session had, not just the first (issue #118).
+  // Each gets its own slot in the registry so its renderer restores its own
+  // workspaces — `SESSION_LOAD_AUTO` used to hand windows[0] to whoever asked,
+  // which made a second window a clone of the first.
   const savedSession = loadSession();
-  const savedWindow = savedSession?.windows?.[0];
-  windowManager.createWindow(savedWindow?.bounds, savedWindow?.maximized);
+  const savedWindows = (savedSession?.windows ?? []).slice(0, MAX_RESTORED_WINDOWS);
+  if (savedWindows.length === 0) {
+    windowManager.createWindow();
+  } else {
+    for (const saved of savedWindows) {
+      const id = windowManager.createWindow(saved.bounds, saved.maximized);
+      sessionWindows.prime(id, saved);
+    }
+  }
 
   // Cold launch from the Explorer verb: no instance was running, so there is no
   // second-instance event — the folder is in our own argv. Wait for the renderer
@@ -908,6 +954,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   // Cancel pending auto-save timer
   if (autoSaveTimer !== null) {
     clearTimeout(autoSaveTimer);

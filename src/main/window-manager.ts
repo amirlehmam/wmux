@@ -23,6 +23,13 @@ interface WindowEntry {
 export class WindowManager {
   private windows = new Map<WindowId, WindowEntry>();
 
+  /**
+   * Notified after a window is gone, so the session registry can forget its
+   * slot (issue #118). Without it, a window the user deliberately closed comes
+   * back on the next launch, because the merged save still carries its state.
+   */
+  onWindowClosed: ((id: WindowId) => void) | null = null;
+
   createWindow(
     bounds?: { x: number; y: number; width: number; height: number },
     maximized?: boolean,
@@ -99,6 +106,7 @@ export class WindowManager {
 
     win.on('closed', () => {
       this.windows.delete(id);
+      this.onWindowClosed?.(id);
     });
 
     this.windows.set(id, { id, window: win });
@@ -122,6 +130,18 @@ export class WindowManager {
   getWindow(id: WindowId): BrowserWindow | undefined {
     const entry = this.windows.get(id);
     return entry && !entry.window.isDestroyed() ? entry.window : undefined;
+  }
+
+  /**
+   * Which window a renderer message came from. Session auto-save is a broadcast
+   * and every window answers it, so the reply has to be attributable to a window
+   * before it can be merged rather than overwrite everyone else's (issue #118).
+   */
+  idForWebContents(sender: Electron.WebContents): WindowId | null {
+    for (const entry of this.windows.values()) {
+      if (!entry.window.isDestroyed() && entry.window.webContents.id === sender.id) return entry.id;
+    }
+    return null;
   }
 
   getAllWindows(): Array<{ id: WindowId; window: BrowserWindow }> {

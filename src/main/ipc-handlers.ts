@@ -17,6 +17,7 @@ import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
+import { sessionWindows, toRestorePayload } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
 import { getChangedFiles, getFileDiff } from './diff-provider';
 import { readMarkdownFile, isAllowedMarkdownPath, MD_DIALOG_EXTENSIONS } from './markdown-file';
@@ -271,22 +272,22 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_NAMED, () => {
     return listNamedSessions();
   });
-  // Return the most recent auto-saved session in the flattened shape the
-  // renderer's restore code already understands. Used on app launch so the
-  // workspaces / splits / tabs persisted by the 30s rolling save are actually
-  // rehydrated (instead of the renderer falling back to a fresh "Session 1").
-  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_AUTO, () => {
-    const data = loadSession();
-    const win = data?.windows?.[0];
-    if (!win) return null;
-    const activeIndex = win.activeWorkspaceId
-      ? win.workspaces.findIndex(w => w.id === win.activeWorkspaceId)
-      : 0;
-    return {
-      workspaces: win.workspaces,
-      sidebarWidth: win.sidebarWidth,
-      activeIndex: activeIndex >= 0 ? activeIndex : 0,
-    };
+  // Return the auto-saved session in the flattened shape the renderer's restore
+  // code already understands. Used on app launch so the workspaces / splits /
+  // tabs persisted by the 30s rolling save are actually rehydrated (instead of
+  // the renderer falling back to a fresh "Session 1").
+  //
+  // Answered per window (issue #118): main primes each restored window's slot
+  // at creation, so a window gets back its own workspaces. Returning windows[0]
+  // to every caller — the old behaviour — meant a window opened during the run
+  // came up as a clone of the first window's tabs, and multi-window sessions
+  // could never restore more than one window's worth of state.
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_AUTO, (event) => {
+    const windowId = windowManager.idForWebContents(event.sender);
+    if (windowId) return toRestorePayload(sessionWindows.get(windowId));
+    // Unattributable sender: fall back to the file's first window rather than
+    // leaving a legitimately-restored window empty.
+    return toRestorePayload(loadSession()?.windows?.[0] ?? null);
   });
   // Settings persistence (issue #19) — file-backed in %APPDATA%\wmux so prefs
   // survive portable-zip updates. get-all is synchronous so the renderer's
