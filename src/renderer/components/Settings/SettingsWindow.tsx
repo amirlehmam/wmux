@@ -8,13 +8,14 @@ import BrowserSettings from './BrowserSettings';
 import KeyboardSettings from './KeyboardSettings';
 import QuickLaunchSettings from './QuickLaunchSettings';
 import HelpSettings from './HelpSettings';
-import { useT } from '../../i18n';
+import { useT, type TranslationKey } from '../../i18n';
 import '../../styles/settings.css';
 
 const TABS = ['General', 'Sidebar', 'Workspace', 'Terminal', 'Notifications', 'Browser', 'Profiles', 'Shortcuts', 'Help'] as const;
 
-// Map each tab to its i18n key (issue #56). Falls back to the English label.
-const TAB_LABEL_KEYS: Record<typeof TABS[number], string> = {
+// Map each tab to its i18n key (issue #56). Typed as TranslationKey, not
+// string: the lookup is what reaches t(), so the keys are checked here.
+const TAB_LABEL_KEYS: Record<typeof TABS[number], TranslationKey> = {
   General: 'settings.tab.general',
   Sidebar: 'settings.tab.sidebar',
   Workspace: 'settings.tab.workspace',

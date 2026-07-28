@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { translate, detectDefaultLanguage, LANGUAGES, SUPPORTED_LANGUAGES } from '../../src/renderer/i18n';
+import {
+  translate,
+  detectDefaultLanguage,
+  isLanguage,
+  DICTIONARIES,
+  LANGUAGES,
+  SUPPORTED_LANGUAGES,
+  type TranslationKey,
+} from '../../src/renderer/i18n';
 
 // The i18n layer (issue #56) backs the Settings language switcher. These cover
 // the fallback chain (active language → English → key) and locale detection so a
@@ -17,13 +25,51 @@ describe('i18n: translate (issue #56)', () => {
   });
 
   it('falls back to the provided fallback, then the key itself', () => {
-    expect(translate('en', 'nonexistent.key', 'My Fallback')).toBe('My Fallback');
-    expect(translate('en', 'nonexistent.key')).toBe('nonexistent.key');
+    // Casts on purpose: an unknown key is a compile error since the keys became
+    // typed, but the runtime chain still has to hold for keys that reach
+    // translate() dynamically (persisted state, CLI, a stale cast).
+    const missing = 'nonexistent.key' as TranslationKey;
+    expect(translate('en', missing, 'My Fallback')).toBe('My Fallback');
+    expect(translate('en', missing)).toBe('nonexistent.key');
   });
 
-  it('exposes the three shipped languages', () => {
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'zh']);
-    expect(LANGUAGES.map((l) => l.label)).toEqual(['English', 'Français', '中文']);
+  it('exposes the shipped languages', () => {
+    // Pinned on purpose: adding a language must be a deliberate edit here, so
+    // the shipped set can never grow (or shrink) unnoticed.
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'it', 'zh']);
+    expect(LANGUAGES.map((l) => l.label)).toEqual(['English', 'Français', 'Italiano', '中文']);
+  });
+});
+
+// The locale files are typed against English, so a stale key is normally a
+// compile error. This is the runtime backstop (vitest strips types, and a cast
+// or a generated file could slip one through) — and it reports coverage, which
+// the type system deliberately does not, since partial translations are legal.
+describe('i18n: locale registry', () => {
+  const enKeys = Object.keys(DICTIONARIES.en);
+
+  it.each(SUPPORTED_LANGUAGES.filter((c) => c !== 'en'))(
+    '%s carries no key English has dropped',
+    (code) => {
+      const stale = Object.keys(DICTIONARIES[code]).filter((k) => !enKeys.includes(k));
+      expect({ code, stale }).toEqual({ code, stale: [] });
+    },
+  );
+
+  it('reports translation coverage per language', () => {
+    for (const { code, label } of LANGUAGES) {
+      const done = enKeys.filter((k) => k in DICTIONARIES[code]).length;
+      // eslint-disable-next-line no-console
+      console.log(`  ${code} (${label}): ${done}/${enKeys.length} keys`);
+      expect(done).toBeGreaterThan(0);
+    }
+  });
+
+  it('isLanguage narrows only shipped codes', () => {
+    expect(SUPPORTED_LANGUAGES.every(isLanguage)).toBe(true);
+    for (const bad of ['de', 'EN', 'fr-FR', '', null, undefined, 42]) {
+      expect(isLanguage(bad)).toBe(false);
+    }
   });
 });
 
