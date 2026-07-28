@@ -150,6 +150,7 @@ export function useKeyboardShortcuts(
     nextSurface,
     prevSurface,
     closeSurface,
+    requestCloseSurface,
   } = useStore();
 
   useEffect(() => {
@@ -197,8 +198,9 @@ export function useKeyboardShortcuts(
       const leaf = findLeaf(ws.splitTree, focusedPaneId);
       const activeSurface = leaf?.surfaces[leaf.activeSurfaceIndex];
       if (activeSurface) {
-        // Close the active surface; if it's the last, closeSurface removes the pane.
-        closeSurface(activeWorkspaceId, focusedPaneId, activeSurface.id);
+        // Close the active surface; if it's the last, closeSurface removes the
+        // pane. Via requestCloseSurface so unsaved markdown edits confirm first.
+        requestCloseSurface(activeWorkspaceId, focusedPaneId, activeSurface.id);
         return;
       }
       // Fallback: no surfaces — remove the pane directly (guard: keep last pane).

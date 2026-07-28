@@ -31,6 +31,23 @@ export interface SurfaceSlice {
   closeSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => void;
 
   /**
+   * The path behind every USER close gesture for a tab (the tab ×, Ctrl+W).
+   * Closes immediately unless the surface holds unsaved markdown edits (issue
+   * #116, F3), in which case it parks the request in `pendingCloseSurface` for
+   * the confirmation dialog. Programmatic closes (`wmux close-surface`) call
+   * closeSurface directly and never see the dialog — a CLI call must not block
+   * on a modal nobody is looking at.
+   *
+   * reopenClosedSurface (Ctrl+Shift+T) does make an accidental close
+   * recoverable, but "recoverable via a shortcut you may not know" is not good
+   * enough for text the user typed.
+   */
+  requestCloseSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => void;
+  pendingCloseSurface: { workspaceId: WorkspaceId; paneId: PaneId; surfaceId: SurfaceId; label: string } | null;
+  confirmPendingCloseSurface: () => void;
+  cancelPendingCloseSurface: () => void;
+
+  /**
    * Close a whole pane, reaping every shell it holds.
    *
    * Lives in the store rather than in PaneWrapper so the UI button, `wmux
@@ -101,7 +118,7 @@ export interface SurfaceSlice {
   setMarkdownContent: (
     surfaceId: SurfaceId,
     content: string,
-    options?: string | { fileName?: string; filePath?: string },
+    options?: string | { fileName?: string; filePath?: string; mtimeMs?: number; dirty?: boolean },
   ) => void;
 
   /** Split a pane and move a surface into the new pane (drag to edge) */
@@ -112,6 +129,36 @@ export interface SurfaceSlice {
     surfaceId: SurfaceId,
     direction: 'left' | 'right' | 'up' | 'down',
   ) => void;
+}
+
+/**
+ * Build the surface patch for a markdown content update.
+ *
+ * The subtle rule is which fields a content-only push is allowed to touch. Only
+ * a load *from a file* may set the tab label and backing path — otherwise
+ * `wmux markdown set --content` against a file-backed surface would silently
+ * re-point or clear the path it saves and reloads from.
+ *
+ * Dirty state follows the same reasoning (F3, issue #116): a load from disk
+ * carries an mtime and leaves the buffer clean, while pushing text into a
+ * file-backed surface makes the buffer differ from disk — which is a user edit
+ * in every way that matters, so it is marked dirty rather than auto-written.
+ */
+export function markdownContentPatch(
+  existing: SurfaceRef,
+  content: string,
+  opts: { fileName?: string; filePath?: string; mtimeMs?: number; dirty?: boolean } = {},
+): Partial<SurfaceRef> {
+  const patch: Partial<SurfaceRef> = { markdownContent: content };
+  if (opts.fileName) patch.markdownFileName = opts.fileName;
+  if (opts.filePath) patch.markdownFilePath = opts.filePath;
+  if (opts.mtimeMs !== undefined) patch.markdownFileMtime = opts.mtimeMs;
+  if (opts.dirty !== undefined) {
+    patch.markdownDirty = opts.dirty;
+  } else {
+    patch.markdownDirty = !opts.filePath && !!existing.markdownFilePath;
+  }
+  return patch;
 }
 
 // ─── Helper: update a leaf's surfaces in the split tree ──────────────────────
@@ -151,7 +198,7 @@ function pushClosedSurface(surface: SurfaceRef): void {
 
 // ─── Slice creator ───────────────────────────────────────────────────────────
 
-export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> = (_set, get) => ({
+export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> = (set, get) => ({
   addSurface(workspaceId, paneId, type, options) {
     const surfaceId: SurfaceId = `surf-${uuid()}` as SurfaceId;
 
@@ -205,6 +252,36 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
       colorScheme: src.colorScheme,
       url: src.url,
     });
+  },
+
+  pendingCloseSurface: null,
+
+  requestCloseSurface(workspaceId, paneId, surfaceId) {
+    const { workspaces, closeSurface } = get();
+    const ws = workspaces.find((w) => w.id === workspaceId);
+    const surface = ws && findLeaf(ws.splitTree, paneId)?.surfaces.find((s) => s.id === surfaceId);
+    if (!surface?.markdownDirty) {
+      closeSurface(workspaceId, paneId, surfaceId);
+      return;
+    }
+    set({
+      pendingCloseSurface: {
+        workspaceId,
+        paneId,
+        surfaceId,
+        label: surface.markdownFileName || 'this note',
+      },
+    });
+  },
+
+  confirmPendingCloseSurface() {
+    const pending = get().pendingCloseSurface;
+    set({ pendingCloseSurface: null });
+    if (pending) get().closeSurface(pending.workspaceId, pending.paneId, pending.surfaceId);
+  },
+
+  cancelPendingCloseSurface() {
+    set({ pendingCloseSurface: null });
   },
 
   closeSurface(workspaceId, paneId, surfaceId) {
@@ -479,21 +556,14 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
   setMarkdownContent(surfaceId, content, options) {
     const { workspaces, updateSurface } = get();
-    const opts = typeof options === 'string' ? { fileName: options } : (options || {});
+    const opts = typeof options === 'string' ? { fileName: options } : (options ?? {});
     for (const ws of workspaces) {
       for (const paneId of getAllPaneIds(ws.splitTree)) {
         const leaf = findLeaf(ws.splitTree, paneId);
-        if (leaf?.surfaces.some((s) => s.id === surfaceId)) {
-          const patch: Partial<SurfaceRef> = { markdownContent: content };
-          // Only overwrite the tab label and backing path when the content came
-          // from a file. Content-only setters (`wmux markdown set --content`)
-          // leave both untouched, so pushing text into a file-backed surface
-          // can't silently re-point or clear the path it saves/reloads from.
-          if (opts.fileName) patch.markdownFileName = opts.fileName;
-          if (opts.filePath) patch.markdownFilePath = opts.filePath;
-          updateSurface(ws.id, paneId, surfaceId, patch);
-          return;
-        }
+        const existing = leaf?.surfaces.find((s) => s.id === surfaceId);
+        if (!existing) continue;
+        updateSurface(ws.id, paneId, surfaceId, markdownContentPatch(existing, content, opts));
+        return;
       }
     }
   },

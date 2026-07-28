@@ -311,7 +311,7 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 - `pane.split`, `pane.close`, `pane.focus`, `pane.zoom`, `pane.list`
 - `surface.create`, `surface.close`, `surface.focus`, `surface.rename`, `surface.list`
 - `surface.send_text`, `surface.send_key`, `surface.read_text`, `surface.trigger_flash`
-- `markdown.set_content`, `markdown.load_file`
+- `markdown.set_content`, `markdown.load_file`, `markdown.get_content`
 - `notification.list`, `notification.clear`
 - `sidebar.set_status`, `sidebar.set_progress`, `sidebar.log`, `sidebar.get_state`
 - `browser.*` (via CDP bridge)
@@ -365,6 +365,10 @@ wmux bridge [--port P] [--host H]     # on the remote: expose its pipe on TCP (d
 wmux token                            # on the remote: print its auth token
 wmux --remote host[:port] --token T <any command>   # on the client (through `ssh -L port:127.0.0.1:port`)
                                       # env equivalents: WMUX_REMOTE, WMUX_REMOTE_TOKEN
+
+# Markdown surfaces
+wmux markdown <file> | markdown set <id> --content <text> [--title T] | --file <path>
+wmux markdown get <id>                                 # read a surface's buffer back out
 
 # Surfaces (tabs within a pane)
 wmux new-surface [--type terminal|browser|markdown]

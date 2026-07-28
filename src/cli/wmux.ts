@@ -243,15 +243,24 @@ async function cmdMarkdown(args: string[]): Promise<void> {
     const surfaceId = args[2];
     const contentFlag = args.indexOf('--content');
     const fileFlag = args.indexOf('--file');
+    const titleFlag = args.indexOf('--title');
+    const title = titleFlag !== -1 ? args[titleFlag + 1] : undefined;
     if (contentFlag !== -1) {
-      print(await sendV2('markdown.set_content', { surfaceId, markdown: args.slice(contentFlag + 1).join(' ') }));
+      // Stop at --title so it isn't swallowed into the content when it comes last.
+      const end = titleFlag > contentFlag ? titleFlag : args.length;
+      print(await sendV2('markdown.set_content', {
+        surfaceId, markdown: args.slice(contentFlag + 1, end).join(' '), title,
+      }));
     } else if (fileFlag !== -1) {
       // Resolve against the terminal's cwd — the main-process cwd differs.
       const filePath = path.resolve(process.cwd(), args[fileFlag + 1] || '');
       print(await sendV2('markdown.load_file', { surfaceId, filePath }));
     } else {
-      console.error('Usage: wmux markdown set <id> --content <text> | --file <path>'); process.exit(1);
+      console.error('Usage: wmux markdown set <id> --content <text> [--title T] | --file <path>'); process.exit(1);
     }
+  } else if (sub === 'get') {
+    // Read a surface's buffer back out — mirrors `read-screen` for terminals.
+    print(await sendV2('markdown.get_content', { surfaceId: args[2] }));
   } else if (sub) {
     // One-shot: `wmux markdown <file>` — create a markdown surface and load the
     // file into it. Relative paths resolve against the caller's cwd.
@@ -261,7 +270,7 @@ async function cmdMarkdown(args: string[]): Promise<void> {
     if (!surfaceId) { console.error('Failed to create markdown surface'); process.exit(1); }
     print(await sendV2('markdown.load_file', { surfaceId, filePath }));
   } else {
-    console.error('Usage: wmux markdown <file>  |  wmux markdown set <id> --content <text> | --file <path>');
+    console.error('Usage: wmux markdown <file>  |  wmux markdown set <id> --content <text> [--title T] | --file <path>  |  wmux markdown get <id>');
     process.exit(1);
   }
 }

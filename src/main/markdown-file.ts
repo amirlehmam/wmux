@@ -14,6 +14,7 @@
 // turning into "read ~/.ssh/id_rsa into a visible pane", and the regular-file
 // check stops device/FIFO paths from hanging the read.
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -81,5 +82,102 @@ export function readMarkdownFile(filePath: string): MarkdownReadResult {
     return { filePath, content, mtimeMs: stat.mtimeMs };
   } catch (err: any) {
     return { error: err?.message || 'Failed to read file' };
+  }
+}
+
+/** Current mtime of a file, or null if it is gone / unreadable. Backs the
+ *  on-focus "changed on disk?" check, which needs no content. */
+export function statMarkdownFile(filePath: string): { mtimeMs: number } | { error: string } {
+  if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type' };
+  try {
+    const stat = fs.lstatSync(filePath);
+    if (!stat.isFile()) return { error: 'File is not a regular file' };
+    return { mtimeMs: stat.mtimeMs };
+  } catch {
+    return { error: 'File not found' };
+  }
+}
+
+// ─── Writing (F3) ────────────────────────────────────────────────────────────
+
+export type MarkdownWriteResult =
+  | { ok: true; mtimeMs: number }
+  /** The file moved under us — the buffer is stale, so nothing was written. */
+  | { conflict: true; currentMtimeMs: number }
+  | { error: string };
+
+/**
+ * Write a markdown buffer back to disk with every guard the read path has,
+ * plus two the write path needs on its own.
+ *
+ * - **Extension whitelist on write too.** Otherwise a grant could be laundered
+ *   into writing `.ps1` / `.cmd` / `.bat` — the reachable set has to be the
+ *   same going out as coming in.
+ * - **Symlink refusal**, so a save can't be redirected through a link planted
+ *   by whatever produced the markdown.
+ * - **Optimistic concurrency.** Agents rewrite files under the pane constantly;
+ *   if `expectedMtimeMs` no longer matches, refuse and report, rather than
+ *   silently overwriting the agent's work (or the user's, depending who lost).
+ * - **Atomic rename.** A half-written spec is worse than an unsaved one, and an
+ *   interrupted write is exactly what happens when the app is quitting.
+ */
+/** Everything that can refuse a write before a single byte is produced. */
+function checkWritable(
+  filePath: string,
+  content: string,
+  expectedMtimeMs?: number,
+): MarkdownWriteResult | null {
+  if (!filePath) return { error: 'No file path provided' };
+  if (typeof content !== 'string') return { error: 'No content to write' };
+  if (!isAllowedMarkdownPath(filePath)) {
+    return { error: `Unsupported file type: ${path.extname(filePath) || '(none)'}` };
+  }
+  if (Buffer.byteLength(content, 'utf-8') > MAX_MD_BYTES) {
+    return { error: 'Content exceeds the 5MB limit' };
+  }
+
+  let existing: fs.Stats;
+  try {
+    existing = fs.lstatSync(filePath);
+  } catch {
+    // Missing is fine — this is Save As, or a file deleted since it was opened.
+    return null;
+  }
+  if (existing.isSymbolicLink()) return { error: 'Refusing to write through a symlink' };
+  if (!existing.isFile()) return { error: 'File is not a regular file' };
+  if (expectedMtimeMs !== undefined && existing.mtimeMs !== expectedMtimeMs) {
+    return { conflict: true, currentMtimeMs: existing.mtimeMs };
+  }
+  return null;
+}
+
+export function writeMarkdownFile(
+  filePath: string,
+  content: string,
+  expectedMtimeMs?: number,
+): MarkdownWriteResult {
+  const refusal = checkWritable(filePath, content, expectedMtimeMs);
+  if (refusal) return refusal;
+
+  // Same directory as the target so the rename stays on one filesystem, which
+  // is what makes it atomic.
+  const tmpPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.wmux-tmp-${crypto.randomBytes(6).toString('hex')}`,
+  );
+  try {
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (err: any) {
+    try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
+    return { error: err?.message || 'Failed to write file' };
+  }
+
+  try {
+    return { ok: true, mtimeMs: fs.statSync(filePath).mtimeMs };
+  } catch {
+    // Written, but we can't read the new mtime — report success without one so
+    // the pane clears its dirty flag; the next focus check re-stats anyway.
+    return { ok: true, mtimeMs: 0 };
   }
 }

@@ -340,15 +340,39 @@ export function initPipeBridge(): void {
 
   // ─── Markdown ───────────────────────────────────────────────────────────────
 
-  w.__wmux_setMarkdownContent = (surfaceId: string, markdown: string, fileName?: string, filePath?: string) => {
+  w.__wmux_setMarkdownContent = (surfaceId: string, markdown: string, fileName?: string, filePath?: string, mtimeMs?: number) => {
     // Persist into the store so MarkdownPane (re)renders the content. The old
     // `wmux:markdown-update` CustomEvent had no listener, so content never
     // displayed (issue #54). `fileName`, when the content came from a file, is
     // used as the tab label so multiple markdown tabs stay distinguishable;
     // `filePath` makes the surface path-aware (issue #116) so the pane can show
     // the path, copy it, reveal it, and reload from it.
-    useStore.getState().setMarkdownContent(surfaceId as SurfaceId, markdown ?? '', { fileName, filePath });
+    // `mtimeMs` (F3) records what was on disk at load time so a later save can
+    // detect an agent having rewritten the file underneath the pane.
+    useStore.getState().setMarkdownContent(surfaceId as SurfaceId, markdown ?? '', { fileName, filePath, mtimeMs });
     return { ok: true };
+  };
+
+  // Read a markdown surface's buffer back out (issue #116). Mirrors
+  // __wmux_readScreen for terminals — an agent that pushed content has no other
+  // way to check what actually landed.
+  w.__wmux_getMarkdownContent = (surfaceId: string) => {
+    const state = useStore.getState();
+    for (const ws of state.workspaces) {
+      for (const paneId of getAllPaneIds(ws.splitTree)) {
+        const surface = findLeaf(ws.splitTree, paneId)?.surfaces.find((s) => s.id === surfaceId);
+        if (surface) {
+          return {
+            surfaceId,
+            content: surface.markdownContent ?? '',
+            filePath: surface.markdownFilePath ?? null,
+            fileName: surface.markdownFileName ?? null,
+            dirty: !!surface.markdownDirty,
+          };
+        }
+      }
+    }
+    return null;
   };
 
   // ─── Notifications ──────────────────────────────────────────────────────────

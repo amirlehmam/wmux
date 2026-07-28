@@ -32,8 +32,12 @@ export function getSurfaceLabel(surface: SurfaceRef, agentLabel?: string, worksp
     }
     case 'browser':
       return 'Browser';
-    case 'markdown':
-      return surface.markdownFileName || 'Markdown';
+    case 'markdown': {
+      // `•` for an unsaved buffer (issue #116, F3) — the same convention every
+      // editor uses, and the only signal on a tab the user isn't looking at.
+      const name = surface.markdownFileName || 'Markdown';
+      return surface.markdownDirty ? `• ${name}` : name;
+    }
     case 'diff':
       return 'Diff';
     default:

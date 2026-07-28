@@ -28,7 +28,7 @@ export class WindowManager {
    * slot (issue #118). Without it, a window the user deliberately closed comes
    * back on the next launch, because the merged save still carries its state.
    */
-  onWindowClosed: ((id: WindowId) => void) | null = null;
+  onWindowClosed: ((id: WindowId, webContentsId: number) => void) | null = null;
 
   createWindow(
     bounds?: { x: number; y: number; width: number; height: number },
@@ -104,9 +104,12 @@ export class WindowManager {
       win.maximize();
     }
 
+    // webContents id is captured up front: by the time 'closed' fires the
+    // BrowserWindow is destroyed and reading win.webContents throws.
+    const webContentsId = win.webContents.id;
     win.on('closed', () => {
       this.windows.delete(id);
-      this.onWindowClosed?.(id);
+      this.onWindowClosed?.(id, webContentsId);
     });
 
     this.windows.set(id, { id, window: win });

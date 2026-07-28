@@ -90,3 +90,93 @@ export function middleEllipsize(text: string, max: number): string {
 
   return `${text.slice(0, max - base.length - 1)}…${base}`;
 }
+
+// ─── Editing (F3) ────────────────────────────────────────────────────────────
+
+/** Two spaces, not a tab: the surrounding docs are markdown, where a literal
+ *  tab in a list context is ambiguous about nesting. */
+export const EDIT_INDENT = '  ';
+
+export interface EditResult {
+  content: string;
+  /** Where the caret goes afterwards — a textarea won't work it out for us. */
+  selectionStart: number;
+  selectionEnd: number;
+}
+
+/**
+ * Insert an indent at the caret, or indent every line a selection touches.
+ * Without this, Tab moves focus out of the editor and the edit is lost.
+ */
+export function insertIndent(content: string, start: number, end: number): EditResult {
+  if (start === end) {
+    return {
+      content: content.slice(0, start) + EDIT_INDENT + content.slice(start),
+      selectionStart: start + EDIT_INDENT.length,
+      selectionEnd: start + EDIT_INDENT.length,
+    };
+  }
+  // Expand the selection to whole lines so partial selections indent sanely.
+  const lineStart = content.lastIndexOf('\n', start - 1) + 1;
+  const block = content.slice(lineStart, end);
+  const indented = block.replace(/^/gm, EDIT_INDENT);
+  return {
+    content: content.slice(0, lineStart) + indented + content.slice(end),
+    selectionStart: lineStart,
+    selectionEnd: lineStart + indented.length,
+  };
+}
+
+// A list line: leading whitespace, a bullet/number/quote marker, then the item.
+// The `[ ]`/`[x]` group is optional so GFM task lists continue as task lists.
+const LIST_PREFIX = /^(\s*)(?:([-*+])|(\d+)([.)]))(\s+)(\[[ xX]\]\s+)?/;
+const QUOTE_PREFIX = /^(\s*)(>+\s?)/;
+
+/**
+ * The prefix a new line should inherit when Enter is pressed inside a list or
+ * blockquote, or null when it should not inherit anything.
+ *
+ * Returns an empty string for the "empty item" case — pressing Enter on `- `
+ * with nothing after it ends the list instead of emitting another bullet
+ * forever, which is what every editor does and what users expect.
+ */
+export function continuationPrefix(line: string): string | null {
+  const list = LIST_PREFIX.exec(line);
+  if (list) {
+    const [matched, indent, bullet, number, delimiter, space, task] = list;
+    if (line.slice(matched.length).trim() === '') return '';
+    const marker = bullet ?? `${Number(number) + 1}${delimiter}`;
+    return `${indent}${marker}${space}${task ? '[ ] ' : ''}`;
+  }
+  const quote = QUOTE_PREFIX.exec(line);
+  if (quote) {
+    if (line.slice(quote[0].length).trim() === '') return '';
+    return `${quote[1]}${quote[2]}`;
+  }
+  return null;
+}
+
+/**
+ * Enter inside the editor: continue a list/quote prefix, or end an empty item.
+ * Returns null when the default newline is correct and the caller should let
+ * the textarea handle the key itself.
+ */
+export function continueList(content: string, caret: number): EditResult | null {
+  const lineStart = content.lastIndexOf('\n', caret - 1) + 1;
+  const line = content.slice(lineStart, caret);
+  const prefix = continuationPrefix(line);
+  if (prefix === null) return null;
+
+  if (prefix === '') {
+    // Empty item: drop the marker, leaving a blank line where it was.
+    const next = content.slice(0, lineStart) + '\n' + content.slice(caret);
+    return { content: next, selectionStart: lineStart + 1, selectionEnd: lineStart + 1 };
+  }
+  const inserted = '\n' + prefix;
+  const next = content.slice(0, caret) + inserted + content.slice(caret);
+  return {
+    content: next,
+    selectionStart: caret + inserted.length,
+    selectionEnd: caret + inserted.length,
+  };
+}

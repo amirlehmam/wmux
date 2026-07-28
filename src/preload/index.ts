@@ -203,6 +203,15 @@ contextBridge.exposeInMainWorld('wmux', {
     readFile: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.MARKDOWN_READ_FILE, filePath),
     reveal: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.MARKDOWN_REVEAL, filePath),
     openInApp: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.MARKDOWN_OPEN_IN_APP, filePath),
+    // Edit & save (issue #116, F3). saveFile writes in place and is refused
+    // unless the path is in this window's grant set; saveAs shows a native
+    // dialog, which is both the write target and the consent that mints the
+    // grant. statFile is the cheap "did it change under me?" re-check.
+    statFile: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.MARKDOWN_STAT_FILE, filePath),
+    saveFile: (filePath: string, content: string, expectedMtimeMs?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.MARKDOWN_SAVE_FILE, filePath, content, expectedMtimeMs),
+    saveAs: (content: string, suggestedName?: string, defaultDir?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.MARKDOWN_SAVE_AS, content, suggestedName, defaultDir),
   },
   diff: {
     getFiles: (cwd: string) => ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_FILES, cwd),

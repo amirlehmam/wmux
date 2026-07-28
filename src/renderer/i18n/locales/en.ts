@@ -107,6 +107,21 @@ export const en = {
   'markdown.error.copy': 'Could not write to the clipboard',
   'markdown.error.read': 'Could not read the file',
   'markdown.error.action': 'The action failed',
+  'markdown.edit': 'Edit',
+  'markdown.editHint': 'Edit the source in place (Ctrl+S to save)',
+  'markdown.save': 'Save',
+  'markdown.saveHint': 'Write the buffer back to the file (Ctrl+S)',
+  'markdown.revert': 'Discard changes',
+  'markdown.conflict': 'This file changed on disk since it was loaded.',
+  'markdown.conflict.reload': 'Reload and lose my edits',
+  'markdown.conflict.overwrite': 'Overwrite',
+  'markdown.conflict.saveAs': 'Save as copy',
+  'markdown.error.save': 'Could not save the file',
+  'markdown.error.conflict': 'The file changed on disk — nothing was written',
+  'markdown.closeUnsaved': 'Close “{name}” without saving?',
+  'markdown.closeUnsavedHint': 'This note has edits that were never written to disk.',
+  'markdown.keepEditing': 'Keep editing',
+  'markdown.discardAndClose': 'Discard and close',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

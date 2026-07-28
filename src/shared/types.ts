@@ -43,6 +43,14 @@ export interface SurfaceRef {
    *  surface (issue #116). Persisted for the same reason as `markdownContent`:
    *  split-tree restructures remount the pane and would otherwise reset it. */
   markdownViewMode?: 'preview' | 'source';
+  /** mtime of the backing file as of the last successful load or save (F3).
+   *  Compared before overwriting so an agent rewriting the file under the pane
+   *  is caught instead of silently losing to whoever saves last. */
+  markdownFileMtime?: number;
+  /** Buffer differs from what is on disk (F3). Shown as a `•` on the tab and
+   *  confirmed before closing. Persisted with the content, so an unsaved edit
+   *  survives a restart — and comes back still marked unsaved. */
+  markdownDirty?: boolean;
 }
 
 /**
@@ -355,6 +363,12 @@ export const IPC_CHANNELS = {
   MARKDOWN_READ_FILE: 'markdown:read-file',
   MARKDOWN_REVEAL: 'markdown:reveal',
   MARKDOWN_OPEN_IN_APP: 'markdown:open-in-app',
+  // F3 (issue #116) — the first renderer→disk writes in this surface. Both go
+  // through the grant set in ./markdown-grants; save-as is also what mints a
+  // grant for a surface that had no backing file.
+  MARKDOWN_SAVE_FILE: 'markdown:save-file',
+  MARKDOWN_SAVE_AS: 'markdown:save-as',
+  MARKDOWN_STAT_FILE: 'markdown:stat-file',
   // Orchestration (wmux-orchestrator plugin state broadcast)
   ORCHESTRATION_UPDATE: 'orchestration:update',
   ORCHESTRATION_CLEAR: 'orchestration:clear',

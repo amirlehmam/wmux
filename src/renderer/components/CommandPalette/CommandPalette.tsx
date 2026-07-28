@@ -120,7 +120,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
               // user may not know where it lives.
               const filePath = String(res.filePath || '') || undefined;
               const fileName = (filePath || '').replace(/\\/g, '/').split('/').pop() || undefined;
-              useStore.getState().setMarkdownContent(surfaceId as SurfaceId, res.content, { fileName, filePath });
+              useStore.getState().setMarkdownContent(surfaceId as SurfaceId, res.content, { fileName, filePath, mtimeMs: res.mtimeMs });
             }
           } catch {
             // Dialog/read failures are surfaced via the returned { error }; ignore here.

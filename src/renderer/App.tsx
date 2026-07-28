@@ -13,6 +13,7 @@ import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
 import ConfirmCloseDialog from './components/ConfirmCloseDialog';
+import ConfirmCloseSurfaceDialog from './components/ConfirmCloseSurfaceDialog';
 import BrowserPane from './components/Browser/BrowserPane';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
@@ -1150,6 +1151,7 @@ export default function App() {
       {cheatSheetOpen && <ShortcutCheatSheet onClose={() => setCheatSheetOpen(false)} />}
 
       <ConfirmCloseDialog />
+      <ConfirmCloseSurfaceDialog />
 
       {broadcastInputActive && (
         <div className="broadcast-input-banner" title="Typed input is sent to every terminal pane in this workspace">

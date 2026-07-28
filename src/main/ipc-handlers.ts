@@ -20,7 +20,14 @@ import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSessi
 import { sessionWindows, toRestorePayload } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
 import { getChangedFiles, getFileDiff } from './diff-provider';
-import { readMarkdownFile, isAllowedMarkdownPath, MD_DIALOG_EXTENSIONS } from './markdown-file';
+import {
+  readMarkdownFile,
+  isAllowedMarkdownPath,
+  statMarkdownFile,
+  writeMarkdownFile,
+  MD_DIALOG_EXTENSIONS,
+} from './markdown-file';
+import { grantMarkdownPath, isMarkdownPathGranted } from './markdown-grants';
 
 const ptyManager = new PtyManager();
 const notificationManager = new NotificationManager();
@@ -350,7 +357,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     }
     // The "All Files" filter lets the user pick anything, so the whitelist still
     // has to be enforced after the dialog — the filter is a convenience, not a guard.
-    return readMarkdownFile(result.filePaths[0]);
+    const read = readMarkdownFile(result.filePaths[0]);
+    // The user chose this file in a native dialog, so editing and saving it back
+    // is what they asked for. That consent is what the grant set records (F3).
+    if (!('error' in read)) grantMarkdownPath(event.sender.id, read.filePath);
+    return read;
   });
 
   // Markdown viewer (issue #116): re-read a file the pane already knows about.
@@ -376,6 +387,48 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     const err = await shell.openPath(filePath);
     return err ? { error: err } : { ok: true };
   });
+
+  // Markdown editing (issue #116, F3). Re-stat only — backs the on-focus
+  // "changed on disk?" check, which needs the mtime and not the content.
+  ipcMain.handle(IPC_CHANNELS.MARKDOWN_STAT_FILE, async (_event, filePath: string) => {
+    return statMarkdownFile(filePath);
+  });
+
+  // Save in place. The path comes from the renderer's store, so it is only
+  // honoured if it is in this window's grant set — see ./markdown-grants for
+  // why a renderer-supplied write path is treated as attacker-controlled.
+  ipcMain.handle(
+    IPC_CHANNELS.MARKDOWN_SAVE_FILE,
+    async (event, filePath: string, content: string, expectedMtimeMs?: number) => {
+      if (!isMarkdownPathGranted(event.sender.id, filePath)) {
+        return { error: 'This file was not opened in wmux — use Save As' };
+      }
+      return writeMarkdownFile(filePath, content, expectedMtimeMs);
+    },
+  );
+
+  // Save As: the native dialog is the user's consent, so a confirmed
+  // destination both gets written and becomes a grant for later in-place saves.
+  ipcMain.handle(
+    IPC_CHANNELS.MARKDOWN_SAVE_AS,
+    async (event, content: string, suggestedName?: string, defaultDir?: string) => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const result = await dialog.showSaveDialog(win as BrowserWindow, {
+        title: 'Save Markdown File',
+        defaultPath: suggestedName
+          ? path.join(defaultDir || '', suggestedName)
+          : path.join(defaultDir || '', 'untitled.md'),
+        filters: [{ name: 'Markdown / Text', extensions: MD_DIALOG_EXTENSIONS }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      const written = writeMarkdownFile(result.filePath, content);
+      if ('ok' in written) {
+        grantMarkdownPath(event.sender.id, result.filePath);
+        return { ...written, filePath: result.filePath };
+      }
+      return written;
+    },
+  );
 
   // Folder picker (issue #64): backs the `openFolder` shortcut (Ctrl+O). Shows a
   // native directory dialog and returns the chosen path; the renderer opens a new

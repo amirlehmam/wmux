@@ -18,6 +18,7 @@ import { ensureOpencodeContext, ensureOpencodePlugin } from './opencode-context'
 import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
 import { startOrchestrationWatcher } from './orchestration-watcher';
 import { readMarkdownFile } from './markdown-file';
+import { grantMarkdownPath, clearMarkdownGrants } from './markdown-grants';
 import { directoryFromArgv } from './shell-context-menu';
 import fs from 'fs';
 import path from 'path';
@@ -87,7 +88,8 @@ const windowManager = new WindowManager();
 // (issue #118). Two cases deliberately do NOT prune: shutdown, and closing the
 // *last* window, which is how most people quit wmux and must still persist
 // everything for the next launch.
-windowManager.onWindowClosed = (id) => {
+windowManager.onWindowClosed = (id, webContentsId) => {
+  clearMarkdownGrants(webContentsId);
   if (isQuitting || windowManager.getCount() === 0) return;
   sessionWindows.forget(id);
   saveSession({ version: 1, windows: sessionWindows.toArray() });
@@ -722,8 +724,12 @@ app.whenReady().then(() => {
             }
             const win = BrowserWindow.getAllWindows()[0];
             if (!win || win.isDestroyed()) { respondError(-32000, 'No window'); return; }
+            // This method is token-gated, so the caller is an authenticated
+            // client that deliberately opened this file — the same standard as
+            // a native dialog, and enough to allow editing it back (F3).
+            grantMarkdownPath(win.webContents.id, filePath);
             await win.webContents.executeJavaScript(
-              `window.__wmux_setMarkdownContent?.(${JSON.stringify(request.params?.surfaceId || '')}, ${JSON.stringify(read.content)}, ${JSON.stringify(path.basename(filePath))}, ${JSON.stringify(filePath)})`
+              `window.__wmux_setMarkdownContent?.(${JSON.stringify(request.params?.surfaceId || '')}, ${JSON.stringify(read.content)}, ${JSON.stringify(path.basename(filePath))}, ${JSON.stringify(filePath)}, ${JSON.stringify(read.mtimeMs)})`
             );
             respond({ ok: true, length: read.content.length, filePath });
           } catch (err: any) { respondError(-32000, err.message); }

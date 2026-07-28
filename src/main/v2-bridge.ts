@@ -86,7 +86,18 @@ const SPECS: Record<string, BridgeSpec> = {
     emptyOnNoWindow: { surfaces: [] },
   },
   'markdown.set_content': {
-    js: (p) => `window.__wmux_setMarkdownContent?.(${S(p?.surfaceId || '')}, ${S(p?.markdown || '')})`,
+    // `title` is optional and only sets the tab label; without it every
+    // CLI-pushed surface was labelled "Markdown", so several agent-pushed docs
+    // in one pane were indistinguishable (issue #116). It does NOT make the
+    // surface file-backed — pushed content stays pathless by design.
+    js: (p) => `window.__wmux_setMarkdownContent?.(${S(p?.surfaceId || '')}, ${S(p?.markdown || '')}, ${S(p?.title || '')})`,
+  },
+  'markdown.get_content': {
+    // Read the buffer back out, mirroring `read-screen` for terminals: it lets
+    // an agent verify what it actually pushed, which is the only way to debug a
+    // producer that emitted an escaped newline or an unclosed fence (#116).
+    js: (p) => `window.__wmux_getMarkdownContent?.(${S(p?.surfaceId || '')})`,
+    shape: (r) => r ?? { error: 'surface not found' },
   },
   'notification.list': {
     js: () => `window.__wmux_listNotifications?.()`,
