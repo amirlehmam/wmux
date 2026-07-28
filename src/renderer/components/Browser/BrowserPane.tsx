@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import AddressBar from './AddressBar';
+import { popupBridgeSource } from './popup-bridge';
 import '../../styles/browser.css';
 
 interface BrowserPaneProps {
@@ -84,17 +85,26 @@ export default function BrowserPane({ initialUrl = 'https://github.com/amirlehma
       window.wmux.cdp.attach(wcId, surfaceId, workspaceId ?? null);
     }
   }, [surfaceId, workspaceId]);
+  // `target="_blank"` links and `window.open()` are silently dropped by a
+  // webview with no `allowpopups`, so they read as dead buttons (issue #126).
+  // Re-installed on every dom-ready because each document starts clean; the
+  // bridge itself is idempotent for SPA re-entry.
+  const installPopupBridge = useCallback(() => {
+    webviewRef.current?.executeJavaScript?.(popupBridgeSource()).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const wv = webviewRef.current;
     if (!wv) return;
-    wv.addEventListener('dom-ready', claimCdp);
+    const onDomReady = () => { claimCdp(); installPopupBridge(); };
+    wv.addEventListener('dom-ready', onDomReady);
     return () => {
-      wv.removeEventListener('dom-ready', claimCdp);
+      wv.removeEventListener('dom-ready', onDomReady);
       // Only detach if this pane still owns the connection — closing a split-tree
       // browser pane must not kill another open pane's CDP (issue #27).
       if (wcIdRef.current !== null) window.wmux?.cdp?.detach?.(wcIdRef.current);
     };
-  }, [claimCdp]);
+  }, [claimCdp, installPopupBridge]);
 
   // Listen for programmatic navigation (e.g. auto-navigate on dev server detection)
   useEffect(() => {

@@ -372,10 +372,16 @@ export const IPC_CHANNELS = {
   // Orchestration (wmux-orchestrator plugin state broadcast)
   ORCHESTRATION_UPDATE: 'orchestration:update',
   ORCHESTRATION_CLEAR: 'orchestration:clear',
-  // App update notification (GitHub releases polling — opens OS browser on click)
+  // App update notification (GitHub releases polling — badge in the titlebar)
   UPDATE_AVAILABLE: 'update:available',
   UPDATE_GET_LATEST: 'update:get-latest',
   UPDATE_OPEN_RELEASE: 'update:open-release',
+  // In-app download/install driven by the badge (issue #125). UPDATE_INSTALL
+  // starts (or confirms) the flow; UPDATE_STATE streams checking → downloading
+  // → ready back to the badge.
+  UPDATE_INSTALL: 'update:install',
+  UPDATE_GET_STATE: 'update:get-state',
+  UPDATE_STATE: 'update:state',
 } as const;
 
 // ─── Orchestration state (wmux-orchestrator plugin) ────────────────────────

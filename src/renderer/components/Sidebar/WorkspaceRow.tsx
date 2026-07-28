@@ -112,7 +112,10 @@ interface WorkspaceRowProps {
   onDragOver?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
-  isDragOver?: boolean;
+  /** Which edge of this row the dragged workspace would land on, or null when
+   *  it isn't the drop target. The marker has to name an edge: drawing it
+   *  always above the hovered row lied about every downward move (issue #124). */
+  dropEdge?: 'above' | 'below' | null;
   /** Full hook-activity map — keyed by surface id (per Claude session) or workspace id (legacy). */
   hookActivity?: Record<string, HookActivityEntry>;
   claudeActivity?: Record<string, any>;
@@ -131,7 +134,7 @@ export default function WorkspaceRow({
   onDragOver,
   onDrop,
   onDragEnd,
-  isDragOver = false,
+  dropEdge = null,
   hookActivity,
   claudeActivity,
   onFocusAgentPane,
@@ -399,7 +402,7 @@ export default function WorkspaceRow({
         // `solidFill` restores the pre-0.35 opaque block for anyone who wants it.
         isActive && activeTabIndicator === 'solidFill' ? 'workspace-row--fill' : '',
         workspace.customColor ? 'workspace-row--custom' : '',
-        isDragOver ? 'workspace-row--drag-over' : '',
+        dropEdge ? `workspace-row--drop-${dropEdge}` : '',
       ].filter(Boolean).join(' ')}
       style={rowStyle}
       // TRACE drives everything from attributes so the CSS owns the rendering

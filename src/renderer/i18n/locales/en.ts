@@ -60,9 +60,17 @@ export const en = {
   'titlebar.help': 'Help / Tutorial',
   'titlebar.devtools': 'Toggle Developer Tools',
   'titlebar.settings': 'Settings (Ctrl+,)',
-  // Titlebar — update badge (issue #88)
+  // Titlebar — update badge (issue #88; in-app install, issue #125)
   'titlebar.updateAvailable': 'Update available',
   'titlebar.updateDownload': 'Click to download from GitHub',
+  'titlebar.updateInstall': 'Click to download and install',
+  'titlebar.updateChecking': 'Checking…',
+  'titlebar.updateDownloading': 'Downloading update',
+  'titlebar.updateReady': 'Update ready',
+  'titlebar.updateRestart': 'Restart',
+  'titlebar.updateRestartHint': 'Click to restart into the new version',
+  'titlebar.updateFailed': 'Update failed',
+  'titlebar.updateRetry': 'Click to try again',
   // Settings — Help / About panel
   'settings.tab.help': 'Help',
   'settings.help.about': 'About wmux',

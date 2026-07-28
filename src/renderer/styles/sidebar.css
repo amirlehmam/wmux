@@ -454,8 +454,16 @@
   opacity: 0.5;
 }
 
-.workspace-row--drag-over {
-  box-shadow: 0 -2px 0 0 var(--ui-accent);
+/* The marker names the edge the row will land on. It used to be hardcoded to
+   the top, which described upward moves correctly and downward moves not at all
+   (issue #124). Inset so the marker stays inside the list — an outset bottom
+   rule on the last row would be clipped. */
+.workspace-row--drop-above {
+  box-shadow: inset 0 2px 0 0 var(--ui-accent);
+}
+
+.workspace-row--drop-below {
+  box-shadow: inset 0 -2px 0 0 var(--ui-accent);
 }
 
 /* ─── Context menu (legacy class names used by WorkspaceContextMenu) ── */

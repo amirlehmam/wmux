@@ -152,6 +152,17 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.on(IPC_CHANNELS.UPDATE_AVAILABLE, handler);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_AVAILABLE, handler);
     },
+    // Issue #125 — download and install without leaving the app. Resolves
+    // { handled: false } when this build can't self-update, which is the
+    // renderer's cue to fall back to openRelease().
+    install: (): Promise<{ handled: boolean; reason?: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL),
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_STATE),
+    onState: (callback: (state: { phase: string; version: string | null; percent: number; message?: string }) => void) => {
+      const handler = (_event: any, state: any) => callback(state);
+      ipcRenderer.on(IPC_CHANNELS.UPDATE_STATE, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_STATE, handler);
+    },
   },
   hook: {
     onEvent: (callback: (event: any) => void) => {

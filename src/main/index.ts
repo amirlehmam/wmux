@@ -11,7 +11,7 @@ import { getPipePath, getAppDataDir, ensurePipeToken } from '../shared/instance'
 import { loadSession, saveSession, handleVersionChange, SessionData } from './session-persistence';
 import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
 import { WindowManager } from './window-manager';
-import { initAutoUpdater } from './updater';
+import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
 import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig, ensureOrchestratorPlugin } from './claude-context';
 import { ensureOpencodeContext, ensureOpencodePlugin } from './opencode-context';
@@ -467,6 +467,10 @@ app.whenReady().then(() => {
   // Late-mounted windows query the cached latest update info so the badge
   // appears even if the GitHub poll fired before the window's renderer attached.
   ipcMain.handle(IPC_CHANNELS.UPDATE_GET_LATEST, () => getLatestUpdate());
+  // Badge click — download + install in place; the renderer falls back to the
+  // release page when this says it can't (issue #125).
+  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, () => requestUpdateNow());
+  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_STATE, () => getUpdateState());
   ipcMain.on(IPC_CHANNELS.UPDATE_OPEN_RELEASE, (_event, url: string) => {
     // Whitelist GitHub release URLs so a hostile renderer can't pivot this
     // channel into an arbitrary openExternal sink.
