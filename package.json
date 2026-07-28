@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "concurrently \"vite --port 5199\" \"wait-on http://localhost:5199 && electron .\"",
     "build": "tsc -p tsconfig.node.json && vite build && electron-builder",
+    "build:icons": "electron scripts/build-icons.mjs",
     "build:main": "tsc -p tsconfig.node.json",
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",

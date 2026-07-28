@@ -1,4 +1,86 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="48" fill="#0091FF"/>
-  <text x="128" y="168" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="120" fill="white">w</text>
+<!--
+  wmux app icon — full detail (issue #122).
+
+  Concept from @myersdb's proposal in the issue, rebuilt as vector so it stays
+  crisp at every size: a split terminal window, a `>_` prompt in each pane, and
+  the W sitting on the divider intersection as the thing that joins them. The
+  gradient runs green -> blue -> violet along the frame, which is also wmux's
+  accent range.
+
+  Two rules the old icon broke, and the reason it read as mush on the taskbar:
+  the art now FILLS the canvas (it used to sit in the middle ~70% with
+  transparent margins, so the glyph was ~11px of a 16px icon), and it carries
+  its own dark plate so it stays legible on a light taskbar, a dark one, and the
+  Windows 11 Start list alike.
+
+  Small sizes use icon-small.svg instead: below ~32px the prompts and the
+  divider seams collapse into noise, so that variant drops them. See
+  scripts/build-icons.mjs for which SVG feeds which ICO entry.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- userSpaceOnUse, not the objectBoundingBox default: an axis-aligned
+         <line> has a zero-extent bounding box, so a bbox gradient degenerates
+         and the divider strokes paint nothing at all. User space also gives one
+         continuous ramp across the whole icon instead of restarting per shape. -->
+    <linearGradient id="frame" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#22E88C"/>
+      <stop offset="38%" stop-color="#19C2F5"/>
+      <stop offset="70%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="plate" gradientUnits="userSpaceOnUse" x1="100" y1="0" x2="920" y2="1024">
+      <stop offset="0%" stop-color="#12161C"/>
+      <stop offset="100%" stop-color="#0A0D12"/>
+    </linearGradient>
+    <linearGradient id="hub" gradientUnits="userSpaceOnUse" x1="380" y1="380" x2="644" y2="644">
+      <stop offset="0%" stop-color="#19C2F5"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Plate: fills the canvas so the icon has real presence at 16px. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#plate)"/>
+
+  <!-- The window frame. Inset by half the stroke so the stroke lands inside. -->
+  <rect x="86" y="86" width="852" height="852" rx="168"
+        fill="none" stroke="url(#frame)" stroke-width="44"/>
+
+  <!-- Pane dividers, stopping short of the hub so the W is not struck through. -->
+  <g stroke="url(#frame)" stroke-width="34" stroke-linecap="round">
+    <line x1="512" y1="108" x2="512" y2="404"/>
+    <line x1="512" y1="620" x2="512" y2="916"/>
+    <line x1="108" y1="512" x2="404" y2="512"/>
+    <line x1="620" y1="512" x2="916" y2="512"/>
+  </g>
+
+  <!-- Prompts, one per pane, tinted along the same gradient range so each pane
+       reads as a distinct session. -->
+  <g fill="none" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#22E88C">
+      <polyline points="196,236 258,286 196,336"/>
+      <line x1="200" y1="392" x2="308" y2="392"/>
+    </g>
+    <g stroke="#19C2F5">
+      <polyline points="628,236 690,286 628,336"/>
+      <line x1="632" y1="392" x2="740" y2="392"/>
+    </g>
+    <g stroke="#3B82F6">
+      <polyline points="196,668 258,718 196,768"/>
+      <line x1="200" y1="824" x2="308" y2="824"/>
+    </g>
+    <g stroke="#A855F7">
+      <polyline points="628,668 690,718 628,768"/>
+      <line x1="632" y1="824" x2="740" y2="824"/>
+    </g>
+  </g>
+
+  <!-- The hub: the W joining all four panes. The plate-coloured ring under it
+       is what lets the divider lines run right up to the disc without touching
+       the letter. -->
+  <circle cx="512" cy="512" r="138" fill="url(#plate)"/>
+  <circle cx="512" cy="512" r="118" fill="url(#hub)"/>
+  <path d="M 434 456 L 470 566 L 512 486 L 554 566 L 590 456"
+        fill="none" stroke="#06090D" stroke-width="42"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

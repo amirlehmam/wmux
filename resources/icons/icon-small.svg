@@ -1,0 +1,52 @@
+<!--
+  wmux app icon — small-size variant (issue #122), used for the 16/20/24/32px
+  ICO entries and the tray.
+
+  Same silhouette as icon.svg, with everything that cannot survive downsampling
+  removed: no `>_` prompts (a 30-unit stroke on a 1024 canvas is a third of a
+  pixel at 16px), no gap between the dividers and the hub, and a heavier frame
+  so the rounded square still reads as a window rather than a grey blob.
+
+  What is kept is what identifies wmux at a glance: the split-pane cross, the
+  gradient, and the W on the intersection.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- userSpaceOnUse, not the objectBoundingBox default: an axis-aligned
+         <line> has a zero-extent bounding box, so a bbox gradient degenerates
+         and the divider strokes paint nothing at all. User space also gives one
+         continuous ramp across the whole icon instead of restarting per shape. -->
+    <linearGradient id="frameS" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#22E88C"/>
+      <stop offset="38%" stop-color="#19C2F5"/>
+      <stop offset="70%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="plateS" gradientUnits="userSpaceOnUse" x1="100" y1="0" x2="920" y2="1024">
+      <stop offset="0%" stop-color="#12161C"/>
+      <stop offset="100%" stop-color="#0A0D12"/>
+    </linearGradient>
+    <linearGradient id="hubS" gradientUnits="userSpaceOnUse" x1="380" y1="380" x2="644" y2="644">
+      <stop offset="0%" stop-color="#19C2F5"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="216" fill="url(#plateS)"/>
+
+  <rect x="76" y="76" width="872" height="872" rx="164"
+        fill="none" stroke="url(#frameS)" stroke-width="72"/>
+
+  <g stroke="url(#frameS)" stroke-width="62" stroke-linecap="butt">
+    <line x1="512" y1="92" x2="512" y2="932"/>
+    <line x1="92" y1="512" x2="932" y2="512"/>
+  </g>
+
+  <circle cx="512" cy="512" r="246" fill="url(#plateS)"/>
+  <circle cx="512" cy="512" r="206" fill="url(#hubS)"/>
+  <!-- Wider and thinner than it looks like it should be: at 32px a heavier
+       stroke closes the two notches and the letter becomes a filled lump. -->
+  <path d="M 364 412 L 434 636 L 512 496 L 590 636 L 660 412"
+        fill="none" stroke="#06090D" stroke-width="58"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

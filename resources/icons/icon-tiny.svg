@@ -1,0 +1,36 @@
+<!--
+  wmux app icon — tiny variant (issue #122), used for the 16/20/24px ICO
+  entries: the taskbar, the Alt-Tab strip, Explorer's small-icon view.
+
+  At 16 device pixels there is room for a plate, a border and ONE mark. The
+  four-pane cross plus a W-on-a-disc — which reads well from 32px up — turns
+  into a single grey lump here, because the disc, the W inside it and the
+  divider seams all land within two or three pixels of each other.
+
+  So this variant keeps only what survives: the gradient-bordered rounded
+  square, and a W large enough to actually be a W. The letter is drawn in the
+  gradient rather than on a disc, which buys the stroke roughly double the
+  contrast against the dark plate.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="frameT" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#2BF098"/>
+      <stop offset="40%" stop-color="#22CCFF"/>
+      <stop offset="72%" stop-color="#4A8CFF"/>
+      <stop offset="100%" stop-color="#B266FF"/>
+    </linearGradient>
+    <linearGradient id="plateT" gradientUnits="userSpaceOnUse" x1="100" y1="0" x2="920" y2="1024">
+      <stop offset="0%" stop-color="#12161C"/>
+      <stop offset="100%" stop-color="#0A0D12"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="208" fill="url(#plateT)"/>
+  <rect x="52" y="52" width="920" height="920" rx="172"
+        fill="none" stroke="url(#frameT)" stroke-width="104"/>
+
+  <path d="M 268 330 L 400 700 L 512 470 L 624 700 L 756 330"
+        fill="none" stroke="url(#frameT)" stroke-width="118"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
