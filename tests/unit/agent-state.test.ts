@@ -145,12 +145,31 @@ describe('release', () => {
     expect(sendMock).toHaveBeenCalledWith('agent:state', expect.objectContaining({ state: 'unknown' }));
   });
 
-  it('clearAgentState (PTY exit) removes the record silently', () => {
+  it('clearAgentState (PTY exit) announces unknown, not just deletes', () => {
+    // The renderer keeps its own copy of the last broadcast, so a silent delete
+    // would leave the sidebar rendering a dead pane as working forever — the
+    // exact ghost this module exists to prevent. A shell can exit while its tab
+    // stays open, so the surface is still on screen to render.
     reportAgent(surf, { runDelta: 1 });
     sendMock.mockClear();
     clearAgentState(surf);
     expect(getAgentState(surf)).toBeUndefined();
+    expect(sendMock).toHaveBeenCalledWith('agent:state', expect.objectContaining({
+      surfaceId: surf, state: 'unknown',
+    }));
+  });
+
+  it('clearing an untracked surface broadcasts nothing', () => {
+    clearAgentState(surf);
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('a blocked pane whose PTY dies stops claiming it needs you', () => {
+    reportAgent(surf, { awaitingHuman: true, reason: 'permission: Bash' });
+    sendMock.mockClear();
+    clearAgentState(surf);
+    const [, payload] = sendMock.mock.calls.at(-1)!;
+    expect(payload).toMatchObject({ state: 'unknown', blockedReason: null });
   });
 });
 
