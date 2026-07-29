@@ -15,6 +15,7 @@ import { openInWmuxBrowser } from '../utils/open-in-browser';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
+import { isConEmuSubcommand } from './osc9';
 import '@xterm/xterm/css/xterm.css';
 
 declare global {
@@ -566,11 +567,18 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Register OSC notification handlers
     // OSC 9: basic notification (iTerm2 style)
     terminal.parser.registerOscHandler(9, (data) => {
-      // ConEmu/Windows Terminal overload OSC 9 with numeric subcommands:
-      // "9;<cwd>" (cwd report — our own cmd integration and the standard WT
-      // PowerShell prompt snippet emit this on EVERY prompt redraw) and
-      // "4;<state>;<n>" (progress). Only bare text is an iTerm2 notification.
-      if (/^\d+;/.test(data)) return true;
+      // ConEmu/Windows Terminal overload OSC 9 with numeric subcommands —
+      // "9;<cwd>" (our own cmd integration and the standard WT PowerShell
+      // prompt snippet emit this on EVERY prompt redraw) and "4;<state>;<n>"
+      // (progress). Only bare text is an iTerm2 notification (#127).
+      //
+      // Return FALSE, not true: xterm runs OSC handlers newest-first and stops
+      // at the first one returning true. ProgressAddon also registers on OSC 9
+      // but is loaded earlier (above), so this handler always sees the sequence
+      // first — swallowing it with `true` starved the addon and the OSC 9;4
+      // progress bar never fired at all (dead since it shipped in 0.23.0).
+      // Declining passes the sequence down the chain to the addon.
+      if (isConEmuSubcommand(data)) return false;
       window.wmux.notification.fire({
         surfaceId: ptyIdRef.current || '',
         text: data,
