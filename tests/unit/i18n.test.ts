@@ -16,6 +16,7 @@ import {
 describe('i18n: translate (issue #56)', () => {
   it('returns the translation for the active language', () => {
     expect(translate('fr', 'settings.title')).toBe('Paramètres');
+    expect(translate('es', 'settings.title')).toBe('Ajustes');
     expect(translate('zh', 'settings.title')).toBe('设置');
   });
 
@@ -36,8 +37,14 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'it', 'zh']);
-    expect(LANGUAGES.map((l) => l.label)).toEqual(['English', 'Français', 'Italiano', '中文']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'es', 'fr', 'it', 'zh']);
+    expect(LANGUAGES.map((l) => l.label)).toEqual([
+      'English',
+      'Español',
+      'Français',
+      'Italiano',
+      '中文',
+    ]);
   });
 });
 
@@ -105,6 +112,8 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
   it('maps a supported OS display language to its base tag', () => {
     stubPreferred(['fr-CA']);
     expect(detectDefaultLanguage()).toBe('fr');
+    stubPreferred(['es-ES']);
+    expect(detectDefaultLanguage()).toBe('es');
     stubPreferred(['zh-Hans-CN']);
     expect(detectDefaultLanguage()).toBe('zh');
   });
