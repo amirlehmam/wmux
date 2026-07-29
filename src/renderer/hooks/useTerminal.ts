@@ -566,6 +566,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Register OSC notification handlers
     // OSC 9: basic notification (iTerm2 style)
     terminal.parser.registerOscHandler(9, (data) => {
+      // ConEmu/Windows Terminal overload OSC 9 with numeric subcommands:
+      // "9;<cwd>" (cwd report — our own cmd integration and the standard WT
+      // PowerShell prompt snippet emit this on EVERY prompt redraw) and
+      // "4;<state>;<n>" (progress). Only bare text is an iTerm2 notification.
+      if (/^\d+;/.test(data)) return true;
       window.wmux.notification.fire({
         surfaceId: ptyIdRef.current || '',
         text: data,
