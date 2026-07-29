@@ -11,6 +11,7 @@
 // partial translation never renders blank.
 
 import { en, type Translation, type TranslationKey } from './locales/en';
+import { es } from './locales/es';
 import { fr } from './locales/fr';
 import { it } from './locales/it';
 import { zh } from './locales/zh';
@@ -20,6 +21,7 @@ import { zh } from './locales/zh';
 // derive from this table, so there is no second list to keep in sync.
 const REGISTRY = [
   { code: 'en', label: 'English', dict: en as Translation },
+  { code: 'es', label: 'Español', dict: es },
   { code: 'fr', label: 'Français', dict: fr },
   { code: 'it', label: 'Italiano', dict: it },
   { code: 'zh', label: '中文', dict: zh },
