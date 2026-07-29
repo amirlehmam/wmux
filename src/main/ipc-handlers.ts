@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId } from '../shared/types';
-import { observePtyData } from './claude-observer';
+import { observePtyData, clearActivity } from './claude-observer';
+import { clearAgentState } from './agent-state';
 import { PtyManager } from './pty-manager';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
@@ -73,6 +74,12 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         if (window && !window.isDestroyed()) {
           window.webContents.send(IPC_CHANNELS.PTY_EXIT, id, code);
         }
+        // The process that owned this surface is gone, so any state it declared
+        // is now a lie. Drop it rather than leave a `working`/`blocked` pane
+        // pointing at a dead PID (issue #128); the observer's scraped activity
+        // goes with it, since it describes the same dead process.
+        clearAgentState(id);
+        clearActivity(id);
         // Clean up listeners when PTY exits
         unsubData();
         unsubExit();

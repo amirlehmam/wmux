@@ -344,6 +344,8 @@ export const IPC_CHANNELS = {
   HOOK_EVENT: 'hook:event',
   // Claude Code activity (parsed from PTY output → renderer)
   CLAUDE_ACTIVITY: 'claude:activity',
+  // Declared agent run state (pane.report_agent → main → renderer, issue #128)
+  AGENT_STATE: 'agent:state',
   // Named sessions
   SESSION_SAVE_NAMED: 'session:save-named',
   SESSION_LOAD_NAMED: 'session:load-named',

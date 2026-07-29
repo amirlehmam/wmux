@@ -62,6 +62,9 @@ docs/             Planning docs
 | `ipc-handlers.ts` | All IPC channel handlers |
 | `claude-context.ts` | Auto-injects wmux instructions into `~/.claude/CLAUDE.md`, configures hooks, installs wmux-orchestrator plugin |
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
+| `agent-state.ts` | Declared agent run state — blocked/working/idle, run refcount, `seq` dedupe, metadata TTL (issue #128) |
+| `agent-state-rpc.ts` | `pane.report_agent` & friends, routed off the main V2 switch |
+| `agent-hook-bridge.ts` | Claude Code hooks → declared state, so it works with no plugin to install |
 | `session-persistence.ts` | Auto-save/restore window state |
 | `port-scanner.ts` | Active port detection for running dev servers |
 | `shell-context-menu.ts` | "Open in wmux" Explorer verb — HKCU shell keys for Directory/Directory\Background/Drive, plus `directoryFromArgv` for the launch path. Win11 places it under "Show more options"; the modern menu needs a signed MSIX, which unsigned wmux cannot ship |
@@ -114,6 +117,7 @@ agent:    list, status, onUpdate
 clipboard: pasteImage
 hook:     onEvent
 claudeActivity: onUpdate
+agentState: onUpdate   # declared blocked/working/idle (issue #128)
 session:  save, load, list, delete
 cdp:      attach, detach
 window:   create, close, focus, list, minimize, maximize, isMaximized
@@ -316,6 +320,7 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 - `sidebar.set_status`, `sidebar.set_progress`, `sidebar.log`, `sidebar.get_state`
 - `browser.*` (via CDP bridge)
 - `agent.spawn`, `agent.spawn_batch`, `agent.status`, `agent.list`, `agent.kill`
+- `pane.report_agent`, `pane.report_agent_session`, `pane.report_metadata`, `pane.release_agent`, `pane.agent_state`
 - `hook.event`, `diff.refresh`
 
 ---
@@ -386,6 +391,16 @@ wmux browser open <url> | snapshot | click eN | type eN <text>
 wmux browser fill eN <value> | get-text | screenshot | eval <js>
 wmux browser back | forward | reload
 
+# Declared agent state (issue #128) — blocked / working / idle, no screen scraping.
+# Surface defaults to $WMUX_SURFACE_ID, so an agent inside a pane needs no id.
+wmux report-agent --blocked "permission: Bash"   # parked on a human
+wmux report-agent --unblocked                    # the human answered
+wmux report-agent --run-start | --run-end        # refcount, so nested subagents nest
+wmux report-agent --run-depth N [--seq N]        # absolute depth; --seq drops replays
+wmux report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms]
+wmux report-session <id> | release-agent
+wmux agent-state [--surface <id>]                # no --surface → all panes + blocked list
+
 # Agents
 wmux agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-tab]
 wmux agent spawn-batch --json '[...]' [--strategy distribute|stack|split]
@@ -415,7 +430,7 @@ Notify:  notification:fire/list/clear/jump
 Agent:   agent:spawn/spawn-batch/status/list/kill/update
 CDP:     cdp:attach/detach
 Session: session:save-named/load-named/list-named/delete-named
-Meta:    metadata:update, hook:event, claude:activity
+Meta:    metadata:update, hook:event, claude:activity, agent:state
 ```
 
 ---

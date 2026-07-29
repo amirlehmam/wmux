@@ -23,7 +23,7 @@ describe('claudeSessionsForWorkspace', () => {
   it('returns no sessions when neither hooks nor observer saw Claude', () => {
     const tree = leaf('pane-1', [{ id: 'surf-a' }]);
     const out = claudeSessionsForWorkspace(tree, {}, {}, NOW);
-    expect(out).toEqual({ sessions: [], working: 0 });
+    expect(out).toEqual({ sessions: [], working: 0, blocked: 0 });
   });
 
   it('a fresh hook event makes the surface a working session with its tool', () => {
@@ -97,7 +97,7 @@ describe('claudeSessionsForWorkspace', () => {
       'surf-foreign': hook('Bash', NOW),
       'ws-1234': hook('Bash', NOW),
     }, NOW);
-    expect(out).toEqual({ sessions: [], working: 0 });
+    expect(out).toEqual({ sessions: [], working: 0, blocked: 0 });
   });
 
   it('prefers the user-set surface title over the cwd basename (rename bug)', () => {
@@ -115,5 +115,72 @@ describe('claudeSessionsForWorkspace', () => {
       NOW,
     );
     expect(out.sessions[0]).toMatchObject({ label: 'Claude', skill: 'debugging' });
+  });
+});
+
+// ─── Declared agent state (issue #128) ───────────────────────────────────────
+// The signal the freshness heuristic structurally cannot produce: an agent
+// parked on a human emits nothing while it waits, so inference alone decays it
+// to idle — hiding the one pane that needs the user.
+describe('declared agent state precedence', () => {
+  const declared = (state: string, blockedReason: string | null = null) => ({ state, blockedReason } as any);
+
+  it('a blocked session stays blocked long after every signal went quiet', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(
+      tree, {}, { 'surf-a': hook('Bash', NOW - 60_000) }, NOW,
+      { 'surf-a': declared('blocked', 'permission: Bash') },
+    );
+    expect(out.blocked).toBe(1);
+    expect(out.sessions[0]).toMatchObject({ blocked: true, blockedReason: 'permission: Bash' });
+  });
+
+  it('without a declared state the same stale surface reads idle — the old bug', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Bash', NOW - 60_000) }, NOW);
+    expect(out.sessions[0]).toMatchObject({ working: false, blocked: false });
+    expect(out.blocked).toBe(0);
+  });
+
+  it('a declared state alone makes a surface a session', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, { 'surf-a': declared('working') });
+    expect(out.sessions).toHaveLength(1);
+    expect(out.working).toBe(1);
+  });
+
+  it('a declared idle overrides a fresh hook event', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(
+      tree, {}, { 'surf-a': hook('Edit', NOW) }, NOW, { 'surf-a': declared('idle') },
+    );
+    expect(out.working).toBe(0);
+  });
+
+  it('unknown falls back to inference instead of pinning the pane idle', () => {
+    // What a released agent leaves behind: no claim, so the heuristic decides.
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(
+      tree, {}, { 'surf-a': hook('Edit', NOW) }, NOW, { 'surf-a': declared('unknown') },
+    );
+    expect(out.working).toBe(1);
+  });
+
+  it('counts blocked panes across a split workspace', () => {
+    const tree = split(leaf('pane-1', [{ id: 'surf-a' }]), leaf('pane-2', [{ id: 'surf-b' }]));
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, {
+      'surf-a': declared('blocked', 'approve?'),
+      'surf-b': declared('working'),
+    });
+    expect(out).toMatchObject({ blocked: 1, working: 1 });
+    expect(out.sessions.map(s => s.blocked)).toEqual([true, false]);
+  });
+
+  it('a blocked session reports no tool label from a stale signal', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(
+      tree, {}, { 'surf-a': hook('Bash', NOW - 60_000) }, NOW, { 'surf-a': declared('blocked') },
+    );
+    expect(out.sessions[0].tool).toBeNull();
   });
 });

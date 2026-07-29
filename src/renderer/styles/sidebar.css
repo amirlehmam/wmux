@@ -256,6 +256,16 @@
   color: #4caf50;
 }
 
+/* "Needs you" — a session parked on a human (issue #128). Deliberately NOT
+   amber: amber already means "working", and the whole value of this state is
+   that it reads differently from the panes that are getting on with it. Violet
+   is unused elsewhere in the sidebar vocabulary, so it cannot be confused with
+   running (amber), done (green) or interrupted (red). */
+.workspace-row__status--blocked {
+  color: #b388ff;
+  font-weight: 600;
+}
+
 .workspace-row__status--interrupted {
   color: #e53935;
 }
@@ -644,6 +654,25 @@
   background: #e8a33d;
   animation: pulse-dot 1.2s ease-in-out infinite;
   flex-shrink: 0;
+}
+/* Blocked session dot: violet to match the status line, and a slower, wider
+   pulse than the working dot. A working pane's fast flicker says "busy, leave
+   it"; this one says "waiting on you" — different rhythm, different meaning,
+   readable without reading the label. */
+.workspace-row__agent-dot--blocked {
+  background: #b388ff;
+  animation: pulse-blocked-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-blocked-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-row__agent-dot--blocked { animation: none; opacity: 1; }
+}
+.workspace-row__session--blocked .workspace-row__agent-detail {
+  color: #b388ff;
+  opacity: 1;
 }
 .workspace-row__agent-name {
   overflow: hidden;

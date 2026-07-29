@@ -1,0 +1,310 @@
+/**
+ * Declared agent state per surface (issue #128).
+ *
+ * wmux already infers "is this agent busy?" two ways, and both are guesses:
+ *   - claude-observer.ts scrapes the Claude Code TUI with regexes
+ *   - claude-session-view.ts calls a surface `working` while a hook/observer
+ *     signal is younger than 5s, and `idle` once it goes quiet
+ *
+ * That inference cannot represent the one state that actually matters: an agent
+ * PARKED ON A HUMAN. A permission prompt makes the agent go silent, so after the
+ * 5s window it decays to `idle` — indistinguishable from a finished turn. With
+ * ten panes open, the pane that needs you looks exactly like the nine that don't.
+ *
+ * This module holds *declared* state instead: the agent (or a hook acting for
+ * it) states what it is doing, and wmux stores it verbatim. No screen scraping,
+ * no timing heuristic. The transport is the existing V2 pipe — wmux already
+ * injects WMUX=1 / WMUX_SURFACE_ID / WMUX_PIPE / WMUX_PIPE_TOKEN into every
+ * spawned shell, which is herdr's three-env-var activation plus authentication.
+ *
+ * Two facts, three states — `blocked` and a run refcount:
+ *   awaitingHuman        -> 'blocked'
+ *   runDepth > 0         -> 'working'
+ *   otherwise            -> 'idle'
+ * Never reported / released -> 'unknown' (absent from the map).
+ *
+ * runDepth is a refcount, not a boolean, so nested subagents don't let an inner
+ * completion clear the outer run.
+ */
+
+import { BrowserWindow } from 'electron';
+import { IPC_CHANNELS, SurfaceId } from '../shared/types';
+
+export type AgentRunState = 'blocked' | 'working' | 'idle' | 'unknown';
+
+export interface AgentMetadata {
+  model?: string;
+  /** Percentage of the context window consumed, 0-100. */
+  contextPct?: number;
+  tokens?: string;
+  /** Wall-clock ms after which these values are stale and must not be shown. */
+  expiresAt?: number;
+}
+
+export interface AgentStateRecord {
+  surfaceId: SurfaceId;
+  state: AgentRunState;
+  /** True while the agent is parked on a human (permission, question, menu). */
+  awaitingHuman: boolean;
+  /** Nested run refcount — >0 means a turn is in flight. */
+  runDepth: number;
+  /** What the agent is waiting for, when it told us. */
+  blockedReason: string | null;
+  /** Resumable session handle (a file/id), not a PID — survives a restart. */
+  sessionId: string | null;
+  metadata: AgentMetadata;
+  /** Highest `seq` accepted so far — replays and retries are dropped. */
+  lastSeq: number;
+  updatedAt: number;
+}
+
+/** Metadata with no explicit TTL is trusted this long before it stops being shown. */
+export const DEFAULT_METADATA_TTL_MS = 60_000;
+
+/** Longest a `working` claim is trusted without any further report. */
+export const WORKING_TRUST_MS = 15 * 60_000;
+
+const records = new Map<SurfaceId, AgentStateRecord>();
+
+/** Guards against a hostile or buggy reporter growing the map without bound. */
+const MAX_TRACKED_SURFACES = 256;
+
+function blank(surfaceId: SurfaceId): AgentStateRecord {
+  return {
+    surfaceId,
+    state: 'unknown',
+    awaitingHuman: false,
+    runDepth: 0,
+    blockedReason: null,
+    sessionId: null,
+    metadata: {},
+    lastSeq: 0,
+    updatedAt: Date.now(),
+  };
+}
+
+function getOrCreate(surfaceId: SurfaceId): AgentStateRecord {
+  let record = records.get(surfaceId);
+  if (!record) {
+    if (records.size >= MAX_TRACKED_SURFACES) {
+      // Evict the least recently updated entry rather than refusing new ones —
+      // a live pane matters more than a stale one.
+      let oldest: AgentStateRecord | null = null;
+      for (const candidate of records.values()) {
+        if (!oldest || candidate.updatedAt < oldest.updatedAt) oldest = candidate;
+      }
+      if (oldest) records.delete(oldest.surfaceId);
+    }
+    record = blank(surfaceId);
+    records.set(surfaceId, record);
+  }
+  return record;
+}
+
+/**
+ * Monotonic sequence gate. Reporters stamp every message with an increasing
+ * `seq`; wmux drops anything it has already seen. Without this a retried
+ * message replays a stale state — the classic "agent finished but the pane
+ * still says working" ghost, caused by a re-delivered older frame landing
+ * after the newer one.
+ *
+ * A reporter that omits `seq` opts out (every message is accepted in order).
+ */
+function acceptSeq(record: AgentStateRecord, seq: number | undefined): boolean {
+  if (seq === undefined || seq === null || !Number.isFinite(seq)) return true;
+  if (seq <= record.lastSeq) return false;
+  record.lastSeq = seq;
+  return true;
+}
+
+/**
+ * Resolve the two stored facts into the state the sidebar renders.
+ *
+ * `now` is passed in rather than read from the clock so this stays a pure
+ * function of the record — which is what makes the expiry rules testable.
+ */
+export function resolveState(record: AgentStateRecord, now: number): AgentRunState {
+  // A pane parked on a human keeps saying so until the agent itself moves on.
+  // This signal is the entire point of the feature: it must never time out,
+  // because an agent waiting for you emits nothing while it waits, and a
+  // decaying `blocked` would silently become `idle` — the exact bug this
+  // module exists to remove.
+  if (record.awaitingHuman) return 'blocked';
+
+  // A `working` claim is a promise to report again. If a process is killed
+  // mid-run it never sends its release, so an un-bounded `working` would be a
+  // permanent lie. Past the trust window we admit we do not know rather than
+  // keep asserting a run that may be long dead.
+  if (record.runDepth > 0) {
+    return now - record.updatedAt > WORKING_TRUST_MS ? 'unknown' : 'working';
+  }
+
+  return 'idle';
+}
+
+/** Metadata is dropped once stale so a crashed process can't keep lying. */
+export function liveMetadata(record: AgentStateRecord, now: number): AgentMetadata {
+  const { expiresAt } = record.metadata;
+  if (expiresAt !== undefined && now >= expiresAt) return {};
+  return record.metadata;
+}
+
+export interface ReportAgentParams {
+  seq?: number;
+  /** True when the agent is parked on a human; false when it resumes. */
+  awaitingHuman?: boolean;
+  /** Why it is parked ("permission: Bash", "question", …). */
+  reason?: string | null;
+  /** Refcount delta for nested runs: +1 on run start, -1 on run end. */
+  runDelta?: number;
+  /** Absolute refcount, for reporters that track it themselves. */
+  runDepth?: number;
+}
+
+/**
+ * `pane.report_agent` — the whole point of the protocol.
+ * Returns the record when the report was accepted, null when deduped.
+ */
+export function reportAgent(surfaceId: SurfaceId, params: ReportAgentParams): AgentStateRecord | null {
+  const record = getOrCreate(surfaceId);
+  if (!acceptSeq(record, params.seq)) return null;
+
+  if (params.awaitingHuman !== undefined) {
+    record.awaitingHuman = !!params.awaitingHuman;
+    // Leaving the blocked state clears the reason with it, so a stale "waiting
+    // for permission: Bash" can't outlive the prompt it described.
+    record.blockedReason = record.awaitingHuman ? (params.reason ?? null) : null;
+  } else if (params.reason !== undefined) {
+    record.blockedReason = params.reason;
+  }
+
+  if (params.runDepth !== undefined && Number.isFinite(params.runDepth)) {
+    record.runDepth = Math.max(0, Math.trunc(params.runDepth));
+  } else if (params.runDelta !== undefined && Number.isFinite(params.runDelta)) {
+    // Clamped at zero: an unbalanced -1 (a subagent whose start we missed)
+    // must not drive the count negative and mask a genuine outer run.
+    record.runDepth = Math.max(0, record.runDepth + Math.trunc(params.runDelta));
+  }
+
+  return commit(record);
+}
+
+/** `pane.report_agent_session` — tie the pane to a resumable session handle. */
+export function reportAgentSession(
+  surfaceId: SurfaceId,
+  params: { seq?: number; sessionId: string | null },
+): AgentStateRecord | null {
+  const record = getOrCreate(surfaceId);
+  if (!acceptSeq(record, params.seq)) return null;
+  record.sessionId = params.sessionId || null;
+  return commit(record);
+}
+
+/** `pane.report_metadata` — model / context% / tokens, with a TTL. */
+export function reportMetadata(
+  surfaceId: SurfaceId,
+  params: { seq?: number; model?: string; contextPct?: number; tokens?: string; ttlMs?: number },
+): AgentStateRecord | null {
+  const record = getOrCreate(surfaceId);
+  if (!acceptSeq(record, params.seq)) return null;
+
+  const ttl = Number.isFinite(params.ttlMs) ? Math.max(0, Number(params.ttlMs)) : DEFAULT_METADATA_TTL_MS;
+  record.metadata = {
+    ...record.metadata,
+    ...(params.model !== undefined ? { model: params.model } : {}),
+    ...(params.contextPct !== undefined ? { contextPct: params.contextPct } : {}),
+    ...(params.tokens !== undefined ? { tokens: params.tokens } : {}),
+    expiresAt: Date.now() + ttl,
+  };
+  return commit(record);
+}
+
+/**
+ * `pane.release_agent` — the agent is deliberately letting go of the pane.
+ * The record is removed entirely so the pane reads `unknown` rather than
+ * lingering as a ghost `working`.
+ */
+export function releaseAgent(surfaceId: SurfaceId, params: { seq?: number } = {}): boolean {
+  const record = records.get(surfaceId);
+  if (!record) return false;
+  if (!acceptSeq(record, params.seq)) return false;
+  records.delete(surfaceId);
+  // Send `unknown` explicitly rather than snapshotting a blank record: a blank
+  // record resolves to `idle`, and `idle` is a CLAIM — the sidebar gives a
+  // declared state precedence over its own inference. A released pane has made
+  // no claim at all, so it must fall back to the heuristic, not be pinned idle.
+  send({
+    surfaceId,
+    state: 'unknown',
+    blockedReason: null,
+    sessionId: null,
+    runDepth: 0,
+    metadata: {},
+    updatedAt: Date.now(),
+  });
+  return true;
+}
+
+/** Surface closed / PTY exited — drop the record without a broadcast payload. */
+export function clearAgentState(surfaceId: SurfaceId): void {
+  records.delete(surfaceId);
+}
+
+export interface AgentStateSnapshot {
+  surfaceId: SurfaceId;
+  state: AgentRunState;
+  blockedReason: string | null;
+  sessionId: string | null;
+  runDepth: number;
+  metadata: AgentMetadata;
+  updatedAt: number;
+}
+
+function snapshot(record: AgentStateRecord, now = Date.now()): AgentStateSnapshot {
+  return {
+    surfaceId: record.surfaceId,
+    state: resolveState(record, now),
+    blockedReason: record.blockedReason,
+    sessionId: record.sessionId,
+    runDepth: record.runDepth,
+    metadata: liveMetadata(record, now),
+    updatedAt: record.updatedAt,
+  };
+}
+
+export function getAgentState(surfaceId: SurfaceId): AgentStateSnapshot | undefined {
+  const record = records.get(surfaceId);
+  return record ? snapshot(record) : undefined;
+}
+
+export function listAgentStates(): AgentStateSnapshot[] {
+  const now = Date.now();
+  return [...records.values()].map(r => snapshot(r, now));
+}
+
+/** Panes currently parked on a human — what "which one needs me?" resolves to. */
+export function listBlocked(): AgentStateSnapshot[] {
+  return listAgentStates().filter(s => s.state === 'blocked');
+}
+
+function commit(record: AgentStateRecord): AgentStateRecord {
+  record.updatedAt = Date.now();
+  record.state = resolveState(record, record.updatedAt);
+  broadcast(record);
+  return record;
+}
+
+function broadcast(record: AgentStateRecord): void {
+  send(snapshot(record));
+}
+
+function send(payload: AgentStateSnapshot): void {
+  BrowserWindow.getAllWindows().forEach(win => {
+    if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.AGENT_STATE, payload);
+  });
+}
+
+/** Test seam — drops all tracked state. */
+export function resetAgentState(): void {
+  records.clear();
+}

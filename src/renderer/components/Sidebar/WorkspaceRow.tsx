@@ -34,9 +34,13 @@ function getToolLabel(tool: string): string {
 }
 
 /** Detail text of one Claude session sub-line. */
-function sessionDetailText(working: boolean, tool: string | null): string {
-  if (!working) return 'Idle';
-  return tool ? getToolLabel(tool) : 'Running…';
+function sessionDetailText(session: { working: boolean; blocked: boolean; blockedReason: string | null; tool: string | null }): string {
+  // Blocked outranks the tool label: a pane parked on a permission prompt is
+  // the one thing the user has to act on, so it must not read as "Idle" just
+  // because no tool is running (issue #128).
+  if (session.blocked) return session.blockedReason || 'Needs you';
+  if (!session.working) return 'Idle';
+  return session.tool ? getToolLabel(session.tool) : 'Running…';
 }
 
 interface StatusTextInputs {
@@ -45,6 +49,7 @@ interface StatusTextInputs {
   agentTotal: number;
   sessionCount: number;
   workingSessions: number;
+  blockedSessions: number;
   currentToolLabel: string | null;
   claudeIsIdle: boolean;
   shellState?: string;
@@ -57,6 +62,13 @@ function claudeStatusText(s: StatusTextInputs): string | null {
   // heuristics can misread tools that keep the shell "running" while idle.
   if (s.statusOverride) {
     return s.statusOverride === 'running' ? 'Running' : 'Idle';
+  }
+
+  // Priority 0.25: a session is parked on the user. Ranked above the running
+  // summaries on purpose — everything else describes work that proceeds on its
+  // own, this describes work that has stopped until the user acts (issue #128).
+  if (s.blockedSessions > 0) {
+    return s.blockedSessions > 1 ? `Needs you · ${s.blockedSessions}` : 'Needs you';
   }
 
   // Priority 0.5: agents are running — show the orchestration summary
@@ -119,6 +131,8 @@ interface WorkspaceRowProps {
   /** Full hook-activity map — keyed by surface id (per Claude session) or workspace id (legacy). */
   hookActivity?: Record<string, HookActivityEntry>;
   claudeActivity?: Record<string, any>;
+  /** surfaceId → declared agent state (issue #128). */
+  agentStates?: Record<string, any>;
   onFocusAgentPane?: (paneId: PaneId) => void;
 }
 
@@ -137,6 +151,7 @@ export default function WorkspaceRow({
   dropEdge = null,
   hookActivity,
   claudeActivity,
+  agentStates,
   onFocusAgentPane,
 }: WorkspaceRowProps) {
   const [isRenaming, setIsRenaming] = useState(false);
@@ -224,11 +239,20 @@ export default function WorkspaceRow({
 
   // ── Per-surface Claude sessions (2 claude panes = 2 independent states) ──
   const sessionsView = useMemo(
-    () => claudeSessionsForWorkspace(workspace.splitTree, claudeActivity ?? {}, hookActivity ?? {}, Date.now()),
-    [workspace.splitTree, claudeActivity, hookActivity, tick],
+    () => claudeSessionsForWorkspace(
+      workspace.splitTree,
+      claudeActivity ?? {},
+      hookActivity ?? {},
+      Date.now(),
+      agentStates ?? {},
+    ),
+    [workspace.splitTree, claudeActivity, hookActivity, agentStates, tick],
   );
   const sessions = sessionsView.sessions;
   const workingSessions = sessionsView.working;
+  // Panes parked on the user. Surfaced on the collapsed row too: the whole
+  // point is seeing which of ten workspaces needs you WITHOUT expanding them.
+  const blockedSessions = sessionsView.blocked;
 
   // Legacy workspace-keyed entry — only written by hook events with no surfaceId.
   const legacyHook = hookActivity?.[workspace.id];
@@ -334,11 +358,12 @@ export default function WorkspaceRow({
     agentTotal: wsAgents.total,
     sessionCount: sessions.length,
     workingSessions,
+    blockedSessions,
     currentToolLabel,
     claudeIsIdle,
     shellState: workspace.shellState,
     notificationText: workspace.notificationText,
-  }), [workspace.statusOverride, runningAgentCount, wsAgents, sessions, workingSessions, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
+  }), [workspace.statusOverride, runningAgentCount, wsAgents, sessions, workingSessions, blockedSessions, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
 
   // ── Status color class ──
   const statusClass = useMemo(() => {
@@ -347,6 +372,7 @@ export default function WorkspaceRow({
         ? 'workspace-row__status--running'
         : 'workspace-row__status--idle';
     }
+    if (blockedSessions > 0) return 'workspace-row__status--blocked';
     if (runningAgentCount > 0) return 'workspace-row__status--working';
     if (sessions.length >= 2) {
       return workingSessions > 0 ? 'workspace-row__status--working' : 'workspace-row__status--idle';
@@ -358,7 +384,7 @@ export default function WorkspaceRow({
     if (state === 'interrupted') return 'workspace-row__status--interrupted';
     if (state === 'idle') return 'workspace-row__status--done';
     return 'workspace-row__status--idle';
-  }, [workspace.statusOverride, runningAgentCount, currentToolLabel, claudeIsIdle, workspace.shellState]);
+  }, [workspace.statusOverride, blockedSessions, runningAgentCount, sessions.length, workingSessions, currentToolLabel, claudeIsIdle, workspace.shellState]);
 
   // ── Context line: "branch* · ~/path/to/dir" ──
   const contextLine = useMemo(() => {
@@ -515,7 +541,7 @@ export default function WorkspaceRow({
 
       {/* Per-Claude-session sub-lines — one per pane running Claude Code,
           shown as soon as the workspace hosts 2+ sessions (click → focus pane) */}
-      {sessions.length >= 2 && (
+      {(sessions.length >= 2 || blockedSessions > 0) && (
         <div className="workspace-row__agents workspace-row__sessions">
           {sessions.map((s, i) => (
             <div
@@ -524,7 +550,8 @@ export default function WorkspaceRow({
                 'workspace-row__agent',
                 'workspace-row__agent--clickable',
                 'workspace-row__session',
-                s.working ? '' : 'workspace-row__session--idle',
+                s.blocked ? 'workspace-row__session--blocked' : '',
+                s.working || s.blocked ? '' : 'workspace-row__session--idle',
               ].filter(Boolean).join(' ')}
               // Per-session channel: this is what makes "that one is REWRITING
               // my code, that one is only reading" legible at a glance. Bound
@@ -539,10 +566,11 @@ export default function WorkspaceRow({
               }}
             >
               <span className="workspace-row__agent-glyph" aria-hidden="true">{i === sessions.length - 1 ? '└' : '├'}</span>
-              {s.working && <span className="workspace-row__agent-dot" />}
+              {s.blocked && <span className="workspace-row__agent-dot workspace-row__agent-dot--blocked" />}
+              {s.working && !s.blocked && <span className="workspace-row__agent-dot" />}
               <span className="workspace-row__agent-name">{s.label}</span>
               <span className={`workspace-row__agent-detail${uiMode === 'trace' ? ' workspace-row__session-tool' : ''}`}>
-                {sessionDetailText(s.working, s.tool)}
+                {sessionDetailText(s)}
               </span>
             </div>
           ))}

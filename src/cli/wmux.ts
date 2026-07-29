@@ -415,6 +415,82 @@ async function cmdAgentActivity(args: string[]): Promise<void> {
   await sendV2('agent.activity', params);
 }
 
+// ─── Declared agent state (issue #128) ───────────────────────────────────────
+// The reporting side of the protocol. An agent running inside a wmux pane can
+// call these with no arguments beyond the state itself — WMUX_SURFACE_ID is
+// already in its environment, so it never has to discover which pane it is in.
+
+/** Resolve the pane this command is about: --surface, else the ambient pane. */
+function reportingSurface(args: string[], command: string): string {
+  const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+  if (!surfaceId) {
+    console.error(`${command}: --surface or WMUX_SURFACE_ID required`);
+    process.exit(1);
+  }
+  return surfaceId;
+}
+
+/** Optional monotonic sequence — wmux drops any report at or below the last seen. */
+function seqFlag(args: string[]): number | undefined {
+  const raw = getFlag(args, '--seq');
+  if (!raw) return undefined;
+  const seq = Number(raw);
+  return Number.isFinite(seq) ? seq : undefined;
+}
+
+async function cmdReportAgent(args: string[]): Promise<void> {
+  const surfaceId = reportingSurface(args, 'report-agent');
+  const params: Record<string, any> = { surfaceId, seq: seqFlag(args) };
+
+  // --blocked [reason] parks the pane on the user; --unblocked releases it.
+  if (args.includes('--blocked')) {
+    params.awaitingHuman = true;
+    params.reason = getFlag(args, '--blocked') || getFlag(args, '--reason') || null;
+  } else if (args.includes('--unblocked')) {
+    params.awaitingHuman = false;
+  }
+
+  if (args.includes('--run-start')) params.runDelta = 1;
+  if (args.includes('--run-end')) params.runDelta = -1;
+  const depth = getFlag(args, '--run-depth');
+  if (depth !== undefined) params.runDepth = Number(depth);
+
+  print(await sendV2('pane.report_agent', params));
+}
+
+async function cmdReportMetadata(args: string[]): Promise<void> {
+  const surfaceId = reportingSurface(args, 'report-metadata');
+  const params: Record<string, any> = { surfaceId, seq: seqFlag(args) };
+  const model = getFlag(args, '--model'); if (model) params.model = model;
+  const tokens = getFlag(args, '--tokens'); if (tokens) params.tokens = tokens;
+  const pct = getFlag(args, '--context-pct'); if (pct) params.contextPct = Number(pct);
+  const ttl = getFlag(args, '--ttl'); if (ttl) params.ttlMs = Number(ttl);
+  print(await sendV2('pane.report_metadata', params));
+}
+
+const AGENT_STATE_COMMANDS: Record<string, (args: string[]) => Promise<void>> = {
+  'report-agent': cmdReportAgent,
+  'report-metadata': cmdReportMetadata,
+  'report-session': async (args) => {
+    const surfaceId = reportingSurface(args, 'report-session');
+    print(await sendV2('pane.report_agent_session', {
+      surfaceId,
+      seq: seqFlag(args),
+      sessionId: getFlag(args, '--session') ?? args[1] ?? null,
+    }));
+  },
+  'release-agent': async (args) => {
+    const surfaceId = reportingSurface(args, 'release-agent');
+    print(await sendV2('pane.release_agent', { surfaceId, seq: seqFlag(args) }));
+  },
+  // No --surface → the whole picture, including a `blocked` list that answers
+  // "which pane needs me?" in one call.
+  'agent-state': async (args) => {
+    const surfaceId = getFlag(args, '--surface');
+    print(await sendV2('pane.agent_state', surfaceId ? { surfaceId } : {}));
+  },
+};
+
 // Command dispatch table. Each handler receives the raw argv (args[0] is the
 // command name). Replaces a single giant switch so each command stays small and
 // independently testable.
@@ -551,6 +627,7 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
   },
   hook: cmdHook,
   'agent-activity': cmdAgentActivity,
+  ...AGENT_STATE_COMMANDS,
 };
 
 async function main() {
@@ -616,6 +693,11 @@ Diff:       diff [--file <path>]
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state
 Hook:       hook --event <type> --tool <name> [--agent <id>]
+Agent state: report-agent --blocked [reason] | --unblocked | --run-start | --run-end
+                          [--run-depth N] [--seq N] [--surface <id>]
+            report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms]
+            report-session <id> | release-agent | agent-state [--surface <id>]
+            (surface defaults to $WMUX_SURFACE_ID — an agent in a pane needs no id)
 Config:     config show|reload|path   (edits ~/.wmux/config.toml — see docs)
             reload-config             (shorthand for 'config reload')
 `);

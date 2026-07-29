@@ -178,6 +178,14 @@ contextBridge.exposeInMainWorld('wmux', {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.CLAUDE_ACTIVITY, handler);
     },
   },
+  // Declared agent run state — blocked / working / idle (issue #128).
+  agentState: {
+    onUpdate: (callback: (data: any) => void) => {
+      const handler = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.AGENT_STATE, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT_STATE, handler);
+    },
+  },
   orchestration: {
     onUpdate: (callback: (state: any) => void) => {
       const handler = (_event: any, state: any) => callback(state);

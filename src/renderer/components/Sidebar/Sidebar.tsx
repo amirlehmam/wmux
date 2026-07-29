@@ -30,6 +30,8 @@ interface SidebarProps {
   onUpdateMetadata: (id: WorkspaceId, partial: Partial<WorkspaceInfo>) => void;
   hookActivity?: Record<string, { lastTool: string; toolCount: number; lastSeen: number }>;
   claudeActivity?: Record<string, any>;
+  /** surfaceId → declared agent state (issue #128). */
+  agentStates?: Record<string, any>;
   onSaveSession?: (name: string) => void;
   onLoadSession?: (name: string) => void;
   onCollapse?: () => void;
@@ -49,6 +51,7 @@ export default function Sidebar({
   onUpdateMetadata,
   hookActivity,
   claudeActivity,
+  agentStates,
   onSaveSession,
   onLoadSession,
   onCollapse,
@@ -281,6 +284,7 @@ export default function Sidebar({
             dropEdge={dropTarget?.id === ws.id ? dropTarget.edge : null}
             hookActivity={hookActivity}
             claudeActivity={claudeActivity}
+            agentStates={agentStates}
             onFocusAgentPane={(paneId) => onFocusAgentPane?.(ws.id, paneId)}
           />
         ))}

@@ -16,6 +16,8 @@ import { initUpdateChecker, getLatestUpdate } from './update-checker';
 import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig, ensureOrchestratorPlugin } from './claude-context';
 import { ensureOpencodeContext, ensureOpencodePlugin } from './opencode-context';
 import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
+import { handleAgentStateV2 } from './agent-state-rpc';
+import { applyHookToAgentState } from './agent-hook-bridge';
 import { startOrchestrationWatcher } from './orchestration-watcher';
 import { readMarkdownFile } from './markdown-file';
 import { grantMarkdownPath, clearMarkdownGrants } from './markdown-grants';
@@ -38,6 +40,8 @@ function routeSpecialV2(
   if (request.method.startsWith('window.')) {
     return handleWindowV2(request.method, request.params, respond, respondError);
   }
+  // Declared agent state (issue #128) — pane.report_agent and friends.
+  if (handleAgentStateV2(request.method, request.params, respond, respondError)) return true;
   return handleBridgeV2(request.method, request.params, respond, respondError);
 }
 
@@ -376,6 +380,36 @@ function applyHookLifecycle(params: any): void {
   if (!sid) return;
   if (params.event === 'SubagentStop') markSubagentStop(sid);
   else if (params.event === 'Stop') markAllAgentsDone(sid);
+}
+
+/** Edit/Write hooks refresh the diff view; delays let the DiffPane mount first. */
+function pushDiffUpdate(file: string): void {
+  // Stagger updates: 500ms for immediate feedback, 2s to catch slower writes.
+  for (const delay of [500, 2000]) {
+    setTimeout(() => {
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.DIFF_UPDATE, { file });
+      });
+    }, delay);
+  }
+}
+
+/** One Claude Code hook event, fanned out to every consumer that wants it. */
+function handleHookEvent(params: any): void {
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.HOOK_EVENT, params);
+  });
+  applyHookLifecycle(params);
+
+  // Same events, second consumer: declared agent run state (issue #128). This
+  // is what makes "which pane is parked on me?" work for Claude Code with no
+  // plugin to install — wmux already registers these hooks.
+  if (params?.surfaceId && params?.event) {
+    applyHookToAgentState(params.surfaceId as SurfaceId, String(params.event), params.message ?? null);
+  }
+
+  // Always refresh the diff for Edit/Write, even without a file path.
+  if (params?.tool === 'Edit' || params?.tool === 'Write') pushDiffUpdate(params.file || '');
 }
 
 app.whenReady().then(() => {
@@ -914,23 +948,7 @@ app.whenReady().then(() => {
       }
 
       case 'hook.event': {
-        BrowserWindow.getAllWindows().forEach(w => {
-          if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.HOOK_EVENT, request.params);
-        });
-        applyHookLifecycle(request.params);
-        // Always push diff update for Edit/Write hooks (even without file path).
-        // Delay slightly so the renderer has time to mount the DiffPane
-        // (HOOK_EVENT triggers diff tab creation; DIFF_UPDATE needs to arrive after mount).
-        if (request.params.tool === 'Edit' || request.params.tool === 'Write') {
-          // Stagger updates: 500ms for immediate feedback, 2s to catch slower writes
-          for (const delay of [500, 2000]) {
-            setTimeout(() => {
-              BrowserWindow.getAllWindows().forEach(w => {
-                if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.DIFF_UPDATE, { file: request.params.file || '' });
-              });
-            }, delay);
-          }
-        }
+        handleHookEvent(request.params);
         respond({ ok: true });
         break;
       }

@@ -398,6 +398,8 @@ export default function App() {
   const [hookActivity, setHookActivity] = useState<Record<string, { lastTool: string; toolCount: number; lastSeen: number }>>({});
   // Per-surface Claude activity (parsed from terminal output)
   const [claudeActivity, setClaudeActivity] = useState<Record<string, any>>({});
+  // surfaceId → declared agent state (blocked / working / idle), issue #128.
+  const [agentStates, setAgentStates] = useState<Record<string, any>>({});
   // Track when each workspace entered "running" state (for notification threshold)
   const runningStartTimes = useRef<Record<string, number>>({});
   // Browser URL tracking is now per-workspace via WorkspaceInfo.browserUrl
@@ -644,6 +646,18 @@ export default function App() {
     const unsub = window.wmux.claudeActivity.onUpdate((data: any) => {
       if (!data?.surfaceId || !data?.activity) return;
       setClaudeActivity(prev => ({ ...prev, [data.surfaceId]: data.activity }));
+    });
+    return unsub;
+  }, []);
+
+  // Declared agent state pushed by the agent itself (issue #128). Unlike the
+  // scraped/heuristic signals above this is authoritative, so it is kept in its
+  // own map and given precedence in claude-session-view.
+  useEffect(() => {
+    if (!window.wmux?.agentState?.onUpdate) return;
+    const unsub = window.wmux.agentState.onUpdate((data: any) => {
+      if (!data?.surfaceId) return;
+      setAgentStates(prev => ({ ...prev, [data.surfaceId]: data }));
     });
     return unsub;
   }, []);
@@ -966,6 +980,7 @@ export default function App() {
             onUpdateMetadata={handleUpdateMetadata}
             hookActivity={hookActivity}
             claudeActivity={claudeActivity}
+            agentStates={agentStates}
             onSaveSession={handleSaveSession}
             onLoadSession={handleLoadSession}
             onCollapse={toggleSidebar}
