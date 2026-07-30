@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { ShortcutBinding, ShortcutAction, DEFAULT_SHORTCUTS } from '../../store/settings-slice';
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
+import { actionLabel } from './KeyboardSettings';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,7 @@ interface ShortcutRecorderProps {
 }
 
 export default function ShortcutRecorder({ action, binding }: ShortcutRecorderProps) {
+  const t = useT();
   const { shortcuts, setShortcut } = useStore();
   const [recording, setRecording] = useState(false);
   const [conflict, setConflict] = useState<ShortcutAction | null>(null);
@@ -92,13 +95,15 @@ export default function ShortcutRecorder({ action, binding }: ShortcutRecorderPr
           setConflict(null);
           setRecording(true);
         }}
-        title={recording ? 'Press a key combo (Escape to cancel)' : 'Click to record a new shortcut'}
+        title={recording
+          ? t('settings.shortcutRecorder.pressCombo', 'Press a key combo (Escape to cancel)')
+          : t('settings.shortcutRecorder.clickToRecord', 'Click to record a new shortcut')}
       >
-        {recording ? 'Press keys...' : bindingToString(binding)}
+        {recording ? t('settings.shortcutRecorder.pressKeys', 'Press keys...') : bindingToString(binding)}
       </button>
       {conflict && (
         <span className="shortcut-recorder__conflict">
-          Conflicts with {conflict}
+          {t('settings.shortcutRecorder.conflictsWith', 'Conflicts with {action}').replace('{action}', actionLabel(conflict, t))}
         </span>
       )}
     </div>

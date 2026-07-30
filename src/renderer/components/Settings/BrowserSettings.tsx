@@ -1,14 +1,16 @@
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
 
 export default function BrowserSettings() {
+  const t = useT();
   const { browserPrefs, setBrowserPrefs } = useStore();
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Search</h3>
+      <h3 className="settings-section-title">{t('settings.browser.searchSection', 'Search')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Default search engine</label>
+        <label className="settings-label">{t('settings.browser.defaultSearchEngine', 'Default search engine')}</label>
         <select
           className="settings-select"
           value={browserPrefs.searchEngine}
@@ -26,10 +28,10 @@ export default function BrowserSettings() {
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">Startup</h3>
+      <h3 className="settings-section-title">{t('settings.browser.startupSection', 'Startup')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Open browser panel on startup</label>
+        <label className="settings-label">{t('settings.browser.openOnStartup', 'Open browser panel on startup')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -39,10 +41,10 @@ export default function BrowserSettings() {
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">Developer Tools</h3>
+      <h3 className="settings-section-title">{t('settings.browser.devToolsSection', 'Developer Tools')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">DevTools icon</label>
+        <label className="settings-label">{t('settings.browser.devToolsIcon', 'DevTools icon')}</label>
         <select
           className="settings-select"
           value={browserPrefs.devToolsIcon}
@@ -52,9 +54,9 @@ export default function BrowserSettings() {
             })
           }
         >
-          <option value="default">Default</option>
-          <option value="compact">Compact</option>
-          <option value="hidden">Hidden</option>
+          <option value="default">{t('settings.browser.devToolsIcon.default', 'Default')}</option>
+          <option value="compact">{t('settings.browser.devToolsIcon.compact', 'Compact')}</option>
+          <option value="hidden">{t('settings.browser.devToolsIcon.hidden', 'Hidden')}</option>
         </select>
       </div>
     </div>

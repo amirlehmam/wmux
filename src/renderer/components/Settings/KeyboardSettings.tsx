@@ -1,4 +1,6 @@
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import ShortcutRecorder from './ShortcutRecorder';
 
@@ -58,19 +60,25 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   toggleShortcutCheatSheet: 'Shortcut cheat-sheet',
 };
 
+/** Translated label for an action, falling back to the English `ACTION_LABELS` map. */
+export function actionLabel(action: ShortcutAction, t: (key: TranslationKey, fallback?: string) => string): string {
+  return t(`shortcutAction.${action}` as TranslationKey, ACTION_LABELS[action] ?? action);
+}
+
 export default function KeyboardSettings() {
+  const t = useT();
   const { shortcuts, resetShortcuts } = useStore();
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Keyboard Shortcuts</h3>
+      <h3 className="settings-section-title">{t('settings.keyboard.title', 'Keyboard Shortcuts')}</h3>
 
       <div className="shortcut-list">
         {(Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]).map(
           ([action, binding]) => (
             <div key={action} className="shortcut-row">
               <span className="shortcut-action-label">
-                {ACTION_LABELS[action] ?? action}
+                {actionLabel(action, t)}
               </span>
               <ShortcutRecorder action={action} binding={binding} />
             </div>
@@ -80,7 +88,7 @@ export default function KeyboardSettings() {
 
       <div className="shortcut-footer">
         <button className="settings-btn settings-btn--danger" onClick={resetShortcuts}>
-          Reset All
+          {t('settings.keyboard.resetAll', 'Reset All')}
         </button>
       </div>
     </div>
