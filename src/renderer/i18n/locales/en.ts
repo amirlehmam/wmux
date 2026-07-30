@@ -392,6 +392,33 @@ export const en = {
   'settings.workspacePanel.shellSection': 'Shell',
   'settings.workspacePanel.defaultShell': 'Default shell',
   'settings.workspacePanel.shell.systemDefault': 'System default',
+  // ErrorBoundary fallback card
+  'errorBoundary.labelFailed': '{label} failed',
+  'errorBoundary.somethingWrong': 'Something went wrong',
+  'errorBoundary.retry': 'retry',
+  // Sidebar — orchestration panel
+  'orchestrationPanel.expand': 'Expand orchestration',
+  'orchestrationPanel.collapse': 'Collapse orchestration',
+  'orchestrationPanel.title': 'orchestration',
+  'orchestrationPanel.reviewer': 'reviewer',
+  'orchestrationPanel.dismiss': 'dismiss',
+  'orchestrationPanel.waiting': 'waiting',
+  'orchestrationPanel.status.running': 'running',
+  'orchestrationPanel.status.complete': 'complete',
+  'orchestrationPanel.status.failed': 'failed',
+  'orchestrationPanel.status.queued': 'queued',
+  // Keyboard shortcut cheat-sheet
+  'cheatSheet.selectWorkspace': 'Select workspace 1–9',
+  'cheatSheet.selectTab': 'Select tab 1–9',
+  'cheatSheet.filterPlaceholder': 'Filter shortcuts…',
+  'cheatSheet.closeTitle': 'Close (Esc)',
+  'cheatSheet.noMatch': 'No shortcuts match "{query}".',
+  'cheatSheet.category.workspaces': 'Workspaces',
+  'cheatSheet.category.tabs': 'Tabs',
+  'cheatSheet.category.panes': 'Panes',
+  'cheatSheet.category.terminal': 'Terminal',
+  'cheatSheet.category.view': 'View',
+  'cheatSheet.category.other': 'Other',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

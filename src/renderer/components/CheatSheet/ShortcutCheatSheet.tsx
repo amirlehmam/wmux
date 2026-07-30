@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
-import { ACTION_LABELS } from '../Settings/KeyboardSettings';
+import { actionLabel } from '../Settings/KeyboardSettings';
 import '../../styles/cheat-sheet.css';
 
 interface ShortcutCheatSheetProps {
@@ -43,14 +45,29 @@ const CATEGORY: Partial<Record<ShortcutAction, string>> = {
 
 const CATEGORY_ORDER = ['Workspaces', 'Tabs', 'Panes', 'Terminal', 'View', 'Other'];
 
+// Internal (English) category constant → its translation key. CATEGORY /
+// CATEGORY_ORDER above stay English so the grouping logic is untouched;
+// only the displayed label is translated.
+const CATEGORY_LABEL_KEY: Record<string, TranslationKey> = {
+  Workspaces: 'cheatSheet.category.workspaces',
+  Tabs: 'cheatSheet.category.tabs',
+  Panes: 'cheatSheet.category.panes',
+  Terminal: 'cheatSheet.category.terminal',
+  View: 'cheatSheet.category.view',
+  Other: 'cheatSheet.category.other',
+};
+
 // Fixed (non-remappable) bindings handled by dedicated key listeners, surfaced
 // here so they're discoverable alongside the remappable ones.
-const FIXED_BINDINGS: Array<{ label: string; binding: string; category: string }> = [
-  { label: 'Select workspace 1–9', binding: 'Ctrl+1…9', category: 'Workspaces' },
-  { label: 'Select tab 1–9', binding: 'Ctrl+Alt+1…9', category: 'Tabs' },
-];
+function getFixedBindings(t: (key: TranslationKey, fallback?: string) => string): Array<{ label: string; binding: string; category: string }> {
+  return [
+    { label: t('cheatSheet.selectWorkspace', 'Select workspace 1–9'), binding: 'Ctrl+1…9', category: 'Workspaces' },
+    { label: t('cheatSheet.selectTab', 'Select tab 1–9'), binding: 'Ctrl+Alt+1…9', category: 'Tabs' },
+  ];
+}
 
 export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps) {
+  const t = useT();
   const shortcuts = useStore((s) => s.shortcuts);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,11 +83,11 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
   const grouped = useMemo(() => {
     const rows: Array<{ label: string; binding: string; category: string }> = [
       ...(Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]).map(([action, binding]) => ({
-        label: ACTION_LABELS[action] ?? action,
+        label: actionLabel(action, t),
         binding: formatBinding(binding),
         category: CATEGORY[action] ?? 'Other',
       })),
-      ...FIXED_BINDINGS,
+      ...getFixedBindings(t),
     ];
     const q = query.trim().toLowerCase();
     const filtered = q
@@ -85,29 +102,29 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
     return CATEGORY_ORDER
       .filter((c) => byCategory.has(c))
       .map((c) => ({ category: c, rows: byCategory.get(c)!.sort((a, b) => a.label.localeCompare(b.label)) }));
-  }, [shortcuts, query]);
+  }, [shortcuts, query, t]);
 
   return (
     <div className="cheat-sheet-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="cheat-sheet">
         <div className="cheat-sheet__header">
-          <h2 className="cheat-sheet__title">Keyboard Shortcuts</h2>
+          <h2 className="cheat-sheet__title">{t('settings.keyboard.title', 'Keyboard Shortcuts')}</h2>
           <input
             ref={inputRef}
             className="cheat-sheet__search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter shortcuts…"
+            placeholder={t('cheatSheet.filterPlaceholder', 'Filter shortcuts…')}
           />
-          <button className="cheat-sheet__close" onClick={onClose} title="Close (Esc)">×</button>
+          <button className="cheat-sheet__close" onClick={onClose} title={t('cheatSheet.closeTitle', 'Close (Esc)')}>×</button>
         </div>
         <div className="cheat-sheet__body">
           {grouped.length === 0 ? (
-            <div className="cheat-sheet__empty">No shortcuts match “{query}”.</div>
+            <div className="cheat-sheet__empty">{t('cheatSheet.noMatch', 'No shortcuts match "{query}".').replace('{query}', query)}</div>
           ) : (
             grouped.map((group) => (
               <div key={group.category} className="cheat-sheet__group">
-                <h3 className="cheat-sheet__group-title">{group.category}</h3>
+                <h3 className="cheat-sheet__group-title">{t(CATEGORY_LABEL_KEY[group.category] ?? 'cheatSheet.category.other', group.category)}</h3>
                 {group.rows.map((row) => (
                   <div key={`${row.category}:${row.label}`} className="cheat-sheet__row">
                     <span className="cheat-sheet__label">{row.label}</span>
