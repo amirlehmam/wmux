@@ -153,6 +153,32 @@ export const en = {
   'surfaceTab.close': 'Close',
   'surfaceTab.closeOthers': 'Close others',
   'surfaceTab.closeToRight': 'Close to the right',
+  // Tutorial overlay
+  'tutorial.skip': 'Skip',
+  'tutorial.previous': 'Previous',
+  'tutorial.next': 'Next',
+  'tutorial.getStarted': 'Get Started',
+  'tutorial.step.welcome.title': 'Welcome to wmux',
+  'tutorial.step.welcome.body':
+    'wmux is a terminal multiplexer for running AI coding agents in parallel. This quick tour will show you the essentials.',
+  'tutorial.step.workspaces.title': 'Workspaces',
+  'tutorial.step.workspaces.body':
+    'The sidebar on the left shows your workspaces. Each workspace is an independent session with its own terminal layout. Create new ones with Ctrl+N. Double-click a workspace title to rename it.',
+  'tutorial.step.splitPanes.title': 'Split Panes',
+  'tutorial.step.splitPanes.body':
+    'Split your terminals horizontally or vertically. Each pane runs its own shell. Drag dividers to resize. Zoom any pane to full size with Ctrl+Shift+Enter.',
+  'tutorial.step.surfaceTabs.title': 'Surface Tabs',
+  'tutorial.step.surfaceTabs.body':
+    'Each pane can have multiple tabs — terminals, browser panels, or markdown views. Drag tabs between panes to reorganize. Create new tabs with Ctrl+T.',
+  'tutorial.step.browserPanel.title': 'Browser Panel',
+  'tutorial.step.browserPanel.body':
+    'The browser panel on the right lets you preview what your agents build. Toggle it with Ctrl+Shift+I. Navigate to localhost or any URL. The browser is scriptable via the socket API.',
+  'tutorial.step.notifications.title': 'Notifications',
+  'tutorial.step.notifications.body':
+    'When an agent needs your attention, its pane gets a blue ring and the workspace badge increments. A Windows toast notification fires too. Jump to the latest unread with Ctrl+Shift+U.',
+  'tutorial.step.allSet.title': "You're all set",
+  'tutorial.step.allSet.body':
+    'You can always reopen this guide from the help button (?) in the title bar. For the full keyboard shortcuts, open Settings with Ctrl+, or the Command Palette with Ctrl+Shift+P.',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

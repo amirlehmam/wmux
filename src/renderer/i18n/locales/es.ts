@@ -141,4 +141,30 @@ export const es: Translation = {
   'surfaceTab.close': 'Cerrar',
   'surfaceTab.closeOthers': 'Cerrar las demás',
   'surfaceTab.closeToRight': 'Cerrar las de la derecha',
+  // Tutorial de bienvenida
+  'tutorial.skip': 'Saltar',
+  'tutorial.previous': 'Anterior',
+  'tutorial.next': 'Siguiente',
+  'tutorial.getStarted': 'Empezar',
+  'tutorial.step.welcome.title': 'Bienvenido a wmux',
+  'tutorial.step.welcome.body':
+    'wmux es un multiplexor de terminal para ejecutar agentes de IA en paralelo. Este recorrido rápido te muestra lo esencial.',
+  'tutorial.step.workspaces.title': 'Espacios de trabajo',
+  'tutorial.step.workspaces.body':
+    'La barra lateral izquierda muestra tus espacios de trabajo. Cada espacio de trabajo es una sesión independiente con su propio diseño de terminales. Crea uno nuevo con Ctrl+N. Haz doble clic en un título para renombrarlo.',
+  'tutorial.step.splitPanes.title': 'Paneles divididos',
+  'tutorial.step.splitPanes.body':
+    'Divide tus terminales horizontal o verticalmente. Cada panel ejecuta su propio shell. Arrastra los divisores para redimensionar. Amplía cualquier panel a pantalla completa con Ctrl+Mayús+Intro.',
+  'tutorial.step.surfaceTabs.title': 'Pestañas',
+  'tutorial.step.surfaceTabs.body':
+    'Cada panel puede tener varias pestañas: terminales, paneles de navegador o vistas markdown. Arrastra las pestañas entre paneles para reorganizarlas. Crea nuevas pestañas con Ctrl+T.',
+  'tutorial.step.browserPanel.title': 'Panel del navegador',
+  'tutorial.step.browserPanel.body':
+    'El panel del navegador a la derecha te permite previsualizar lo que construyen tus agentes. Actívalo con Ctrl+Mayús+I. Navega a localhost o a cualquier URL. El navegador es programable mediante la API de socket.',
+  'tutorial.step.notifications.title': 'Notificaciones',
+  'tutorial.step.notifications.body':
+    'Cuando un agente necesita tu atención, su panel recibe un anillo azul y el contador del espacio de trabajo aumenta. También se dispara una notificación toast de Windows. Ve a la última sin leer con Ctrl+Mayús+U.',
+  'tutorial.step.allSet.title': 'Todo listo',
+  'tutorial.step.allSet.body':
+    'Puedes volver a abrir esta guía en cualquier momento desde el botón de ayuda (?) en la barra de título. Para ver todos los atajos de teclado, abre Ajustes con Ctrl+, o la paleta de comandos con Ctrl+Mayús+P.',
 };

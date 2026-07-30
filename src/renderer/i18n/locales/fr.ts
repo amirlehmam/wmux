@@ -140,4 +140,30 @@ export const fr: Translation = {
   'surfaceTab.close': 'Fermer',
   'surfaceTab.closeOthers': 'Fermer les autres',
   'surfaceTab.closeToRight': 'Fermer ceux de droite',
+  // Tutoriel d'accueil
+  'tutorial.skip': 'Passer',
+  'tutorial.previous': 'Précédent',
+  'tutorial.next': 'Suivant',
+  'tutorial.getStarted': 'Commencer',
+  'tutorial.step.welcome.title': 'Bienvenue dans wmux',
+  'tutorial.step.welcome.body':
+    "wmux est un multiplexeur de terminal pour exécuter des agents IA en parallèle. Cette visite rapide vous montre l'essentiel.",
+  'tutorial.step.workspaces.title': 'Espaces de travail',
+  'tutorial.step.workspaces.body':
+    "La barre latérale à gauche affiche vos espaces de travail. Chaque espace est une session indépendante avec sa propre disposition de terminaux. Créez-en un nouveau avec Ctrl+N. Double-cliquez sur un titre pour le renommer.",
+  'tutorial.step.splitPanes.title': 'Panneaux divisés',
+  'tutorial.step.splitPanes.body':
+    'Divisez vos terminaux horizontalement ou verticalement. Chaque panneau exécute son propre shell. Faites glisser les séparateurs pour redimensionner. Agrandissez un panneau en plein écran avec Ctrl+Maj+Entrée.',
+  'tutorial.step.surfaceTabs.title': 'Onglets',
+  'tutorial.step.surfaceTabs.body':
+    'Chaque panneau peut avoir plusieurs onglets — terminaux, panneaux navigateur ou vues markdown. Faites glisser les onglets entre panneaux pour les réorganiser. Créez de nouveaux onglets avec Ctrl+T.',
+  'tutorial.step.browserPanel.title': 'Panneau navigateur',
+  'tutorial.step.browserPanel.body':
+    "Le panneau navigateur à droite permet de prévisualiser ce que construisent vos agents. Activez-le avec Ctrl+Maj+I. Accédez à localhost ou à n'importe quelle URL. Le navigateur est scriptable via l'API socket.",
+  'tutorial.step.notifications.title': 'Notifications',
+  'tutorial.step.notifications.body':
+    "Quand un agent a besoin de votre attention, son panneau s'entoure d'un anneau bleu et le badge de l'espace de travail s'incrémente. Une notification toast Windows se déclenche aussi. Accédez au dernier non lu avec Ctrl+Maj+U.",
+  'tutorial.step.allSet.title': 'Vous êtes prêt',
+  'tutorial.step.allSet.body':
+    "Vous pouvez toujours rouvrir ce guide depuis le bouton d'aide (?) dans la barre de titre. Pour tous les raccourcis clavier, ouvrez les Paramètres avec Ctrl+, ou la palette de commandes avec Ctrl+Maj+P.",
 };

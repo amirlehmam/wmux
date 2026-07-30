@@ -138,4 +138,29 @@ export const zh: Translation = {
   'surfaceTab.close': '关闭',
   'surfaceTab.closeOthers': '关闭其他',
   'surfaceTab.closeToRight': '关闭右侧标签',
+  // 新手引导
+  'tutorial.skip': '跳过',
+  'tutorial.previous': '上一步',
+  'tutorial.next': '下一步',
+  'tutorial.getStarted': '开始使用',
+  'tutorial.step.welcome.title': '欢迎使用 wmux',
+  'tutorial.step.welcome.body': 'wmux 是一款用于并行运行 AI 编程代理的终端复用器。这段快速导览将展示核心功能。',
+  'tutorial.step.workspaces.title': '工作区',
+  'tutorial.step.workspaces.body':
+    '左侧边栏显示你的工作区。每个工作区都是拥有独立终端布局的独立会话。按 Ctrl+N 新建工作区，双击标题可重命名。',
+  'tutorial.step.splitPanes.title': '拆分窗格',
+  'tutorial.step.splitPanes.body':
+    '可以水平或垂直拆分终端，每个窗格运行独立的 shell。拖动分隔线可调整大小，按 Ctrl+Shift+Enter 可将窗格放大至全屏。',
+  'tutorial.step.surfaceTabs.title': '标签页',
+  'tutorial.step.surfaceTabs.body':
+    '每个窗格可包含多个标签页——终端、浏览器面板或 Markdown 视图。可在窗格间拖动标签页重新排列，按 Ctrl+T 新建标签页。',
+  'tutorial.step.browserPanel.title': '浏览器面板',
+  'tutorial.step.browserPanel.body':
+    '右侧的浏览器面板可预览代理构建的内容。按 Ctrl+Shift+I 切换显示，可导航至 localhost 或任意网址，浏览器还可通过 socket API 编程控制。',
+  'tutorial.step.notifications.title': '通知',
+  'tutorial.step.notifications.body':
+    '当代理需要你处理时，其窗格会出现蓝色光环，工作区角标也会增加，同时会触发 Windows 系统通知。按 Ctrl+Shift+U 跳转到最新未读项。',
+  'tutorial.step.allSet.title': '一切就绪',
+  'tutorial.step.allSet.body':
+    '你随时可以通过标题栏中的帮助按钮（?）重新打开本指南。要查看完整快捷键列表，请按 Ctrl+, 打开设置，或按 Ctrl+Shift+P 打开命令面板。',
 };

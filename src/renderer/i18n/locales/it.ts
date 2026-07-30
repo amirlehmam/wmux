@@ -140,4 +140,30 @@ export const it: Translation = {
   'surfaceTab.close': 'Chiudi',
   'surfaceTab.closeOthers': 'Chiudi le altre',
   'surfaceTab.closeToRight': 'Chiudi quelle a destra',
+  // Tutorial iniziale
+  'tutorial.skip': 'Salta',
+  'tutorial.previous': 'Indietro',
+  'tutorial.next': 'Avanti',
+  'tutorial.getStarted': 'Inizia',
+  'tutorial.step.welcome.title': 'Benvenuto in wmux',
+  'tutorial.step.welcome.body':
+    'wmux è un terminal multiplexer per eseguire agenti AI in parallelo. Questo breve tour ti mostrerà l’essenziale.',
+  'tutorial.step.workspaces.title': 'Aree di lavoro',
+  'tutorial.step.workspaces.body':
+    'La barra laterale a sinistra mostra le tue aree di lavoro. Ogni area di lavoro è una sessione indipendente con il proprio layout di terminali. Creane di nuove con Ctrl+N. Doppio clic sul titolo per rinominarla.',
+  'tutorial.step.splitPanes.title': 'Riquadri divisi',
+  'tutorial.step.splitPanes.body':
+    'Dividi i terminali orizzontalmente o verticalmente. Ogni riquadro esegue la propria shell. Trascina i divisori per ridimensionare. Ingrandisci un riquadro a schermo intero con Ctrl+Shift+Invio.',
+  'tutorial.step.surfaceTabs.title': 'Schede',
+  'tutorial.step.surfaceTabs.body':
+    'Ogni riquadro può avere più schede — terminali, pannelli browser o viste markdown. Trascina le schede tra i riquadri per riorganizzarle. Crea nuove schede con Ctrl+T.',
+  'tutorial.step.browserPanel.title': 'Pannello browser',
+  'tutorial.step.browserPanel.body':
+    'Il pannello browser a destra ti permette di vedere in anteprima cosa costruiscono i tuoi agenti. Attivalo con Ctrl+Shift+I. Naviga verso localhost o qualsiasi URL. Il browser è scriptabile tramite l’API socket.',
+  'tutorial.step.notifications.title': 'Notifiche',
+  'tutorial.step.notifications.body':
+    'Quando un agente richiede la tua attenzione, il suo riquadro si illumina di un anello blu e il badge dell’area di lavoro si incrementa. Parte anche una notifica toast di Windows. Vai all’ultimo non letto con Ctrl+Shift+U.',
+  'tutorial.step.allSet.title': 'Tutto pronto',
+  'tutorial.step.allSet.body':
+    'Puoi sempre riaprire questa guida dal pulsante di aiuto (?) nella barra del titolo. Per tutte le scorciatoie da tastiera, apri Impostazioni con Ctrl+, oppure il Command Palette con Ctrl+Shift+P.',
 };
