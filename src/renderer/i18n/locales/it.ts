@@ -117,4 +117,27 @@ export const it: Translation = {
   'markdown.closeUnsavedHint': 'Questa nota contiene modifiche mai scritte su disco.',
   'markdown.keepEditing': 'Continua a modificare',
   'markdown.discardAndClose': 'Scarta e chiudi',
+  // SplitPane — etichette predefinite delle schede
+  'surfaceLabel.terminal': 'Terminale',
+  'surfaceLabel.browser': 'Browser',
+  'surfaceLabel.markdown': 'Markdown',
+  'surfaceLabel.diff': 'Diff',
+  'surfaceLabel.tab': 'Scheda',
+  // SplitPane — anteprima di divisione trascina-e-rilascia
+  'splitPreview.dropHere': 'Rilascia qui',
+  // SplitPane — barra delle schede e menu contestuale
+  'surfaceTab.newTab': 'Nuova scheda terminale ({binding})',
+  'surfaceTab.newTabType': 'Nuova scheda di tipo…',
+  'surfaceTab.splitRightTooltip': 'Dividi a destra ({binding})',
+  'surfaceTab.splitLayout': 'Layout di divisione…',
+  'surfaceTab.closePane': 'Chiudi riquadro ({binding})',
+  'surfaceTab.duplicateTab': 'Duplica scheda',
+  'surfaceTab.profileProject': 'Profilo di progetto (.wmux.json)',
+  'surfaceTab.profileGlobal': 'Profilo globale',
+  'surfaceTab.splitRight': 'Dividi a destra',
+  'surfaceTab.splitDown': 'Dividi in basso',
+  'surfaceTab.rename': 'Rinomina',
+  'surfaceTab.close': 'Chiudi',
+  'surfaceTab.closeOthers': 'Chiudi le altre',
+  'surfaceTab.closeToRight': 'Chiudi quelle a destra',
 };

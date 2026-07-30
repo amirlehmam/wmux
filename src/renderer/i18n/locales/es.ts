@@ -118,4 +118,27 @@ export const es: Translation = {
   'markdown.closeUnsavedHint': 'Esta nota tiene cambios que nunca se escribieron en el disco.',
   'markdown.keepEditing': 'Seguir editando',
   'markdown.discardAndClose': 'Descartar y cerrar',
+  // SplitPane — etiquetas de pestaña por defecto
+  'surfaceLabel.terminal': 'Terminal',
+  'surfaceLabel.browser': 'Navegador',
+  'surfaceLabel.markdown': 'Markdown',
+  'surfaceLabel.diff': 'Diff',
+  'surfaceLabel.tab': 'Pestaña',
+  // SplitPane — vista previa de arrastrar para dividir
+  'splitPreview.dropHere': 'Suelta aquí',
+  // SplitPane — barra de pestañas y menú contextual
+  'surfaceTab.newTab': 'Nueva pestaña de terminal ({binding})',
+  'surfaceTab.newTabType': 'Nuevo tipo de pestaña…',
+  'surfaceTab.splitRightTooltip': 'Dividir a la derecha ({binding})',
+  'surfaceTab.splitLayout': 'Diseño de división…',
+  'surfaceTab.closePane': 'Cerrar panel ({binding})',
+  'surfaceTab.duplicateTab': 'Duplicar pestaña',
+  'surfaceTab.profileProject': 'Perfil de proyecto (.wmux.json)',
+  'surfaceTab.profileGlobal': 'Perfil global',
+  'surfaceTab.splitRight': 'Dividir a la derecha',
+  'surfaceTab.splitDown': 'Dividir abajo',
+  'surfaceTab.rename': 'Renombrar',
+  'surfaceTab.close': 'Cerrar',
+  'surfaceTab.closeOthers': 'Cerrar las demás',
+  'surfaceTab.closeToRight': 'Cerrar las de la derecha',
 };

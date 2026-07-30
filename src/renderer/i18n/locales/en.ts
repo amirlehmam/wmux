@@ -130,6 +130,29 @@ export const en = {
   'markdown.closeUnsavedHint': 'This note has edits that were never written to disk.',
   'markdown.keepEditing': 'Keep editing',
   'markdown.discardAndClose': 'Discard and close',
+  // SplitPane — default tab labels (surface-label.ts)
+  'surfaceLabel.terminal': 'Terminal',
+  'surfaceLabel.browser': 'Browser',
+  'surfaceLabel.markdown': 'Markdown',
+  'surfaceLabel.diff': 'Diff',
+  'surfaceLabel.tab': 'Tab',
+  // SplitPane — drag-to-split preview overlay
+  'splitPreview.dropHere': 'Drop here',
+  // SplitPane — surface tab bar controls & context menu
+  'surfaceTab.newTab': 'New terminal tab ({binding})',
+  'surfaceTab.newTabType': 'New tab type…',
+  'surfaceTab.splitRightTooltip': 'Split right ({binding})',
+  'surfaceTab.splitLayout': 'Split layout…',
+  'surfaceTab.closePane': 'Close pane ({binding})',
+  'surfaceTab.duplicateTab': 'Duplicate tab',
+  'surfaceTab.profileProject': 'Project profile (.wmux.json)',
+  'surfaceTab.profileGlobal': 'Global profile',
+  'surfaceTab.splitRight': 'Split right',
+  'surfaceTab.splitDown': 'Split down',
+  'surfaceTab.rename': 'Rename',
+  'surfaceTab.close': 'Close',
+  'surfaceTab.closeOthers': 'Close others',
+  'surfaceTab.closeToRight': 'Close to the right',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

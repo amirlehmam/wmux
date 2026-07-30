@@ -117,4 +117,27 @@ export const fr: Translation = {
   'markdown.closeUnsavedHint': 'Cette note contient des modifications jamais écrites sur le disque.',
   'markdown.keepEditing': 'Continuer l’édition',
   'markdown.discardAndClose': 'Abandonner et fermer',
+  // SplitPane — libellés d'onglet par défaut
+  'surfaceLabel.terminal': 'Terminal',
+  'surfaceLabel.browser': 'Navigateur',
+  'surfaceLabel.markdown': 'Markdown',
+  'surfaceLabel.diff': 'Diff',
+  'surfaceLabel.tab': 'Onglet',
+  // SplitPane — aperçu de division par glisser-déposer
+  'splitPreview.dropHere': 'Déposer ici',
+  // SplitPane — barre d'onglets et menu contextuel
+  'surfaceTab.newTab': 'Nouvel onglet terminal ({binding})',
+  'surfaceTab.newTabType': "Nouveau type d'onglet…",
+  'surfaceTab.splitRightTooltip': 'Diviser à droite ({binding})',
+  'surfaceTab.splitLayout': 'Disposition de division…',
+  'surfaceTab.closePane': 'Fermer le panneau ({binding})',
+  'surfaceTab.duplicateTab': "Dupliquer l'onglet",
+  'surfaceTab.profileProject': 'Profil de projet (.wmux.json)',
+  'surfaceTab.profileGlobal': 'Profil global',
+  'surfaceTab.splitRight': 'Diviser à droite',
+  'surfaceTab.splitDown': 'Diviser en bas',
+  'surfaceTab.rename': 'Renommer',
+  'surfaceTab.close': 'Fermer',
+  'surfaceTab.closeOthers': 'Fermer les autres',
+  'surfaceTab.closeToRight': 'Fermer ceux de droite',
 };

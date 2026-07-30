@@ -115,4 +115,27 @@ export const zh: Translation = {
   'markdown.closeUnsavedHint': '这份笔记有从未写入磁盘的修改。',
   'markdown.keepEditing': '继续编辑',
   'markdown.discardAndClose': '丢弃并关闭',
+  // SplitPane — 默认标签名称
+  'surfaceLabel.terminal': '终端',
+  'surfaceLabel.browser': '浏览器',
+  'surfaceLabel.markdown': 'Markdown',
+  'surfaceLabel.diff': '差异',
+  'surfaceLabel.tab': '标签',
+  // SplitPane — 拖拽分屏预览
+  'splitPreview.dropHere': '拖放到此处',
+  // SplitPane — 标签栏控件与右键菜单
+  'surfaceTab.newTab': '新建终端标签 ({binding})',
+  'surfaceTab.newTabType': '新建标签类型…',
+  'surfaceTab.splitRightTooltip': '向右拆分 ({binding})',
+  'surfaceTab.splitLayout': '拆分布局…',
+  'surfaceTab.closePane': '关闭窗格 ({binding})',
+  'surfaceTab.duplicateTab': '复制标签',
+  'surfaceTab.profileProject': '项目配置 (.wmux.json)',
+  'surfaceTab.profileGlobal': '全局配置',
+  'surfaceTab.splitRight': '向右拆分',
+  'surfaceTab.splitDown': '向下拆分',
+  'surfaceTab.rename': '重命名',
+  'surfaceTab.close': '关闭',
+  'surfaceTab.closeOthers': '关闭其他',
+  'surfaceTab.closeToRight': '关闭右侧标签',
 };
