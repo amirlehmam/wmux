@@ -244,6 +244,11 @@ export const es: Translation = {
   // Ajustes — Panel Teclado
   'settings.keyboard.title': 'Atajos de teclado',
   'settings.keyboard.resetAll': 'Restablecer todo',
+  'settings.keyboard.searchByName': 'Buscar por nombre…',
+  'settings.keyboard.searchByShortcut': 'Buscar por atajo…',
+  'settings.keyboard.captureShortcutTitle': 'Haz clic y pulsa un atajo para filtrar',
+  'settings.keyboard.clearShortcutFilter': 'Borrar filtro de atajo',
+  'settings.keyboard.noMatch': 'Ningún atajo coincide con tu búsqueda.',
   // Ajustes — Panel Teclado: etiquetas por acción
   'shortcutAction.newWorkspace': 'Nuevo espacio de trabajo',
   'shortcutAction.newWindow': 'Nueva ventana',

@@ -240,6 +240,11 @@ export const zh: Translation = {
   // 设置 — 键盘面板
   'settings.keyboard.title': '键盘快捷键',
   'settings.keyboard.resetAll': '全部重置',
+  'settings.keyboard.searchByName': '按名称搜索…',
+  'settings.keyboard.searchByShortcut': '按快捷键搜索…',
+  'settings.keyboard.captureShortcutTitle': '点击后按下快捷键进行筛选',
+  'settings.keyboard.clearShortcutFilter': '清除快捷键筛选',
+  'settings.keyboard.noMatch': '没有匹配的快捷键。',
   // 设置 — 键盘面板：各动作的标签
   'shortcutAction.newWorkspace': '新建工作区',
   'shortcutAction.newWindow': '新建窗口',

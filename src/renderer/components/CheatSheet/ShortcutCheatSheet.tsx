@@ -3,59 +3,12 @@ import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
-import { actionLabel } from '../Settings/KeyboardSettings';
+import { actionLabel, formatBinding, CATEGORY, CATEGORY_ORDER, CATEGORY_LABEL_KEY } from '../Settings/KeyboardSettings';
 import '../../styles/cheat-sheet.css';
 
 interface ShortcutCheatSheetProps {
   onClose: () => void;
 }
-
-// Render a binding as "Ctrl+Shift+T". Matches CommandPalette.formatBinding so the
-// cheat-sheet always shows the user's live (possibly remapped) bindings.
-function formatBinding(binding: ShortcutBinding): string {
-  const parts: string[] = [];
-  if (binding.ctrl) parts.push('Ctrl');
-  if (binding.alt) parts.push('Alt');
-  if (binding.shift) parts.push('Shift');
-  parts.push(binding.key.length === 1 ? binding.key.toUpperCase() : binding.key);
-  return parts.join('+');
-}
-
-// Group every action under a readable category. Actions absent here fall under
-// "Other", so newly-added shortcuts still appear without touching this map.
-const CATEGORY: Partial<Record<ShortcutAction, string>> = {
-  newWorkspace: 'Workspaces', closeWorkspace: 'Workspaces', nextWorkspace: 'Workspaces',
-  prevWorkspace: 'Workspaces', renameWorkspace: 'Workspaces', jumpToUnread: 'Workspaces',
-  togglePinWorkspace: 'Workspaces', markWorkspaceRead: 'Workspaces', openFolder: 'Workspaces',
-  newWindow: 'Workspaces', closeWindow: 'Workspaces',
-  newSurface: 'Tabs', nextSurface: 'Tabs', prevSurface: 'Tabs', reopenClosedSurface: 'Tabs',
-  renameSurface: 'Tabs', openMarkdownPanel: 'Tabs', openDiffPanel: 'Tabs',
-  toggleMarkdownSource: 'Tabs',
-  splitRight: 'Panes', splitDown: 'Panes', splitBrowserRight: 'Panes', splitBrowserDown: 'Panes',
-  focusLeft: 'Panes', focusRight: 'Panes', focusUp: 'Panes', focusDown: 'Panes',
-  resizePaneLeft: 'Panes', resizePaneRight: 'Panes', resizePaneUp: 'Panes', resizePaneDown: 'Panes',
-  toggleZoom: 'Panes', closeSurfaceOrPane: 'Panes', broadcastInput: 'Panes',
-  find: 'Terminal', findNext: 'Terminal', findPrevious: 'Terminal', copyMode: 'Terminal',
-  copy: 'Terminal', paste: 'Terminal', fontSizeIncrease: 'Terminal', fontSizeDecrease: 'Terminal',
-  fontSizeReset: 'Terminal',
-  toggleSidebar: 'View', showNotifications: 'View', flashFocused: 'View', openBrowser: 'View',
-  browserDevTools: 'View', browserConsole: 'View', openSettings: 'View', commandPalette: 'View',
-  toggleShortcutCheatSheet: 'View',
-};
-
-const CATEGORY_ORDER = ['Workspaces', 'Tabs', 'Panes', 'Terminal', 'View', 'Other'];
-
-// Internal (English) category constant → its translation key. CATEGORY /
-// CATEGORY_ORDER above stay English so the grouping logic is untouched;
-// only the displayed label is translated.
-const CATEGORY_LABEL_KEY: Record<string, TranslationKey> = {
-  Workspaces: 'cheatSheet.category.workspaces',
-  Tabs: 'cheatSheet.category.tabs',
-  Panes: 'cheatSheet.category.panes',
-  Terminal: 'cheatSheet.category.terminal',
-  View: 'cheatSheet.category.view',
-  Other: 'cheatSheet.category.other',
-};
 
 // Fixed (non-remappable) bindings handled by dedicated key listeners, surfaced
 // here so they're discoverable alongside the remappable ones.

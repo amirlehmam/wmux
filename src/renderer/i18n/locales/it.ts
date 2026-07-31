@@ -243,6 +243,11 @@ export const it: Translation = {
   // Impostazioni — Pannello Tastiera
   'settings.keyboard.title': 'Scorciatoie da tastiera',
   'settings.keyboard.resetAll': 'Ripristina tutto',
+  'settings.keyboard.searchByName': 'Cerca per nome…',
+  'settings.keyboard.searchByShortcut': 'Cerca per scorciatoia…',
+  'settings.keyboard.captureShortcutTitle': 'Clicca, poi premi una scorciatoia per filtrare',
+  'settings.keyboard.clearShortcutFilter': 'Cancella filtro scorciatoia',
+  'settings.keyboard.noMatch': 'Nessuna scorciatoia corrisponde alla ricerca.',
   // Impostazioni — Pannello Tastiera: etichette per ogni azione
   'shortcutAction.newWorkspace': 'Nuova area di lavoro',
   'shortcutAction.newWindow': 'Nuova finestra',

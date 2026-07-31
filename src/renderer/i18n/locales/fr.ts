@@ -243,6 +243,11 @@ export const fr: Translation = {
   // Paramètres — Panneau Clavier
   'settings.keyboard.title': 'Raccourcis clavier',
   'settings.keyboard.resetAll': 'Tout réinitialiser',
+  'settings.keyboard.searchByName': 'Rechercher par nom…',
+  'settings.keyboard.searchByShortcut': 'Rechercher par raccourci…',
+  'settings.keyboard.captureShortcutTitle': 'Cliquez, puis appuyez sur un raccourci pour filtrer',
+  'settings.keyboard.clearShortcutFilter': 'Effacer le filtre de raccourci',
+  'settings.keyboard.noMatch': 'Aucun raccourci ne correspond à votre recherche.',
   // Paramètres — Panneau Clavier : libellés par action
   'shortcutAction.newWorkspace': 'Nouvel espace de travail',
   'shortcutAction.newWindow': 'Nouvelle fenêtre',

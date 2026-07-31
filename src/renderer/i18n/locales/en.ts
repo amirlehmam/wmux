@@ -256,6 +256,11 @@ export const en = {
   // Settings — Keyboard panel
   'settings.keyboard.title': 'Keyboard Shortcuts',
   'settings.keyboard.resetAll': 'Reset All',
+  'settings.keyboard.searchByName': 'Search by name…',
+  'settings.keyboard.searchByShortcut': 'Search by shortcut…',
+  'settings.keyboard.captureShortcutTitle': 'Click, then press a shortcut to filter by it',
+  'settings.keyboard.clearShortcutFilter': 'Clear shortcut filter',
+  'settings.keyboard.noMatch': 'No shortcuts match your search.',
   // Settings — Keyboard panel: per-action shortcut labels
   'shortcutAction.newWorkspace': 'New workspace',
   'shortcutAction.newWindow': 'New window',

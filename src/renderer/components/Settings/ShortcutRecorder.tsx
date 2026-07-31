@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { ShortcutBinding, ShortcutAction, DEFAULT_SHORTCUTS } from '../../store/settings-slice';
+import { useState, useEffect } from 'react';
+import { ShortcutBinding, ShortcutAction } from '../../store/settings-slice';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { actionLabel } from './KeyboardSettings';
+import { bindingsEqual } from '../../utils/shortcut-binding';
+import { useKeyCapture } from '../../hooks/useKeyCapture';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -15,8 +17,6 @@ function bindingToString(b: ShortcutBinding): string {
   return parts.join('+');
 }
 
-const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface ShortcutRecorderProps {
@@ -27,57 +27,23 @@ interface ShortcutRecorderProps {
 export default function ShortcutRecorder({ action, binding }: ShortcutRecorderProps) {
   const t = useT();
   const { shortcuts, setShortcut } = useStore();
-  const [recording, setRecording] = useState(false);
   const [conflict, setConflict] = useState<ShortcutAction | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!recording) return;
-
-    function handleKeyDown(e: KeyboardEvent) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Escape cancels recording
-      if (e.key === 'Escape') {
-        setRecording(false);
-        setConflict(null);
-        return;
-      }
-
-      // Ignore bare modifier presses
-      if (MODIFIER_KEYS.has(e.key)) return;
-
-      const newBinding: ShortcutBinding = {
-        key: e.key,
-        ctrl: e.ctrlKey || undefined,
-        shift: e.shiftKey || undefined,
-        alt: e.altKey || undefined,
-      };
-
-      // Check for conflicts with other actions
+  const { capturing: recording, start } = useKeyCapture({
+    onCapture: (newBinding) => {
+      // Check for conflicts with other actions. bindingsEqual compares
+      // single-character keys case-insensitively, matching the rule
+      // useKeyboardShortcuts.ts applies at dispatch time — otherwise a combo
+      // like Ctrl+Shift+N (persisted as key: 'N') could silently miss its
+      // conflict with newWindow's default (key: 'n').
       const conflictAction = (Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]).find(
-        ([a, b]) => a !== action && b.key === newBinding.key &&
-          !!b.ctrl === !!newBinding.ctrl &&
-          !!b.shift === !!newBinding.shift &&
-          !!b.alt === !!newBinding.alt,
+        ([a, b]) => a !== action && bindingsEqual(b, newBinding),
       );
-
-      if (conflictAction) {
-        setConflict(conflictAction[0]);
-      } else {
-        setConflict(null);
-      }
-
+      setConflict(conflictAction ? conflictAction[0] : null);
       setShortcut(action, newBinding);
-      setRecording(false);
-    }
-
-    document.addEventListener('keydown', handleKeyDown, true);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown, true);
-    };
-  }, [recording, shortcuts, action, setShortcut]);
+    },
+    onCancel: () => setConflict(null),
+  });
 
   // Clear conflict warning after 3 seconds
   useEffect(() => {
@@ -89,11 +55,10 @@ export default function ShortcutRecorder({ action, binding }: ShortcutRecorderPr
   return (
     <div className="shortcut-recorder">
       <button
-        ref={btnRef}
         className={`shortcut-recorder__btn ${recording ? 'shortcut-recorder__btn--recording' : ''}`}
         onClick={() => {
           setConflict(null);
-          setRecording(true);
+          start();
         }}
         title={recording
           ? t('settings.shortcutRecorder.pressCombo', 'Press a key combo (Escape to cancel)')
