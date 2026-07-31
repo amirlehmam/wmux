@@ -224,8 +224,17 @@ export async function initAgentIntegration(parent?: Electron.BrowserWindow): Pro
   return consent;
 }
 
-/** Settings → General wrote a new decision: persist it and reconcile the files now. */
-export function updateConsent(partial: Partial<IntegrationConsent>): IntegrationConsent {
+/**
+ * Settings → General wrote a new decision: persist it and reconcile the files now.
+ *
+ * `features` is a *sparse* patch, not a whole record — the panel sends one
+ * checkbox at a time. Typing it as `Partial<IntegrationConsent>` would say a
+ * caller must supply all four, which is neither true nor what the UI does.
+ */
+export function updateConsent(partial: {
+  decision?: IntegrationDecision;
+  features?: Partial<Record<IntegrationFeature, boolean>>;
+}): IntegrationConsent {
   const current = readConsent();
   const next: IntegrationConsent = {
     decision: partial.decision ?? current.decision,

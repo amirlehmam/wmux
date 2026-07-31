@@ -20,7 +20,7 @@ import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
 import { sessionWindows, toRestorePayload } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
-import { readConsent, updateConsent, type IntegrationConsent } from './agent-integration';
+import { readConsent, updateConsent } from './agent-integration';
 import { getChangedFiles, getFileDiff } from './diff-provider';
 import {
   readMarkdownFile,
@@ -320,7 +320,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // wrote, or the toggle would only stop future writes and leave the current ones
   // in place, which is the original complaint one level down.
   ipcMain.handle('integration:get', () => readConsent());
-  ipcMain.handle('integration:set', (_event, partial: Partial<IntegrationConsent>) =>
+  ipcMain.handle('integration:set', (_event, partial: Parameters<typeof updateConsent>[0]) =>
     updateConsent(partial ?? {}),
   );
 

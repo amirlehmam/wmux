@@ -24,6 +24,12 @@ interface Consent {
   features: Record<Feature, boolean>;
 }
 
+/** What this panel sends back: a decision, or a single flipped checkbox. */
+interface ConsentPatch {
+  decision?: Consent['decision'];
+  features?: Partial<Record<Feature, boolean>>;
+}
+
 const FEATURES: Array<{ key: Feature; labelKey: TranslationKey; labelFallback: string; pathHint: string }> = [
   {
     key: 'instructions',
@@ -67,7 +73,7 @@ export default function AgentIntegrationSettings() {
   // Trust what main reports back over what was requested: applying a change also
   // adds or removes files, and a partial failure must leave the checkboxes
   // showing what actually happened.
-  const push = async (partial: Partial<Consent>) => {
+  const push = async (partial: ConsentPatch) => {
     setBusy(true);
     try {
       const next = await window.wmux?.integration?.set?.(partial);
@@ -122,7 +128,7 @@ export default function AgentIntegrationSettings() {
             // unchecked, they are meaningless — disable them rather than let
             // one be ticked while nothing it controls can run.
             disabled={busy || !enabled}
-            onChange={(e) => push({ features: { [f.key]: e.target.checked } as Record<Feature, boolean> })}
+            onChange={(e) => push({ features: { [f.key]: e.target.checked } })}
           />
         </div>
       ))}
