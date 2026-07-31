@@ -467,4 +467,18 @@ export const zh: Translation = {
   'settings.general.bgPreset.deepSea': '深海',
   'settings.general.bgPreset.aurora': '极光',
   'settings.general.bgPreset.graphite': '石墨',
+  // 应用 — 系统通知、默认会话标题、提示、广播输入横幅
+  'app.notificationDefault': '通知',
+  'app.interruptedIn': '在 {workspace} 中中断（{duration}）',
+  'app.finishedIn': '在 {workspace} 中完成（{duration}）',
+  'app.claudeNeedsInput': 'Claude Code 需要您的操作',
+  'app.claudeFinishedIn': 'Claude Code 已在 {workspace} 中完成',
+  'app.claudeFinished': 'Claude Code 已完成',
+  'app.firstSessionTitle': '会话 1',
+  'app.sessionTitle': '会话 {n}',
+  'app.sessionSaved': '会话 "{name}" 已保存',
+  'app.expandSidebar': '展开侧边栏（Ctrl+B）',
+  'app.closeBrowserPanel': '关闭浏览器面板',
+  'app.broadcastInputTooltip': '输入的文本会发送到此工作区的所有终端面板',
+  'app.broadcastInputBanner': '广播输入已开启 — 输入内容会发送到所有面板（Ctrl+Alt+B 停止）',
 };

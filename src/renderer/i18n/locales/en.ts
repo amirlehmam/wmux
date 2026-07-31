@@ -485,6 +485,20 @@ export const en = {
   'settings.general.bgPreset.deepSea': 'Deep sea',
   'settings.general.bgPreset.aurora': 'Aurora',
   'settings.general.bgPreset.graphite': 'Graphite',
+  // App shell — OS notifications, default session titles, sidebar/browser tooltips, broadcast-input banner
+  'app.notificationDefault': 'Notification',
+  'app.interruptedIn': 'Interrupted in {workspace} ({duration})',
+  'app.finishedIn': 'Finished in {workspace} ({duration})',
+  'app.claudeNeedsInput': 'Claude Code needs your input',
+  'app.claudeFinishedIn': 'Claude Code finished in {workspace}',
+  'app.claudeFinished': 'Claude Code finished',
+  'app.firstSessionTitle': 'Session 1',
+  'app.sessionTitle': 'Session {n}',
+  'app.sessionSaved': 'Session "{name}" saved',
+  'app.expandSidebar': 'Expand sidebar (Ctrl+B)',
+  'app.closeBrowserPanel': 'Close browser panel',
+  'app.broadcastInputTooltip': 'Typed input is sent to every terminal pane in this workspace',
+  'app.broadcastInputBanner': 'Broadcast input ON — typing goes to all panes (Ctrl+Alt+B to stop)',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

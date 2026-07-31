@@ -472,4 +472,18 @@ export const fr: Translation = {
   'settings.general.bgPreset.deepSea': 'Fond marin',
   'settings.general.bgPreset.aurora': 'Aurore',
   'settings.general.bgPreset.graphite': 'Graphite',
+  // App — notifications système, titres de session par défaut, infobulles, bannière de diffusion
+  'app.notificationDefault': 'Notification',
+  'app.interruptedIn': 'Interrompu dans {workspace} ({duration})',
+  'app.finishedIn': 'Terminé dans {workspace} ({duration})',
+  'app.claudeNeedsInput': 'Claude Code a besoin de votre intervention',
+  'app.claudeFinishedIn': 'Claude Code a terminé dans {workspace}',
+  'app.claudeFinished': 'Claude Code a terminé',
+  'app.firstSessionTitle': 'Session 1',
+  'app.sessionTitle': 'Session {n}',
+  'app.sessionSaved': 'Session « {name} » enregistrée',
+  'app.expandSidebar': 'Développer la barre latérale (Ctrl+B)',
+  'app.closeBrowserPanel': 'Fermer le panneau du navigateur',
+  'app.broadcastInputTooltip': 'Le texte saisi est envoyé à tous les panneaux de terminal de cet espace de travail',
+  'app.broadcastInputBanner': 'Diffusion de saisie ACTIVÉE — tout ce que vous tapez va dans tous les panneaux (Ctrl+Alt+B pour arrêter)',
 };
