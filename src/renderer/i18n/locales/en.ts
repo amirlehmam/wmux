@@ -429,6 +429,14 @@ export const en = {
   'diffPane.waitingForChanges': 'Waiting for changes...',
   'diffPane.hint': 'Diffs will appear here when Claude edits files',
   'diffPane.noDiffAvailable': 'No diff available for {file}',
+  // Terminal — copy mode, find bar, bell notification
+  'terminal.bell': 'Terminal bell',
+  'terminal.copyModeHint':
+    'COPY MODE — Arrow keys to move, Shift+arrows to select, Enter to copy, Esc to exit',
+  'terminal.findPlaceholder': 'Find...',
+  'terminal.findPrevious': 'Previous (Shift+Enter)',
+  'terminal.findNext': 'Next (Enter)',
+  'terminal.findClose': 'Close (Esc)',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

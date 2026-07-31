@@ -416,4 +416,12 @@ export const fr: Translation = {
   'diffPane.waitingForChanges': 'En attente de modifications...',
   'diffPane.hint': 'Les diffs apparaîtront ici quand Claude modifie des fichiers',
   'diffPane.noDiffAvailable': 'Aucun diff disponible pour {file}',
+  // Terminal — mode copie, barre de recherche, notification de cloche
+  'terminal.bell': 'Cloche du terminal',
+  'terminal.copyModeHint':
+    'MODE COPIE — Flèches pour se déplacer, Maj+flèches pour sélectionner, Entrée pour copier, Échap pour quitter',
+  'terminal.findPlaceholder': 'Rechercher...',
+  'terminal.findPrevious': 'Précédent (Maj+Entrée)',
+  'terminal.findNext': 'Suivant (Entrée)',
+  'terminal.findClose': 'Fermer (Échap)',
 };

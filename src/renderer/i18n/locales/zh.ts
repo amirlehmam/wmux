@@ -413,4 +413,11 @@ export const zh: Translation = {
   'diffPane.waitingForChanges': '等待更改...',
   'diffPane.hint': 'Claude 编辑文件时，差异将显示在这里',
   'diffPane.noDiffAvailable': '{file} 没有可用的差异',
+  // 终端 — 复制模式、查找栏、响铃通知
+  'terminal.bell': '终端响铃',
+  'terminal.copyModeHint': '复制模式 — 方向键移动，Shift+方向键选择，回车复制，Esc 退出',
+  'terminal.findPlaceholder': '查找...',
+  'terminal.findPrevious': '上一个 (Shift+Enter)',
+  'terminal.findNext': '下一个 (Enter)',
+  'terminal.findClose': '关闭 (Esc)',
 };
