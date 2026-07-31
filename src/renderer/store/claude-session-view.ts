@@ -19,10 +19,18 @@ interface ObserverActivity {
 /** How long a hook/observer signal counts as "actively working" (ms). */
 export const SESSION_ACTIVITY_TTL_MS = 5000;
 
+/** One answer the blocked agent declared it will accept (issue #128). */
+export interface AgentChoiceView {
+  id: string;
+  label: string;
+}
+
 /** Declared state pushed by the agent itself (src/main/agent-state.ts, issue #128). */
 export interface DeclaredAgentState {
   state: 'blocked' | 'working' | 'idle' | 'unknown';
   blockedReason?: string | null;
+  choices?: AgentChoiceView[];
+  answeredAt?: number | null;
 }
 
 /** One Claude Code session (= one surface where Claude ran) inside a workspace. */
@@ -41,6 +49,14 @@ export interface ClaudeSessionView {
   blocked: boolean;
   /** What it is waiting for, when the agent said. */
   blockedReason: string | null;
+  /**
+   * Answers offerable from the sidebar. Empty for a blocked pane whose agent
+   * declared none — still worth showing as "needs you", just not answerable
+   * from here.
+   */
+  choices: AgentChoiceView[];
+  /** An answer has been relayed and the agent has not yet reported back. */
+  answerPending: boolean;
   /** Raw tool name while working, null when idle or unknown. */
   tool: string | null;
   skill: string | null;
@@ -101,7 +117,7 @@ function resolveActivity(
   observed: ObserverActivity | undefined,
   declared: DeclaredAgentState | undefined,
   now: number,
-): Pick<ClaudeSessionView, 'working' | 'blocked' | 'blockedReason' | 'tool'> {
+): Pick<ClaudeSessionView, 'working' | 'blocked' | 'blockedReason' | 'tool' | 'choices' | 'answerPending'> {
   const hookFresh = !!hook && now - hook.lastSeen < SESSION_ACTIVITY_TTL_MS;
   const obsFresh = !!observed && !observed.isDone && !!observed.lastTool
     && now - observed.lastUpdate < SESSION_ACTIVITY_TTL_MS;
@@ -114,7 +130,20 @@ function resolveActivity(
   if (obsFresh) tool = observed.lastTool;
   else if (hookFresh && hook.lastTool) tool = hook.lastTool;
 
-  return { working, blocked, blockedReason: blocked ? (declared?.blockedReason ?? null) : null, tool };
+  // Choices only ever ride along with a live block. An answered prompt keeps
+  // showing "sent" until the agent confirms — wmux deliberately does not clear
+  // `blocked` on its own say-so (see answerAgent in src/main/agent-state.ts).
+  const choices = blocked ? (declared?.choices ?? []) : [];
+  const answerPending = blocked && choices.length === 0 && !!declared?.answeredAt;
+
+  return {
+    working,
+    blocked,
+    blockedReason: blocked ? (declared?.blockedReason ?? null) : null,
+    tool,
+    choices,
+    answerPending,
+  };
 }
 
 /**

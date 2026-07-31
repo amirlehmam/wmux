@@ -21,6 +21,7 @@ import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSessi
 import { sessionWindows, toRestorePayload } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
 import { readConsent, updateConsent } from './agent-integration';
+import { handleAgentStateV2 } from './agent-state-rpc';
 import { getChangedFiles, getFileDiff } from './diff-provider';
 import {
   readMarkdownFile,
@@ -313,6 +314,22 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.on('settings:set', (_event, key: string, value: unknown) => {
     saveSetting(key, value);
   });
+
+  // The #128 back-channel from the sidebar: answer a blocked pane in place.
+  // Routed through the same V2 handler the CLI and pipe clients use, so there
+  // is exactly one implementation of "what does answering mean" — including the
+  // refusals (pane no longer asking, choice already consumed).
+  ipcMain.handle(IPC_CHANNELS.AGENT_ANSWER, (_event, surfaceId: string, choiceId: string) =>
+    new Promise((resolve) => {
+      const handled = handleAgentStateV2(
+        'pane.answer_agent',
+        { surfaceId, choiceId },
+        (result: any) => resolve({ ok: true, ...result }),
+        (_code: number, message: string) => resolve({ ok: false, error: message }),
+      );
+      if (!handled) resolve({ ok: false, error: 'answer_agent not routed' });
+    }),
+  );
 
   // Agent-integration consent (issue #132). Deliberately NOT routed through the
   // generic settings:set above: changing this decision has to reconcile the files

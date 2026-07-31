@@ -522,4 +522,7 @@ export const fr: Translation = {
   'settings.integration.hooks': 'Hooks de statut',
   'settings.integration.orchestrator': 'Extension orchestrateur',
   'settings.integration.browserMcp': 'Panneau navigateur pour MCP',
+  // Barre latérale — répondre à un agent bloqué depuis l'extérieur de son panneau (issue #128)
+  'workspaceRow.answerSent': 'Envoyé — en attente…',
+  'workspaceRow.answerTitle': 'Répondre sans basculer vers ce panneau',
 };

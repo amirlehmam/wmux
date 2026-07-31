@@ -40,10 +40,15 @@ function getToolLabel(tool: string, t: T): string {
 }
 
 /** Detail text of one Claude session sub-line. */
-function sessionDetailText(session: { working: boolean; blocked: boolean; blockedReason: string | null; tool: string | null }, t: T): string {
+function sessionDetailText(session: { working: boolean; blocked: boolean; blockedReason: string | null; tool: string | null; answerPending?: boolean }, t: T): string {
   // Blocked outranks the tool label: a pane parked on a permission prompt is
   // the one thing the user has to act on, so it must not read as "Idle" just
   // because no tool is running (issue #128).
+  //
+  // "Sent…" is its own state rather than a cleared block: wmux relayed the
+  // answer but the agent has not confirmed, and claiming the prompt is gone on
+  // our own say-so is exactly the ghost this feature exists to avoid.
+  if (session.answerPending) return t('workspaceRow.answerSent', 'Sent — waiting…');
   if (session.blocked) return session.blockedReason || t('workspaceRow.needsYou', 'Needs you');
   if (!session.working) return t('workspaceRow.idle', 'Idle');
   return session.tool ? getToolLabel(session.tool, t) : t('workspaceRow.sessionRunning', 'Running…');
@@ -269,6 +274,31 @@ export default function WorkspaceRow({
   // Panes parked on the user. Surfaced on the collapsed row too: the whole
   // point is seeing which of ten workspaces needs you WITHOUT expanding them.
   const blockedSessions = sessionsView.blocked;
+
+  // Answering is a write into someone else's live terminal, so it is guarded
+  // against double-fire while in flight (issue #128).
+  const [answering, setAnswering] = useState<string | null>(null);
+
+  /**
+   * Relay a declared answer to a blocked pane.
+   *
+   * On refusal — the pane stopped asking, the choice was already consumed, the
+   * agent declared a key wmux cannot translate — fall back to FOCUSING the
+   * pane. That is the honest outcome: wmux could not answer for you, so it puts
+   * you where you can answer yourself, rather than silently swallowing a click
+   * on a button that looked like it worked.
+   */
+  const answerSession = async (surfaceId: string, choiceId: string, paneId: PaneId) => {
+    setAnswering(surfaceId);
+    try {
+      const res = await window.wmux?.agentState?.answer?.(surfaceId, choiceId);
+      if (!res?.ok) onFocusAgentPane?.(paneId);
+    } catch {
+      onFocusAgentPane?.(paneId);
+    } finally {
+      setAnswering(null);
+    }
+  };
 
   // Legacy workspace-keyed entry — only written by hook events with no surfaceId.
   const legacyHook = hookActivity?.[workspace.id];
@@ -560,8 +590,8 @@ export default function WorkspaceRow({
       {(sessions.length >= 2 || blockedSessions > 0) && (
         <div className="workspace-row__agents workspace-row__sessions">
           {sessions.map((s, i) => (
+            <React.Fragment key={s.surfaceId}>
             <div
-              key={s.surfaceId}
               className={[
                 'workspace-row__agent',
                 'workspace-row__agent--clickable',
@@ -589,6 +619,31 @@ export default function WorkspaceRow({
                 {sessionDetailText(s, t)}
               </span>
             </div>
+            {/* The back-channel (issue #128): answer the pane that needs you
+                without leaving the pane you are in. Only rendered when the
+                AGENT declared these answers — wmux never invents a keystroke
+                for someone else's prompt. */}
+            {s.choices.length > 0 && (
+              <div className="workspace-row__answers">
+                <span className="workspace-row__agent-glyph" aria-hidden="true">{' '}</span>
+                {s.choices.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="workspace-row__answer"
+                    disabled={answering === s.surfaceId}
+                    title={t('workspaceRow.answerTitle', 'Answer without switching to this pane')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void answerSession(s.surfaceId, c.id, s.paneId);
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            </React.Fragment>
           ))}
         </div>
       )}

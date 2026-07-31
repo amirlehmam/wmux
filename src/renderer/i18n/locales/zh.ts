@@ -517,4 +517,7 @@ export const zh: Translation = {
   'settings.integration.hooks': '状态钩子',
   'settings.integration.orchestrator': '编排器插件',
   'settings.integration.browserMcp': '用于 MCP 的浏览器面板',
+  // 侧边栏 — 在面板之外回复被阻塞的代理 (issue #128)
+  'workspaceRow.answerSent': '已发送 — 等待中…',
+  'workspaceRow.answerTitle': '无需切换到该面板即可回复',
 };

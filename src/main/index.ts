@@ -15,7 +15,7 @@ import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
 import { initAgentIntegration } from './agent-integration';
 import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
-import { handleAgentStateV2 } from './agent-state-rpc';
+import { handleAgentStateV2, setAnswerWriter } from './agent-state-rpc';
 import { applyHookToAgentState } from './agent-hook-bridge';
 import { startOrchestrationWatcher } from './orchestration-watcher';
 import { readMarkdownFile } from './markdown-file';
@@ -265,6 +265,32 @@ function translateKeyName(key: string, shift: boolean): string | null {
   if (normalized in PTY_KEY_MAP) return PTY_KEY_MAP[normalized];
   return null;
 }
+
+/**
+ * Deliver an answer from `pane.answer_agent` into the pane (issue #128).
+ *
+ * Wired here rather than in agent-state-rpc.ts because this is where both
+ * halves already live: the PTY manager, and the named-key table that
+ * `surface.send_key` uses. Sharing that table is the point — a choice declaring
+ * `key: "enter"` must reach the terminal as exactly the same bytes it would if
+ * the user had asked wmux to send that key by hand, or the back-channel becomes
+ * a second, subtly different way to type.
+ *
+ * An unknown key name throws rather than falling back to writing the name as
+ * literal text: silently typing "enter" into a permission prompt would answer
+ * the wrong thing.
+ */
+setAnswerWriter(async (surfaceId, payload) => {
+  const resolved = await resolvePtySurface(surfaceId);
+  if (!resolved.ok) throw new Error(resolved.error);
+  if (payload.key !== undefined) {
+    const translated = translateKeyName(payload.key, false);
+    if (translated === null) throw new Error(`the agent declared an unknown key name: "${payload.key}"`);
+    ptyManager.write(resolved.id, translated);
+    return;
+  }
+  ptyManager.write(resolved.id, payload.text ?? '');
+});
 
 // Set Windows AppUserModelId so taskbar pinning uses the correct icon & identity
 app.setAppUserModelId('com.wmux.app');

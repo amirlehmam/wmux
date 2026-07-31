@@ -455,7 +455,40 @@ async function cmdReportAgent(args: string[]): Promise<void> {
   const depth = getFlag(args, '--run-depth');
   if (depth !== undefined) params.runDepth = Number(depth);
 
+  // --choices declares what wmux may offer as an answer (issue #128). JSON
+  // rather than a packed string because each choice carries four fields and the
+  // payload is exact bytes — the one place a cramped syntax would be a bug
+  // waiting to happen. Mirrors `agent spawn-batch --json`.
+  const choices = getFlag(args, '--choices');
+  if (choices !== undefined) {
+    try {
+      params.choices = JSON.parse(choices);
+    } catch (err: any) {
+      console.error(`report-agent: --choices is not valid JSON: ${err.message}`);
+      process.exit(1);
+    }
+  }
+
   print(await sendV2('pane.report_agent', params));
+}
+
+/**
+ * `answer-agent` — reply to a blocked pane from outside it (issue #128).
+ *
+ * Note this one defaults to NO ambient surface: the other verbs are an agent
+ * describing itself, where WMUX_SURFACE_ID is exactly right, but answering is
+ * aimed at a DIFFERENT pane — the whole point is to not be in it. Defaulting to
+ * the caller's own pane would make `wmux answer-agent --choice allow` type into
+ * whatever terminal you happen to be sitting in.
+ */
+async function cmdAnswerAgent(args: string[]): Promise<void> {
+  const surfaceId = getFlag(args, '--surface');
+  if (!surfaceId) {
+    console.error('answer-agent: --surface required (run `wmux agent-state` to see which panes are blocked)');
+    process.exit(1);
+  }
+  const choiceId = getFlag(args, '--choice') ?? args[1];
+  print(await sendV2('pane.answer_agent', { surfaceId, choiceId: choiceId ?? null }));
 }
 
 async function cmdReportMetadata(args: string[]): Promise<void> {
@@ -479,6 +512,7 @@ const AGENT_STATE_COMMANDS: Record<string, (args: string[]) => Promise<void>> = 
       sessionId: getFlag(args, '--session') ?? args[1] ?? null,
     }));
   },
+  'answer-agent': cmdAnswerAgent,
   'release-agent': async (args) => {
     const surfaceId = reportingSurface(args, 'release-agent');
     print(await sendV2('pane.release_agent', { surfaceId, seq: seqFlag(args) }));
@@ -693,7 +727,9 @@ Diff:       diff [--file <path>]
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state
 Hook:       hook --event <type> --tool <name> [--agent <id>]
-Agent state: report-agent --blocked [reason] | --unblocked | --run-start | --run-end
+Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
+            report-agent --run-start | --run-end
+            answer-agent --surface <id> --choice <id>   # reply without leaving your pane
                           [--run-depth N] [--seq N] [--surface <id>]
             report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms]
             report-session <id> | release-agent | agent-state [--surface <id>]

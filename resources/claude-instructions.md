@@ -40,4 +40,32 @@ wmux markdown get <id>                           # read a surface's buffer back 
 
 Relative paths resolve against your current working directory. Only text/markdown files up to 5 MB are accepted. Prefer this over pasting long markdown into the terminal so the user can read it comfortably in a pane.
 
+## Asking the user something
+
+When you stop to ask the user a question — a permission prompt, a choice, a
+confirmation — tell wmux, and tell it what the answers are. The sidebar then
+shows **"Needs you"** on your pane (so a user with ten panes open can see which
+one is waiting), and renders your answers as buttons they can click **without
+switching to your pane**.
+
+```bash
+wmux report-agent --blocked "Run the migration against prod?" --choices '[
+  {"id":"yes","label":"Yes, run it","key":"1"},
+  {"id":"no","label":"No, stop","key":"2","isDefault":true}
+]'
+```
+
+Each choice needs an `id`, a human-readable `label`, and **exactly what to send**
+— either `key` (a key name: `enter`, `esc`, `1`, `y`, …) or `text` (sent
+literally). wmux relays those bytes verbatim; it does not know how to answer
+your prompt and will never guess. A choice with neither is dropped, and the
+reply tells you how many were kept.
+
+Answering does **not** clear your blocked state — report it yourself once you
+have acted on the answer, exactly as you would if the user had typed it:
+
+```bash
+wmux report-agent --unblocked
+```
+
 <!-- wmux:end -->

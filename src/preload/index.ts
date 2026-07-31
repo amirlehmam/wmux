@@ -191,6 +191,11 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.on(IPC_CHANNELS.AGENT_STATE, handler);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT_STATE, handler);
     },
+    // The back-channel: answer a blocked pane without switching to it. Returns
+    // { ok } — a refusal (the pane stopped asking, the choice is gone) is a
+    // normal outcome the UI reports, not an exception.
+    answer: (surfaceId: string, choiceId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_ANSWER, surfaceId, choiceId),
   },
   orchestration: {
     onUpdate: (callback: (state: any) => void) => {

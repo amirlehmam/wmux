@@ -674,6 +674,43 @@
   color: #b388ff;
   opacity: 1;
 }
+/* Answer buttons for a blocked pane (issue #128, the back-channel).
+   Violet, matching the blocked dot and detail text — the whole point of that
+   colour is that "needs you" reads differently from the amber of panes getting
+   on with it, and the thing you click to resolve it belongs to the same signal.
+   They wrap: an agent may declare several answers and the sidebar is narrow. */
+.workspace-row__answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0 4px 0;
+  align-items: center;
+}
+.workspace-row__answer {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(179, 136, 255, 0.45);
+  background: rgba(179, 136, 255, 0.12);
+  color: #d3bcff;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-row__answer:hover:not(:disabled) {
+  background: rgba(179, 136, 255, 0.26);
+  border-color: rgba(179, 136, 255, 0.75);
+  color: #efe6ff;
+}
+.workspace-row__answer:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .workspace-row__agent-name {
   overflow: hidden;
   text-overflow: ellipsis;

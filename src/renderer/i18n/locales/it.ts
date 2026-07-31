@@ -522,4 +522,7 @@ export const it: Translation = {
   'settings.integration.hooks': 'Hook di stato',
   'settings.integration.orchestrator': 'Plugin orchestratore',
   'settings.integration.browserMcp': 'Pannello browser per MCP',
+  // Barra laterale — rispondere a un agente bloccato da fuori del suo pannello (issue #128)
+  'workspaceRow.answerSent': 'Inviato — in attesa…',
+  'workspaceRow.answerTitle': 'Rispondi senza passare a questo pannello',
 };

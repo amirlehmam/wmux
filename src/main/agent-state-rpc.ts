@@ -19,13 +19,38 @@ import {
   reportAgentSession,
   reportMetadata,
   releaseAgent,
+  answerAgent,
+  sanitizeChoices,
   getAgentState,
   listAgentStates,
   listBlocked,
+  type AnswerFailure,
 } from './agent-state';
 
 type Respond = (result: any) => void;
 type RespondError = (code: number, message: string) => void;
+
+/**
+ * Writes the resolved answer into the pane. Injected rather than imported so
+ * this module keeps no dependency on the PTY layer — which is also what lets
+ * the routing be tested without a terminal.
+ */
+export type AnswerWriter = (surfaceId: SurfaceId, payload: { key?: string; text?: string }) => Promise<void> | void;
+
+let writeAnswer: AnswerWriter | null = null;
+
+/** Wired once at startup by index.ts, which owns the key table and the PTY manager. */
+export function setAnswerWriter(writer: AnswerWriter): void {
+  writeAnswer = writer;
+}
+
+/** Why an answer was refused, in words a CLI user can act on. */
+const ANSWER_ERRORS: Record<AnswerFailure, string> = {
+  'unknown-surface': 'no agent has reported for this surface',
+  'not-blocked': 'that pane is not waiting on you right now',
+  'no-choices': 'the agent is blocked but declared no answers — switch to the pane',
+  'unknown-choice': 'no such choice (call pane.agent_state to list them)',
+};
 
 /** `surfaceId`, or the `paneId` alias from the issue's original method names. */
 function targetSurface(params: any): SurfaceId | undefined {
@@ -54,14 +79,44 @@ export function handleAgentStateV2(
   }
 
   const handler = HANDLERS[method];
-  if (!handler) return false;
+  const isAnswer = method === 'pane.answer_agent';
+  if (!handler && !isAnswer) return false;
 
   const surfaceId = targetSurface(params);
   if (!surfaceId) {
     respondError(-32602, 'surfaceId required');
     return true;
   }
-  respond(handler(surfaceId, params || {}));
+
+  // The one method that writes rather than records, so it is the one that has
+  // to reach the PTY — and the only one that can fail for reasons the caller
+  // needs spelled out.
+  if (isAnswer) {
+    const result = answerAgent(surfaceId, { choiceId: params?.choiceId ?? params?.choice ?? null });
+    if (!result.ok) {
+      respondError(-32000, ANSWER_ERRORS[result.reason]);
+      return true;
+    }
+    if (!writeAnswer) {
+      respondError(-32000, 'no answer writer wired');
+      return true;
+    }
+    // The writer is invoked INSIDE the async function, not handed to
+    // Promise.resolve(): a writer that throws synchronously — an untranslatable
+    // key name is the obvious case — would otherwise escape past `.catch()` and
+    // take down the pipe request handler instead of returning an RPC error.
+    void (async () => {
+      try {
+        await writeAnswer!(surfaceId, { key: result.key, text: result.text });
+        respond({ ok: true, choice: result.choice });
+      } catch (err: any) {
+        respondError(-32000, err?.message || 'failed to deliver the answer');
+      }
+    })();
+    return true;
+  }
+
+  respond(handler!(surfaceId, params || {}));
   return true;
 }
 
@@ -78,8 +133,16 @@ const HANDLERS: Record<string, (surfaceId: SurfaceId, p: any) => any> = {
       reason: p.reason,
       runDelta: p.runDelta,
       runDepth: p.runDepth,
+      choices: p.choices,
     });
-    return { accepted: !!record, state: getAgentState(surfaceId)?.state ?? 'unknown' };
+    // `choices` echoes how many were KEPT, not how many were sent: a reporter
+    // that declares an unanswerable choice (no key, no text) learns from the
+    // reply instead of from a user clicking a dead button.
+    return {
+      accepted: !!record,
+      state: getAgentState(surfaceId)?.state ?? 'unknown',
+      ...(p.choices !== undefined ? { choices: sanitizeChoices(p.choices).length } : {}),
+    };
   },
 
   'pane.report_agent_session': (surfaceId, p) => ({

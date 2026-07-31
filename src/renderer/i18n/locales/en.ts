@@ -535,6 +535,9 @@ export const en = {
   'settings.integration.hooks': 'Status hooks',
   'settings.integration.orchestrator': 'Orchestrator plugin',
   'settings.integration.browserMcp': 'Browser panel for MCP',
+  // Sidebar — answering a blocked agent from outside its pane (issue #128)
+  'workspaceRow.answerSent': 'Sent — waiting…',
+  'workspaceRow.answerTitle': 'Answer without switching to this pane',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */
