@@ -40,7 +40,16 @@ async function isGitRepo(cwd: string): Promise<boolean> {
 // When there's no git repo, we take a snapshot of file contents on first load
 // and diff against it on subsequent polls.
 
-const snapshots = new Map<string, Map<string, string>>(); // cwd → (relPath → content)
+interface SnapshotEntry {
+  content: string;
+  mtimeMs: number;
+  size: number;
+}
+
+const snapshots = new Map<string, Map<string, SnapshotEntry>>(); // cwd → (relPath → entry)
+// One scan per directory at a time: a slow scan coalesces concurrent callers
+// instead of piling up (a home-dir scan can outlast the renderer's poll interval).
+const scansInFlight = new Map<string, Promise<ChangedFile[]>>();
 const SNAPSHOT_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.json', '.py', '.rb', '.go', '.rs',
   '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.swift', '.kt',
@@ -58,15 +67,15 @@ function shouldSnapshotFile(filePath: string): boolean {
   return SNAPSHOT_EXTENSIONS.has(ext);
 }
 
-function walkDir(dir: string, base: string, files: string[], depth = 0): void {
+async function walkDir(dir: string, base: string, files: string[], depth = 0): Promise<void> {
   if (depth > 5 || files.length >= MAX_SNAPSHOT_FILES) return;
   let entries: fs.Dirent[];
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
   for (const entry of entries) {
     if (files.length >= MAX_SNAPSHOT_FILES) return;
     if (entry.isDirectory()) {
       if (!SNAPSHOT_IGNORE.has(entry.name) && !entry.name.startsWith('.')) {
-        walkDir(path.join(dir, entry.name), base, files, depth + 1);
+        await walkDir(path.join(dir, entry.name), base, files, depth + 1);
       }
     } else if (entry.isFile() && shouldSnapshotFile(entry.name)) {
       const rel = path.relative(base, path.join(dir, entry.name)).replace(/\\/g, '/');
@@ -75,34 +84,38 @@ function walkDir(dir: string, base: string, files: string[], depth = 0): void {
   }
 }
 
-function takeSnapshot(cwd: string): Map<string, string> {
-  const snap = new Map<string, string>();
+/** Resolve `rel` inside `cwd`, or null if it escapes the directory. */
+function resolveWithin(cwd: string, rel: string): string | null {
+  const resolved = path.resolve(path.join(cwd, rel));
+  return resolved.startsWith(path.resolve(cwd)) ? resolved : null;
+}
+
+async function readSnapshotEntry(abs: string): Promise<SnapshotEntry | null> {
+  try {
+    const stat = await fs.promises.stat(abs);
+    if (stat.size > MAX_SNAPSHOT_FILE) return null;
+    const buf = await fs.promises.readFile(abs);
+    if (buf.includes(0)) return null; // skip binary
+    return { content: buf.toString('utf-8'), mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch { return null; /* skip unreadable */ }
+}
+
+async function takeSnapshot(cwd: string): Promise<Map<string, SnapshotEntry>> {
+  const snap = new Map<string, SnapshotEntry>();
   const files: string[] = [];
-  walkDir(cwd, cwd, files);
+  await walkDir(cwd, cwd, files);
   for (const rel of files) {
-    try {
-      const abs = path.join(cwd, rel);
-      const stat = fs.statSync(abs);
-      if (stat.size > MAX_SNAPSHOT_FILE) continue;
-      const buf = fs.readFileSync(abs);
-      if (buf.includes(0)) continue; // skip binary
-      snap.set(rel, buf.toString('utf-8'));
-    } catch { /* skip unreadable */ }
+    const entry = await readSnapshotEntry(path.join(cwd, rel));
+    if (entry) snap.set(rel, entry);
   }
   return snap;
 }
 
-function readCurrentFile(cwd: string, rel: string): string | null {
-  try {
-    const abs = path.join(cwd, rel);
-    const resolved = path.resolve(abs);
-    if (!resolved.startsWith(path.resolve(cwd))) return null;
-    const stat = fs.statSync(resolved);
-    if (stat.size > MAX_SNAPSHOT_FILE) return null;
-    const buf = fs.readFileSync(resolved);
-    if (buf.includes(0)) return null;
-    return buf.toString('utf-8');
-  } catch { return null; }
+async function readCurrentFile(cwd: string, rel: string): Promise<string | null> {
+  const resolved = resolveWithin(cwd, rel);
+  if (!resolved) return null;
+  const entry = await readSnapshotEntry(resolved);
+  return entry ? entry.content : null;
 }
 
 function generateUnifiedDiff(filePath: string, oldContent: string, newContent: string): string {
@@ -182,22 +195,34 @@ function generateUnifiedDiff(filePath: string, oldContent: string, newContent: s
 
 async function getSnapshotChangedFiles(cwd: string): Promise<ChangedFile[]> {
   if (!snapshots.has(cwd)) {
-    snapshots.set(cwd, takeSnapshot(cwd));
+    snapshots.set(cwd, await takeSnapshot(cwd));
     return []; // First call: snapshot taken, no changes yet
   }
   const snap = snapshots.get(cwd)!;
   const changed: ChangedFile[] = [];
 
-  // Check existing files for modifications
-  for (const [rel, oldContent] of snap) {
-    const current = readCurrentFile(cwd, rel);
-    if (current === null) {
-      // File was deleted
-      const lines = oldContent.split('\n').length;
+  // Check existing files for modifications. Stat first and only read content
+  // when mtime/size moved — in the steady state this skips every read.
+  for (const [rel, entry] of snap) {
+    const resolved = resolveWithin(cwd, rel);
+    let stat: fs.Stats | null = null;
+    if (resolved) {
+      try { stat = await fs.promises.stat(resolved); } catch { /* deleted */ }
+    }
+    if (!stat) {
+      const lines = entry.content.split('\n').length;
       changed.push({ path: rel, status: 'deleted', additions: 0, deletions: lines });
-    } else if (current !== oldContent) {
+      continue;
+    }
+    if (stat.mtimeMs === entry.mtimeMs && stat.size === entry.size) continue; // unchanged
+    const current = await readCurrentFile(cwd, rel);
+    if (current === null) {
+      // Grew past the size cap or turned binary — treat as gone, like before
+      const lines = entry.content.split('\n').length;
+      changed.push({ path: rel, status: 'deleted', additions: 0, deletions: lines });
+    } else if (current !== entry.content) {
       // File was modified
-      const oldLines = oldContent.split('\n');
+      const oldLines = entry.content.split('\n');
       const newLines = current.split('\n');
       let additions = 0, deletions = 0;
       const max = Math.max(oldLines.length, newLines.length);
@@ -210,15 +235,19 @@ async function getSnapshotChangedFiles(cwd: string): Promise<ChangedFile[]> {
         }
       }
       changed.push({ path: rel, status: 'modified', additions, deletions });
+    } else {
+      // Content identical, only metadata moved (e.g. touch) — refresh the
+      // stored stat so the next poll goes back to the cheap skip path.
+      snap.set(rel, { content: entry.content, mtimeMs: stat.mtimeMs, size: stat.size });
     }
   }
 
   // Check for new files
   const currentFiles: string[] = [];
-  walkDir(cwd, cwd, currentFiles);
+  await walkDir(cwd, cwd, currentFiles);
   for (const rel of currentFiles) {
     if (!snap.has(rel)) {
-      const content = readCurrentFile(cwd, rel);
+      const content = await readCurrentFile(cwd, rel);
       if (content !== null) {
         changed.push({ path: rel, status: 'added', additions: content.split('\n').length, deletions: 0 });
       }
@@ -228,12 +257,21 @@ async function getSnapshotChangedFiles(cwd: string): Promise<ChangedFile[]> {
   return changed;
 }
 
-function getSnapshotFileDiff(cwd: string, file: string): string {
+/** Serialize/coalesce snapshot scans per directory. */
+function getSnapshotChangedFilesCoalesced(cwd: string): Promise<ChangedFile[]> {
+  const inFlight = scansInFlight.get(cwd);
+  if (inFlight) return inFlight;
+  const scan = getSnapshotChangedFiles(cwd).finally(() => scansInFlight.delete(cwd));
+  scansInFlight.set(cwd, scan);
+  return scan;
+}
+
+async function getSnapshotFileDiff(cwd: string, file: string): Promise<string> {
   const snap = snapshots.get(cwd);
   if (!snap) return '';
 
-  const oldContent = snap.get(file);
-  const current = readCurrentFile(cwd, file);
+  const oldContent = snap.get(file)?.content;
+  const current = await readCurrentFile(cwd, file);
 
   if (oldContent === undefined && current !== null) {
     // New file
@@ -312,7 +350,7 @@ export async function getChangedFiles(cwd: string): Promise<ChangedFile[]> {
   }
 
   // No git — use snapshot system
-  return getSnapshotChangedFiles(cwd);
+  return getSnapshotChangedFilesCoalesced(cwd);
 }
 
 export async function getFileDiff(cwd: string, file: string): Promise<string> {

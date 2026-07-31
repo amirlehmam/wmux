@@ -121,26 +121,39 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
     }
   }, [cwd]);
 
-  // Poll git status every 2 seconds (~50ms per git status call)
-  // This replaces the old mount-only load — ensures diffs always stay fresh
+  // Poll every 2 seconds (~50ms per git status call). The non-git snapshot
+  // fallback can take much longer than the interval on big trees, so schedule
+  // the next poll only after the previous one finishes (never overlap) and
+  // stretch the delay when a pass runs longer than the interval itself.
   useEffect(() => {
     lastFilesKeyRef.current = '';
     lastDiffRawRef.current = '';
     setLoading(true);
 
+    const POLL_MS = 2000;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
     const poll = async () => {
+      const started = Date.now();
       const loaded = await loadFiles();
+      if (cancelled) return;
       if (loaded.length > 0 && !selectedFileRef.current) {
         setSelectedFile(loaded[0].path);
       }
       if (selectedFileRef.current) {
-        loadDiff(selectedFileRef.current);
+        await loadDiff(selectedFileRef.current);
       }
+      if (cancelled) return;
+      const elapsed = Date.now() - started;
+      timer = setTimeout(poll, Math.max(POLL_MS, elapsed));
     };
 
     poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }, [loadFiles, loadDiff]);
 
   // Load diff + scroll to top when user selects a file
