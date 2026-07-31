@@ -195,6 +195,27 @@ describe('PipeServer', () => {
     expect(parsed.result.name).toBe('wmux');
   });
 
+  it('rejects pane.answer_agent without a token', async () => {
+    // The back-channel (issue #128) is the first agent-state method that WRITES
+    // into a PTY, so it must never drift onto the public allowlist. The
+    // allowlist is deny-by-default, which is exactly why this deserves a pin:
+    // the guard is an absence, and absences are easy to delete by accident.
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    let handlerCalled = false;
+    server.on('v2', (req, respond) => { handlerCalled = true; respond({ ok: true }); });
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const response = await connectAndSend(pipe, JSON.stringify({
+      method: 'pane.answer_agent',
+      params: { surfaceId: 'surf-1', choiceId: 'allow' },
+      id: 91,
+    }));
+    expect(JSON.parse(response).error.code).toBe(-32001);
+    expect(handlerCalled).toBe(false);
+  });
+
   it('still accepts unauthenticated V1 ping', async () => {
     const pipe = uniquePipe();
     server = new PipeServer(pipe, 'secret');
