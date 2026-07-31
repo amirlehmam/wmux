@@ -1,29 +1,35 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { LANGUAGES, Language, useT } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
 
 // Named background presets for issue #89 — the first is the gradient the
 // requester posted ("MyLovelyBackground"), kept verbatim as a tribute.
-const BG_PRESETS: Array<{ name: string; css: string }> = [
+const BG_PRESETS: Array<{ nameKey: TranslationKey; fallback: string; css: string }> = [
   {
-    name: 'Lovely',
+    nameKey: 'settings.general.bgPreset.lovely',
+    fallback: 'Lovely',
     css: 'radial-gradient(ellipse at 0% 0%, rgba(9, 140, 206, 0.40) 0%, transparent 75%), radial-gradient(ellipse at 100% 100%, rgba(137, 33, 210, 0.35) 0%, transparent 75%), #1a1a1a',
   },
   {
-    name: 'Ember',
+    nameKey: 'settings.general.bgPreset.ember',
+    fallback: 'Ember',
     css: 'radial-gradient(ellipse at 20% 100%, rgba(255, 94, 58, 0.28) 0%, transparent 70%), radial-gradient(ellipse at 90% 0%, rgba(255, 184, 0, 0.18) 0%, transparent 65%), #151210',
   },
   {
-    name: 'Deep sea',
+    nameKey: 'settings.general.bgPreset.deepSea',
+    fallback: 'Deep sea',
     css: 'linear-gradient(160deg, #04141f 0%, #062c3e 55%, #04303a 100%)',
   },
   {
-    name: 'Aurora',
+    nameKey: 'settings.general.bgPreset.aurora',
+    fallback: 'Aurora',
     css: 'radial-gradient(ellipse at 50% 0%, rgba(64, 224, 160, 0.22) 0%, transparent 60%), radial-gradient(ellipse at 0% 100%, rgba(80, 120, 255, 0.25) 0%, transparent 70%), #0d1117',
   },
   {
-    name: 'Graphite',
+    nameKey: 'settings.general.bgPreset.graphite',
+    fallback: 'Graphite',
     css: 'linear-gradient(135deg, #1c1c1e 0%, #2a2a2e 50%, #1c1c1e 100%)',
   },
 ];
@@ -75,7 +81,7 @@ export default function GeneralSettings() {
     }
   };
 
-  const activePreset = BG_PRESETS.find((p) => p.css === appearancePrefs.customBackground)?.name ?? '';
+  const activePreset = BG_PRESETS.find((p) => p.css === appearancePrefs.customBackground)?.nameKey ?? '';
 
   return (
     <div className="settings-section">
@@ -152,13 +158,13 @@ export default function GeneralSettings() {
               className="settings-select"
               value={activePreset}
               onChange={(e) => {
-                const preset = BG_PRESETS.find((p) => p.name === e.target.value);
+                const preset = BG_PRESETS.find((p) => p.nameKey === e.target.value);
                 if (preset) setAppearancePrefs({ customBackground: preset.css });
               }}
             >
               <option value="">{t('settings.general.customBgPreset.none')}</option>
               {BG_PRESETS.map((p) => (
-                <option key={p.name} value={p.name}>{p.name}</option>
+                <option key={p.nameKey} value={p.nameKey}>{t(p.nameKey, p.fallback)}</option>
               ))}
             </select>
           </div>

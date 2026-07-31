@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { WorkspaceInfo, WorkspaceId } from '../../../shared/types';
 import { useT } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
 
 interface WorkspaceContextMenuProps {
   x: number;
@@ -22,23 +23,23 @@ interface WorkspaceContextMenuProps {
   onMarkUnread: (id: WorkspaceId) => void;
 }
 
-const COLOR_PRESETS: Array<{ label: string; value: string }> = [
-  { label: 'Red', value: '#C0392B' },
-  { label: 'Crimson', value: '#922B21' },
-  { label: 'Orange', value: '#A04000' },
-  { label: 'Amber', value: '#7D6608' },
-  { label: 'Olive', value: '#4A5C18' },
-  { label: 'Green', value: '#196F3D' },
-  { label: 'Teal', value: '#006B6B' },
-  { label: 'Aqua', value: '#0E6B8C' },
-  { label: 'Blue', value: '#1565C0' },
-  { label: 'Navy', value: '#1A5276' },
-  { label: 'Indigo', value: '#283593' },
-  { label: 'Purple', value: '#6A1B9A' },
-  { label: 'Magenta', value: '#AD1457' },
-  { label: 'Rose', value: '#880E4F' },
-  { label: 'Brown', value: '#7B3F00' },
-  { label: 'Charcoal', value: '#3E4B5E' },
+const COLOR_PRESETS: Array<{ labelKey: TranslationKey; fallback: string; value: string }> = [
+  { labelKey: 'workspaceColor.red', fallback: 'Red', value: '#C0392B' },
+  { labelKey: 'workspaceColor.crimson', fallback: 'Crimson', value: '#922B21' },
+  { labelKey: 'workspaceColor.orange', fallback: 'Orange', value: '#A04000' },
+  { labelKey: 'workspaceColor.amber', fallback: 'Amber', value: '#7D6608' },
+  { labelKey: 'workspaceColor.olive', fallback: 'Olive', value: '#4A5C18' },
+  { labelKey: 'workspaceColor.green', fallback: 'Green', value: '#196F3D' },
+  { labelKey: 'workspaceColor.teal', fallback: 'Teal', value: '#006B6B' },
+  { labelKey: 'workspaceColor.aqua', fallback: 'Aqua', value: '#0E6B8C' },
+  { labelKey: 'workspaceColor.blue', fallback: 'Blue', value: '#1565C0' },
+  { labelKey: 'workspaceColor.navy', fallback: 'Navy', value: '#1A5276' },
+  { labelKey: 'workspaceColor.indigo', fallback: 'Indigo', value: '#283593' },
+  { labelKey: 'workspaceColor.purple', fallback: 'Purple', value: '#6A1B9A' },
+  { labelKey: 'workspaceColor.magenta', fallback: 'Magenta', value: '#AD1457' },
+  { labelKey: 'workspaceColor.rose', fallback: 'Rose', value: '#880E4F' },
+  { labelKey: 'workspaceColor.brown', fallback: 'Brown', value: '#7B3F00' },
+  { labelKey: 'workspaceColor.charcoal', fallback: 'Charcoal', value: '#3E4B5E' },
 ];
 
 export default function WorkspaceContextMenu({
@@ -200,7 +201,7 @@ export default function WorkspaceContextMenu({
                   key={c.value}
                   className="ctx-menu__swatch"
                   style={{ backgroundColor: c.value }}
-                  title={c.label}
+                  title={t(c.labelKey, c.fallback)}
                   onClick={() => { onSetColor(workspaceId, c.value); onClose(); }}
                   role="menuitem"
                 />
