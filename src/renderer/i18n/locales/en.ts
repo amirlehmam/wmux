@@ -419,6 +419,16 @@ export const en = {
   'cheatSheet.category.terminal': 'Terminal',
   'cheatSheet.category.view': 'View',
   'cheatSheet.category.other': 'Other',
+  // Diff pane
+  'diffPane.failedToLoad': 'Failed to load changed files',
+  'diffPane.loadingChanges': 'Loading changes...',
+  'diffPane.changed': 'Changed',
+  'diffPane.refresh': 'Refresh',
+  'diffPane.noChanges': 'No changes detected',
+  'diffPane.selectFile': 'Select a file to view changes',
+  'diffPane.waitingForChanges': 'Waiting for changes...',
+  'diffPane.hint': 'Diffs will appear here when Claude edits files',
+  'diffPane.noDiffAvailable': 'No diff available for {file}',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

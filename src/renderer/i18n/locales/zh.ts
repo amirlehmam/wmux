@@ -403,4 +403,14 @@ export const zh: Translation = {
   'cheatSheet.category.terminal': '终端',
   'cheatSheet.category.view': '视图',
   'cheatSheet.category.other': '其他',
+  // 差异面板
+  'diffPane.failedToLoad': '无法加载已更改的文件',
+  'diffPane.loadingChanges': '正在加载更改...',
+  'diffPane.changed': '已更改',
+  'diffPane.refresh': '刷新',
+  'diffPane.noChanges': '未检测到更改',
+  'diffPane.selectFile': '选择一个文件以查看更改',
+  'diffPane.waitingForChanges': '等待更改...',
+  'diffPane.hint': 'Claude 编辑文件时，差异将显示在这里',
+  'diffPane.noDiffAvailable': '{file} 没有可用的差异',
 };

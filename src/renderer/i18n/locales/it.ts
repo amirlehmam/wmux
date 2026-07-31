@@ -406,4 +406,14 @@ export const it: Translation = {
   'cheatSheet.category.terminal': 'Terminale',
   'cheatSheet.category.view': 'Vista',
   'cheatSheet.category.other': 'Altro',
+  // Pannello diff
+  'diffPane.failedToLoad': 'Impossibile caricare i file modificati',
+  'diffPane.loadingChanges': 'Caricamento modifiche...',
+  'diffPane.changed': 'Modificati',
+  'diffPane.refresh': 'Aggiorna',
+  'diffPane.noChanges': 'Nessuna modifica rilevata',
+  'diffPane.selectFile': 'Seleziona un file per vedere le modifiche',
+  'diffPane.waitingForChanges': 'In attesa di modifiche...',
+  'diffPane.hint': 'Le modifiche appariranno qui quando Claude modifica i file',
+  'diffPane.noDiffAvailable': 'Nessuna differenza disponibile per {file}',
 };

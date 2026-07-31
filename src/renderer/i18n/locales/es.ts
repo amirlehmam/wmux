@@ -407,4 +407,14 @@ export const es: Translation = {
   'cheatSheet.category.terminal': 'Terminal',
   'cheatSheet.category.view': 'Vista',
   'cheatSheet.category.other': 'Otro',
+  // Panel de diferencias
+  'diffPane.failedToLoad': 'No se pudieron cargar los archivos modificados',
+  'diffPane.loadingChanges': 'Cargando cambios...',
+  'diffPane.changed': 'Modificados',
+  'diffPane.refresh': 'Actualizar',
+  'diffPane.noChanges': 'No se detectaron cambios',
+  'diffPane.selectFile': 'Selecciona un archivo para ver los cambios',
+  'diffPane.waitingForChanges': 'Esperando cambios...',
+  'diffPane.hint': 'Los diffs aparecerán aquí cuando Claude edite archivos',
+  'diffPane.noDiffAvailable': 'No hay diferencias disponibles para {file}',
 };

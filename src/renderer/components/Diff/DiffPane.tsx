@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useT } from '../../i18n';
 import '../../styles/diff.css';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ interface DiffPaneProps {
 }
 
 export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
+  const t = useT();
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [hunks, setHunks] = useState<DiffHunk[]>([]);
@@ -99,12 +101,12 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
         return newFiles;
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load changed files');
+      setError(err.message || t('diffPane.failedToLoad', 'Failed to load changed files'));
     } finally {
       setLoading(false);
     }
     return [];
-  }, [cwd]);
+  }, [cwd, t]);
 
   const loadDiff = useCallback(async (file: string) => {
     try {
@@ -207,7 +209,7 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
   if (loading && files.length === 0) {
     return (
       <div className="diff-pane" data-surface-id={surfaceId}>
-        <div className="diff-pane__empty">Loading changes...</div>
+        <div className="diff-pane__empty">{t('diffPane.loadingChanges', 'Loading changes...')}</div>
       </div>
     );
   }
@@ -229,7 +231,7 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
       <div className="diff-pane__sidebar">
         <div className="diff-pane__sidebar-header">
           <span className="diff-pane__sidebar-title">
-            Changed
+            {t('diffPane.changed', 'Changed')}
             <span className="diff-pane__sidebar-count">{files.length}</span>
           </span>
           <div className="diff-pane__sidebar-actions">
@@ -239,7 +241,7 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
                 {totalDeleted > 0 && <span className="diff-pane__stat-del">-{totalDeleted}</span>}
               </span>
             )}
-            <button className="diff-pane__refresh-btn" onClick={handleRefresh} title="Refresh">
+            <button className="diff-pane__refresh-btn" onClick={handleRefresh} title={t('diffPane.refresh', 'Refresh')}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
                 <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
@@ -250,7 +252,7 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
         <div className="diff-pane__file-list">
           {files.length === 0 && (
             <div className="diff-pane__no-files">
-              No changes detected
+              {t('diffPane.noChanges', 'No changes detected')}
             </div>
           )}
           {files.map((file) => (
@@ -284,7 +286,7 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
       {/* Diff content */}
       <div className="diff-pane__content" ref={contentRef}>
         {!selectedFile && files.length > 0 && (
-          <div className="diff-pane__empty">Select a file to view changes</div>
+          <div className="diff-pane__empty">{t('diffPane.selectFile', 'Select a file to view changes')}</div>
         )}
         {files.length === 0 && (
           <div className="diff-pane__empty">
@@ -293,14 +295,14 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
                 <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0zm7.25-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7.25 8.25v-3.5a.75.75 0 0 1 1.5 0z"/>
               </svg>
             </div>
-            <div>Waiting for changes...</div>
+            <div>{t('diffPane.waitingForChanges', 'Waiting for changes...')}</div>
             <div className="diff-pane__empty-hint">
-              Diffs will appear here when Claude edits files
+              {t('diffPane.hint', 'Diffs will appear here when Claude edits files')}
             </div>
           </div>
         )}
         {selectedFile && hunks.length === 0 && files.length > 0 && (
-          <div className="diff-pane__empty">No diff available for {selectedFile.split(/[/\\]/).pop()}</div>
+          <div className="diff-pane__empty">{t('diffPane.noDiffAvailable', 'No diff available for {file}').replace('{file}', selectedFile.split(/[/\\]/).pop() ?? selectedFile)}</div>
         )}
         {selectedFile && hunks.length > 0 && (
           <>

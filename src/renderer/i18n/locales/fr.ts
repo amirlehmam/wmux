@@ -406,4 +406,14 @@ export const fr: Translation = {
   'cheatSheet.category.terminal': 'Terminal',
   'cheatSheet.category.view': 'Affichage',
   'cheatSheet.category.other': 'Autre',
+  // Panneau diff
+  'diffPane.failedToLoad': 'Impossible de charger les fichiers modifiés',
+  'diffPane.loadingChanges': 'Chargement des modifications...',
+  'diffPane.changed': 'Modifiés',
+  'diffPane.refresh': 'Actualiser',
+  'diffPane.noChanges': 'Aucune modification détectée',
+  'diffPane.selectFile': 'Sélectionnez un fichier pour voir les modifications',
+  'diffPane.waitingForChanges': 'En attente de modifications...',
+  'diffPane.hint': 'Les diffs apparaîtront ici quand Claude modifie des fichiers',
+  'diffPane.noDiffAvailable': 'Aucun diff disponible pour {file}',
 };
