@@ -532,7 +532,7 @@ export default function SurfaceTabBar({
                       </span>
                       <span className="surface-tab-menu__profile-name">{profile.name}</span>
                       {profile.source === 'project' && (
-                        <span className="surface-tab-menu__badge">project</span>
+                        <span className="surface-tab-menu__badge">{t('surfaceTab.profileBadge', 'project')}</span>
                       )}
                     </button>
                   ))}

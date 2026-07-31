@@ -499,6 +499,19 @@ export const en = {
   'app.closeBrowserPanel': 'Close browser panel',
   'app.broadcastInputTooltip': 'Typed input is sent to every terminal pane in this workspace',
   'app.broadcastInputBanner': 'Broadcast input ON — typing goes to all panes (Ctrl+Alt+B to stop)',
+  // Workspace store — default title when a new workspace is created with none
+  'workspace.defaultTitle': 'Workspace {n}',
+  // Sidebar agent list — "+N more" summary line when the list overflows
+  'agentView.moreSummary': '+{n} more',
+  // Settings — notification sound names
+  'notificationSound.default': 'Default',
+  'notificationSound.chime': 'Chime',
+  'notificationSound.ping': 'Ping',
+  'notificationSound.marimba': 'Marimba',
+  'notificationSound.pop': 'Pop',
+  'notificationSound.none': 'None',
+  // SplitPane — new-tab menu profile badge (stray miss)
+  'surfaceTab.profileBadge': 'project',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

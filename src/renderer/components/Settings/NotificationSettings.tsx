@@ -89,7 +89,7 @@ export default function NotificationSettings() {
             }}
           >
             {NOTIFICATION_SOUND_LABELS.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
+              <option key={s.value} value={s.value}>{t(s.labelKey, s.fallback)}</option>
             ))}
           </select>
           <button

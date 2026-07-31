@@ -238,7 +238,7 @@ export default function WorkspaceRow({
   const doneAtRef = useRef<number | null>(null);
   const wsAgents = useMemo<WorkspaceAgentsView>(() => {
     const now = Date.now();
-    const view = agentsForWorkspace(workspace.splitTree, claudeActivity ?? {}, agentMeta, now);
+    const view = agentsForWorkspace(workspace.splitTree, claudeActivity ?? {}, agentMeta, now, t);
     if (view.lines.length === 0) { doneAtRef.current = null; return EMPTY_AGENTS_VIEW; }
     const linger = resolveAgentLinger(view.running === 0, doneAtRef.current, now);
     // The ref write lives in the memo, not an effect: the linger decision must
@@ -247,7 +247,7 @@ export default function WorkspaceRow({
     // lands on the same state.
     doneAtRef.current = linger.doneAt;
     return linger.visible ? view : EMPTY_AGENTS_VIEW;
-  }, [workspace.splitTree, claudeActivity, agentMeta, tick]);
+  }, [workspace.splitTree, claudeActivity, agentMeta, tick, t]);
   const runningAgentCount = wsAgents.running;
 
   // How long a tool label persists after the last hook/observer event (ms)

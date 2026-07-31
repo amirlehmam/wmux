@@ -481,4 +481,17 @@ export const zh: Translation = {
   'app.closeBrowserPanel': '关闭浏览器面板',
   'app.broadcastInputTooltip': '输入的文本会发送到此工作区的所有终端面板',
   'app.broadcastInputBanner': '广播输入已开启 — 输入内容会发送到所有面板（Ctrl+Alt+B 停止）',
+  // 工作区存储 — 未命名新工作区的默认标题
+  'workspace.defaultTitle': '工作区 {n}',
+  // 侧边栏代理列表 — 列表溢出时的“+N 更多”摘要
+  'agentView.moreSummary': '还有 {n} 个',
+  // 设置 — 通知声音名称
+  'notificationSound.default': '默认',
+  'notificationSound.chime': '铃声',
+  'notificationSound.ping': 'Ping',
+  'notificationSound.marimba': '马林巴',
+  'notificationSound.pop': 'Pop',
+  'notificationSound.none': '无',
+  // SplitPane — 新建标签菜单中的项目徽章（遗漏项）
+  'surfaceTab.profileBadge': '项目',
 };

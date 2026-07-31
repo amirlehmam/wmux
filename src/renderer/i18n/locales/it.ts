@@ -486,4 +486,17 @@ export const it: Translation = {
   'app.closeBrowserPanel': 'Chiudi il pannello del browser',
   'app.broadcastInputTooltip': 'Il testo digitato viene inviato a tutti i pannelli terminale di questo workspace',
   'app.broadcastInputBanner': 'Input broadcast ATTIVO — quello che digiti va a tutti i pannelli (Ctrl+Alt+B per fermare)',
+  // Store aree di lavoro — titolo predefinito per una nuova area senza titolo
+  'workspace.defaultTitle': 'Area di lavoro {n}',
+  // Elenco agenti sidebar — riepilogo "+N altri" quando l'elenco eccede
+  'agentView.moreSummary': '+{n} altri',
+  // Impostazioni — nomi suoni di notifica
+  'notificationSound.default': 'Predefinito',
+  'notificationSound.chime': 'Campanello',
+  'notificationSound.ping': 'Ping',
+  'notificationSound.marimba': 'Marimba',
+  'notificationSound.pop': 'Pop',
+  'notificationSound.none': 'Nessuno',
+  // SplitPane — badge profilo nel menu nuova scheda (buco isolato)
+  'surfaceTab.profileBadge': 'progetto',
 };

@@ -463,7 +463,7 @@ export default function App() {
         const autoSaved = await window.wmux?.session?.loadAuto?.();
         if (autoSaved && Array.isArray(autoSaved.workspaces) && autoSaved.workspaces.length > 0) {
           const { replaceAllWorkspaces } = useStore.getState();
-          replaceAllWorkspaces(autoSaved.workspaces, autoSaved.activeIndex);
+          replaceAllWorkspaces(autoSaved.workspaces, autoSaved.activeIndex, t);
           if (autoSaved.sidebarWidth) setSidebarWidth(autoSaved.sidebarWidth);
           return;
         }
@@ -474,7 +474,7 @@ export default function App() {
           const session = await window.wmux?.session?.load(sessions[0].name);
           if (session) {
             const { replaceAllWorkspaces } = useStore.getState();
-            replaceAllWorkspaces(session.workspaces);
+            replaceAllWorkspaces(session.workspaces, undefined, t);
             if (session.sidebarWidth) setSidebarWidth(session.sidebarWidth);
             return;
           }
@@ -780,10 +780,10 @@ export default function App() {
     const session = await window.wmux?.session?.load(name);
     if (!session) return;
     const { replaceAllWorkspaces, setTerminalPrefs } = useStore.getState();
-    replaceAllWorkspaces(session.workspaces);
+    replaceAllWorkspaces(session.workspaces, undefined, t);
     if (session.sidebarWidth) setSidebarWidth(session.sidebarWidth);
     if (session.terminalPrefs) setTerminalPrefs(session.terminalPrefs);
-  }, []);
+  }, [t]);
 
   const handleUpdateMetadata = useCallback(
     (id: WorkspaceId, partial: Partial<WorkspaceInfo>) => {

@@ -7,6 +7,11 @@ import { splitNode, getAllPaneIds, findLeaf, buildGridLayout } from './store/spl
 import { surfaceTerminalRegistry } from './hooks/useTerminal';
 import { PaneId, SurfaceId, WorkspaceId, SurfaceType } from '../shared/types';
 import { v4 as uuid } from 'uuid';
+import { translate, type TranslationKey } from './i18n/core';
+
+/** Non-hook context (bridges the main process to the store) — reads the current language directly. */
+const bridgeT = (key: TranslationKey, fallback?: string): string =>
+  translate(useStore.getState().language, key, fallback);
 
 export function initPipeBridge(): void {
   const w = window as any;
@@ -19,7 +24,7 @@ export function initPipeBridge(): void {
       title: params?.title,
       shell: params?.shell,
       cwd: params?.cwd,
-    });
+    }, bridgeT);
     return { workspaceId: id };
   };
 

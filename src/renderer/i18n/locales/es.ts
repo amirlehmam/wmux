@@ -487,4 +487,17 @@ export const es: Translation = {
   'app.closeBrowserPanel': 'Cerrar el panel del navegador',
   'app.broadcastInputTooltip': 'El texto escrito se envía a todos los paneles de terminal de este espacio de trabajo',
   'app.broadcastInputBanner': 'Difusión de entrada ACTIVADA — lo que escribas va a todos los paneles (Ctrl+Alt+B para detener)',
+  // Almacén de espacios de trabajo — título por defecto de un espacio nuevo sin título
+  'workspace.defaultTitle': 'Espacio de trabajo {n}',
+  // Lista de agentes de la barra lateral — resumen "+N más" cuando la lista desborda
+  'agentView.moreSummary': '+{n} más',
+  // Ajustes — nombres de los sonidos de notificación
+  'notificationSound.default': 'Predeterminado',
+  'notificationSound.chime': 'Campanilla',
+  'notificationSound.ping': 'Ping',
+  'notificationSound.marimba': 'Marimba',
+  'notificationSound.pop': 'Pop',
+  'notificationSound.none': 'Ninguno',
+  // SplitPane — insignia de perfil en el menú de nueva pestaña (hueco aislado)
+  'surfaceTab.profileBadge': 'proyecto',
 };
