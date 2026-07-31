@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { LANGUAGES, Language, useT } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
+import AgentIntegrationSettings from './AgentIntegrationSettings';
 
 // Named background presets for issue #89 — the first is the gradient the
 // requester posted ("MyLovelyBackground"), kept verbatim as a tribute.
@@ -228,6 +229,8 @@ export default function GeneralSettings() {
       )}
 
       <p className="settings-hint">{t('settings.general.customBgHint')}</p>
+
+      <AgentIntegrationSettings />
     </div>
   );
 }

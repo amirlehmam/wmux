@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout, replaceSoleTerminalSurface } from '../../src/renderer/store/split-utils';
+import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout, replaceSoleTerminalSurface, freezeSurfaceCwds } from '../../src/renderer/store/split-utils';
 
 describe('split-tree', () => {
   it('creates a leaf node', () => {
@@ -209,5 +209,81 @@ describe('replaceSoleTerminalSurface (agent spawn --replace-tab)', () => {
     // Anchor untouched
     expect(findLeaf(result.tree, 'pane-1' as any)!.surfaces[0].id)
       .toBe(base.surfaces[0].id);
+  });
+});
+
+// ─── freezeSurfaceCwds (issue #134) ──────────────────────────────────────────
+// A saved session used to persist only the workspace-level cwd, so restoring a
+// window whose terminals sat on different drives sent all of them to the same
+// place — for the reporter, worktrees on D:\ came back on C:\.
+describe('freezeSurfaceCwds', () => {
+  const leafWith = (paneId: string, surfaces: any[]) => ({
+    type: 'leaf' as const,
+    paneId: paneId as any,
+    surfaces,
+    activeSurfaceIndex: 0,
+  });
+
+  it('promotes the live directory into the spawn directory', () => {
+    const tree = leafWith('pane-1', [
+      { id: 'surf-1', type: 'terminal', currentCwd: 'D:\worktrees\feature-a' },
+    ]);
+    const frozen = freezeSurfaceCwds(tree) as any;
+    expect(frozen.surfaces[0].cwd).toBe('D:\worktrees\feature-a');
+  });
+
+  it('keeps each pane on its own drive instead of collapsing to one', () => {
+    const tree = {
+      type: 'branch' as const,
+      direction: 'horizontal' as const,
+      ratio: 0.5,
+      children: [
+        leafWith('pane-1', [{ id: 'surf-1', type: 'terminal', currentCwd: 'D:\wt\a' }]),
+        leafWith('pane-2', [{ id: 'surf-2', type: 'terminal', currentCwd: 'E:\wt\b' }]),
+      ],
+    };
+    const frozen = freezeSurfaceCwds(tree) as any;
+    expect(frozen.children[0].surfaces[0].cwd).toBe('D:\wt\a');
+    expect(frozen.children[1].surfaces[0].cwd).toBe('E:\wt\b');
+  });
+
+  it('freezes every tab in a pane, not just the visible one', () => {
+    const tree = leafWith('pane-1', [
+      { id: 'surf-1', type: 'terminal', currentCwd: 'D:\one' },
+      { id: 'surf-2', type: 'terminal', currentCwd: 'D:\two' },
+    ]);
+    const frozen = freezeSurfaceCwds(tree) as any;
+    expect(frozen.surfaces.map((s: any) => s.cwd)).toEqual(['D:\one', 'D:\two']);
+  });
+
+  it('overwrites a stale spawn directory the terminal has since left', () => {
+    const tree = leafWith('pane-1', [
+      { id: 'surf-1', type: 'terminal', cwd: 'C:\start', currentCwd: 'D:\moved-here' },
+    ]);
+    const frozen = freezeSurfaceCwds(tree) as any;
+    expect(frozen.surfaces[0].cwd).toBe('D:\moved-here');
+  });
+
+  it('leaves a surface that never reported a directory exactly as it was', () => {
+    // No shell integration (or a browser/markdown tab) — the workspace-level
+    // fallback still applies on restore, which is the pre-#134 behaviour.
+    const surface = { id: 'surf-1', type: 'terminal', cwd: 'C:\explicit' };
+    const tree = leafWith('pane-1', [surface]);
+    const frozen = freezeSurfaceCwds(tree) as any;
+    expect(frozen.surfaces[0]).toBe(surface);
+  });
+
+  it('does not mutate the live tree — the store keeps its spawn arguments', () => {
+    const tree = leafWith('pane-1', [
+      { id: 'surf-1', type: 'terminal', cwd: 'C:\start', currentCwd: 'D:\moved-here' },
+    ]);
+    freezeSurfaceCwds(tree);
+    expect(tree.surfaces[0].cwd).toBe('C:\start');
+  });
+
+  it('carries currentCwd through so a restored tab can label itself immediately', () => {
+    const tree = leafWith('pane-1', [{ id: 'surf-1', type: 'terminal', currentCwd: 'D:\wt\a' }]);
+    const frozen = freezeSurfaceCwds(tree) as any;
+    expect(frozen.surfaces[0].currentCwd).toBe('D:\wt\a');
   });
 });

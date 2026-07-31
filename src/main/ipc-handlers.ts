@@ -20,6 +20,7 @@ import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
 import { sessionWindows, toRestorePayload } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
+import { readConsent, updateConsent, type IntegrationConsent } from './agent-integration';
 import { getChangedFiles, getFileDiff } from './diff-provider';
 import {
   readMarkdownFile,
@@ -312,6 +313,16 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.on('settings:set', (_event, key: string, value: unknown) => {
     saveSetting(key, value);
   });
+
+  // Agent-integration consent (issue #132). Deliberately NOT routed through the
+  // generic settings:set above: changing this decision has to reconcile the files
+  // in the user's home right away — switching a feature off has to remove what it
+  // wrote, or the toggle would only stop future writes and leave the current ones
+  // in place, which is the original complaint one level down.
+  ipcMain.handle('integration:get', () => readConsent());
+  ipcMain.handle('integration:set', (_event, partial: Partial<IntegrationConsent>) =>
+    updateConsent(partial ?? {}),
+  );
 
   // OS display-language list for first-launch UI language detection (issue #114).
   // navigator.language follows Chromium's locale resolution, which on Windows can

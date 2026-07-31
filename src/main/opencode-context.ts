@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { stripWmuxBlock } from './claude-context';
 
 const START_MARKER = '<!-- wmux:start';
 const END_MARKER = '<!-- wmux:end -->';
@@ -106,5 +107,46 @@ export function ensureOpencodePlugin(): void {
     console.log('[wmux] Installed wmux OpenCode plugin to', dest);
   } catch (err) {
     console.warn('[wmux] Failed to install OpenCode plugin:', err);
+  }
+}
+
+/**
+ * Delete wmux's block from ~/.config/opencode/AGENTS.md (issue #132).
+ *
+ * Mirrors removeClaudeContext: the file goes only when it held nothing but our
+ * block, so an AGENTS.md the user wrote survives with just the block excised.
+ * The stripping itself is shared — the two files use identical markers, and
+ * having one implementation is what stops the two paths from drifting.
+ */
+export function removeOpencodeContext(): void {
+  try {
+    const agentsPath = getAgentsMdPath();
+    if (!fs.existsSync(agentsPath)) return;
+    const stripped = stripWmuxBlock(fs.readFileSync(agentsPath, 'utf-8'));
+    if (stripped === null) return;
+    if (stripped === '') fs.unlinkSync(agentsPath);
+    else fs.writeFileSync(agentsPath, stripped, 'utf-8');
+    console.log('[wmux] Removed wmux context from ~/.config/opencode/AGENTS.md');
+  } catch (err) {
+    console.warn('[wmux] Failed to remove OpenCode context:', err);
+  }
+}
+
+/**
+ * Remove the wmux OpenCode plugin (issue #132).
+ *
+ * Guarded on the version marker wmux stamps into its own plugin source: a
+ * wmux.js the user wrote or vendored themselves has no marker and is left where
+ * it is, because uninstalling our integration must not delete their file.
+ */
+export function removeOpencodePlugin(): void {
+  try {
+    const dest = path.join(os.homedir(), '.config', 'opencode', 'plugin', 'wmux.js');
+    if (!fs.existsSync(dest)) return;
+    if (!VERSION_RE.test(fs.readFileSync(dest, 'utf-8'))) return;
+    fs.unlinkSync(dest);
+    console.log('[wmux] Removed the wmux OpenCode plugin from', dest);
+  } catch (err) {
+    console.warn('[wmux] Failed to remove OpenCode plugin:', err);
   }
 }

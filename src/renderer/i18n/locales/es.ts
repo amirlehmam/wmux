@@ -514,4 +514,13 @@ export const es: Translation = {
   'notificationSound.none': 'Ninguno',
   // SplitPane — insignia de perfil en el menú de nueva pestaña (hueco aislado)
   'surfaceTab.profileBadge': 'proyecto',
+  // Ajustes — consentimiento de integración de agentes (issue #132)
+  'settings.integration.section': 'Integración de agentes',
+  'settings.integration.enable': 'Permitir que wmux configure Claude Code y OpenCode',
+  'settings.integration.hint':
+    'wmux edita archivos en tu carpeta personal para que los agentes de programación puedan controlar su panel de navegador, sus vistas markdown y el estado de la barra lateral. Desactivar algo aquí también elimina lo que había escrito.',
+  'settings.integration.instructions': 'Instrucciones para agentes',
+  'settings.integration.hooks': 'Hooks de estado',
+  'settings.integration.orchestrator': 'Complemento orquestador',
+  'settings.integration.browserMcp': 'Panel de navegador para MCP',
 };

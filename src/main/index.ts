@@ -13,8 +13,7 @@ import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
 import { WindowManager } from './window-manager';
 import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
-import { ensureClaudeContext, ensureClaudeHooks, ensureChromeDevtoolsConfig, ensureOrchestratorPlugin } from './claude-context';
-import { ensureOpencodeContext, ensureOpencodePlugin } from './opencode-context';
+import { initAgentIntegration } from './agent-integration';
 import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
 import { handleAgentStateV2 } from './agent-state-rpc';
 import { applyHookToAgentState } from './agent-hook-bridge';
@@ -416,13 +415,6 @@ app.whenReady().then(() => {
   // A losing second instance is already quitting; don't run startup side effects.
   if (!gotInstanceLock) return;
   hardenWebContents();
-  // Inject wmux instructions into ~/.claude/CLAUDE.md for Claude Code awareness
-  ensureClaudeContext();
-  ensureClaudeHooks();
-  ensureChromeDevtoolsConfig();
-  ensureOrchestratorPlugin();
-  ensureOpencodeContext();
-  ensureOpencodePlugin();
 
   // IPC: renderer pushes session state (auto-save response or explicit save).
   // Every window answers the same broadcast, each with a one-entry `windows`
@@ -477,6 +469,16 @@ app.whenReady().then(() => {
       sessionWindows.prime(id, saved);
     }
   }
+
+  // Everything wmux writes into ~/.claude and ~/.config/opencode now runs behind
+  // a stored consent decision, and asks for one on first launch (issue #132).
+  //
+  // Placed AFTER the windows exist, for two reasons. The prompt is a modal
+  // dialog, and an ownerless one opens with nothing behind it — a question about
+  // an app the user cannot yet see. And it is deliberately not awaited: startup
+  // must not block on an answer, so the rest of the launch proceeds and the
+  // integration lands whenever the user gets to it.
+  void initAgentIntegration(BrowserWindow.getAllWindows()[0]);
 
   // Cold launch from the Explorer verb: no instance was running, so there is no
   // second-instance event — the folder is in our own argv. Wait for the renderer

@@ -60,7 +60,8 @@ docs/             Planning docs
 | `agent-manager.ts` | Agent PTY spawning, round-robin distribution across panes |
 | `window-manager.ts` | Electron BrowserWindow creation/management |
 | `ipc-handlers.ts` | All IPC channel handlers |
-| `claude-context.ts` | Auto-injects wmux instructions into `~/.claude/CLAUDE.md`, configures hooks, installs wmux-orchestrator plugin |
+| `claude-context.ts` | Injects wmux instructions into `~/.claude/CLAUDE.md`, configures hooks, installs wmux-orchestrator plugin — **and the inverse of each**, since 0.40.0 |
+| `agent-integration.ts` | Consent gate for every write outside `%APPDATA%\wmux` (issue #132). Asks on first launch, stores `unset`/`granted`/`declined` in wmux's own settings.json, and reconciles `~/.claude` + `~/.config/opencode` to match. Nothing in `claude-context.ts` or `opencode-context.ts` may be called directly from startup any more — route it through here |
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
 | `agent-state.ts` | Declared agent run state — blocked/working/idle, run refcount, `seq` dedupe, metadata TTL (issue #128) |
 | `agent-state-rpc.ts` | `pane.report_agent` & friends, routed off the main V2 switch |
@@ -327,7 +328,7 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 
 ## wmux-orchestrator Plugin
 
-Claude Code plugin bundled in `resources/wmux-orchestrator/`. Auto-installed into `~/.claude/plugins/cache/` on startup by `ensureOrchestratorPlugin()` in `claude-context.ts`. Also published standalone: `github.com/amirlehmam/wmux-orchestrator`.
+Claude Code plugin bundled in `resources/wmux-orchestrator/`. Installed into `~/.claude/plugins/cache/` on startup by `ensureOrchestratorPlugin()` in `claude-context.ts` — but only when the user has granted the `orchestrator` feature (issue #132); `agent-integration.ts` owns that call. Also published standalone: `github.com/amirlehmam/wmux-orchestrator`.
 
 **What it does:** Decomposes complex dev tasks into parallel Claude Code agents coordinated through dependency-aware waves with automated review. With wmux: each agent in its own visible terminal pane. Without wmux: falls back to native subagents.
 

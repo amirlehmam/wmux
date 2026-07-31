@@ -90,6 +90,48 @@ export function ensureClaudeContext(): void {
   }
 }
 
+/**
+ * Remove the marker-delimited wmux block from a CLAUDE.md-style document,
+ * leaving everything the user wrote (issue #132). Pure, so the marker
+ * arithmetic is testable without touching a real home directory.
+ *
+ * Returns `null` when there is nothing to remove, so callers can skip the write
+ * entirely rather than rewriting a file they did not change. A start marker with
+ * no end marker means a previous write was interrupted or hand-edited: the block
+ * is taken to run to end-of-file, matching how ensureClaudeContext repairs the
+ * same damage. The blank lines that joined the block to its surroundings are
+ * collapsed so removal doesn't leave a growing gap behind.
+ */
+export function stripWmuxBlock(content: string): string | null {
+  const startIdx = content.indexOf(START_MARKER);
+  if (startIdx === -1) return null;
+  const endIdx = content.indexOf(END_MARKER, startIdx);
+  const before = content.substring(0, startIdx);
+  const after = endIdx === -1 ? '' : content.substring(endIdx + END_MARKER.length);
+  const joined = before.trimEnd() + (after.trim() ? '\n\n' + after.trimStart() : '');
+  return joined.trim() ? joined.trimEnd() + '\n' : '';
+}
+
+/**
+ * Delete wmux's block from ~/.claude/CLAUDE.md. When the file consisted of
+ * nothing but that block — i.e. wmux created it — the file itself is removed,
+ * since leaving an empty CLAUDE.md behind is still a file the user never asked
+ * for.
+ */
+export function removeClaudeContext(): void {
+  try {
+    const claudeMdPath = getClaudeMdPath();
+    if (!fs.existsSync(claudeMdPath)) return;
+    const stripped = stripWmuxBlock(fs.readFileSync(claudeMdPath, 'utf-8'));
+    if (stripped === null) return; // no wmux block — nothing of ours to take back
+    if (stripped === '') fs.unlinkSync(claudeMdPath);
+    else fs.writeFileSync(claudeMdPath, stripped, 'utf-8');
+    console.log('[wmux] Removed wmux context from ~/.claude/CLAUDE.md');
+  } catch (err) {
+    console.warn('[wmux] Failed to remove Claude context:', err);
+  }
+}
+
 const HOOK_MARKER = 'wmux-hook';
 
 function getSettingsPath(): string {
@@ -110,6 +152,40 @@ function getCliAbsolutePath(): string {
 /** Tools tracked via PostToolUse hooks for the sidebar/diff view. */
 const TRACKED_TOOLS = ['Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob', 'Agent', 'WebSearch', 'WebFetch', 'Skill'];
 
+/** Drop any wmux entry from one hook array, preserving the user's own hooks. */
+const stripWmux = (entries: any): any[] =>
+  (Array.isArray(entries) ? entries : []).filter((e: any) => {
+    if (!Array.isArray(e.hooks)) return true;
+    return !e.hooks.some((h: any) => h.command?.includes(HOOK_MARKER));
+  });
+
+/** The hook arrays wmux installs into, and therefore the ones it may remove from. */
+const WMUX_HOOK_EVENTS = ['PostToolUse', 'Notification', 'Stop', 'SubagentStop'] as const;
+
+/**
+ * Inverse of {@link applyWmuxHooks}: returns a settings object with every wmux
+ * hook entry removed and every user hook left alone (issue #132).
+ *
+ * A hook array that ends up empty is deleted rather than left as `[]`, and a
+ * `hooks` object with nothing left in it goes too — so declining the
+ * integration restores the file to something indistinguishable from one wmux
+ * had never touched, instead of leaving its footprints behind as empty shells.
+ */
+export function removeWmuxHooks(settings: any): any {
+  const next = { ...(settings || {}) };
+  if (!next.hooks || typeof next.hooks !== 'object') return next;
+  const hooks = { ...next.hooks };
+  for (const event of WMUX_HOOK_EVENTS) {
+    if (!(event in hooks)) continue;
+    const kept = stripWmux(hooks[event]);
+    if (kept.length > 0) hooks[event] = kept;
+    else delete hooks[event];
+  }
+  if (Object.keys(hooks).length === 0) delete next.hooks;
+  else next.hooks = hooks;
+  return next;
+}
+
 /**
  * Pure builder for the wmux hook blocks. Given the parsed settings object and
  * the absolute path to wmux-hook.js, returns a new settings object whose
@@ -126,13 +202,6 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
   // pass an --event flag so the helper reports an event type instead.
   const makeToolCmd = (tool: string) => `node "${hookScript}" ${tool} 2>/dev/null || true`;
   const makeEventCmd = (event: string) => `node "${hookScript}" --event ${event} 2>/dev/null || true`;
-
-  // Drop any prior wmux entry from a hook array, preserving user hooks.
-  const stripWmux = (entries: any): any[] =>
-    (Array.isArray(entries) ? entries : []).filter((e: any) => {
-      if (!Array.isArray(e.hooks)) return true;
-      return !e.hooks.some((h: any) => h.command?.includes('wmux-hook'));
-    });
 
   // PostToolUse — one entry per tracked tool for specific sidebar tracking.
   next.hooks.PostToolUse = [
@@ -207,6 +276,28 @@ export function ensureClaudeHooks(): void {
   }
 }
 
+/** Take wmux's hooks back out of ~/.claude/settings.json, leaving user hooks (issue #132). */
+export function removeClaudeHooks(): void {
+  try {
+    const settingsPath = getSettingsPath();
+    if (!fs.existsSync(settingsPath)) return;
+    const raw = fs.readFileSync(settingsPath, 'utf-8');
+    let settings: any;
+    try { settings = JSON.parse(raw); } catch { return; }
+
+    const updated = removeWmuxHooks(settings);
+    // Compare before writing: on every launch after a decline this function runs
+    // again, and rewriting an unchanged file would keep bumping its mtime for no
+    // reason (and race anyone else editing it).
+    const next = JSON.stringify(updated, null, 2);
+    if (next === JSON.stringify(settings, null, 2)) return;
+    fs.writeFileSync(settingsPath, next, 'utf-8');
+    console.log('[wmux] Removed wmux hooks from ~/.claude/settings.json');
+  } catch (err) {
+    console.warn('[wmux] Failed to remove Claude hooks:', err);
+  }
+}
+
 /**
  * Configures chrome-devtools-mcp to connect to wmux's CDP proxy on localhost:9222.
  * Disables the plugin version and adds a custom MCP server in settings.json with
@@ -247,6 +338,46 @@ export function ensureChromeDevtoolsConfig(): void {
     }
   } catch (err) {
     console.warn('[wmux] Failed to configure chrome-devtools-mcp:', err);
+  }
+}
+
+/**
+ * Undo {@link ensureChromeDevtoolsConfig} (issue #132): drop the MCP server
+ * entry wmux added and stop forcing the official plugin off.
+ *
+ * Only an entry that points at wmux's own CDP proxy port is removed — a user
+ * who has since pointed `chrome-devtools` somewhere of their own keeps it.
+ * Likewise the `enabledPlugins` flag is only cleared when it is still `false`,
+ * the value wmux set; a user who deliberately re-enabled it is left alone.
+ */
+export function removeChromeDevtoolsConfig(): void {
+  try {
+    const settingsPath = getSettingsPath();
+    if (!fs.existsSync(settingsPath)) return;
+    const raw = fs.readFileSync(settingsPath, 'utf-8');
+    let settings: any;
+    try { settings = JSON.parse(raw); } catch { return; }
+
+    let changed = false;
+    const entry = settings.mcpServers?.['chrome-devtools'];
+    if (entry && JSON.stringify(entry).includes('9222')) {
+      delete settings.mcpServers['chrome-devtools'];
+      if (Object.keys(settings.mcpServers).length === 0) delete settings.mcpServers;
+      changed = true;
+    }
+    const pluginKey = 'chrome-devtools-mcp@claude-plugins-official';
+    if (settings.enabledPlugins?.[pluginKey] === false) {
+      delete settings.enabledPlugins[pluginKey];
+      if (Object.keys(settings.enabledPlugins).length === 0) delete settings.enabledPlugins;
+      changed = true;
+    }
+
+    if (changed) {
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+      console.log('[wmux] Removed chrome-devtools-mcp configuration from ~/.claude/settings.json');
+    }
+  } catch (err) {
+    console.warn('[wmux] Failed to remove chrome-devtools-mcp config:', err);
   }
 }
 
@@ -392,5 +523,54 @@ function ensurePluginRegistered(installPath: string, version: string, claudeDir:
     }
   } catch (err) {
     console.warn('[wmux] Failed to enable plugin in settings.json:', err);
+  }
+}
+
+/**
+ * Uninstall the orchestrator plugin wmux auto-installed (issue #132): remove its
+ * plugin-cache directory, its registration, and its enabled flag.
+ *
+ * Only the `wmux-orchestrator@wmux` key is touched, and only the cache path
+ * wmux itself wrote to — a plugin the user installed by hand from the standalone
+ * repo lives under a different install path and survives.
+ */
+export function removeOrchestratorPlugin(): void {
+  const pluginKey = 'wmux-orchestrator@wmux';
+  const claudeDir = path.join(os.homedir(), '.claude');
+
+  try {
+    const cacheRoot = path.join(claudeDir, 'plugins', 'cache', 'wmux-orchestrator');
+    if (fs.existsSync(cacheRoot)) {
+      fs.rmSync(cacheRoot, { recursive: true, force: true });
+      console.log('[wmux] Removed wmux-orchestrator from the plugin cache');
+    }
+  } catch (err) {
+    console.warn('[wmux] Failed to remove orchestrator plugin cache:', err);
+  }
+
+  try {
+    const installedPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
+    if (fs.existsSync(installedPath)) {
+      const installed = JSON.parse(fs.readFileSync(installedPath, 'utf-8'));
+      if (installed[pluginKey]) {
+        delete installed[pluginKey];
+        fs.writeFileSync(installedPath, JSON.stringify(installed, null, 2), 'utf-8');
+      }
+    }
+  } catch (err) {
+    console.warn('[wmux] Failed to deregister orchestrator plugin:', err);
+  }
+
+  try {
+    const settingsPath = path.join(claudeDir, 'settings.json');
+    if (!fs.existsSync(settingsPath)) return;
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    if (settings.enabledPlugins?.[pluginKey] === undefined) return;
+    delete settings.enabledPlugins[pluginKey];
+    if (Object.keys(settings.enabledPlugins).length === 0) delete settings.enabledPlugins;
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    console.log('[wmux] Disabled wmux-orchestrator in ~/.claude/settings.json');
+  } catch (err) {
+    console.warn('[wmux] Failed to disable orchestrator plugin:', err);
   }
 }

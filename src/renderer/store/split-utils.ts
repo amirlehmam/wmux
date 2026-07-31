@@ -177,6 +177,39 @@ export function collectActiveTerminalSurfaceIds(tree: SplitNode): SurfaceId[] {
   ];
 }
 
+// ─── freezeSurfaceCwds (issue #134: save/restore per-terminal directory) ─────
+// Rewrite every surface's spawn `cwd` to the directory it is *actually* sitting
+// in, for the copy of the tree that goes into a saved session.
+//
+// A terminal carries two directories: `cwd`, where it was told to start, and
+// `currentCwd`, where shell integration last reported it to be. Only the first
+// was persisted, and for a tab opened the ordinary way it is undefined — so on
+// restore every terminal in a workspace fell back to the single, workspace-level
+// `cwd`, which is itself whichever pane reported a prompt most recently. Two
+// terminals on D:\ therefore came back on C:\ (the shell's own default when the
+// fallback was empty too), which is exactly what #134 hit: with git worktrees on
+// separate drives, restoring a session lost the one thing that identified it.
+//
+// Freezing happens at save time rather than on every prompt because `cwd` is a
+// *spawn* argument. Live-updating it would be rewriting the terminal's history
+// while it runs, and PaneWrapper passes it as a prop — the store's copy stays
+// untouched, so nothing about the running session changes.
+//
+// `currentCwd` is carried through as well, so a restored tab can label itself
+// with the right folder before its shell has reported a first prompt.
+export function freezeSurfaceCwds(tree: SplitNode): SplitNode {
+  if (tree.type === 'leaf') {
+    return {
+      ...tree,
+      surfaces: tree.surfaces.map((s) => (s.currentCwd ? { ...s, cwd: s.currentCwd } : s)),
+    };
+  }
+  return {
+    ...tree,
+    children: [freezeSurfaceCwds(tree.children[0]), freezeSurfaceCwds(tree.children[1])],
+  };
+}
+
 // ─── replaceSoleTerminalSurface (agent spawn --replace-tab) ──────────────────
 // Swap a pane's single default terminal tab for `newSurface`, so an agent can
 // occupy a freshly-gridded pane without leaving the idle shell behind as a

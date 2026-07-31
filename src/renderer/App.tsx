@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { useStore } from './store';
 import { PaneId, SurfaceId, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import SplitContainer from './components/SplitPane/SplitContainer';
-import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface } from './store/split-utils';
+import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds } from './store/split-utils';
 import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
 import { aggregateProgress } from './store/progress-slice';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -710,7 +710,10 @@ export default function App() {
             pinned: ws.pinned,
             shell: ws.shell,
             cwd: ws.cwd, // issue #20 — restore so new terminals reopen in the workspace folder
-            splitTree: ws.splitTree,
+            // Per-tab directories, frozen at save time (issue #134): ws.cwd above
+            // is a single value for the whole workspace, so on its own it sends
+            // every restored terminal to the same place.
+            splitTree: freezeSurfaceCwds(ws.splitTree),
             browserUrl: ws.browserUrl,
             browserWidth: ws.browserWidth,
           })),
@@ -771,7 +774,10 @@ export default function App() {
         customColor: ws.customColor,
         shell: ws.shell,
         cwd: ws.cwd || '',
-        splitTree: ws.splitTree,
+        // See the auto-save path below — a named session is the case #134
+        // reported, where losing a worktree's drive makes the session
+        // unidentifiable after a restore.
+        splitTree: freezeSurfaceCwds(ws.splitTree),
         browserUrl: ws.browserUrl || '',
         browserWidth: ws.browserWidth,
       })),

@@ -123,6 +123,12 @@ contextBridge.exposeInMainWorld('wmux', {
       }
     },
   },
+  // What wmux may write into ~/.claude and ~/.config/opencode (issue #132).
+  // Separate from `settings` because setting it has side effects on disk.
+  integration: {
+    get: (): Promise<unknown> => ipcRenderer.invoke('integration:get'),
+    set: (partial: unknown): Promise<unknown> => ipcRenderer.invoke('integration:set', partial),
+  },
   settings: {
     // Synchronous read so the renderer store can hydrate at module-load time.
     getAllSync: (): Record<string, unknown> => {

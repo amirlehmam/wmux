@@ -3,13 +3,35 @@ import { v4 as uuid } from 'uuid';
 import path from 'path';
 import type { WindowId } from '../shared/types';
 
+/**
+ * The window icon, preferring the multi-size .ico over the 512px .png (issue #137).
+ *
+ * Windows asks for this icon at four different sizes — 16px in the Alt-Tab strip,
+ * 24–32px on the taskbar button, 48px in the window list, 256px in Task Manager —
+ * and a single 512px representation means the shell downsamples for every one of
+ * them. The .ico carries purpose-drawn entries at each size (the tiny variants
+ * drop detail that cannot survive the downsample), so handing it over is the
+ * difference between a crisp mark and a smudge at exactly the sizes users see
+ * most. Falls back to the .png if the .ico is missing from an older install's
+ * resources, since an approximate icon beats the default Electron one.
+ */
 function getAppIcon(): Electron.NativeImage | undefined {
   try {
     const { app } = require('electron') as typeof import('electron');
-    const iconPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'icon.png')
-      : path.resolve(path.join(__dirname, '../../resources/icon.png'));
-    return nativeImage.createFromPath(iconPath);
+    const candidates = app.isPackaged
+      ? [path.join(process.resourcesPath, 'icon.ico'), path.join(process.resourcesPath, 'icon.png')]
+      : [
+          path.resolve(path.join(__dirname, '../../resources/icons/icon.ico')),
+          path.resolve(path.join(__dirname, '../../resources/icon.png')),
+        ];
+    for (const candidate of candidates) {
+      const image = nativeImage.createFromPath(candidate);
+      // createFromPath returns an *empty* image rather than throwing when the
+      // file is absent or unreadable, and an empty icon silently falls back to
+      // the Electron default — so emptiness is the only usable existence check.
+      if (!image.isEmpty()) return image;
+    }
+    return undefined;
   } catch {
     return undefined;
   }

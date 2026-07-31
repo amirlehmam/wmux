@@ -1,5 +1,11 @@
 import React from 'react';
-import logoSrc from '../../assets/logo.png';
+// Imported straight from resources/ rather than a copy under src/renderer/assets/
+// (issue #137). The copy was the whole bug: the brand moved to the split-pane
+// icon in 0.37.0 and every shipped asset followed except this one, so the app
+// kept showing its own previous logo in the titlebar. There is now one file.
+// The *small* variant is deliberate — it is drawn for ≤32px, which is exactly
+// the size the titlebar renders at, and the full icon's `>_` prompts vanish there.
+import logoSrc from '../../../../resources/icons/icon-small.svg';
 import NotificationBell from './NotificationBell';
 import UpdateBadge from './UpdateBadge';
 import { NotificationInfo, WorkspaceId, PaneId, SurfaceId } from '../../../shared/types';
