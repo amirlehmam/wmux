@@ -420,4 +420,10 @@ export const zh: Translation = {
   'terminal.findPrevious': '上一个 (Shift+Enter)',
   'terminal.findNext': '下一个 (Enter)',
   'terminal.findClose': '关闭 (Esc)',
+  // 标题栏 — 通知铃铛与面板
+  'notifPanel.title': '通知',
+  'notifPanel.markAllRead': '全部标记为已读',
+  'notifPanel.empty': '暂无通知',
+  'notifPanel.unknownSource': '未知',
+  'notifPanel.yesterday': '昨天',
 };

@@ -424,4 +424,10 @@ export const fr: Translation = {
   'terminal.findPrevious': 'Précédent (Maj+Entrée)',
   'terminal.findNext': 'Suivant (Entrée)',
   'terminal.findClose': 'Fermer (Échap)',
+  // Titlebar — cloche et panneau de notifications
+  'notifPanel.title': 'Notifications',
+  'notifPanel.markAllRead': 'Tout marquer comme lu',
+  'notifPanel.empty': 'Aucune notification',
+  'notifPanel.unknownSource': 'Inconnu',
+  'notifPanel.yesterday': 'hier',
 };

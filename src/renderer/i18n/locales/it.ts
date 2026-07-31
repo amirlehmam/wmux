@@ -424,4 +424,10 @@ export const it: Translation = {
   'terminal.findPrevious': 'Precedente (Shift+Invio)',
   'terminal.findNext': 'Successivo (Invio)',
   'terminal.findClose': 'Chiudi (Esc)',
+  // Titlebar — campanella e pannello notifiche
+  'notifPanel.title': 'Notifiche',
+  'notifPanel.markAllRead': 'Segna tutte come lette',
+  'notifPanel.empty': 'Nessuna notifica',
+  'notifPanel.unknownSource': 'Sconosciuto',
+  'notifPanel.yesterday': 'ieri',
 };

@@ -437,6 +437,12 @@ export const en = {
   'terminal.findPrevious': 'Previous (Shift+Enter)',
   'terminal.findNext': 'Next (Enter)',
   'terminal.findClose': 'Close (Esc)',
+  // Titlebar — notification bell & panel
+  'notifPanel.title': 'Notifications',
+  'notifPanel.markAllRead': 'Mark all read',
+  'notifPanel.empty': 'No notifications',
+  'notifPanel.unknownSource': 'Unknown',
+  'notifPanel.yesterday': 'yesterday',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */
