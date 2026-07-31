@@ -430,6 +430,12 @@ export default function App() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [shortcuts, commandPaletteOpen]);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  // Session writes read the width through this ref, not the state value.
+  // As a dependency, `sidebarWidth` re-subscribed the auto-save listener and
+  // rebuilt the save callback on every intermediate value of a drag; the ref
+  // keeps those stable, so only the settled width matters (issue 07).
+  const sidebarWidthRef = useRef(sidebarWidth);
+  useEffect(() => { sidebarWidthRef.current = sidebarWidth; }, [sidebarWidth]);
 
   // Open tutorial on first launch, unless the welcome screen is disabled in
   // Settings (issue #22). The "seen" flag still prevents re-showing it.
@@ -688,7 +694,7 @@ export default function App() {
         version: 1,
         windows: [{
           bounds: { x: 0, y: 0, width: 0, height: 0 }, // main process fills real bounds
-          sidebarWidth,
+          sidebarWidth: sidebarWidthRef.current,
           activeWorkspaceId: state.activeWorkspaceId,
           workspaces: state.workspaces.map(ws => ({
             id: ws.id,
@@ -706,7 +712,7 @@ export default function App() {
       window.wmux.session.pushAutoSave(data);
     });
     return unsub;
-  }, [sidebarWidth]);
+  }, []);
 
   // Auto-focus first pane whenever the active workspace changes or gains its first pane
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
@@ -762,12 +768,12 @@ export default function App() {
         browserUrl: ws.browserUrl || '',
         browserWidth: ws.browserWidth,
       })),
-      sidebarWidth,
+      sidebarWidth: sidebarWidthRef.current,
       terminalPrefs: { ...state.terminalPrefs },
     };
     await window.wmux?.session?.save(session);
     window.wmux?.notification?.fire({ surfaceId: '', text: `Session "${name}" saved`, title: 'wmux' });
-  }, [sidebarWidth]);
+  }, []);
 
   const handleLoadSession = useCallback(async (name: string) => {
     const session = await window.wmux?.session?.load(name);

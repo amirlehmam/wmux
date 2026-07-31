@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import { createResizeDrag } from './resize-drag';
 
 interface SidebarResizeHandleProps {
   onWidthChange: (delta: number) => void;
@@ -8,14 +9,14 @@ export default function SidebarResizeHandle({ onWidthChange }: SidebarResizeHand
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
-      const startX = e.clientX;
+      // Coalesced to one width update per frame — see resize-drag.ts for why a
+      // raw mousemove handler is expensive here.
+      const drag = createResizeDrag(e.clientX, onWidthChange);
 
-      const onMouseMove = (ev: MouseEvent) => {
-        const delta = ev.clientX - startX;
-        onWidthChange(delta);
-      };
+      const onMouseMove = (ev: MouseEvent) => drag.move(ev.clientX);
 
       const onMouseUp = () => {
+        drag.stop();
         window.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onMouseUp);
       };
