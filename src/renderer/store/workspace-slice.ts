@@ -3,6 +3,11 @@ import { v4 as uuid } from 'uuid';
 import { WorkspaceId, WorkspaceInfo, SplitNode } from '../../shared/types';
 import { createLeaf } from './split-utils';
 import { killTreeTerminalPtys } from './pty-teardown';
+import type { TranslationKey } from '../i18n/core';
+
+/** Defaults to returning the fallback verbatim so callers that omit `t` still see English. */
+type T = (key: TranslationKey, fallback?: string) => string;
+const identityT: T = (_key, fallback) => fallback ?? _key;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -16,7 +21,7 @@ export interface WorkspaceSlice {
    */
   pendingCloseWorkspaceIds: WorkspaceId[];
 
-  createWorkspace(options?: Partial<WorkspaceInfo>): WorkspaceId;
+  createWorkspace(options?: Partial<WorkspaceInfo>, t?: T): WorkspaceId;
   closeWorkspace(id: WorkspaceId): void;
   /**
    * Close a workspace on behalf of a USER gesture (sidebar ×, context menu,
@@ -35,7 +40,7 @@ export interface WorkspaceSlice {
   reorderWorkspaces(ids: WorkspaceId[]): void;
   updateWorkspaceMetadata(id: WorkspaceId, partial: Partial<WorkspaceInfo>): void;
   updateSplitTree(id: WorkspaceId, tree: SplitNode): void;
-  replaceAllWorkspaces(workspaces: Array<Partial<WorkspaceInfo>>, activeIndex?: number): void;
+  replaceAllWorkspaces(workspaces: Array<Partial<WorkspaceInfo>>, activeIndex?: number, t?: T): void;
 }
 
 // ─── Slice creator ───────────────────────────────────────────────────────────
@@ -45,12 +50,12 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
   activeWorkspaceId: null,
   pendingCloseWorkspaceIds: [],
 
-  createWorkspace(options = {}): WorkspaceId {
+  createWorkspace(options = {}, t = identityT): WorkspaceId {
     const id: WorkspaceId = `ws-${uuid()}`;
     const splitTree = options.splitTree ?? createLeaf();
     const workspace: WorkspaceInfo = {
       id,
-      title: options.title ?? `Workspace ${get().workspaces.length + 1}`,
+      title: options.title ?? t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(get().workspaces.length + 1)),
       pinned: options.pinned ?? false,
       shell: options.shell || '',
       splitTree,
@@ -166,10 +171,10 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
     }));
   },
 
-  replaceAllWorkspaces(workspaceConfigs: Array<Partial<WorkspaceInfo>>, activeIndex?: number): void {
+  replaceAllWorkspaces(workspaceConfigs: Array<Partial<WorkspaceInfo>>, activeIndex?: number, t = identityT): void {
     const newWorkspaces: WorkspaceInfo[] = workspaceConfigs.map((config, i) => ({
       id: `ws-${uuid()}` as WorkspaceId,
-      title: config.title ?? `Workspace ${i + 1}`,
+      title: config.title ?? t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(i + 1)),
       pinned: config.pinned ?? false,
       shell: config.shell || '',
       splitTree: config.splitTree ?? createLeaf(),

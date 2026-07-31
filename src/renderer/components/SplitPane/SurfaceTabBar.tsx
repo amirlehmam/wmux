@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { SurfaceRef, SurfaceId, PaneId, QuickLaunchProfile, ShellInfo } from '../../../shared/types';
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret } from './icons';
 import type { SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
@@ -83,6 +84,7 @@ export default function SurfaceTabBar({
   isDragActive,
   isFocused,
 }: SurfaceTabBarProps) {
+  const t = useT();
   const [draggingSurfaceId, setDraggingSurfaceId] = useState<SurfaceId | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [renamingId, setRenamingId] = useState<SurfaceId | null>(null);
@@ -383,10 +385,10 @@ export default function SurfaceTabBar({
                   }}
                   onBlur={commitRename}
                   onClick={(e) => e.stopPropagation()}
-                  placeholder={getSurfaceLabel(surface, agentMeta?.label, workspaceShell)}
+                  placeholder={getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t)}
                 />
               ) : (
-                <span className="surface-tab__label">{getSurfaceLabel(surface, agentMeta?.label, workspaceShell)}</span>
+                <span className="surface-tab__label">{getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t)}</span>
               )}
               {surfaces.length > 1 && !isRenaming && (
                 <button
@@ -418,7 +420,7 @@ export default function SurfaceTabBar({
             className="surface-tab-bar__ctl surface-tab-bar__ctl--new"
             onClick={onNew}
             tabIndex={-1}
-            title={`New terminal tab (${bindingFor('newSurface')})`}
+            title={t('surfaceTab.newTab', 'New terminal tab ({binding})').replace('{binding}', bindingFor('newSurface'))}
           >
             <IconAdd />
           </button>
@@ -430,7 +432,7 @@ export default function SurfaceTabBar({
               tabIndex={-1}
               aria-haspopup="menu"
               aria-expanded={openMenu === 'new'}
-              title="New tab type…"
+              title={t('surfaceTab.newTabType', 'New tab type…')}
             >
               <IconCaret />
             </button>
@@ -444,7 +446,7 @@ export default function SurfaceTabBar({
               className="surface-tab-bar__ctl surface-tab-bar__ctl--layout"
               onClick={onSplitRight}
               tabIndex={-1}
-              title={`Split right (${bindingFor('splitRight')})`}
+              title={t('surfaceTab.splitRightTooltip', 'Split right ({binding})').replace('{binding}', bindingFor('splitRight'))}
             >
               <IconSplit />
             </button>
@@ -455,7 +457,7 @@ export default function SurfaceTabBar({
               tabIndex={-1}
               aria-haspopup="menu"
               aria-expanded={openMenu === 'layout'}
-              title="Split layout…"
+              title={t('surfaceTab.splitLayout', 'Split layout…')}
             >
               <IconCaret />
             </button>
@@ -468,7 +470,7 @@ export default function SurfaceTabBar({
             className="surface-tab-bar__ctl surface-tab-bar__ctl--close"
             onClick={onClosePane}
             tabIndex={-1}
-            title={`Close pane (${bindingFor('closeSurfaceOrPane')})`}
+            title={t('surfaceTab.closePane', 'Close pane ({binding})').replace('{binding}', bindingFor('closeSurfaceOrPane'))}
           >
             <IconClose />
           </button>
@@ -487,7 +489,7 @@ export default function SurfaceTabBar({
               {onDuplicate && (
                 <>
                   <button role="menuitem" onClick={pickDuplicate}>
-                    <span className="surface-tab-menu__icon">⧉</span> Duplicate tab
+                    <span className="surface-tab-menu__icon">⧉</span> {t('surfaceTab.duplicateTab', 'Duplicate tab')}
                   </button>
                   <div className="surface-tab-menu__sep" role="separator" />
                 </>
@@ -503,14 +505,14 @@ export default function SurfaceTabBar({
                 </>
               ) : (
                 <button role="menuitem" onClick={() => pickNew('terminal')}>
-                  <span className="surface-tab-menu__icon">{surfaceIcon('terminal', false)}</span> Terminal
+                  <span className="surface-tab-menu__icon">{surfaceIcon('terminal', false)}</span> {t('surfaceLabel.terminal', 'Terminal')}
                 </button>
               )}
               <button role="menuitem" onClick={() => pickNew('browser')}>
-                <span className="surface-tab-menu__icon">{surfaceIcon('browser', false)}</span> Browser
+                <span className="surface-tab-menu__icon">{surfaceIcon('browser', false)}</span> {t('surfaceLabel.browser', 'Browser')}
               </button>
               <button role="menuitem" onClick={() => pickNew('markdown')}>
-                <span className="surface-tab-menu__icon">{surfaceIcon('markdown', false)}</span> Markdown
+                <span className="surface-tab-menu__icon">{surfaceIcon('markdown', false)}</span> {t('surfaceLabel.markdown', 'Markdown')}
               </button>
               {profiles && profiles.length > 0 && (
                 <>
@@ -521,14 +523,16 @@ export default function SurfaceTabBar({
                       role="menuitem"
                       className="surface-tab-menu__profile"
                       onClick={() => pickProfile(profile)}
-                      title={profile.source === 'project' ? 'Project profile (.wmux.json)' : 'Global profile'}
+                      title={profile.source === 'project'
+                        ? t('surfaceTab.profileProject', 'Project profile (.wmux.json)')
+                        : t('surfaceTab.profileGlobal', 'Global profile')}
                     >
                       <span className="surface-tab-menu__icon">
                         {profile.icon || surfaceIcon(profile.type, false)}
                       </span>
                       <span className="surface-tab-menu__profile-name">{profile.name}</span>
                       {profile.source === 'project' && (
-                        <span className="surface-tab-menu__badge">project</span>
+                        <span className="surface-tab-menu__badge">{t('surfaceTab.profileBadge', 'project')}</span>
                       )}
                     </button>
                   ))}
@@ -539,13 +543,13 @@ export default function SurfaceTabBar({
             <>
               <button role="menuitem" onClick={() => pickSplit('right')}>
                 <span className="surface-tab-menu__icon"><IconSplit size={15} /></span>
-                Split right
+                {t('surfaceTab.splitRight', 'Split right')}
                 <span className="surface-tab-menu__kbd">Ctrl+D</span>
               </button>
               {onSplitDown && (
                 <button role="menuitem" onClick={() => pickSplit('down')}>
                   <span className="surface-tab-menu__icon"><IconSplitDown size={15} /></span>
-                  Split down
+                  {t('surfaceTab.splitDown', 'Split down')}
                   <span className="surface-tab-menu__kbd">Ctrl+Shift+D</span>
                 </button>
               )}
@@ -570,7 +574,7 @@ export default function SurfaceTabBar({
             role="menuitem"
             onClick={() => { startRenameFor(ctxMenu.surfaceId); setCtxMenu(null); }}
           >
-            Rename
+            {t('surfaceTab.rename', 'Rename')}
           </div>
           <div className="ctx-menu__separator" />
           <div
@@ -578,7 +582,7 @@ export default function SurfaceTabBar({
             role="menuitem"
             onClick={() => { onClose(ctxMenu.surfaceId); setCtxMenu(null); }}
           >
-            Close
+            {t('surfaceTab.close', 'Close')}
           </div>
           {surfaces.length > 1 && (
             <div
@@ -586,7 +590,7 @@ export default function SurfaceTabBar({
               role="menuitem"
               onClick={() => { onCloseOthers?.(ctxMenu.surfaceId); setCtxMenu(null); }}
             >
-              Close others
+              {t('surfaceTab.closeOthers', 'Close others')}
             </div>
           )}
           {surfaces.findIndex((s) => s.id === ctxMenu.surfaceId) < surfaces.length - 1 && (
@@ -595,7 +599,7 @@ export default function SurfaceTabBar({
               role="menuitem"
               onClick={() => { onCloseToRight?.(ctxMenu.surfaceId); setCtxMenu(null); }}
             >
-              Close to the right
+              {t('surfaceTab.closeToRight', 'Close to the right')}
             </div>
           )}
         </div>,

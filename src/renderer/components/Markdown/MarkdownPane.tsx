@@ -66,6 +66,35 @@ const COMPACT_TOOLBAR_PX = 420;
 
 const basenameOf = (p: string) => p.replace(/\\/g, '/').split('/').pop() || 'Markdown';
 
+// The main process has no access to the renderer's i18n system, so its IPC
+// error responses carry a stable `code` alongside the (always-English) `error`
+// string — main-process callers (the CLI, agent pipe responses) still print
+// `error` verbatim, while the renderer maps `code` to a translated message.
+const MARKDOWN_ERROR_KEY: Record<string, TranslationKey> = {
+  no_path: 'markdown.error.noPath',
+  unsupported_type: 'markdown.error.unsupportedType',
+  not_found: 'markdown.error.notFound',
+  symlink: 'markdown.error.symlink',
+  not_regular_file: 'markdown.error.notRegularFile',
+  too_large: 'markdown.error.tooLarge',
+  no_content: 'markdown.error.noContent',
+  not_granted: 'markdown.error.notGranted',
+  action_failed: 'markdown.error.action',
+};
+
+/** Translated message for a `{ error, code }` IPC result, falling back to the
+ *  raw (English) error, then to `fallbackKey`, when `code` is missing/unknown. */
+function markdownErrorMessage(
+  res: { error?: string; code?: string } | null | undefined,
+  t: (key: TranslationKey, fallback?: string) => string,
+  fallbackKey: TranslationKey,
+  fallbackText: string,
+): string {
+  const key = res?.code ? MARKDOWN_ERROR_KEY[res.code] : undefined;
+  if (key) return t(key, res!.error);
+  return res?.error || t(fallbackKey, fallbackText);
+}
+
 // ─── Source view ──────────────────────────────────────────────────────────────
 
 function MarkdownSource({ content }: { content: string }) {
@@ -509,7 +538,7 @@ export default function MarkdownPane({
   const loadFromDisk = useCallback(async (path: string) => {
     const res = await window.wmux?.markdown?.readFile?.(path);
     if (!res || res.error || typeof res.content !== 'string') {
-      setError(res?.error || t('markdown.error.read', 'Could not read the file'));
+      setError(markdownErrorMessage(res, t, 'markdown.error.read', 'Could not read the file'));
       return;
     }
     setConflict(false);
@@ -525,13 +554,13 @@ export default function MarkdownPane({
   // outside the extension whitelist, so surface that rather than dropping it.
   const revealFile = useCallback(async (path: string) => {
     const res = await window.wmux?.markdown?.reveal?.(path);
-    if (res?.error) setError(res.error);
-  }, []);
+    if (res?.error) setError(markdownErrorMessage(res, t, 'markdown.error.action', 'The action failed'));
+  }, [t]);
 
   const openFileInApp = useCallback(async (path: string) => {
     const res = await window.wmux?.markdown?.openInApp?.(path);
-    if (res?.error) setError(res.error);
-  }, []);
+    if (res?.error) setError(markdownErrorMessage(res, t, 'markdown.error.action', 'The action failed'));
+  }, [t]);
 
   // ─── Save (F3) ──────────────────────────────────────────────────────────────
 
@@ -540,7 +569,7 @@ export default function MarkdownPane({
     const res = await window.wmux?.markdown?.saveAs?.(content, suggested, cwd);
     if (!res || res.canceled) return;
     if (res.error || !res.filePath) {
-      setError(res?.error || t('markdown.error.save', 'Could not save the file'));
+      setError(markdownErrorMessage(res, t, 'markdown.error.save', 'Could not save the file'));
       return;
     }
     setConflict(false);
@@ -565,7 +594,7 @@ export default function MarkdownPane({
       return;
     }
     if (!res || res.error) {
-      setError(res?.error || t('markdown.error.save', 'Could not save the file'));
+      setError(markdownErrorMessage(res, t, 'markdown.error.save', 'Could not save the file'));
       return;
     }
     setConflict(false);

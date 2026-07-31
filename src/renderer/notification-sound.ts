@@ -4,6 +4,7 @@ import chimeUrl from './assets/sounds/chime.wav';
 import pingUrl from './assets/sounds/ping.wav';
 import marimbaUrl from './assets/sounds/marimba.wav';
 import popUrl from './assets/sounds/pop.wav';
+import type { TranslationKey } from './i18n/core';
 
 // Built-in notification sounds (issue #39). 'default' is the original chime;
 // the rest are short synthesized CC0 tones. Keep this in sync with the
@@ -17,13 +18,13 @@ export const NOTIFICATION_SOUNDS: Record<string, string> = {
   pop: popUrl,
 };
 
-export const NOTIFICATION_SOUND_LABELS: Array<{ value: string; label: string }> = [
-  { value: 'default', label: 'Default' },
-  { value: 'chime', label: 'Chime' },
-  { value: 'ping', label: 'Ping' },
-  { value: 'marimba', label: 'Marimba' },
-  { value: 'pop', label: 'Pop' },
-  { value: 'none', label: 'None' },
+export const NOTIFICATION_SOUND_LABELS: Array<{ value: string; labelKey: TranslationKey; fallback: string }> = [
+  { value: 'default', labelKey: 'notificationSound.default', fallback: 'Default' },
+  { value: 'chime', labelKey: 'notificationSound.chime', fallback: 'Chime' },
+  { value: 'ping', labelKey: 'notificationSound.ping', fallback: 'Ping' },
+  { value: 'marimba', labelKey: 'notificationSound.marimba', fallback: 'Marimba' },
+  { value: 'pop', labelKey: 'notificationSound.pop', fallback: 'Pop' },
+  { value: 'none', labelKey: 'notificationSound.none', fallback: 'None' },
 ];
 
 // One reusable <audio> element per sound. Re-seeking to 0 lets rapid back-to-back

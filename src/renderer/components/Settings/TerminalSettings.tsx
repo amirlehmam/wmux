@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
 import { UserColorScheme } from '../../store/settings-slice';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
@@ -14,6 +15,7 @@ function cssFamily(name: string): string {
 }
 
 export default function TerminalSettings() {
+  const t = useT();
   const { terminalPrefs, setTerminalPrefs } = useStore();
   const [themes, setThemes] = useState<string[]>(['Monokai']);
   const [newSchemeName, setNewSchemeName] = useState('');
@@ -68,11 +70,11 @@ export default function TerminalSettings() {
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Font</h3>
+      <h3 className="settings-section-title">{t('settings.terminalPanel.font', 'Font')}</h3>
 
       {systemFonts.length > 0 && (
         <div className="settings-row">
-          <label className="settings-label">Font</label>
+          <label className="settings-label">{t('settings.terminalPanel.font', 'Font')}</label>
           <select
             className="settings-select"
             value={pickerValue}
@@ -81,7 +83,9 @@ export default function TerminalSettings() {
               if (name) setTerminalPrefs({ fontFamily: `${cssFamily(name)}, Consolas, monospace` });
             }}
           >
-            <option value="">{pickerValue ? 'Custom stack…' : `Pick an installed font (${systemFonts.length})…`}</option>
+            <option value="">{pickerValue
+              ? t('settings.terminalPanel.customStack', 'Custom stack…')
+              : t('settings.terminalPanel.pickInstalledFont', 'Pick an installed font ({count})…').replace('{count}', String(systemFonts.length))}</option>
             {systemFonts.map((f) => (
               <option key={f} value={f}>{f}</option>
             ))}
@@ -90,13 +94,13 @@ export default function TerminalSettings() {
       )}
 
       <div className="settings-row">
-        <label className="settings-label">Font stack (advanced)</label>
+        <label className="settings-label">{t('settings.terminalPanel.fontStackAdvanced', 'Font stack (advanced)')}</label>
         <input
           type="text"
           className="settings-input"
           value={terminalPrefs.fontFamily}
           onChange={(e) => setTerminalPrefs({ fontFamily: e.target.value })}
-          placeholder="e.g. Consolas, Menlo, monospace"
+          placeholder={t('settings.terminalPanel.fontStackPlaceholder', 'e.g. Consolas, Menlo, monospace')}
         />
       </div>
 
@@ -120,7 +124,7 @@ export default function TerminalSettings() {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label">Font size</label>
+        <label className="settings-label">{t('settings.terminalPanel.fontSize', 'Font size')}</label>
         <input
           type="number"
           className="settings-input settings-input--narrow"
@@ -132,30 +136,30 @@ export default function TerminalSettings() {
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">Color scheme</h3>
+      <h3 className="settings-section-title">{t('settings.terminalPanel.colorSchemeSection', 'Color scheme')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Default scheme</label>
+        <label className="settings-label">{t('settings.terminalPanel.defaultScheme', 'Default scheme')}</label>
         <div className="settings-theme-row">
           <select
             className="settings-select"
             value={terminalPrefs.theme}
             onChange={(e) => setTerminalPrefs({ theme: e.target.value })}
           >
-            {allSchemes.map((t) => (
-              <option key={t} value={t}>{t}</option>
+            {allSchemes.map((scheme) => (
+              <option key={scheme} value={scheme}>{scheme}</option>
             ))}
           </select>
         </div>
       </div>
       <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>
-        Applied to new panes. Override per pane via <code>wmux split --color-scheme NAME</code> or <code>wmux set-color-scheme NAME</code>.
+        {t('settings.terminalPanel.schemeHintPart1', 'Applied to new panes. Override per pane via ')}<code>wmux split --color-scheme NAME</code>{t('settings.terminalPanel.schemeHintPart2', ' or ')}<code>wmux set-color-scheme NAME</code>{t('settings.terminalPanel.schemeHintPart3', '.')}
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">Custom schemes</h3>
+      <h3 className="settings-section-title">{t('settings.terminalPanel.customSchemesSection', 'Custom schemes')}</h3>
       <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>
-        Define named overrides (dev / staging / prod). Only the fields you set are overridden; the rest fall back to the bundled base theme.
+        {t('settings.terminalPanel.customSchemesHint', 'Define named overrides (dev / staging / prod). Only the fields you set are overridden; the rest fall back to the bundled base theme.')}
       </div>
 
       {userSchemeNames.map((name) => {
@@ -164,21 +168,21 @@ export default function TerminalSettings() {
           <div key={name} className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <strong>{name}</strong>
-              <button className="settings-btn settings-btn--secondary" onClick={() => removeUserScheme(name)}>Remove</button>
+              <button className="settings-btn settings-btn--secondary" onClick={() => removeUserScheme(name)}>{t('settings.terminalPanel.remove', 'Remove')}</button>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                bg
+                {t('settings.terminalPanel.bg', 'bg')}
                 <input type="color" value={scheme.background || '#1e1e1e'}
                   onChange={(e) => updateUserScheme(name, { background: e.target.value })} />
               </label>
               <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                fg
+                {t('settings.terminalPanel.fg', 'fg')}
                 <input type="color" value={scheme.foreground || '#dddddd'}
                   onChange={(e) => updateUserScheme(name, { foreground: e.target.value })} />
               </label>
               <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                cursor
+                {t('settings.terminalPanel.cursorAbbr', 'cursor')}
                 <input type="color" value={scheme.cursor || '#ffffff'}
                   onChange={(e) => updateUserScheme(name, { cursor: e.target.value })} />
               </label>
@@ -191,19 +195,19 @@ export default function TerminalSettings() {
         <input
           type="text"
           className="settings-input"
-          placeholder="new scheme name (e.g. prod)"
+          placeholder={t('settings.terminalPanel.newSchemeNamePlaceholder', 'new scheme name (e.g. prod)')}
           value={newSchemeName}
           onChange={(e) => setNewSchemeName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') addUserScheme(); }}
         />
-        <button className="settings-btn settings-btn--secondary" onClick={addUserScheme}>Add scheme</button>
+        <button className="settings-btn settings-btn--secondary" onClick={addUserScheme}>{t('settings.terminalPanel.addScheme', 'Add scheme')}</button>
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">Cursor</h3>
+      <h3 className="settings-section-title">{t('settings.terminalPanel.cursorSection', 'Cursor')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Cursor style</label>
+        <label className="settings-label">{t('settings.terminalPanel.cursorStyle', 'Cursor style')}</label>
         <select
           className="settings-select"
           value={terminalPrefs.cursorStyle}
@@ -211,14 +215,14 @@ export default function TerminalSettings() {
             setTerminalPrefs({ cursorStyle: e.target.value as 'block' | 'underline' | 'bar' })
           }
         >
-          <option value="block">Block</option>
-          <option value="underline">Underline</option>
-          <option value="bar">Bar</option>
+          <option value="block">{t('settings.terminalPanel.cursorStyle.block', 'Block')}</option>
+          <option value="underline">{t('settings.terminalPanel.cursorStyle.underline', 'Underline')}</option>
+          <option value="bar">{t('settings.terminalPanel.cursorStyle.bar', 'Bar')}</option>
         </select>
       </div>
 
       <div className="settings-row">
-        <label className="settings-label">Cursor blink</label>
+        <label className="settings-label">{t('settings.terminalPanel.cursorBlink', 'Cursor blink')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -228,10 +232,10 @@ export default function TerminalSettings() {
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">Scrollback</h3>
+      <h3 className="settings-section-title">{t('settings.terminalPanel.scrollbackSection', 'Scrollback')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Scrollback lines</label>
+        <label className="settings-label">{t('settings.terminalPanel.scrollbackLines', 'Scrollback lines')}</label>
         <input
           type="number"
           className="settings-input settings-input--narrow"

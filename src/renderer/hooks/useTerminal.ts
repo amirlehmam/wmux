@@ -8,6 +8,7 @@ import { ImageAddon } from '@xterm/addon-image';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { ProgressAddon } from '@xterm/addon-progress';
 import { useStore } from '../store';
+import { useT } from '../i18n';
 import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
 import { SplitNode, ThemeConfig } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
@@ -333,6 +334,7 @@ async function fetchTheme(name: string): Promise<ThemeConfig> {
 }
 
 export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = true, colorScheme, startupCommands }: UseTerminalOptions = {}): UseTerminalResult {
+  const t = useT();
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -627,7 +629,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       lastBellAt = now;
       window.wmux.notification.fire({
         surfaceId: ptyIdRef.current || '',
-        text: 'Terminal bell',
+        text: t('terminal.bell', 'Terminal bell'),
       });
     });
 

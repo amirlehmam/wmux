@@ -1,5 +1,9 @@
 import { SplitNode, SurfaceId, PaneId } from '../../shared/types';
 import { AgentMeta } from './agent-slice';
+import type { TranslationKey } from '../i18n/core';
+
+type T = (key: TranslationKey, fallback?: string) => string;
+const identityT: T = (_key, fallback) => fallback ?? _key;
 
 /** One display line under a workspace row. */
 export interface WorkspaceAgent {
@@ -51,7 +55,7 @@ function wmuxLine(surfaceId: string, paneId: PaneId, meta: AgentMeta | undefined
   return { key: `wmux:${surfaceId}`, name: meta.label, detail: done ? '✓' : '', done, paneId };
 }
 
-function summarize(ordered: WorkspaceAgent[]): WorkspaceAgent[] {
+function summarize(ordered: WorkspaceAgent[], t: T): WorkspaceAgent[] {
   if (ordered.length <= MAX_LINES) return ordered;
   const shown = ordered.slice(0, MAX_LINES - 1);
   const hidden = ordered.slice(MAX_LINES - 1);
@@ -60,7 +64,7 @@ function summarize(ordered: WorkspaceAgent[]): WorkspaceAgent[] {
   const hiddenTools = hidden.reduce((sum, a) => sum + (a.toolUses ?? 0), 0);
   shown.push({
     key: MORE_KEY,
-    name: `+${hidden.length} more`,
+    name: t('agentView.moreSummary', '+{n} more').replace('{n}', String(hidden.length)),
     detail: hiddenTools > 0 ? `⚒${hiddenTools}` : '',
     done: hidden.every(a => a.done),
   });
@@ -88,6 +92,7 @@ export function agentsForWorkspace(
   claudeActivity: Record<string, ObserverActivity | undefined>,
   agentMeta: Map<SurfaceId, AgentMeta>,
   now: number,
+  t: T = identityT,
 ): WorkspaceAgentsView {
   const pairs: Array<{ surfaceId: SurfaceId; paneId: PaneId }> = [];
   collectSurfacePanes(splitTree, pairs);
@@ -102,7 +107,7 @@ export function agentsForWorkspace(
   // Stable partition: running agents first, done ones after.
   const runningAgents = merged.filter(a => !a.done);
   const ordered = [...runningAgents, ...merged.filter(a => a.done)];
-  return { lines: summarize(ordered), total: merged.length, running: runningAgents.length };
+  return { lines: summarize(ordered, t), total: merged.length, running: runningAgents.length };
 }
 
 /**

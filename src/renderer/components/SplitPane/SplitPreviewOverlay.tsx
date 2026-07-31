@@ -1,5 +1,6 @@
 import type { PaneId, SplitNode, SurfaceId, SurfaceRef } from '../../../shared/types';
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
 import '../../styles/splitpane.css';
 import { getSurfaceLabel } from './surface-label';
 
@@ -16,9 +17,11 @@ export default function SplitPreviewOverlay({
   draggedSurfaceId,
   workspaceShell,
 }: SplitPreviewOverlayProps) {
+  const t = useT();
   const agentMeta = useStore((state) => state.agentMeta);
   const getPreviewSurfaceLabel = (surface: SurfaceRef) =>
-    getSurfaceLabel(surface, agentMeta.get(surface.id)?.label, workspaceShell);
+    getSurfaceLabel(surface, agentMeta.get(surface.id)?.label, workspaceShell, t);
+  const dropHereLabel = t('splitPreview.dropHere', 'Drop here');
 
   return (
     <div className="split-preview-overlay" aria-hidden="true">
@@ -27,6 +30,7 @@ export default function SplitPreviewOverlay({
         destinationPaneId={destinationPaneId}
         draggedSurfaceId={draggedSurfaceId}
         getPreviewSurfaceLabel={getPreviewSurfaceLabel}
+        dropHereLabel={dropHereLabel}
       />
     </div>
   );
@@ -37,11 +41,13 @@ function PreviewNode({
   destinationPaneId,
   draggedSurfaceId,
   getPreviewSurfaceLabel,
+  dropHereLabel,
 }: {
   node: SplitNode;
   destinationPaneId: PaneId;
   draggedSurfaceId: SurfaceId;
   getPreviewSurfaceLabel: (surface: SurfaceRef) => string;
+  dropHereLabel: string;
 }) {
   if (node.type === 'leaf') {
     const isDestination = node.paneId === destinationPaneId;
@@ -68,7 +74,7 @@ function PreviewNode({
           <span className="split-preview-pane__line" />
           <span className="split-preview-pane__line" />
         </div>
-        {isDestination && <span className="split-preview-pane__destination-label">Drop here</span>}
+        {isDestination && <span className="split-preview-pane__destination-label">{dropHereLabel}</span>}
       </div>
     );
   }
@@ -83,6 +89,7 @@ function PreviewNode({
           destinationPaneId={destinationPaneId}
           draggedSurfaceId={draggedSurfaceId}
           getPreviewSurfaceLabel={getPreviewSurfaceLabel}
+          dropHereLabel={dropHereLabel}
         />
       </div>
       <div className={`split-preview-container__divider split-preview-container__divider--${node.direction}`} />
@@ -92,6 +99,7 @@ function PreviewNode({
           destinationPaneId={destinationPaneId}
           draggedSurfaceId={draggedSurfaceId}
           getPreviewSurfaceLabel={getPreviewSurfaceLabel}
+          dropHereLabel={dropHereLabel}
         />
       </div>
     </div>

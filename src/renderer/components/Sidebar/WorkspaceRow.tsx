@@ -1,12 +1,16 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { WorkspaceInfo, SplitNode, PaneId } from '../../../shared/types';
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
 import { aggregateProgress } from '../../store/progress-slice';
 import { agentsForWorkspace, resolveAgentLinger, WorkspaceAgentsView } from '../../store/agent-view';
 import { claudeSessionsForWorkspace, HookActivityEntry } from '../../store/claude-session-view';
 import UnreadBadge from './UnreadBadge';
 import PrStatusIcon from './PrStatusIcon';
 import { traceState, toolChannel } from './trace-signals';
+
+type T = (key: TranslationKey, fallback?: string) => string;
 
 /** Stable empty view — avoids allocating a fresh object every collapsed tick. */
 const EMPTY_AGENTS_VIEW: WorkspaceAgentsView = { lines: [], total: 0, running: 0 };
@@ -17,30 +21,32 @@ function getAllSurfaceIds(tree: SplitNode): string[] {
 }
 
 /** Human-readable label for a tool name */
-function getToolLabel(tool: string): string {
+function getToolLabel(tool: string, t: T): string {
   switch (tool) {
-    case 'Bash': return 'Running command...';
-    case 'Read': return 'Reading file...';
-    case 'Edit': return 'Editing...';
-    case 'Write': return 'Writing file...';
-    case 'Grep': return 'Searching code...';
-    case 'Glob': return 'Finding files...';
-    case 'Agent': return 'Running agent...';
-    case 'WebSearch': return 'Searching web...';
-    case 'WebFetch': return 'Fetching page...';
-    case 'Skill': return 'Loading skill...';
-    default: return tool.includes(':') ? `MCP: ${tool}` : `${tool}...`;
+    case 'Bash': return t('workspaceRow.tool.bash', 'Running command...');
+    case 'Read': return t('workspaceRow.tool.read', 'Reading file...');
+    case 'Edit': return t('workspaceRow.tool.edit', 'Editing...');
+    case 'Write': return t('workspaceRow.tool.write', 'Writing file...');
+    case 'Grep': return t('workspaceRow.tool.grep', 'Searching code...');
+    case 'Glob': return t('workspaceRow.tool.glob', 'Finding files...');
+    case 'Agent': return t('workspaceRow.tool.agent', 'Running agent...');
+    case 'WebSearch': return t('workspaceRow.tool.webSearch', 'Searching web...');
+    case 'WebFetch': return t('workspaceRow.tool.webFetch', 'Fetching page...');
+    case 'Skill': return t('workspaceRow.tool.skill', 'Loading skill...');
+    default: return tool.includes(':')
+      ? t('workspaceRow.tool.mcp', 'MCP: {tool}').replace('{tool}', tool)
+      : t('workspaceRow.tool.generic', '{tool}...').replace('{tool}', tool);
   }
 }
 
 /** Detail text of one Claude session sub-line. */
-function sessionDetailText(session: { working: boolean; blocked: boolean; blockedReason: string | null; tool: string | null }): string {
+function sessionDetailText(session: { working: boolean; blocked: boolean; blockedReason: string | null; tool: string | null }, t: T): string {
   // Blocked outranks the tool label: a pane parked on a permission prompt is
   // the one thing the user has to act on, so it must not read as "Idle" just
   // because no tool is running (issue #128).
-  if (session.blocked) return session.blockedReason || 'Needs you';
-  if (!session.working) return 'Idle';
-  return session.tool ? getToolLabel(session.tool) : 'Running…';
+  if (session.blocked) return session.blockedReason || t('workspaceRow.needsYou', 'Needs you');
+  if (!session.working) return t('workspaceRow.idle', 'Idle');
+  return session.tool ? getToolLabel(session.tool, t) : t('workspaceRow.sessionRunning', 'Running…');
 }
 
 interface StatusTextInputs {
@@ -57,59 +63,68 @@ interface StatusTextInputs {
 }
 
 /** Priorities 0–2: Claude-derived signals. Null → fall through to shell state. */
-function claudeStatusText(s: StatusTextInputs): string | null {
+function claudeStatusText(s: StatusTextInputs, t: T): string | null {
   // Priority 0: user pinned the status by hand (issue #81) — detection
   // heuristics can misread tools that keep the shell "running" while idle.
   if (s.statusOverride) {
-    return s.statusOverride === 'running' ? 'Running' : 'Idle';
+    return s.statusOverride === 'running' ? t('workspaceRow.running', 'Running') : t('workspaceRow.idle', 'Idle');
   }
 
   // Priority 0.25: a session is parked on the user. Ranked above the running
   // summaries on purpose — everything else describes work that proceeds on its
   // own, this describes work that has stopped until the user acts (issue #128).
   if (s.blockedSessions > 0) {
-    return s.blockedSessions > 1 ? `Needs you · ${s.blockedSessions}` : 'Needs you';
+    return s.blockedSessions > 1
+      ? t('workspaceRow.needsYouCount', 'Needs you · {count}').replace('{count}', String(s.blockedSessions))
+      : t('workspaceRow.needsYou', 'Needs you');
   }
 
   // Priority 0.5: agents are running — show the orchestration summary
   if (s.runningAgentCount > 0) {
-    return `Orchestrating · ${s.agentTotal} agent${s.agentTotal > 1 ? 's' : ''}`;
+    return (s.agentTotal > 1
+      ? t('workspaceRow.orchestratingMany', 'Orchestrating · {count} agents')
+      : t('workspaceRow.orchestratingOne', 'Orchestrating · {count} agent')
+    ).replace('{count}', String(s.agentTotal));
   }
 
   // Priority 0.75: several Claude sessions in this workspace — summarize;
   // the per-session sub-lines below the status carry the detail.
   if (s.sessionCount >= 2) {
     return s.workingSessions > 0
-      ? `Claude · ${s.workingSessions}/${s.sessionCount} running`
-      : 'Idle';
+      ? t('workspaceRow.claudeRunning', 'Claude · {working}/{total} running')
+        .replace('{working}', String(s.workingSessions))
+        .replace('{total}', String(s.sessionCount))
+      : t('workspaceRow.idle', 'Idle');
   }
 
   // Priority 1: Claude is actively using a tool
   if (s.currentToolLabel) return s.currentToolLabel;
 
   // Priority 2: Claude was working but stopped → idle, not "Running"
-  if (s.claudeIsIdle) return 'Idle';
+  if (s.claudeIsIdle) return t('workspaceRow.idle', 'Idle');
 
   return null;
 }
 
 /** Status line priority chain: override > agents > sessions > tool > idle > shell > notification. */
-function resolveStatusText(s: StatusTextInputs): string {
-  const claude = claudeStatusText(s);
+function resolveStatusText(s: StatusTextInputs, t: T): string {
+  const claude = claudeStatusText(s, t);
   if (claude) return claude;
 
   // Priority 3: Shell state from shell integration
-  if (s.shellState === 'running') return 'Running';
-  if (s.shellState === 'interrupted') return 'Interrupted';
+  if (s.shellState === 'running') return t('workspaceRow.running', 'Running');
+  if (s.shellState === 'interrupted') return t('workspaceRow.interrupted', 'Interrupted');
   if (s.shellState === 'idle') {
-    return s.notificationText ? `Done: ${s.notificationText}` : 'Idle';
+    return s.notificationText
+      ? t('workspaceRow.done', 'Done: {text}').replace('{text}', s.notificationText)
+      : t('workspaceRow.idle', 'Idle');
   }
 
   // Priority 4: Notification text without shell state
   if (s.notificationText) return s.notificationText;
 
   // Priority 5: Default — always show something
-  return 'Idle';
+  return t('workspaceRow.idle', 'Idle');
 }
 
 interface WorkspaceRowProps {
@@ -154,6 +169,7 @@ export default function WorkspaceRow({
   agentStates,
   onFocusAgentPane,
 }: WorkspaceRowProps) {
+  const t = useT();
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(workspace.title);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -222,7 +238,7 @@ export default function WorkspaceRow({
   const doneAtRef = useRef<number | null>(null);
   const wsAgents = useMemo<WorkspaceAgentsView>(() => {
     const now = Date.now();
-    const view = agentsForWorkspace(workspace.splitTree, claudeActivity ?? {}, agentMeta, now);
+    const view = agentsForWorkspace(workspace.splitTree, claudeActivity ?? {}, agentMeta, now, t);
     if (view.lines.length === 0) { doneAtRef.current = null; return EMPTY_AGENTS_VIEW; }
     const linger = resolveAgentLinger(view.running === 0, doneAtRef.current, now);
     // The ref write lives in the memo, not an effect: the linger decision must
@@ -231,7 +247,7 @@ export default function WorkspaceRow({
     // lands on the same state.
     doneAtRef.current = linger.doneAt;
     return linger.visible ? view : EMPTY_AGENTS_VIEW;
-  }, [workspace.splitTree, claudeActivity, agentMeta, tick]);
+  }, [workspace.splitTree, claudeActivity, agentMeta, tick, t]);
   const runningAgentCount = wsAgents.running;
 
   // How long a tool label persists after the last hook/observer event (ms)
@@ -323,16 +339,16 @@ export default function WorkspaceRow({
   const currentToolLabel = useMemo(() => {
     // Prefer per-session state — first working session with a known tool.
     const active = sessions.find(s => s.working && s.tool);
-    if (active?.tool) return getToolLabel(active.tool);
+    if (active?.tool) return getToolLabel(active.tool, t);
     const now = Date.now();
     if (wsActivity?.lastTool && now - wsActivity.lastUpdate < ACTIVITY_TTL) {
-      return getToolLabel(wsActivity.lastTool);
+      return getToolLabel(wsActivity.lastTool, t);
     }
     if (legacyHook?.lastTool && now - legacyHook.lastSeen < ACTIVITY_TTL) {
-      return getToolLabel(legacyHook.lastTool);
+      return getToolLabel(legacyHook.lastTool, t);
     }
     return null;
-  }, [sessions, wsActivity, legacyHook, tick]);
+  }, [sessions, wsActivity, legacyHook, tick, t]);
 
   // ── Detect "Claude was active but stopped" (shell still says running) ──
   const claudeIsIdle = useMemo(() => {
@@ -363,7 +379,7 @@ export default function WorkspaceRow({
     claudeIsIdle,
     shellState: workspace.shellState,
     notificationText: workspace.notificationText,
-  }), [workspace.statusOverride, runningAgentCount, wsAgents, sessions, workingSessions, blockedSessions, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText]);
+  }, t), [workspace.statusOverride, runningAgentCount, wsAgents, sessions, workingSessions, blockedSessions, currentToolLabel, claudeIsIdle, workspace.shellState, workspace.notificationText, t]);
 
   // ── Status color class ──
   const statusClass = useMemo(() => {
@@ -512,7 +528,7 @@ export default function WorkspaceRow({
         {!!rowTrace && rowTrace.toolCount > 0 && (
           <span
             className="workspace-row__odometer"
-            title={`${rowTrace.toolCount} tool calls in this workspace`}
+            title={t('workspaceRow.toolCallsTitle', '{count} tool calls in this workspace').replace('{count}', String(rowTrace.toolCount))}
           >
             {rowTrace.toolCount}
           </span>
@@ -528,7 +544,7 @@ export default function WorkspaceRow({
             e.stopPropagation();
             onClose();
           }}
-          title="Close workspace"
+          title={t('workspaceRow.closeWorkspace', 'Close workspace')}
         >
           &#x2715;
         </button>
@@ -570,7 +586,7 @@ export default function WorkspaceRow({
               {s.working && !s.blocked && <span className="workspace-row__agent-dot" />}
               <span className="workspace-row__agent-name">{s.label}</span>
               <span className={`workspace-row__agent-detail${uiMode === 'trace' ? ' workspace-row__session-tool' : ''}`}>
-                {sessionDetailText(s)}
+                {sessionDetailText(s, t)}
               </span>
             </div>
           ))}
@@ -605,7 +621,7 @@ export default function WorkspaceRow({
       {/* OSC 9;4 progress bar — only while a terminal reports progress */}
       {wsProgress && (
         <div className="workspace-row__progress" title={
-          wsProgress.state === 3 ? 'Working…' : `${wsProgress.value}%`
+          wsProgress.state === 3 ? t('workspaceRow.working', 'Working…') : `${wsProgress.value}%`
         }>
           <div className="workspace-row__progress-track">
             <div

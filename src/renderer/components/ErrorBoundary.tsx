@@ -1,4 +1,6 @@
 import React from 'react';
+import { useStore } from '../store';
+import { translate, isLanguage } from '../i18n';
 
 /**
  * ErrorBoundary — stops one broken subtree from taking down the whole window.
@@ -50,14 +52,23 @@ export default class ErrorBoundary extends React.Component<Props, State> {
     if (!error) return this.props.children;
     if (this.props.silent) return null;
 
+    // Class component: no hooks, so read the language directly off the store
+    // instead of `useT()`. Fine here — an error card re-rendering a beat late
+    // after a language switch is not a concern.
+    const lang = useStore.getState().language;
+    const t = (key: Parameters<typeof translate>[1], fallback?: string) =>
+      translate(isLanguage(lang) ? lang : 'en', key, fallback);
+
     return (
       <div className="error-boundary" role="alert">
         <div className="error-boundary__title">
-          {this.props.label ? `${this.props.label} failed` : 'Something went wrong'}
+          {this.props.label
+            ? t('errorBoundary.labelFailed', '{label} failed').replace('{label}', this.props.label)
+            : t('errorBoundary.somethingWrong', 'Something went wrong')}
         </div>
         <div className="error-boundary__message">{error.message}</div>
         <button className="error-boundary__retry" onClick={this.reset}>
-          retry
+          {t('errorBoundary.retry', 'retry')}
         </button>
       </div>
     );

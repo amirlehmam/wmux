@@ -1,4 +1,8 @@
 import type { SurfaceRef } from '../../../shared/types';
+import type { TranslationKey } from '../../i18n/core';
+
+/** Defaults to returning the fallback verbatim so callers (and existing tests) that omit `t` still see English. */
+const identityT = (_key: TranslationKey, fallback?: string): string => fallback ?? _key;
 
 export function getShellLabel(shell?: string): string | null {
   if (!shell) return null;
@@ -20,7 +24,12 @@ function cwdFolderName(cwd: string): string | null {
   return lastSegment || null;
 }
 
-export function getSurfaceLabel(surface: SurfaceRef, agentLabel?: string, workspaceShell?: string): string {
+export function getSurfaceLabel(
+  surface: SurfaceRef,
+  agentLabel?: string,
+  workspaceShell?: string,
+  t: (key: TranslationKey, fallback?: string) => string = identityT,
+): string {
   if (surface.customTitle) return surface.customTitle;
   if (agentLabel) return agentLabel;
 
@@ -28,19 +37,19 @@ export function getSurfaceLabel(surface: SurfaceRef, agentLabel?: string, worksp
     case 'terminal': {
       const folder = surface.currentCwd ? cwdFolderName(surface.currentCwd) : null;
       if (folder) return folder;
-      return getShellLabel(surface.shell || workspaceShell) || 'Terminal';
+      return getShellLabel(surface.shell || workspaceShell) || t('surfaceLabel.terminal', 'Terminal');
     }
     case 'browser':
-      return 'Browser';
+      return t('surfaceLabel.browser', 'Browser');
     case 'markdown': {
       // `•` for an unsaved buffer (issue #116, F3) — the same convention every
       // editor uses, and the only signal on a tab the user isn't looking at.
-      const name = surface.markdownFileName || 'Markdown';
+      const name = surface.markdownFileName || t('surfaceLabel.markdown', 'Markdown');
       return surface.markdownDirty ? `• ${name}` : name;
     }
     case 'diff':
-      return 'Diff';
+      return t('surfaceLabel.diff', 'Diff');
     default:
-      return 'Tab';
+      return t('surfaceLabel.tab', 'Tab');
   }
 }

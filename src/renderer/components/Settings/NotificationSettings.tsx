@@ -1,15 +1,17 @@
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
 import { NOTIFICATION_SOUND_LABELS, previewNotificationSound } from '../../notification-sound';
 
 export default function NotificationSettings() {
+  const t = useT();
   const { notificationPrefs, setNotificationPrefs } = useStore();
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Alerts</h3>
+      <h3 className="settings-section-title">{t('settings.notifications.alertsSection', 'Alerts')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Show toast notifications</label>
+        <label className="settings-label">{t('settings.notifications.toast', 'Show toast notifications')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -19,7 +21,7 @@ export default function NotificationSettings() {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label">Taskbar flash</label>
+        <label className="settings-label">{t('settings.notifications.taskbarFlash', 'Taskbar flash')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -29,7 +31,7 @@ export default function NotificationSettings() {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label">Pane ring</label>
+        <label className="settings-label">{t('settings.notifications.paneRing', 'Pane ring')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -39,7 +41,7 @@ export default function NotificationSettings() {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label">Pane flash animation</label>
+        <label className="settings-label">{t('settings.notifications.paneFlashAnimation', 'Pane flash animation')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -49,10 +51,10 @@ export default function NotificationSettings() {
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">AI agents</h3>
+      <h3 className="settings-section-title">{t('settings.notifications.aiAgentsSection', 'AI agents')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Notify when agent needs input</label>
+        <label className="settings-label">{t('settings.notifications.agentInputNotify', 'Notify when agent needs input')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -62,7 +64,7 @@ export default function NotificationSettings() {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label">Notify when agent finishes its turn</label>
+        <label className="settings-label">{t('settings.notifications.agentStopNotify', "Notify when agent finishes its turn")}</label>
         <input
           type="checkbox"
           className="settings-toggle"
@@ -72,10 +74,10 @@ export default function NotificationSettings() {
       </div>
 
       <div className="settings-divider" />
-      <h3 className="settings-section-title">Sound</h3>
+      <h3 className="settings-section-title">{t('settings.notifications.soundSection', 'Sound')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">Notification sound</label>
+        <label className="settings-label">{t('settings.notifications.sound', 'Notification sound')}</label>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select
             className="settings-select"
@@ -87,7 +89,7 @@ export default function NotificationSettings() {
             }}
           >
             {NOTIFICATION_SOUND_LABELS.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
+              <option key={s.value} value={s.value}>{t(s.labelKey, s.fallback)}</option>
             ))}
           </select>
           <button
@@ -96,7 +98,7 @@ export default function NotificationSettings() {
             disabled={notificationPrefs.sound === 'none'}
             onClick={() => previewNotificationSound(notificationPrefs.sound)}
           >
-            Preview
+            {t('settings.notifications.preview', 'Preview')}
           </button>
         </div>
       </div>

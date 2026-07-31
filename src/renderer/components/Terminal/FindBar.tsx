@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useT } from '../../i18n';
 
 interface FindBarProps {
   onSearch: (query: string) => void;
@@ -10,6 +11,7 @@ interface FindBarProps {
 }
 
 export default function FindBar({ onSearch, onNext, onPrevious, onClose, matchCount, currentMatch }: FindBarProps) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -34,14 +36,14 @@ export default function FindBar({ onSearch, onNext, onPrevious, onClose, matchCo
         value={query}
         onChange={e => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Find..."
+        placeholder={t('terminal.findPlaceholder', 'Find...')}
       />
       {matchCount !== undefined && (
         <span className="find-bar__count">{currentMatch ?? 0}/{matchCount}</span>
       )}
-      <button className="find-bar__btn" onClick={onPrevious} title="Previous (Shift+Enter)">&#x2191;</button>
-      <button className="find-bar__btn" onClick={onNext} title="Next (Enter)">&#x2193;</button>
-      <button className="find-bar__btn" onClick={onClose} title="Close (Esc)">&#x00D7;</button>
+      <button className="find-bar__btn" onClick={onPrevious} title={t('terminal.findPrevious', 'Previous (Shift+Enter)')}>&#x2191;</button>
+      <button className="find-bar__btn" onClick={onNext} title={t('terminal.findNext', 'Next (Enter)')}>&#x2193;</button>
+      <button className="find-bar__btn" onClick={onClose} title={t('terminal.findClose', 'Close (Esc)')}>&#x00D7;</button>
     </div>
   );
 }

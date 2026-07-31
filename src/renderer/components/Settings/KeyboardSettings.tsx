@@ -1,6 +1,11 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store';
+import { useT } from '../../i18n';
+import type { TranslationKey } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import ShortcutRecorder from './ShortcutRecorder';
+import ShortcutFilterCapture from './ShortcutFilterCapture';
+import { bindingsEqual } from '../../utils/shortcut-binding';
 
 // Human-readable labels for each action
 export const ACTION_LABELS: Record<ShortcutAction, string> = {
@@ -58,29 +63,151 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   toggleShortcutCheatSheet: 'Shortcut cheat-sheet',
 };
 
+/** Translated label for an action, falling back to the English `ACTION_LABELS` map. */
+export function actionLabel(action: ShortcutAction, t: (key: TranslationKey, fallback?: string) => string): string {
+  return t(`shortcutAction.${action}` as TranslationKey, ACTION_LABELS[action] ?? action);
+}
+
+/** Render a binding as "Ctrl+Shift+T". Shared with the shortcut cheat-sheet
+ *  (F1) so both views always show the user's live (possibly remapped) bindings. */
+export function formatBinding(binding: ShortcutBinding): string {
+  const parts: string[] = [];
+  if (binding.ctrl) parts.push('Ctrl');
+  if (binding.alt) parts.push('Alt');
+  if (binding.shift) parts.push('Shift');
+  parts.push(binding.key.length === 1 ? binding.key.toUpperCase() : binding.key);
+  return parts.join('+');
+}
+
+/** Group every action under a readable category. Actions absent here fall under
+ *  "Other", so newly-added shortcuts still appear without touching this map.
+ *  Shared with the cheat-sheet (F1) so the two views can never drift. */
+export const CATEGORY: Partial<Record<ShortcutAction, string>> = {
+  newWorkspace: 'Workspaces', closeWorkspace: 'Workspaces', nextWorkspace: 'Workspaces',
+  prevWorkspace: 'Workspaces', renameWorkspace: 'Workspaces', jumpToUnread: 'Workspaces',
+  togglePinWorkspace: 'Workspaces', markWorkspaceRead: 'Workspaces', openFolder: 'Workspaces',
+  newWindow: 'Workspaces', closeWindow: 'Workspaces',
+  newSurface: 'Tabs', nextSurface: 'Tabs', prevSurface: 'Tabs', reopenClosedSurface: 'Tabs',
+  renameSurface: 'Tabs', openMarkdownPanel: 'Tabs', openDiffPanel: 'Tabs',
+  toggleMarkdownSource: 'Tabs',
+  splitRight: 'Panes', splitDown: 'Panes', splitBrowserRight: 'Panes', splitBrowserDown: 'Panes',
+  focusLeft: 'Panes', focusRight: 'Panes', focusUp: 'Panes', focusDown: 'Panes',
+  resizePaneLeft: 'Panes', resizePaneRight: 'Panes', resizePaneUp: 'Panes', resizePaneDown: 'Panes',
+  toggleZoom: 'Panes', closeSurfaceOrPane: 'Panes', broadcastInput: 'Panes',
+  find: 'Terminal', findNext: 'Terminal', findPrevious: 'Terminal', copyMode: 'Terminal',
+  copy: 'Terminal', paste: 'Terminal', fontSizeIncrease: 'Terminal', fontSizeDecrease: 'Terminal',
+  fontSizeReset: 'Terminal',
+  toggleSidebar: 'View', showNotifications: 'View', flashFocused: 'View', openBrowser: 'View',
+  browserDevTools: 'View', browserConsole: 'View', openSettings: 'View', commandPalette: 'View',
+  toggleShortcutCheatSheet: 'View',
+};
+
+export const CATEGORY_ORDER = ['Workspaces', 'Tabs', 'Panes', 'Terminal', 'View', 'Other'];
+
+/** Internal (English) category constant → its translation key. */
+export const CATEGORY_LABEL_KEY: Record<string, TranslationKey> = {
+  Workspaces: 'cheatSheet.category.workspaces',
+  Tabs: 'cheatSheet.category.tabs',
+  Panes: 'cheatSheet.category.panes',
+  Terminal: 'cheatSheet.category.terminal',
+  View: 'cheatSheet.category.view',
+  Other: 'cheatSheet.category.other',
+};
+
+type ShortcutRow = {
+  action: ShortcutAction;
+  label: string;
+  binding: ShortcutBinding;
+  category: string;
+};
+
 export default function KeyboardSettings() {
-  const { shortcuts, resetShortcuts } = useStore();
+  const t = useT();
+  const shortcuts = useStore((s) => s.shortcuts);
+  const resetShortcuts = useStore((s) => s.resetShortcuts);
+  const [query, setQuery] = useState('');
+  const [bindingFilter, setBindingFilter] = useState<ShortcutBinding | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Group + filter, bucketed by category and sorted alphabetically within
+  // each bucket, same as the shortcut cheat-sheet's (F1) behaviour. Unlike
+  // the cheat sheet, name and shortcut are two independent filters (AND):
+  // the text field matches only the translated label, the capture control
+  // matches the binding exactly. No fixed bindings (Ctrl+1…9 / Ctrl+Alt+1…9)
+  // here — those aren't ShortcutActions and have no ShortcutRecorder, so they
+  // stay cheat-sheet-only.
+  const groups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows: ShortcutRow[] = (Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][])
+      .map(([action, binding]) => ({
+        action,
+        label: actionLabel(action, t),
+        binding,
+        category: CATEGORY[action] ?? 'Other',
+      }))
+      .filter((r) => {
+        if (q && !r.label.toLowerCase().includes(q)) return false;
+        if (bindingFilter && !bindingsEqual(r.binding, bindingFilter)) return false;
+        return true;
+      });
+
+    const byCategory = new Map<string, ShortcutRow[]>();
+    for (const row of rows) {
+      const list = byCategory.get(row.category) ?? [];
+      list.push(row);
+      byCategory.set(row.category, list);
+    }
+
+    return CATEGORY_ORDER
+      .filter((c) => byCategory.has(c))
+      .map((c) => ({ category: c, rows: byCategory.get(c)!.sort((a, b) => a.label.localeCompare(b.label)) }));
+  }, [shortcuts, query, bindingFilter, t]);
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Keyboard Shortcuts</h3>
+      <h3 className="settings-section-title">{t('settings.keyboard.title', 'Keyboard Shortcuts')}</h3>
 
-      <div className="shortcut-list">
-        {(Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]).map(
-          ([action, binding]) => (
-            <div key={action} className="shortcut-row">
-              <span className="shortcut-action-label">
-                {ACTION_LABELS[action] ?? action}
-              </span>
-              <ShortcutRecorder action={action} binding={binding} />
-            </div>
-          ),
-        )}
+      <div className="shortcut-search-row">
+        <input
+          ref={inputRef}
+          className="settings-input shortcut-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('settings.keyboard.searchByName', 'Search by name…')}
+          aria-label={t('settings.keyboard.searchByName', 'Search by name…')}
+        />
+        <ShortcutFilterCapture value={bindingFilter} onChange={setBindingFilter} />
       </div>
+
+      {groups.length === 0 ? (
+        <div className="shortcut-empty">
+          {t('settings.keyboard.noMatch', 'No shortcuts match your search.')}
+        </div>
+      ) : (
+        groups.map((group) => (
+          <div key={group.category} className="shortcut-group">
+            <h4 className="shortcut-group-title">
+              {t(CATEGORY_LABEL_KEY[group.category] ?? 'cheatSheet.category.other', group.category)}
+            </h4>
+            <div className="shortcut-list">
+              {group.rows.map((row) => (
+                <div key={row.action} className="shortcut-row">
+                  <span className="shortcut-action-label">
+                    {row.label}
+                  </span>
+                  <ShortcutRecorder action={row.action} binding={row.binding} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
 
       <div className="shortcut-footer">
         <button className="settings-btn settings-btn--danger" onClick={resetShortcuts}>
-          Reset All
+          {t('settings.keyboard.resetAll', 'Reset All')}
         </button>
       </div>
     </div>

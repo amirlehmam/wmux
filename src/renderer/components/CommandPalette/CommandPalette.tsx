@@ -88,8 +88,8 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
       items.push({
         id: 'command:toggle-ui-mode',
         label: nextMode === 'trace'
-          ? 'Mode: TRACE — live circuit sidebar'
-          : 'Mode: Classic sidebar',
+          ? t('palette.modeTrace', 'Mode: TRACE — live circuit sidebar')
+          : t('palette.modeClassic', 'Mode: Classic sidebar'),
         category: t('palette.category.commands'),
         action: () => {
           useStore.getState().setAppearancePrefs({ uiMode: nextMode });
