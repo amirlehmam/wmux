@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { forBash, hasBash } from '../helpers/bash-path';
 import type { OrchAgentStatus, OrchWaveStatus, OrchRunStatus } from '../../src/shared/types';
 
 const SCRIPTS = path.resolve(__dirname, '../../resources/wmux-orchestrator/scripts');
@@ -35,11 +36,30 @@ function writeState(overrides: Record<string, unknown> = {}): void {
 }
 
 // find_active_orch() scans $TMPDIR for wmux-orch-*/ dirs whose state.json is "running".
+//
+// Both paths go through forBash(): on native Windows `path.resolve` yields
+// `C:\dev\wmux\…`, and bash reads those backslashes as escapes, so the script
+// arrived as `C:devwmux…` and was never found (5 failures on the only platform
+// wmux ships for). No-op on Linux/macOS, where the path is already POSIX.
+//
+// The env vars are set in the bash command line rather than through `env:`
+// because a WSL bash launched from Windows does not inherit the Windows
+// environment unless WSLENV names each variable — assigning them inside the
+// shell works for every flavour.
 function runHook(agentId = 'a1', exitCode = '0'): void {
-  execFileSync('bash', [HOOK], {
-    env: { ...process.env, TMPDIR: tmp, WMUX_AGENT_ID: agentId, CLAUDE_EXIT_CODE: exitCode },
-    encoding: 'utf8',
-  });
+  execFileSync(
+    'bash',
+    [
+      '-c',
+      'TMPDIR="$1" WMUX_AGENT_ID="$2" CLAUDE_EXIT_CODE="$3" exec bash "$4"',
+      'bash',
+      forBash(tmp),
+      agentId,
+      exitCode,
+      forBash(HOOK),
+    ],
+    { encoding: 'utf8' },
+  );
 }
 
 const query = (...args: string[]): string =>
@@ -57,7 +77,9 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-describe('on-agent-stop.sh status vocabulary (#99)', () => {
+// A Windows box without Git for Windows has no bash at all — nothing to convert
+// a path FOR. Skipping is explicit and loud rather than a silent green.
+describe.skipIf(!hasBash())('on-agent-stop.sh status vocabulary (#99)', () => {
   it('marks a successful agent "exited" — the word the sidebar counts, not "completed"', () => {
     writeState();
     runHook();
