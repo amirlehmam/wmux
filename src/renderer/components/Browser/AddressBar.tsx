@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, KeyboardEvent, ChangeEvent } from 'react';
+import { useT } from '../../i18n';
 
 interface AddressBarProps {
   url: string;
@@ -25,6 +26,7 @@ export default function AddressBar({
   onStop,
   onDevTools,
 }: AddressBarProps) {
+  const t = useT();
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -68,8 +70,8 @@ export default function AddressBar({
         className="browser-address-bar__btn"
         disabled={!canGoBack}
         onClick={onBack}
-        title="Back"
-        aria-label="Back"
+        title={t('addressBar.back', 'Back')}
+        aria-label={t('addressBar.back', 'Back')}
       >
         &#8592;
       </button>
@@ -77,16 +79,16 @@ export default function AddressBar({
         className="browser-address-bar__btn"
         disabled={!canGoForward}
         onClick={onForward}
-        title="Forward"
-        aria-label="Forward"
+        title={t('addressBar.forward', 'Forward')}
+        aria-label={t('addressBar.forward', 'Forward')}
       >
         &#8594;
       </button>
       <button
         className="browser-address-bar__btn"
         onClick={isLoading ? onStop : onReload}
-        title={isLoading ? 'Stop' : 'Reload'}
-        aria-label={isLoading ? 'Stop' : 'Reload'}
+        title={isLoading ? t('addressBar.stop', 'Stop') : t('addressBar.reload', 'Reload')}
+        aria-label={isLoading ? t('addressBar.stop', 'Stop') : t('addressBar.reload', 'Reload')}
       >
         {isLoading ? '\u2715' : '\u21BB'}
       </button>
@@ -94,8 +96,8 @@ export default function AddressBar({
         <button
           className="browser-address-bar__btn"
           onClick={onDevTools}
-          title="Open DevTools for this page"
-          aria-label="DevTools"
+          title={t('addressBar.openDevTools', 'Open DevTools for this page')}
+          aria-label={t('addressBar.devTools', 'DevTools')}
         >
           &#9881;
         </button>
