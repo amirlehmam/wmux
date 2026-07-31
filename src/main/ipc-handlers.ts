@@ -384,15 +384,15 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // a renderer-supplied path is an arbitrary-program launcher, which is a much
   // bigger capability than "open the doc I'm reading in Typora".
   ipcMain.handle(IPC_CHANNELS.MARKDOWN_REVEAL, async (_event, filePath: string) => {
-    if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type' };
+    if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type', code: 'unsupported_type' };
     shell.showItemInFolder(filePath);
     return { ok: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.MARKDOWN_OPEN_IN_APP, async (_event, filePath: string) => {
-    if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type' };
+    if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type', code: 'unsupported_type' };
     const err = await shell.openPath(filePath);
-    return err ? { error: err } : { ok: true };
+    return err ? { error: err, code: 'action_failed' } : { ok: true };
   });
 
   // Markdown editing (issue #116, F3). Re-stat only — backs the on-focus
@@ -408,7 +408,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     IPC_CHANNELS.MARKDOWN_SAVE_FILE,
     async (event, filePath: string, content: string, expectedMtimeMs?: number) => {
       if (!isMarkdownPathGranted(event.sender.id, filePath)) {
-        return { error: 'This file was not opened in wmux — use Save As' };
+        return { error: 'This file was not opened in wmux — use Save As', code: 'not_granted' };
       }
       return writeMarkdownFile(filePath, content, expectedMtimeMs);
     },

@@ -34,8 +34,28 @@ export interface MarkdownReadOk {
   mtimeMs: number;
 }
 
+/**
+ * Stable, language-independent reason for a failure. `error` stays the
+ * English message (CLI/pipe callers print it verbatim — see index.ts's
+ * `markdown.load_file` handler); `code` is what the renderer maps to a
+ * `t('markdown.error.*', ...)` key, since the main process has no access to
+ * the renderer's i18n system (issue: main-process errors were winning over
+ * the renderer's translated fallback because `error` was always truthy).
+ */
+export type MarkdownErrorCode =
+  | 'no_path'
+  | 'unsupported_type'
+  | 'not_found'
+  | 'symlink'
+  | 'not_regular_file'
+  | 'too_large'
+  | 'no_content'
+  | 'read_failed'
+  | 'write_failed';
+
 export interface MarkdownReadError {
   error: string;
+  code: MarkdownErrorCode;
 }
 
 export type MarkdownReadResult = MarkdownReadOk | MarkdownReadError;
@@ -56,11 +76,11 @@ export function isAllowedMarkdownPath(filePath: string): boolean {
  * callers can forward them to a pipe response or an IPC return value verbatim.
  */
 export function readMarkdownFile(filePath: string): MarkdownReadResult {
-  if (!filePath) return { error: 'No file path provided' };
+  if (!filePath) return { error: 'No file path provided', code: 'no_path' };
 
   const ext = path.extname(filePath).toLowerCase();
   if (!ALLOWED_MD_EXT.has(ext)) {
-    return { error: `Unsupported file type: ${ext || '(none)'}` };
+    return { error: `Unsupported file type: ${ext || '(none)'}`, code: 'unsupported_type' };
   }
 
   let stat: fs.Stats;
@@ -71,30 +91,30 @@ export function readMarkdownFile(filePath: string): MarkdownReadResult {
     // re-checking, and nothing legitimate in this flow needs them.
     stat = fs.lstatSync(filePath);
   } catch {
-    return { error: 'File not found' };
+    return { error: 'File not found', code: 'not_found' };
   }
-  if (stat.isSymbolicLink()) return { error: 'Refusing to read a symlink' };
-  if (!stat.isFile()) return { error: 'File is not a regular file' };
-  if (stat.size > MAX_MD_BYTES) return { error: 'File exceeds the 5MB limit' };
+  if (stat.isSymbolicLink()) return { error: 'Refusing to read a symlink', code: 'symlink' };
+  if (!stat.isFile()) return { error: 'File is not a regular file', code: 'not_regular_file' };
+  if (stat.size > MAX_MD_BYTES) return { error: 'File exceeds the 5MB limit', code: 'too_large' };
 
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     return { filePath, content, mtimeMs: stat.mtimeMs };
   } catch (err: any) {
-    return { error: err?.message || 'Failed to read file' };
+    return { error: err?.message || 'Failed to read file', code: 'read_failed' };
   }
 }
 
 /** Current mtime of a file, or null if it is gone / unreadable. Backs the
  *  on-focus "changed on disk?" check, which needs no content. */
-export function statMarkdownFile(filePath: string): { mtimeMs: number } | { error: string } {
-  if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type' };
+export function statMarkdownFile(filePath: string): { mtimeMs: number } | MarkdownReadError {
+  if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type', code: 'unsupported_type' };
   try {
     const stat = fs.lstatSync(filePath);
-    if (!stat.isFile()) return { error: 'File is not a regular file' };
+    if (!stat.isFile()) return { error: 'File is not a regular file', code: 'not_regular_file' };
     return { mtimeMs: stat.mtimeMs };
   } catch {
-    return { error: 'File not found' };
+    return { error: 'File not found', code: 'not_found' };
   }
 }
 
@@ -104,7 +124,7 @@ export type MarkdownWriteResult =
   | { ok: true; mtimeMs: number }
   /** The file moved under us — the buffer is stale, so nothing was written. */
   | { conflict: true; currentMtimeMs: number }
-  | { error: string };
+  | MarkdownReadError;
 
 /**
  * Write a markdown buffer back to disk with every guard the read path has,
@@ -127,13 +147,13 @@ function checkWritable(
   content: string,
   expectedMtimeMs?: number,
 ): MarkdownWriteResult | null {
-  if (!filePath) return { error: 'No file path provided' };
-  if (typeof content !== 'string') return { error: 'No content to write' };
+  if (!filePath) return { error: 'No file path provided', code: 'no_path' };
+  if (typeof content !== 'string') return { error: 'No content to write', code: 'no_content' };
   if (!isAllowedMarkdownPath(filePath)) {
-    return { error: `Unsupported file type: ${path.extname(filePath) || '(none)'}` };
+    return { error: `Unsupported file type: ${path.extname(filePath) || '(none)'}`, code: 'unsupported_type' };
   }
   if (Buffer.byteLength(content, 'utf-8') > MAX_MD_BYTES) {
-    return { error: 'Content exceeds the 5MB limit' };
+    return { error: 'Content exceeds the 5MB limit', code: 'too_large' };
   }
 
   let existing: fs.Stats;
@@ -143,8 +163,8 @@ function checkWritable(
     // Missing is fine — this is Save As, or a file deleted since it was opened.
     return null;
   }
-  if (existing.isSymbolicLink()) return { error: 'Refusing to write through a symlink' };
-  if (!existing.isFile()) return { error: 'File is not a regular file' };
+  if (existing.isSymbolicLink()) return { error: 'Refusing to write through a symlink', code: 'symlink' };
+  if (!existing.isFile()) return { error: 'File is not a regular file', code: 'not_regular_file' };
   if (expectedMtimeMs !== undefined && existing.mtimeMs !== expectedMtimeMs) {
     return { conflict: true, currentMtimeMs: existing.mtimeMs };
   }
@@ -170,7 +190,7 @@ export function writeMarkdownFile(
     fs.renameSync(tmpPath, filePath);
   } catch (err: any) {
     try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
-    return { error: err?.message || 'Failed to write file' };
+    return { error: err?.message || 'Failed to write file', code: 'write_failed' };
   }
 
   try {

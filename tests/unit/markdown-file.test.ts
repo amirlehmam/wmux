@@ -69,27 +69,27 @@ describe('readMarkdownFile', () => {
 
   it('refuses a non-whitelisted extension even when the file exists', () => {
     const file = write('secrets.env', 'TOKEN=1');
-    expect(readMarkdownFile(file)).toEqual({ error: 'Unsupported file type: .env' });
+    expect(readMarkdownFile(file)).toEqual({ error: 'Unsupported file type: .env', code: 'unsupported_type' });
   });
 
   it('reports a missing file rather than throwing', () => {
-    expect(readMarkdownFile(path.join(dir, 'nope.md'))).toEqual({ error: 'File not found' });
+    expect(readMarkdownFile(path.join(dir, 'nope.md'))).toEqual({ error: 'File not found', code: 'not_found' });
   });
 
   it('refuses a directory', () => {
     const sub = path.join(dir, 'docs.md');
     fs.mkdirSync(sub);
-    expect(readMarkdownFile(sub)).toEqual({ error: 'File is not a regular file' });
+    expect(readMarkdownFile(sub)).toEqual({ error: 'File is not a regular file', code: 'not_regular_file' });
   });
 
   it('refuses an empty path', () => {
-    expect(readMarkdownFile('')).toEqual({ error: 'No file path provided' });
+    expect(readMarkdownFile('')).toEqual({ error: 'No file path provided', code: 'no_path' });
   });
 
   it('enforces the size cap', () => {
     const file = path.join(dir, 'huge.md');
     fs.writeFileSync(file, Buffer.alloc(MAX_MD_BYTES + 1, 0x61));
-    expect(readMarkdownFile(file)).toEqual({ error: 'File exceeds the 5MB limit' });
+    expect(readMarkdownFile(file)).toEqual({ error: 'File exceeds the 5MB limit', code: 'too_large' });
   });
 
   // A symlink named `notes.md` pointing at `id_rsa` would otherwise pass the
@@ -103,6 +103,6 @@ describe('readMarkdownFile', () => {
     } catch {
       return; // no symlink privilege in this environment
     }
-    expect(readMarkdownFile(link)).toEqual({ error: 'Refusing to read a symlink' });
+    expect(readMarkdownFile(link)).toEqual({ error: 'Refusing to read a symlink', code: 'symlink' });
   });
 });
