@@ -443,6 +443,48 @@ export const en = {
   'notifPanel.empty': 'No notifications',
   'notifPanel.unknownSource': 'Unknown',
   'notifPanel.yesterday': 'yesterday',
+  // Close-session confirm dialog
+  'confirmClose.titleOne': 'Close "{name}"?',
+  'confirmClose.titleMany': 'Close {count} sessions?',
+  'confirmClose.defaultName': 'this session',
+  'confirmClose.message':
+    'Everything running inside — shells, agents, unsaved tool state — will be terminated.',
+  'confirmClose.cancel': 'Cancel',
+  'confirmClose.confirmOne': 'Close session',
+  'confirmClose.confirmMany': 'Close {count} sessions',
+  // Browser panel — address bar
+  'addressBar.back': 'Back',
+  'addressBar.forward': 'Forward',
+  'addressBar.stop': 'Stop',
+  'addressBar.reload': 'Reload',
+  'addressBar.openDevTools': 'Open DevTools for this page',
+  'addressBar.devTools': 'DevTools',
+  // Command palette — sidebar-mode toggle (stray miss)
+  'palette.modeTrace': 'Mode: TRACE — live circuit sidebar',
+  'palette.modeClassic': 'Mode: Classic sidebar',
+  // Workspace context menu — colour swatch names (stray miss)
+  'workspaceColor.red': 'Red',
+  'workspaceColor.crimson': 'Crimson',
+  'workspaceColor.orange': 'Orange',
+  'workspaceColor.amber': 'Amber',
+  'workspaceColor.olive': 'Olive',
+  'workspaceColor.green': 'Green',
+  'workspaceColor.teal': 'Teal',
+  'workspaceColor.aqua': 'Aqua',
+  'workspaceColor.blue': 'Blue',
+  'workspaceColor.navy': 'Navy',
+  'workspaceColor.indigo': 'Indigo',
+  'workspaceColor.purple': 'Purple',
+  'workspaceColor.magenta': 'Magenta',
+  'workspaceColor.rose': 'Rose',
+  'workspaceColor.brown': 'Brown',
+  'workspaceColor.charcoal': 'Charcoal',
+  // General settings — background preset names (stray miss)
+  'settings.general.bgPreset.lovely': 'Lovely',
+  'settings.general.bgPreset.ember': 'Ember',
+  'settings.general.bgPreset.deepSea': 'Deep sea',
+  'settings.general.bgPreset.aurora': 'Aurora',
+  'settings.general.bgPreset.graphite': 'Graphite',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */
