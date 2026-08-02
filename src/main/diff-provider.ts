@@ -58,24 +58,49 @@ const SNAPSHOT_EXTENSIONS = new Set([
   '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
   '.sql', '.graphql', '.proto', '.xml', '.svg',
 ]);
-const SNAPSHOT_IGNORE = new Set(['node_modules', '.git', 'dist', 'build', '.next', '__pycache__', '.venv', 'venv']);
+const SNAPSHOT_IGNORE = new Set([
+  // Build/dependency output
+  'node_modules', '.git', 'dist', 'build', '.next', '__pycache__', '.venv', 'venv',
+  // Platform directories. A home directory is never a git repo, so it lands on
+  // the snapshot path; without these the walk descends into caches and installed
+  // applications, burning the directory budget on files nobody is editing.
+  'AppData', 'Library', 'Application Data', '$RECYCLE.BIN', 'System Volume Information',
+  'OneDrive', 'Recovery', 'ntuser.dat',
+]);
 const MAX_SNAPSHOT_FILE = 500_000; // 500KB per file
 const MAX_SNAPSHOT_FILES = 2000;
+// The file cap bounds how much we READ, not how much we WALK: on a home
+// directory ~3,500 directories get enumerated before the file cap bites, and
+// which files you end up with is then an accident of traversal order. Budget
+// directories too, so the walk itself is bounded.
+const MAX_SNAPSHOT_DIRS = 500;
+// Re-walking to discover new files is far more expensive than stat-ing the
+// files already known, and new files appear far less often than they change.
+// Run discovery on a multiple of the content check instead of every poll.
+const REWALK_EVERY_N_POLLS = 5;
+const pollCounts = new Map<string, number>(); // cwd → polls since last re-walk
+const addedPaths = new Map<string, Set<string>>(); // cwd → files discovered since the baseline
 
 function shouldSnapshotFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return SNAPSHOT_EXTENSIONS.has(ext);
 }
 
-async function walkDir(dir: string, base: string, files: string[], depth = 0): Promise<void> {
-  if (depth > 5 || files.length >= MAX_SNAPSHOT_FILES) return;
+interface WalkBudget { dirs: number }
+
+async function walkDir(
+  dir: string, base: string, files: string[], depth = 0,
+  budget: WalkBudget = { dirs: MAX_SNAPSHOT_DIRS },
+): Promise<void> {
+  if (depth > 5 || files.length >= MAX_SNAPSHOT_FILES || budget.dirs <= 0) return;
+  budget.dirs--;
   let entries: fs.Dirent[];
   try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
   for (const entry of entries) {
-    if (files.length >= MAX_SNAPSHOT_FILES) return;
+    if (files.length >= MAX_SNAPSHOT_FILES || budget.dirs <= 0) return;
     if (entry.isDirectory()) {
       if (!SNAPSHOT_IGNORE.has(entry.name) && !entry.name.startsWith('.')) {
-        await walkDir(path.join(dir, entry.name), base, files, depth + 1);
+        await walkDir(path.join(dir, entry.name), base, files, depth + 1, budget);
       }
     } else if (entry.isFile() && shouldSnapshotFile(entry.name)) {
       const rel = path.relative(base, path.join(dir, entry.name)).replace(/\\/g, '/');
@@ -84,10 +109,22 @@ async function walkDir(dir: string, base: string, files: string[], depth = 0): P
   }
 }
 
+/**
+ * True if `resolved` is `root` or sits underneath it.
+ * Uses path.relative rather than a string prefix test, so a sibling whose name
+ * merely starts with root (C:\foobar vs C:\foo) is not treated as contained.
+ */
+function isWithin(root: string, resolved: string): boolean {
+  if (resolved === root) return true;
+  const rel = path.relative(root, resolved);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
 /** Resolve `rel` inside `cwd`, or null if it escapes the directory. */
 function resolveWithin(cwd: string, rel: string): string | null {
-  const resolved = path.resolve(path.join(cwd, rel));
-  return resolved.startsWith(path.resolve(cwd)) ? resolved : null;
+  const root = path.resolve(cwd);
+  const resolved = path.resolve(path.join(root, rel));
+  return isWithin(root, resolved) ? resolved : null;
 }
 
 async function readSnapshotEntry(abs: string): Promise<SnapshotEntry | null> {
@@ -242,16 +279,31 @@ async function getSnapshotChangedFiles(cwd: string): Promise<ChangedFile[]> {
     }
   }
 
-  // Check for new files
-  const currentFiles: string[] = [];
-  await walkDir(cwd, cwd, currentFiles);
-  for (const rel of currentFiles) {
-    if (!snap.has(rel)) {
-      const content = await readCurrentFile(cwd, rel);
-      if (content !== null) {
-        changed.push({ path: rel, status: 'added', additions: content.split('\n').length, deletions: 0 });
-      }
+  // Check for new files. The re-walk is the expensive half of a poll and new
+  // files appear far less often than existing ones change, so run discovery
+  // every Nth poll. A file added in the gap surfaces on the next discovery
+  // pass rather than being missed.
+  const polls = (pollCounts.get(cwd) ?? 0) + 1;
+  const rewalk = polls >= REWALK_EVERY_N_POLLS;
+  pollCounts.set(cwd, rewalk ? 0 : polls);
+
+  // Discovered additions are remembered, so they keep being reported on the
+  // polls between re-walks instead of flickering out of the list and back in.
+  let known = addedPaths.get(cwd);
+  if (!known) { known = new Set<string>(); addedPaths.set(cwd, known); }
+
+  if (rewalk) {
+    const currentFiles: string[] = [];
+    await walkDir(cwd, cwd, currentFiles);
+    for (const rel of currentFiles) {
+      if (!snap.has(rel)) known.add(rel);
     }
+  }
+
+  for (const rel of [...known]) {
+    const content = await readCurrentFile(cwd, rel);
+    if (content === null) { known.delete(rel); continue; } // gone again
+    changed.push({ path: rel, status: 'added', additions: content.split('\n').length, deletions: 0 });
   }
 
   return changed;
@@ -374,7 +426,7 @@ export async function getFileDiff(cwd: string, file: string): Promise<string> {
       try {
         const absPath = path.isAbsolute(file) ? file : path.join(cwd, file);
         const resolved = path.resolve(absPath);
-        if (!resolved.startsWith(path.resolve(cwd))) return '';
+        if (!isWithin(path.resolve(cwd), resolved)) return '';
         const stat = fs.statSync(resolved);
         if (stat.size > MAX_UNTRACKED_SIZE) return '(File too large to display inline)';
         const buf = fs.readFileSync(resolved);
@@ -405,4 +457,6 @@ export async function getFileDiff(cwd: string, file: string): Promise<string> {
 /** Reset the snapshot for a directory so next poll re-baselines. */
 export function resetSnapshot(cwd: string): void {
   snapshots.delete(cwd);
+  pollCounts.delete(cwd);
+  addedPaths.delete(cwd);
 }
