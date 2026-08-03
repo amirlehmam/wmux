@@ -122,6 +122,8 @@ function systemRoot(): string {
  *
  * Returns [] on any failure, which reaps nothing.
  */
+export const PROBE_TIMEOUT_MS = 60_000;
+
 export function queryProcesses(pids: number[]): Promise<LiveProcess[]> {
   if (pids.length === 0) return Promise.resolve([]);
   const filter = pids.map((pid) => `ProcessId=${pid}`).join(' or ');
@@ -135,10 +137,18 @@ export function queryProcesses(pids: number[]): Promise<LiveProcess[]> {
     execFile(
       shell,
       ['-NoProfile', '-NonInteractive', '-Command', script],
-      { windowsHide: true, timeout: 15_000 },
-      (err, stdout) => {
+      // Generous, because this runs once at startup and off the critical path.
+      // The moment it matters most — the first scan after a crash-loop — is
+      // also the coldest the machine will be, and a cold PowerShell 5.1 pulling
+      // in .NET and the CIM assemblies can take well past 15s. Timing out there
+      // means reaping nothing, which is precisely the case this exists for.
+      { windowsHide: true, timeout: PROBE_TIMEOUT_MS },
+      (err, stdout, stderr) => {
         if (err) {
-          console.warn('[wmux] orphan scan failed, reaping nothing:', err.message);
+          const cause = (err as NodeJS.ErrnoException & { killed?: boolean }).killed
+            ? `timed out after ${PROBE_TIMEOUT_MS}ms`
+            : (stderr || '').trim() || err.message;
+          console.warn('[wmux] orphan scan failed, reaping nothing:', cause);
           resolve([]);
           return;
         }

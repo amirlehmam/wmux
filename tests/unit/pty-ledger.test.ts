@@ -8,6 +8,7 @@ import {
   parseEntries,
   parseProcessLines,
   queryProcesses,
+  PROBE_TIMEOUT_MS,
   REUSE_TOLERANCE_MS,
   type LedgerEntry,
   type LiveProcess,
@@ -187,6 +188,10 @@ describe('queryProcesses (live Win32_Process probe)', () => {
   // on execFile's escaping — this is the test that proves that actually holds.
   // Probing our own PID keeps it hermetic: the answer is known, and nothing
   // here ever reaches the killing half.
+  // Must outlast the probe's own timeout, or a cold PowerShell start on a slow
+  // machine fails the test as a timeout rather than reporting what went wrong.
+  const LIVE_PROBE_BUDGET = PROBE_TIMEOUT_MS + 15_000;
+
   it('reports this process with a real image name and creation time', async () => {
     const found = await queryProcesses([process.pid]);
 
@@ -195,12 +200,14 @@ describe('queryProcesses (live Win32_Process probe)', () => {
     expect(found[0].image.toLowerCase()).toMatch(/\.exe$/);
     expect(found[0].startedAt).toBeLessThanOrEqual(Date.now());
     expect(found[0].startedAt).toBeGreaterThan(Date.now() - 24 * 60 * 60 * 1000);
-  }, 30_000);
+  }, LIVE_PROBE_BUDGET);
 
   it('would not select this process from a ledger entry naming a different image', async () => {
-    const [self] = await queryProcesses([process.pid]);
+    const found = await queryProcesses([process.pid]);
+    expect(found).toHaveLength(1); // assert before destructuring, for a clear failure
+    const [self] = found;
     const stale = entry(process.pid, 'pwsh.exe', self.startedAt);
 
     expect(selectOrphans([stale], [self])).toEqual([]);
-  }, 30_000);
+  }, LIVE_PROBE_BUDGET);
 });
