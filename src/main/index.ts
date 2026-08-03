@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding } from './ipc-handlers';
+import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys } from './ipc-handlers';
 import { handleBrowserV2 } from './v2-browser';
 import { handleBridgeV2 } from './v2-bridge';
 import { distributeAgents } from './agent-manager';
@@ -477,6 +477,18 @@ app.whenReady().then(() => {
   });
 
   registerIpcHandlers(windowManager, cdpProxy);
+
+  // Tree-kill whatever a previously CRASHED instance left running (issue #139).
+  // `will-quit` — the only thing that calls killAll() — does not run on a crash,
+  // and Windows does not tear down a process tree when its root dies, so every
+  // pane's shell, its agent and that agent's MCP servers survive. Restoring the
+  // session below then spawns a fresh set beside them, so without this a
+  // crash-loop multiplies processes instead of replacing them.
+  //
+  // Runs before the restore for tidiness only: the orphans are unrelated to the
+  // PTYs about to be created, and the reap itself is async and unawaited so
+  // startup never blocks on it.
+  reapOrphanedPtys();
 
   // Clear stale session data on version change (clean start for upgrades/fresh installs)
   handleVersionChange(app.getVersion());

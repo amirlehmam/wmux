@@ -6,6 +6,8 @@ import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId } from '../shar
 import { observePtyData, clearActivity } from './claude-observer';
 import { clearAgentState } from './agent-state';
 import { PtyManager } from './pty-manager';
+import { PtyLedger, reapOrphans } from './pty-ledger';
+import { getAppDataDir } from '../shared/instance';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
 import { listSystemFonts } from './font-detector';
@@ -32,10 +34,27 @@ import {
 } from './markdown-file';
 import { grantMarkdownPath, isMarkdownPathGranted } from './markdown-grants';
 
-const ptyManager = new PtyManager();
+// Claimed at module load, before anything can spawn a PTY, so the candidate
+// list is strictly what a PREVIOUS instance left behind (issue #139). The
+// killing half is async and driven from index.ts once the app is up.
+const ptyLedger = new PtyLedger(path.join(getAppDataDir(), 'pty-ledger.json'));
+const orphanCandidates = ptyLedger.takeOver();
+
+const ptyManager = new PtyManager(ptyLedger);
 const notificationManager = new NotificationManager();
 const cdpBridge = new CDPBridge();
 const agentManager = new AgentManager(ptyManager);
+
+/**
+ * Tree-kill the PTY subtrees a previously crashed wmux left running (issue
+ * #139). Best-effort and unawaited by design — see reapOrphans().
+ */
+export function reapOrphanedPtys(): void {
+  reapOrphans(orphanCandidates).then(
+    () => { /* reaped, or nothing to reap */ },
+    (err) => { console.warn('[wmux] orphan reap failed:', err?.message); },
+  );
+}
 
 export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstance?: CDPProxy): void {
   // Toggle DevTools for the renderer window
