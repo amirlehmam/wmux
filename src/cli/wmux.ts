@@ -76,10 +76,12 @@ function sendV1(command: string): Promise<string> {
 }
 
 function sendV2(method: string, params: Record<string, any> = {}): Promise<any> {
-  // Browser commands carry the caller's surface (WMUX_SURFACE_ID) so wmux can
-  // route each agent to its OWN browser pane — concurrent agents no longer share
-  // and clobber a single browser window (issue #62).
-  if (method.startsWith('browser.') && params.caller === undefined && process.env.WMUX_SURFACE_ID) {
+  // Every command carries the caller's surface (WMUX_SURFACE_ID). Browser
+  // commands use it to route each agent to its OWN browser pane, so concurrent
+  // agents no longer share and clobber one browser window (issue #62); the
+  // workspace/pane/surface commands use it to answer about the window the
+  // calling shell actually lives in rather than an arbitrary one (issue #141).
+  if (params.caller === undefined && process.env.WMUX_SURFACE_ID) {
     params = { ...params, caller: process.env.WMUX_SURFACE_ID };
   }
   return new Promise((resolve, reject) => {
@@ -568,7 +570,10 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
     print(await sendV2('surface.rename', { id, title }));
   },
   'focus-surface': async (args) => print(await sendV2('surface.focus', { id: args[1] })),
-  'list-surfaces': async (args) => print(await sendV2('surface.list', { paneId: getFlag(args, '--pane') })),
+  'list-surfaces': async (args) => print(await sendV2('surface.list', {
+    paneId: getFlag(args, '--pane'),
+    workspaceId: getFlag(args, '--workspace'),
+  })),
   'set-color-scheme': cmdSetColorScheme,
   'clear-color-scheme': async (args) => {
     const surfaceId = args[1] || process.env.WMUX_SURFACE_ID || '';
@@ -594,7 +599,10 @@ const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
   'focus-pane': async (args) => print(await sendV2('pane.focus', { id: args[1] })),
   'zoom-pane': async (args) => print(await sendV2('pane.zoom', { id: args[1] })),
   'list-panes': async (args) => print(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') })),
-  tree: async () => print(await sendV2('system.tree')),
+  // `--workspace` used to be parsed by nobody: the flag was accepted on the
+  // command line and silently dropped here, so every call reported the ACTIVE
+  // workspace's tree whatever id you passed (issue #141).
+  tree: async (args) => print(await sendV2('system.tree', { workspaceId: getFlag(args, '--workspace') })),
 
   // Layout
   layout: cmdLayout,

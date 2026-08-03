@@ -283,13 +283,13 @@ export function initPipeBridge(): void {
     }
   };
 
-  w.__wmux_listSurfaces = (workspaceId?: string) => {
+  w.__wmux_listSurfaces = (workspaceId?: string, paneId?: string) => {
     const store = useStore.getState();
     const wsId = (workspaceId || store.activeWorkspaceId) as WorkspaceId;
     const ws = store.workspaces.find(w => w.id === wsId);
     if (!ws) return [];
 
-    const paneIds = getAllPaneIds(ws.splitTree);
+    const paneIds = getAllPaneIds(ws.splitTree).filter(pid => !paneId || pid === paneId);
     const surfaces: Array<{ id: string; type: string; paneId: string; isActive: boolean }> = [];
     for (const pid of paneIds) {
       const leaf = findLeaf(ws.splitTree, pid);
@@ -305,6 +305,25 @@ export function initPipeBridge(): void {
       }
     }
     return surfaces;
+  };
+
+  /**
+   * Does THIS window hold `surfaceId`? Used by the main process to answer a CLI
+   * state query about the window the caller's shell actually lives in, rather
+   * than about whichever window happens to be first in `getAllWindows()`
+   * (issue #141: `tree` and `list-surfaces` reported different panes at the
+   * same moment, so a scripted "find the diff surface and close it" found
+   * nothing and exited reporting success).
+   */
+  w.__wmux_hasSurface = (surfaceId: string) => {
+    if (!surfaceId) return false;
+    for (const ws of useStore.getState().workspaces) {
+      for (const pid of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, pid);
+        if (leaf?.surfaces.some(s => s.id === surfaceId)) return true;
+      }
+    }
+    return false;
   };
 
   w.__wmux_getActiveSurfaceId = () => {

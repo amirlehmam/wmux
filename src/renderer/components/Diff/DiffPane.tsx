@@ -26,45 +26,74 @@ interface DiffHunk {
 
 // ─── Diff parser ────────────────────────────────────────────────────────────
 
+const HEADER_PREFIXES = ['diff --git', 'index ', '---', '+++', 'new file', 'deleted file'];
+// Anchored, with non-optional groups: the loose `,?\d*` form backtracks
+// super-linearly on a crafted `@@` line.
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/;
+
+/** Append one body line to `hunk`, advancing the line counters it owns. */
+function pushBodyLine(hunk: DiffHunk, line: string, nums: { old: number; new: number }): void {
+  if (line.startsWith('+')) {
+    hunk.lines.push({ type: 'add', content: line.slice(1), newNum: nums.new++ });
+  } else if (line.startsWith('-')) {
+    hunk.lines.push({ type: 'remove', content: line.slice(1), oldNum: nums.old++ });
+  } else if (line.startsWith(' ') || line === '') {
+    const content = line.startsWith(' ') ? line.slice(1) : '';
+    hunk.lines.push({ type: 'context', content, oldNum: nums.old++, newNum: nums.new++ });
+  }
+}
+
 function parseDiff(raw: string): DiffHunk[] {
   if (!raw) return [];
   const hunks: DiffHunk[] = [];
-  const lines = raw.split('\n');
   let currentHunk: DiffHunk | null = null;
-  let oldLine = 0;
-  let newLine = 0;
+  const nums = { old: 0, new: 0 };
 
-  for (const line of lines) {
-    if (line.startsWith('diff --git') || line.startsWith('index ') ||
-        line.startsWith('---') || line.startsWith('+++') ||
-        line.startsWith('new file') || line.startsWith('deleted file')) {
-      continue;
-    }
+  for (const line of raw.split('\n')) {
+    if (HEADER_PREFIXES.some(p => line.startsWith(p))) continue;
 
     if (line.startsWith('@@')) {
-      const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@(.*)/);
+      const match = HUNK_HEADER.exec(line);
       if (match) {
-        oldLine = parseInt(match[1]);
-        newLine = parseInt(match[2]);
+        nums.old = parseInt(match[1]);
+        nums.new = parseInt(match[2]);
         currentHunk = { header: line, context: match[3]?.trim() || '', lines: [] };
         hunks.push(currentHunk);
       }
       continue;
     }
 
-    if (!currentHunk) continue;
-
-    if (line.startsWith('+')) {
-      currentHunk.lines.push({ type: 'add', content: line.slice(1), newNum: newLine++ });
-    } else if (line.startsWith('-')) {
-      currentHunk.lines.push({ type: 'remove', content: line.slice(1), oldNum: oldLine++ });
-    } else if (line.startsWith(' ') || line === '') {
-      const content = line.startsWith(' ') ? line.slice(1) : '';
-      currentHunk.lines.push({ type: 'context', content, oldNum: oldLine++, newNum: newLine++ });
-    }
+    if (currentHunk) pushBodyLine(currentHunk, line, nums);
   }
 
   return hunks;
+}
+
+const LINE_PREFIX: Record<DiffLine['type'], string> = {
+  add: '+',
+  remove: '-',
+  context: ' ',
+};
+
+// ─── Visibility ─────────────────────────────────────────────────────────────
+
+/**
+ * Is this diff surface actually on screen?
+ *
+ * Panes keep every tab mounted and hide the inactive ones with
+ * `visibility: hidden` (the keep-alive tab design), so an unmounted-looking
+ * diff surface is still running its poll. Reading the DOM avoids threading the
+ * pane's active-tab index down into this component, and covers the whole
+ * hidden chain — background tab, collapsed pane, unfocused window.
+ */
+function isSurfaceVisible(surfaceId: string): boolean {
+  if (typeof document === 'undefined') return true;
+  if (document.hidden) return false;
+  const el = document.querySelector(`.diff-pane[data-surface-id="${CSS.escape(surfaceId)}"]`);
+  if (!el) return true; // first pass, before the node is in the tree
+  const check = (el as HTMLElement & { checkVisibility?: (o?: object) => boolean }).checkVisibility;
+  if (typeof check !== 'function') return true;
+  return check.call(el, { visibilityProperty: true, contentVisibilityAuto: true });
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -87,6 +116,24 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
   const lastDiffRawRef = useRef('');
   selectedFileRef.current = selectedFile;
 
+  // Every setState below is guarded on an actual change. A poll that finds
+  // nothing new must not re-render: renders are what restarted the poll effect
+  // and turned the 2s interval into a render-speed loop (issue #141).
+  const errorRef = useRef<string | null>(null);
+  const loadingRef = useRef(true);
+
+  const setErrorIfChanged = useCallback((next: string | null) => {
+    if (errorRef.current === next) return;
+    errorRef.current = next;
+    setError(next);
+  }, []);
+
+  const setLoadingIfChanged = useCallback((next: boolean) => {
+    if (loadingRef.current === next) return;
+    loadingRef.current = next;
+    setLoading(next);
+  }, []);
+
   const loadFiles = useCallback(async () => {
     try {
       const result = await window.wmux?.diff?.getFiles(cwd || '');
@@ -97,16 +144,18 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
           lastFilesKeyRef.current = newKey;
           setFiles(newFiles);
         }
-        setError(null);
+        setErrorIfChanged(null);
         return newFiles;
       }
     } catch (err: any) {
-      setError(err.message || t('diffPane.failedToLoad', 'Failed to load changed files'));
+      // Kept raw and translated at render time, so `t` stays out of the
+      // dependency chain that drives the poll.
+      setErrorIfChanged(err.message || '');
     } finally {
-      setLoading(false);
+      setLoadingIfChanged(false);
     }
     return [];
-  }, [cwd, t]);
+  }, [cwd, setErrorIfChanged, setLoadingIfChanged]);
 
   const loadDiff = useCallback(async (file: string) => {
     try {
@@ -123,6 +172,26 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
     }
   }, [cwd]);
 
+  // The poll reads its loaders through refs rather than closing over them.
+  // They are stable today, but this effect must not be restartable by a
+  // re-render under ANY future identity churn: its body kicks off a poll
+  // immediately, so a restart-per-render turns the interval below into a
+  // render-speed loop that spawns git faster than git can answer (issue #141).
+  const loadFilesRef = useRef(loadFiles);
+  const loadDiffRef = useRef(loadDiff);
+  loadFilesRef.current = loadFiles;
+  loadDiffRef.current = loadDiff;
+
+  const runPass = useCallback(async () => {
+    const loaded = await loadFilesRef.current();
+    if (loaded.length > 0 && !selectedFileRef.current) {
+      setSelectedFile(loaded[0].path);
+    }
+    if (selectedFileRef.current) {
+      await loadDiffRef.current(selectedFileRef.current);
+    }
+  }, []);
+
   // Poll every 2 seconds (~50ms per git status call). The non-git snapshot
   // fallback can take much longer than the interval on big trees, so schedule
   // the next poll only after the previous one finishes (never overlap) and
@@ -130,6 +199,7 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
   useEffect(() => {
     lastFilesKeyRef.current = '';
     lastDiffRawRef.current = '';
+    loadingRef.current = true;
     setLoading(true);
 
     const POLL_MS = 2000;
@@ -138,14 +208,10 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
 
     const poll = async () => {
       const started = Date.now();
-      const loaded = await loadFiles();
-      if (cancelled) return;
-      if (loaded.length > 0 && !selectedFileRef.current) {
-        setSelectedFile(loaded[0].path);
-      }
-      if (selectedFileRef.current) {
-        await loadDiff(selectedFileRef.current);
-      }
+      // Hidden tabs and background windows keep this component mounted (panes
+      // are hidden with `visibility`, never unmounted), so the surface has to
+      // opt out of the work itself.
+      if (isSurfaceVisible(surfaceId)) await runPass();
       if (cancelled) return;
       const elapsed = Date.now() - started;
       timer = setTimeout(poll, Math.max(POLL_MS, elapsed));
@@ -156,54 +222,45 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [loadFiles, loadDiff]);
+  }, [cwd, surfaceId, runPass]);
 
   // Load diff + scroll to top when user selects a file
   useEffect(() => {
     if (!selectedFile) return;
     lastDiffRawRef.current = '';
-    loadDiff(selectedFile);
+    loadDiffRef.current(selectedFile);
     contentRef.current?.scrollTo(0, 0);
-  }, [selectedFile, loadDiff]);
+  }, [selectedFile]);
 
   // Listen for immediate updates from Claude Code hooks (faster than polling)
   useEffect(() => {
     if (!window.wmux?.diff?.onUpdate) return;
     let debounce: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      lastFilesKeyRef.current = '';
+      lastDiffRawRef.current = '';
+      void runPass();
+    };
     const unsub = window.wmux.diff.onUpdate((data: { file?: string }) => {
       clearTimeout(debounce);
       debounce = setTimeout(() => {
         if (data?.file) setSelectedFile(data.file);
-        lastFilesKeyRef.current = '';
-        lastDiffRawRef.current = '';
-        loadFiles().then((loaded) => {
-          if (loaded.length > 0 && !selectedFileRef.current) {
-            setSelectedFile(loaded[0].path);
-          }
-          if (selectedFileRef.current) {
-            loadDiff(selectedFileRef.current);
-          }
-        });
+        refresh();
       }, 300);
     });
     return () => {
       clearTimeout(debounce);
       unsub();
     };
-  }, [loadFiles, loadDiff]);
+  }, [runPass]);
 
   const handleRefresh = useCallback(async () => {
     lastFilesKeyRef.current = '';
     lastDiffRawRef.current = '';
-    setLoading(true);
-    const loaded = await loadFiles();
-    if (selectedFile) {
-      loadDiff(selectedFile);
-    } else if (loaded.length > 0) {
-      setSelectedFile(loaded[0].path);
-    }
-    setLoading(false);
-  }, [loadFiles, loadDiff, selectedFile]);
+    setLoadingIfChanged(true);
+    await runPass();
+    setLoadingIfChanged(false);
+  }, [runPass, setLoadingIfChanged]);
 
   // Status badge color
   const statusColor = (status: string) => {
@@ -227,10 +284,12 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
     );
   }
 
-  if (error) {
+  if (error !== null) {
     return (
       <div className="diff-pane" data-surface-id={surfaceId}>
-        <div className="diff-pane__empty">{error}</div>
+        <div className="diff-pane__empty">
+          {error || t('diffPane.failedToLoad', 'Failed to load changed files')}
+        </div>
       </div>
     );
   }
@@ -338,9 +397,7 @@ export default function DiffPane({ surfaceId, cwd }: DiffPaneProps) {
                     <span className="diff-line__gutter diff-line__gutter--new">
                       {line.type !== 'remove' ? line.newNum : ''}
                     </span>
-                    <span className="diff-line__prefix">
-                      {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : '\u00A0'}
-                    </span>
+                    <span className="diff-line__prefix">{LINE_PREFIX[line.type]}</span>
                     <pre className="diff-line__content">{line.content || '\u00A0'}</pre>
                   </div>
                 ))}

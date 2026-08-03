@@ -6,6 +6,7 @@ import SplitContainer from './components/SplitPane/SplitContainer';
 import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds } from './store/split-utils';
 import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
 import { aggregateProgress } from './store/progress-slice';
+import { isDiffTabDismissed } from './store/surface-slice';
 import Sidebar from './components/Sidebar/Sidebar';
 import Titlebar from './components/Titlebar/Titlebar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -157,12 +158,16 @@ function markSessionIdleOnStop(
 function maybeAutoOpenDiffTab(tool: string, ownerWs: WorkspaceInfo): void {
   const state = useStore.getState();
   if ((tool !== 'Edit' && tool !== 'Write') || !state.workspacePrefs.autoOpenDiffTab) return;
+  // A diff tab the user closed stays closed (issue #141). Without this, every
+  // Edit/Write put it back minutes later with no user action — and on a large
+  // repo its polling is what made typing lag, so "close it" was not a fix.
+  if (isDiffTabDismissed(ownerWs.id)) return;
   const bottomPaneId = findBottomPane(ownerWs.splitTree);
   if (!bottomPaneId) return;
   const bottomLeaf = findLeafFromTree(ownerWs.splitTree, bottomPaneId);
   // Only add diff tab if bottom pane doesn't already have one
   if (bottomLeaf && !bottomLeaf.surfaces.some(s => s.type === 'diff')) {
-    state.addSurface(ownerWs.id, bottomPaneId, 'diff');
+    state.addSurface(ownerWs.id, bottomPaneId, 'diff', { auto: true });
   }
 }
 

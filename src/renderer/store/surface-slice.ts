@@ -24,6 +24,12 @@ export interface SurfaceSlice {
       cwd?: string;
       startupCommands?: string[];
       url?: string;
+      /**
+       * This open was triggered by an event, not by the user (the Edit/Write
+       * hook auto-opening a diff tab). Such an open must respect an earlier
+       * dismissal rather than retract it — see `isDiffTabDismissed`.
+       */
+      auto?: boolean;
     },
   ) => SurfaceId | null;
 
@@ -180,10 +186,30 @@ interface ClosedSurface {
 const closedSurfaceStack: ClosedSurface[] = [];
 const MAX_CLOSED_SURFACES = 25;
 
-function pushClosedSurface(surface: SurfaceRef): void {
-  // Diff surfaces are auto-generated from hook events (issue #63) — reopening a
-  // stale one is noise, so don't track them.
-  if (surface.type === 'diff') return;
+// Workspaces where the user closed the auto-opened diff tab (issue #141).
+// Session-scoped, like the reopen stack: closing it used to last only until the
+// next Edit/Write hook fired, so the tab resurrected itself minutes later with
+// no user action — and on a large repo its polling was what made typing lag.
+// A tab the user dismissed stays dismissed until they ask for a diff again.
+const diffTabDismissed = new Set<WorkspaceId>();
+
+/** True if the user closed this workspace's diff tab and hasn't reopened one. */
+export function isDiffTabDismissed(workspaceId: WorkspaceId): boolean {
+  return diffTabDismissed.has(workspaceId);
+}
+
+/**
+ * Bookkeeping every close path owes a surface it is about to drop.
+ *
+ * Diff surfaces are auto-generated from hook events (issue #63), so reopening a
+ * stale one via Ctrl+Shift+T is noise — but the close still has to be recorded,
+ * or the next Edit/Write hook puts the tab straight back (issue #141).
+ */
+function pushClosedSurface(workspaceId: WorkspaceId, surface: SurfaceRef): void {
+  if (surface.type === 'diff') {
+    diffTabDismissed.add(workspaceId);
+    return;
+  }
   closedSurfaceStack.push({
     type: surface.type,
     colorScheme: surface.colorScheme,
@@ -208,6 +234,12 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
     const leaf = findLeaf(ws.splitTree, paneId);
     if (!leaf) return null;
+
+    // Asking for a diff tab retracts an earlier dismissal, so the auto-open
+    // behaviour resumes for this workspace (issue #141). `options.auto` marks
+    // the hook-driven open, which must not clear it — that is the loop the
+    // dismissal exists to break.
+    if (type === 'diff' && !options?.auto) diffTabDismissed.delete(workspaceId);
 
     const newSurface: SurfaceRef = {
       id: surfaceId,
@@ -298,7 +330,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     // this action, and neither used to kill the PTY (only the tab-× button did).
     const closing = leaf.surfaces.find((s) => s.id === surfaceId);
     if (closing) {
-      pushClosedSurface(closing);
+      pushClosedSurface(workspaceId, closing);
       killSurfacePty(closing);
     }
 
@@ -349,7 +381,10 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
       return;
     }
 
-    for (const surface of leaf.surfaces) killSurfacePty(surface);
+    for (const surface of leaf.surfaces) {
+      if (surface.type === 'diff') diffTabDismissed.add(workspaceId);
+      killSurfacePty(surface);
+    }
     updateSplitTree(workspaceId, newTree);
   },
 
@@ -369,7 +404,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     // mirroring the bookkeeping in closeSurface (issues #64, #65).
     for (const s of leaf.surfaces) {
       if (s.id === keepSurfaceId) continue;
-      pushClosedSurface(s);
+      pushClosedSurface(workspaceId, s);
       killSurfacePty(s);
     }
 
@@ -394,7 +429,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     // Reap the shells to the right and remember them for Ctrl+Shift+T,
     // mirroring the bookkeeping in closeSurface (issues #64, #65).
     for (const s of leaf.surfaces.slice(idx + 1)) {
-      pushClosedSurface(s);
+      pushClosedSurface(workspaceId, s);
       killSurfacePty(s);
     }
 

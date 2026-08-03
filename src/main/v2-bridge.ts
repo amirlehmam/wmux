@@ -20,9 +20,40 @@ interface BridgeSpec {
   requireResult?: string;
 }
 
-function firstWindow(): BrowserWindow | null {
-  const win = BrowserWindow.getAllWindows()[0];
-  return win && !win.isDestroyed() ? win : null;
+// caller surface id → the window that held it. `getAllWindows()` order is not
+// a promise Electron makes, so two consecutive CLI calls could land on two
+// different windows and report contradictory state (issue #141: `tree` and
+// `list-surfaces` disagreed about which panes existed, and a scripted cleanup
+// consequently found nothing to close and exited claiming success).
+const callerWindows = new Map<string, number>();
+
+/**
+ * The window that owns the calling shell's surface, or the first one.
+ *
+ * Only probes when it has to: with a single window — the common case — the
+ * answer is that window and no extra round-trip is spent.
+ */
+async function windowForCaller(caller: unknown): Promise<BrowserWindow | null> {
+  const live = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  if (live.length <= 1) return live[0] ?? null;
+  if (typeof caller !== 'string' || !caller) return BrowserWindow.getFocusedWindow() ?? live[0];
+
+  const cachedId = callerWindows.get(caller);
+  const cached = cachedId !== undefined ? live.find((w) => w.id === cachedId) : undefined;
+  if (cached) return cached;
+
+  for (const win of live) {
+    try {
+      const owns = await win.webContents.executeJavaScript(
+        `window.__wmux_hasSurface?.(${S(caller)})`
+      );
+      if (owns) {
+        callerWindows.set(caller, win.id);
+        return win;
+      }
+    } catch { /* window went away mid-probe; try the next */ }
+  }
+  return BrowserWindow.getFocusedWindow() ?? live[0];
 }
 
 const S = (v: any) => JSON.stringify(v);
@@ -81,7 +112,7 @@ const SPECS: Record<string, BridgeSpec> = {
     js: (p) => `window.__wmux_renameSurface?.(${S(p?.id || p?.surfaceId)}, ${S(p?.title || '')}, ${S(p?.workspaceId)})`,
   },
   'surface.list': {
-    js: (p) => `window.__wmux_listSurfaces?.(${S(p?.workspaceId)})`,
+    js: (p) => `window.__wmux_listSurfaces?.(${S(p?.workspaceId)}, ${S(p?.paneId)})`,
     shape: (r) => ({ surfaces: r || [] }),
     emptyOnNoWindow: { surfaces: [] },
   },
@@ -109,7 +140,7 @@ const SPECS: Record<string, BridgeSpec> = {
 function runBridge(spec: BridgeSpec, params: any, respond: Respond, respondError: RespondError): void {
   (async () => {
     try {
-      const win = firstWindow();
+      const win = await windowForCaller(params?.caller);
       if (!win) {
         if (spec.emptyOnNoWindow !== undefined) { respond(spec.emptyOnNoWindow); return; }
         respondError(-32000, 'No window');

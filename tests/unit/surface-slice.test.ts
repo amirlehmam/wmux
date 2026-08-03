@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { create } from 'zustand';
 import { createWorkspaceSlice, WorkspaceSlice } from '../../src/renderer/store/workspace-slice';
-import { createSurfaceSlice, SurfaceSlice } from '../../src/renderer/store/surface-slice';
+import { createSurfaceSlice, isDiffTabDismissed, SurfaceSlice } from '../../src/renderer/store/surface-slice';
 import { WorkspaceId, PaneId, SurfaceId, SplitNode } from '../../src/shared/types';
 
 type TestStore = WorkspaceSlice & SurfaceSlice;
@@ -111,6 +111,62 @@ describe('surface-slice', () => {
       const leaf = currentLeaf();
       expect(leaf.surfaces).toHaveLength(1);
       expect(leaf.activeSurfaceIndex).toBe(0);
+    });
+  });
+
+  // Issue #141: closing the auto-opened diff tab used to last only until the
+  // next Edit/Write hook fired, so it came back minutes later with no user
+  // action — and on a large repo its git polling was what made typing lag.
+  describe('diff tab dismissal', () => {
+    it('is not dismissed before the user closes one', () => {
+      expect(isDiffTabDismissed(workspaceId)).toBe(false);
+    });
+
+    it('records the dismissal when the diff tab is closed', () => {
+      const id = useStore.getState().addSurface(workspaceId, paneId, 'diff', { auto: true })!;
+      useStore.getState().closeSurface(workspaceId, paneId, id);
+      expect(isDiffTabDismissed(workspaceId)).toBe(true);
+    });
+
+    it('records it when the diff tab is swept up by closeOtherSurfaces', () => {
+      const keep = currentLeaf().surfaces[0].id;
+      useStore.getState().addSurface(workspaceId, paneId, 'diff', { auto: true });
+      useStore.getState().closeOtherSurfaces(workspaceId, paneId, keep);
+      expect(isDiffTabDismissed(workspaceId)).toBe(true);
+    });
+
+    it('records it when the diff tab is swept up by closeSurfacesToRight', () => {
+      const first = currentLeaf().surfaces[0].id;
+      useStore.getState().addSurface(workspaceId, paneId, 'diff', { auto: true });
+      useStore.getState().closeSurfacesToRight(workspaceId, paneId, first);
+      expect(isDiffTabDismissed(workspaceId)).toBe(true);
+    });
+
+    it('stays dismissed when a later auto-open is attempted', () => {
+      const id = useStore.getState().addSurface(workspaceId, paneId, 'diff', { auto: true })!;
+      useStore.getState().closeSurface(workspaceId, paneId, id);
+      useStore.getState().addSurface(workspaceId, paneId, 'diff', { auto: true });
+      expect(isDiffTabDismissed(workspaceId)).toBe(true);
+    });
+
+    it('is retracted when the user asks for a diff tab explicitly', () => {
+      const id = useStore.getState().addSurface(workspaceId, paneId, 'diff', { auto: true })!;
+      useStore.getState().closeSurface(workspaceId, paneId, id);
+      useStore.getState().addSurface(workspaceId, paneId, 'diff');
+      expect(isDiffTabDismissed(workspaceId)).toBe(false);
+    });
+
+    it('does not leak across workspaces', () => {
+      const other = useStore.getState().createWorkspace({ title: 'Other' });
+      const id = useStore.getState().addSurface(workspaceId, paneId, 'diff', { auto: true })!;
+      useStore.getState().closeSurface(workspaceId, paneId, id);
+      expect(isDiffTabDismissed(other)).toBe(false);
+    });
+
+    it('does not track non-diff surfaces', () => {
+      const id = useStore.getState().addSurface(workspaceId, paneId, 'terminal')!;
+      useStore.getState().closeSurface(workspaceId, paneId, id);
+      expect(isDiffTabDismissed(workspaceId)).toBe(false);
     });
   });
 });
