@@ -107,6 +107,48 @@ type MetaDeps = {
   t: T;
 };
 
+type SetWidth = (width: number) => void;
+
+/**
+ * Rehydrate from the rolling auto-save (the file main writes every 30s + on quit).
+ *
+ * `'fresh'` is main saying "this window was opened during the run — come up
+ * empty". It is distinct from `'none'` ("nothing saved for you") precisely
+ * because the caller must NOT fall through to a named session in that case:
+ * doing so cloned the session's workspace, pane and surface ids into a second
+ * window, and PTY id is surface id, so the clone re-attached to live PTYs and
+ * every id-based CLI lookup had two equally valid answers (issue #143).
+ */
+async function restoreAutoSaved(t: T, setWidth: SetWidth): Promise<'restored' | 'fresh' | 'none'> {
+  try {
+    const autoSaved = await window.wmux?.session?.loadAuto?.();
+    if (autoSaved && Array.isArray(autoSaved.workspaces) && autoSaved.workspaces.length > 0) {
+      useStore.getState().replaceAllWorkspaces(autoSaved.workspaces, autoSaved.activeIndex, t);
+      if (autoSaved.sidebarWidth) setWidth(autoSaved.sidebarWidth);
+      return 'restored';
+    }
+    return (autoSaved as { fresh?: boolean } | null | undefined)?.fresh ? 'fresh' : 'none';
+  } catch {
+    return 'none';
+  }
+}
+
+/** Fall back to the most recent manually-saved session. Returns whether it restored one. */
+async function restoreNamedSession(t: T, setWidth: SetWidth): Promise<boolean> {
+  try {
+    const sessions = await window.wmux?.session?.list();
+    const name = sessions?.[0]?.name;
+    if (!name) return false;
+    const session = await window.wmux?.session?.load(name);
+    if (!session) return false;
+    useStore.getState().replaceAllWorkspaces(session.workspaces, undefined, t);
+    if (session.sidebarWidth) setWidth(session.sidebarWidth);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function fireNotification(
   surfaceId: string,
   workspaceId: WorkspaceId | null,
@@ -470,28 +512,12 @@ export default function App() {
   // restart users with no manually-saved snapshot lost their workspaces.
   useEffect(() => {
     (async () => {
-      try {
-        const autoSaved = await window.wmux?.session?.loadAuto?.();
-        if (autoSaved && Array.isArray(autoSaved.workspaces) && autoSaved.workspaces.length > 0) {
-          const { replaceAllWorkspaces } = useStore.getState();
-          replaceAllWorkspaces(autoSaved.workspaces, autoSaved.activeIndex, t);
-          if (autoSaved.sidebarWidth) setSidebarWidth(autoSaved.sidebarWidth);
-          return;
-        }
-      } catch {}
-      try {
-        const sessions = await window.wmux?.session?.list();
-        if (sessions && sessions.length > 0) {
-          const session = await window.wmux?.session?.load(sessions[0].name);
-          if (session) {
-            const { replaceAllWorkspaces } = useStore.getState();
-            replaceAllWorkspaces(session.workspaces, undefined, t);
-            if (session.sidebarWidth) setSidebarWidth(session.sidebarWidth);
-            return;
-          }
-        }
-      } catch {}
-      // No saved session — create default workspace
+      const outcome = await restoreAutoSaved(t, setSidebarWidth);
+      if (outcome === 'restored') return;
+      // 'fresh' means main deliberately wants this window empty — a named
+      // session must not be cloned into it (issue #143).
+      if (outcome !== 'fresh' && await restoreNamedSession(t, setSidebarWidth)) return;
+      // Nothing to restore — create the default workspace.
       if (useStore.getState().workspaces.length === 0) {
         createWorkspace({
           title: t('app.firstSessionTitle', 'Session 1'),

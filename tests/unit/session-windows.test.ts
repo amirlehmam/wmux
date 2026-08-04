@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SessionWindowRegistry,
   toRestorePayload,
+  restoreAnswerFor,
   type SessionWindowState,
 } from '../../src/main/session-windows';
 
@@ -98,11 +99,57 @@ describe('toRestorePayload', () => {
     expect(toRestorePayload(state)?.activeIndex).toBe(0);
   });
 
-  // A window opened during this run has no slot. Returning null makes the
-  // renderer create a fresh workspace; returning windows[0] (the old behaviour)
-  // made every new window a clone of the first window's tabs.
+  // A window opened during this run has no slot. Returning windows[0] (the old
+  // behaviour) made every new window a clone of the first window's tabs.
   it('returns null for a window with no saved state', () => {
     expect(toRestorePayload(null)).toBeNull();
     expect(toRestorePayload(win('a', []))).toBeNull();
+  });
+});
+
+describe('restoreAnswerFor (issue #143)', () => {
+  // `null` alone was ambiguous: the renderer reads it as "nothing saved" and
+  // falls back to the newest NAMED session. Right at launch — and wrong for a
+  // window opened mid-run, which came up as a clone of that named session,
+  // re-using its workspace, pane and surface ids. PTY id is surface id, so the
+  // clone's terminals re-attached to the original window's PTYs, and every
+  // id-based CLI lookup then had two equally valid answers.
+  it('tells a window opened during the run to come up empty', () => {
+    expect(restoreAnswerFor(null, { startup: false })).toEqual({ fresh: true });
+  });
+
+  it('lets a launch window fall back to a named session', () => {
+    expect(restoreAnswerFor(null, { startup: true })).toBeNull();
+  });
+
+  it('hands back saved workspaces regardless of when the window was created', () => {
+    const state = win('a', ['kept']);
+    expect(restoreAnswerFor(state, { startup: false })).toEqual(toRestorePayload(state));
+    expect(restoreAnswerFor(state, { startup: true })).toEqual(toRestorePayload(state));
+  });
+});
+
+describe('startup window marking (issue #143)', () => {
+  it('only reports windows the launch restore created', () => {
+    const reg = new SessionWindowRegistry();
+    reg.markStartup('win-launch');
+    expect(reg.isStartup('win-launch')).toBe(true);
+    expect(reg.isStartup('win-opened-later')).toBe(false);
+  });
+
+  it('forgets the mark with the window, so a recycled id is not mistaken for a launch window', () => {
+    const reg = new SessionWindowRegistry();
+    reg.markStartup('win-a');
+    reg.forget('win-a');
+    expect(reg.isStartup('win-a')).toBe(false);
+  });
+
+  it('prunes marks for windows that are gone', () => {
+    const reg = new SessionWindowRegistry();
+    reg.markStartup('win-a');
+    reg.markStartup('win-b');
+    reg.retainOnly(['win-a']);
+    expect(reg.isStartup('win-a')).toBe(true);
+    expect(reg.isStartup('win-b')).toBe(false);
   });
 });

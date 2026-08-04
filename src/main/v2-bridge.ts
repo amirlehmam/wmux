@@ -18,45 +18,94 @@ interface BridgeSpec {
   emptyOnNoWindow?: any;
   // Error message when the renderer returns a falsy result (creation methods).
   requireResult?: string;
+  /**
+   * Methods that act on "a workspace" with no id of their own to go by. They
+   * fall back to the *active* workspace of whatever window they land on, which
+   * is only the right answer when the caller happens to be looking at it — so
+   * when we know where the calling shell lives, its workspace is the better
+   * default (issue #143). Methods that take an explicit surface/pane id are
+   * deliberately NOT scoped: the renderer resolves those ids window-wide.
+   */
+  callerScoped?: boolean;
 }
 
-// caller surface id → the window that held it. `getAllWindows()` order is not
-// a promise Electron makes, so two consecutive CLI calls could land on two
-// different windows and report contradictory state (issue #141: `tree` and
-// `list-surfaces` disagreed about which panes existed, and a scripted cleanup
-// consequently found nothing to close and exited claiming success).
-const callerWindows = new Map<string, number>();
+/** Which window (by `BrowserWindow.id`) and workspace a call should be answered by. */
+export interface CallerTarget<W> {
+  win: W;
+  /** Undefined when the caller's surface is unknown — the window's own active workspace stands. */
+  workspaceId?: string;
+}
 
 /**
- * The window that owns the calling shell's surface, or the first one.
+ * Resolve the calling shell's surface to the window AND workspace that hold it.
  *
- * Only probes when it has to: with a single window — the common case — the
- * answer is that window and no extra round-trip is spent.
+ * Split out from the Electron plumbing (injected `live` / `focused` / `locate`)
+ * so the resolution rules are unit-testable without a running app.
+ *
+ * Rules, in order:
+ *   1. No caller id → the focused window, no workspace opinion. Unchanged.
+ *   2. Probe windows for the surface, cached window first. First hit wins and
+ *      supplies BOTH the window and the workspace.
+ *   3. Surface unknown anywhere (stale `WMUX_SURFACE_ID`, closed pane) → fall
+ *      back to the focused window, exactly as if no id had been passed.
+ *
+ * The cache is only a probe-ORDER hint, never the answer. It used to be
+ * authoritative, so one wrong or outdated hit pinned that caller to that window
+ * for the rest of the session — the "byte-stable across focus changes" wrong
+ * result in issue #143. Re-probing costs one round-trip and lets a stale entry
+ * heal itself on the very next call.
  */
-async function windowForCaller(caller: unknown): Promise<BrowserWindow | null> {
-  const live = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
-  if (live.length <= 1) return live[0] ?? null;
-  if (typeof caller !== 'string' || !caller) return BrowserWindow.getFocusedWindow() ?? live[0];
+export async function resolveCallerTarget<W>(
+  caller: unknown,
+  deps: {
+    live: readonly W[];
+    focused: () => W | null;
+    keyOf: (win: W) => number;
+    locate: (win: W, surfaceId: string) => Promise<{ workspaceId?: string | null } | null | undefined>;
+    cache: Map<string, number>;
+  },
+): Promise<CallerTarget<W> | null> {
+  const { live } = deps;
+  if (live.length === 0) return null;
+  const fallback = () => ({ win: live.length === 1 ? live[0] : (deps.focused() ?? live[0]) });
+  if (typeof caller !== 'string' || !caller) return fallback();
 
-  const cachedId = callerWindows.get(caller);
-  const cached = cachedId !== undefined ? live.find((w) => w.id === cachedId) : undefined;
-  if (cached) return cached;
+  const cachedKey = deps.cache.get(caller);
+  const cached = cachedKey === undefined ? undefined : live.find((w) => deps.keyOf(w) === cachedKey);
+  const order = cached ? [cached, ...live.filter((w) => w !== cached)] : live;
 
-  for (const win of live) {
+  for (const win of order) {
+    let found: { workspaceId?: string | null } | null | undefined;
     try {
-      const owns = await win.webContents.executeJavaScript(
-        `window.__wmux_hasSurface?.(${S(caller)})`
-      );
-      if (owns) {
-        callerWindows.set(caller, win.id);
-        return win;
-      }
-    } catch { /* window went away mid-probe; try the next */ }
+      found = await deps.locate(win, caller);
+    } catch {
+      continue; // window went away mid-probe; try the next
+    }
+    if (found) {
+      deps.cache.set(caller, deps.keyOf(win));
+      return { win, workspaceId: found.workspaceId ?? undefined };
+    }
   }
-  return BrowserWindow.getFocusedWindow() ?? live[0];
+  deps.cache.delete(caller);
+  return fallback();
 }
 
 const S = (v: any) => JSON.stringify(v);
+
+// caller surface id → the window that last held it. See resolveCallerTarget:
+// this is a hint that reorders the probe, not a binding.
+const callerWindows = new Map<string, number>();
+
+function targetForCaller(caller: unknown): Promise<CallerTarget<BrowserWindow> | null> {
+  return resolveCallerTarget(caller, {
+    live: BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()),
+    focused: () => BrowserWindow.getFocusedWindow(),
+    keyOf: (w) => w.id,
+    locate: (w, surfaceId) =>
+      w.webContents.executeJavaScript(`window.__wmux_locateSurface?.(${S(surfaceId)})`),
+    cache: callerWindows,
+  });
+}
 
 const SPECS: Record<string, BridgeSpec> = {
   'workspace.create': {
@@ -80,6 +129,7 @@ const SPECS: Record<string, BridgeSpec> = {
   'pane.split': {
     js: (p) => `window.__wmux_splitPane?.(${S(p || {})})`,
     requireResult: 'No active workspace or panes',
+    callerScoped: true,
   },
   'pane.close': {
     js: (p) => `window.__wmux_closePane?.(${S(p?.id || p?.paneId)}, ${S(p?.workspaceId)})`,
@@ -88,19 +138,23 @@ const SPECS: Record<string, BridgeSpec> = {
     js: (p) => `window.__wmux_listPanes?.(${S(p?.workspaceId)})`,
     shape: (r) => ({ panes: r || [] }),
     emptyOnNoWindow: { panes: [] },
+    callerScoped: true,
   },
   'layout.grid': {
     js: (p) => `window.__wmux_layoutGrid?.(${S(p || {})})`,
     requireResult: 'No active workspace or invalid anchor',
+    callerScoped: true,
   },
   'system.tree': {
     js: (p) => `window.__wmux_getTree?.(${S(p?.workspaceId)})`,
     shape: (r) => ({ tree: r || null }),
     emptyOnNoWindow: { tree: null },
+    callerScoped: true,
   },
   'surface.create': {
     js: (p) => `window.__wmux_createSurface?.(${S(p || {})})`,
     requireResult: 'No active workspace or panes',
+    callerScoped: true,
   },
   'surface.close': {
     js: (p) => `window.__wmux_closeSurface?.(${S(p?.id || p?.surfaceId)}, ${S(p?.workspaceId)})`,
@@ -115,6 +169,7 @@ const SPECS: Record<string, BridgeSpec> = {
     js: (p) => `window.__wmux_listSurfaces?.(${S(p?.workspaceId)}, ${S(p?.paneId)})`,
     shape: (r) => ({ surfaces: r || [] }),
     emptyOnNoWindow: { surfaces: [] },
+    callerScoped: true,
   },
   'markdown.set_content': {
     // `title` is optional and only sets the tab label; without it every
@@ -140,13 +195,18 @@ const SPECS: Record<string, BridgeSpec> = {
 function runBridge(spec: BridgeSpec, params: any, respond: Respond, respondError: RespondError): void {
   (async () => {
     try {
-      const win = await windowForCaller(params?.caller);
-      if (!win) {
+      const target = await targetForCaller(params?.caller);
+      if (!target) {
         if (spec.emptyOnNoWindow !== undefined) { respond(spec.emptyOnNoWindow); return; }
         respondError(-32000, 'No window');
         return;
       }
-      const result = await win.webContents.executeJavaScript(spec.js(params));
+      // An explicit --workspace always wins; the caller's workspace is only a
+      // default for the methods that would otherwise guess (issue #143).
+      const scoped = spec.callerScoped && target.workspaceId && !params?.workspaceId
+        ? { ...params, workspaceId: target.workspaceId }
+        : params;
+      const result = await target.win.webContents.executeJavaScript(spec.js(scoped));
       if (spec.requireResult && !result) { respondError(-32000, spec.requireResult); return; }
       respond(spec.shape ? spec.shape(result) : (result ?? { ok: true }));
     } catch (err: any) {

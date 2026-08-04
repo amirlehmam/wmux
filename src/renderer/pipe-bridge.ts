@@ -116,14 +116,19 @@ export function initPipeBridge(): void {
 
   w.__wmux_closePane = (paneId: string, workspaceId?: string) => {
     const store = useStore.getState();
-    const wsId = (workspaceId || store.activeWorkspaceId) as WorkspaceId;
-    if (!wsId) return;
-    const ws = store.workspaces.find(w => w.id === wsId);
+    // Without an explicit workspace, find the pane wherever it is rather than
+    // assuming it is in the active one (issue #143) — pane ids are uuids, so
+    // the search is unambiguous, and the old assumption made `close-pane` a
+    // no-op that still reported success for any pane not currently on screen.
+    const candidates = workspaceId
+      ? store.workspaces.filter(w => w.id === workspaceId)
+      : store.workspaces;
+    const ws = candidates.find(w => getAllPaneIds(w.splitTree).includes(paneId as PaneId));
     if (!ws) return;
 
     // Reaping + tree surgery live in the store action (issue #65 fixed the
     // missing reap here; the last-pane case was still wrong in all three copies).
-    store.closePane(wsId, paneId as PaneId);
+    store.closePane(ws.id, paneId as PaneId);
   };
 
   w.__wmux_layoutGrid = (params: { count: number; type?: string; anchorSurfaceId?: string; anchorPaneId?: string; workspaceId?: string }) => {
@@ -231,34 +236,45 @@ export function initPipeBridge(): void {
     return { ok: false, error: 'Surface not found' };
   };
 
+  /**
+   * The workspaces an id-targeted op should search: the one it was given, else
+   * every workspace in this window.
+   *
+   * Surface and pane ids are uuids, so a global search cannot hit the wrong
+   * thing — whereas restricting the search to the *active* workspace silently
+   * did nothing whenever the target lived elsewhere, and still answered `ok`
+   * (issue #143: a scripted mutation "succeeding" without mutating anything is
+   * worse than an error, because nothing downstream notices).
+   */
+  const searchScope = (workspaceId?: string) => {
+    const store = useStore.getState();
+    if (!workspaceId) return store.workspaces;
+    const ws = store.workspaces.find(w => w.id === workspaceId);
+    return ws ? [ws] : [];
+  };
+
   w.__wmux_closeSurface = (surfaceId: string, workspaceId?: string) => {
     const store = useStore.getState();
-    const wsId = (workspaceId || store.activeWorkspaceId) as WorkspaceId;
-    if (!wsId) return;
-    const ws = store.workspaces.find(w => w.id === wsId);
-    if (!ws) return;
-    const paneIds = getAllPaneIds(ws.splitTree);
-    for (const pid of paneIds) {
-      const leaf = findLeaf(ws.splitTree, pid);
-      if (leaf?.surfaces?.some(s => s.id === surfaceId)) {
-        store.closeSurface(wsId, pid, surfaceId as SurfaceId);
-        return;
+    for (const ws of searchScope(workspaceId)) {
+      for (const pid of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, pid);
+        if (leaf?.surfaces?.some(s => s.id === surfaceId)) {
+          store.closeSurface(ws.id, pid, surfaceId as SurfaceId);
+          return;
+        }
       }
     }
   };
 
   w.__wmux_renameSurface = (surfaceId: string, title: string, workspaceId?: string) => {
     const store = useStore.getState();
-    const wsId = (workspaceId || store.activeWorkspaceId) as WorkspaceId;
-    if (!wsId) return { ok: false, error: 'No active workspace' };
-    const ws = store.workspaces.find(w => w.id === wsId);
-    if (!ws) return { ok: false, error: 'Workspace not found' };
-    const paneIds = getAllPaneIds(ws.splitTree);
-    for (const pid of paneIds) {
-      const leaf = findLeaf(ws.splitTree, pid);
-      if (leaf?.surfaces?.some(s => s.id === surfaceId)) {
-        store.renameSurface(wsId, pid, surfaceId as SurfaceId, title ?? '');
-        return { ok: true };
+    for (const ws of searchScope(workspaceId)) {
+      for (const pid of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, pid);
+        if (leaf?.surfaces?.some(s => s.id === surfaceId)) {
+          store.renameSurface(ws.id, pid, surfaceId as SurfaceId, title ?? '');
+          return { ok: true };
+        }
       }
     }
     return { ok: false, error: 'Surface not found' };
@@ -266,17 +282,12 @@ export function initPipeBridge(): void {
 
   w.__wmux_focusSurface = (surfaceId: string, workspaceId?: string) => {
     const store = useStore.getState();
-    const wsId = (workspaceId || store.activeWorkspaceId) as WorkspaceId;
-    if (!wsId) return;
-    const ws = store.workspaces.find(w => w.id === wsId);
-    if (!ws) return;
-    const paneIds = getAllPaneIds(ws.splitTree);
-    for (const pid of paneIds) {
-      const leaf = findLeaf(ws.splitTree, pid);
-      if (leaf?.surfaces) {
-        const idx = leaf.surfaces.findIndex(s => s.id === surfaceId);
+    for (const ws of searchScope(workspaceId)) {
+      for (const pid of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, pid);
+        const idx = leaf?.surfaces?.findIndex(s => s.id === surfaceId) ?? -1;
         if (idx >= 0) {
-          store.selectSurface(wsId, pid, idx);
+          store.selectSurface(ws.id, pid, idx);
           return;
         }
       }
@@ -308,22 +319,31 @@ export function initPipeBridge(): void {
   };
 
   /**
-   * Does THIS window hold `surfaceId`? Used by the main process to answer a CLI
-   * state query about the window the caller's shell actually lives in, rather
-   * than about whichever window happens to be first in `getAllWindows()`
+   * WHERE in THIS window does `surfaceId` live — `{ workspaceId, paneId }` — or
+   * null if this window does not hold it at all? Used by the main process to
+   * answer a CLI state query about the place the caller's shell actually lives,
+   * rather than about whichever window happens to be first in `getAllWindows()`
    * (issue #141: `tree` and `list-surfaces` reported different panes at the
    * same moment, so a scripted "find the diff surface and close it" found
    * nothing and exited reporting success).
+   *
+   * It returns the workspace, not just a yes/no, because yes/no was only half
+   * an answer (issue #143): a window owns many workspaces, and a caller parked
+   * in a background one still had every query answered about the *active* one.
+   * The window was right and the workspace was wrong, so `tree` reliably
+   * described panes the caller had never seen.
    */
-  w.__wmux_hasSurface = (surfaceId: string) => {
-    if (!surfaceId) return false;
+  w.__wmux_locateSurface = (surfaceId: string) => {
+    if (!surfaceId) return null;
     for (const ws of useStore.getState().workspaces) {
       for (const pid of getAllPaneIds(ws.splitTree)) {
         const leaf = findLeaf(ws.splitTree, pid);
-        if (leaf?.surfaces.some(s => s.id === surfaceId)) return true;
+        if (leaf?.surfaces.some(s => s.id === surfaceId)) {
+          return { workspaceId: ws.id, paneId: pid };
+        }
       }
     }
-    return false;
+    return null;
   };
 
   w.__wmux_getActiveSurfaceId = () => {
