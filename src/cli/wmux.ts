@@ -503,10 +503,12 @@ async function cmdReportMetadata(args: string[]): Promise<void> {
   print(await sendV2('pane.report_metadata', params));
 }
 
-const AGENT_STATE_COMMANDS: Record<string, (args: string[]) => Promise<void>> = {
+// Keys stay inferred (no Record<string, …> annotation) so spreading this into
+// COMMANDS still satisfies the exhaustive Record<CommandName, …> check.
+const AGENT_STATE_COMMANDS = {
   'report-agent': cmdReportAgent,
   'report-metadata': cmdReportMetadata,
-  'report-session': async (args) => {
+  'report-session': async (args: string[]) => {
     const surfaceId = reportingSurface(args, 'report-session');
     print(await sendV2('pane.report_agent_session', {
       surfaceId,
@@ -515,22 +517,283 @@ const AGENT_STATE_COMMANDS: Record<string, (args: string[]) => Promise<void>> = 
     }));
   },
   'answer-agent': cmdAnswerAgent,
-  'release-agent': async (args) => {
+  'release-agent': async (args: string[]) => {
     const surfaceId = reportingSurface(args, 'release-agent');
     print(await sendV2('pane.release_agent', { surfaceId, seq: seqFlag(args) }));
   },
   // No --surface → the whole picture, including a `blocked` list that answers
   // "which pane needs me?" in one call.
-  'agent-state': async (args) => {
+  'agent-state': async (args: string[]) => {
     const surfaceId = getFlag(args, '--surface');
     print(await sendV2('pane.agent_state', surfaceId ? { surfaceId } : {}));
   },
 };
 
+// ─── Per-command usage + flag validation (issue #143) ────────────────────────
+// `getFlag()` picks out the flags it knows and ignores the rest, so a typo or an
+// exploratory `--help` used to fall through to "run with defaults" — probing the
+// CLI mutated the user's layout (`wmux split --help` split a pane) and returned
+// a JSON reply that read as success. Every command now declares its flags, so
+// anything else is an error, and `--help` prints usage without touching wmux.
+interface CommandSpec {
+  /** Printed by `--help`, by `wmux help <command>`, and after a rejected flag. */
+  usage: string;
+  /** Flags that consume the following argv token. */
+  value?: string[];
+  /** Flags that stand alone. */
+  bool?: string[];
+  /**
+   * Arguments are free-form text or belong to another program (ssh), so nothing
+   * here can be judged a typo. Their argv is never validated and `--help` is
+   * left alone — `wmux send --help` must type "--help" into the pane, not print
+   * usage. `wmux help <command>` is the way in for these.
+   */
+  passthrough?: boolean;
+}
+
+const SURFACE_NOTE = '(surface defaults to $WMUX_SURFACE_ID inside a pane)';
+
+const COMMAND_SPECS = {
+  // System
+  ping: { usage: 'wmux ping' },
+  identify: { usage: 'wmux identify' },
+  capabilities: { usage: 'wmux capabilities' },
+  'list-windows': { usage: 'wmux list-windows' },
+  'focus-window': { usage: 'wmux focus-window <windowId>' },
+  'new-window': { usage: 'wmux new-window' },
+
+  // Remote management (issue #78)
+  bridge: {
+    usage: 'wmux bridge [--port P] [--host H]   (expose this wmux\'s pipe over TCP, default 127.0.0.1:9787)',
+    value: ['--port', '--host'],
+  },
+  token: { usage: 'wmux token   (print this instance\'s pipe auth token)' },
+
+  // Workspace
+  'new-workspace': {
+    usage: 'wmux new-workspace [--title T] [--shell S] [--cwd D]',
+    value: ['--title', '--shell', '--cwd'],
+  },
+  ssh: { usage: 'wmux ssh [ssh options] <user@host> [--title T]', passthrough: true },
+  'close-workspace': { usage: 'wmux close-workspace [workspaceId]' },
+  'select-workspace': { usage: 'wmux select-workspace <workspaceId>' },
+  'rename-workspace': { usage: 'wmux rename-workspace <workspaceId> <title>', passthrough: true },
+  'list-workspaces': { usage: 'wmux list-workspaces' },
+
+  // Surface
+  'new-surface': {
+    usage: 'wmux new-surface [--type terminal|browser|markdown] [--color-scheme NAME]',
+    value: ['--type', '--color-scheme'],
+  },
+  'close-surface': { usage: 'wmux close-surface [surfaceId]' },
+  'rename-surface': {
+    usage: 'wmux rename-surface [surfaceId] <title>   (renames the current surface inside a pane)',
+    passthrough: true,
+  },
+  'focus-surface': { usage: 'wmux focus-surface <surfaceId>' },
+  'list-surfaces': {
+    usage: 'wmux list-surfaces [--pane <paneId>] [--workspace <workspaceId>]',
+    value: ['--pane', '--workspace'],
+  },
+  'set-color-scheme': { usage: 'wmux set-color-scheme [surfaceId] <scheme>' },
+  'clear-color-scheme': { usage: 'wmux clear-color-scheme [surfaceId]' },
+  'list-themes': { usage: 'wmux list-themes' },
+  themes: { usage: 'wmux themes   (alias of list-themes)' },
+
+  // User config
+  'reload-config': { usage: 'wmux reload-config' },
+  config: { usage: 'wmux config <show|reload|path>' },
+
+  // Pane
+  split: {
+    usage: 'wmux split [--down] [--type terminal|browser|markdown] [--color-scheme NAME]',
+    value: ['--type', '--color-scheme'],
+    bool: ['--down'],
+  },
+  pane: {
+    usage: [
+      'wmux pane new [--down] [--type T] [--color-scheme NAME]',
+      'wmux pane close <paneId> | focus <paneId> | list [--workspace <id>]',
+    ].join('\n'),
+    value: ['--type', '--color-scheme', '--workspace'],
+    bool: ['--down'],
+  },
+  'close-pane': { usage: 'wmux close-pane [paneId]' },
+  'focus-pane': { usage: 'wmux focus-pane <paneId>' },
+  'zoom-pane': { usage: 'wmux zoom-pane [paneId]' },
+  'list-panes': { usage: 'wmux list-panes [--workspace <workspaceId>]', value: ['--workspace'] },
+  tree: { usage: 'wmux tree [--workspace <workspaceId>]', value: ['--workspace'] },
+
+  // Layout
+  layout: {
+    usage: 'wmux layout grid --count <N> [--type T] [--anchor-surface <id>] [--anchor-pane <id>] [--workspace <id>]',
+    value: ['--count', '--type', '--anchor-surface', '--anchor-pane', '--workspace'],
+  },
+
+  // Terminal interaction
+  send: { usage: 'wmux send [--surface <id>] <text>', passthrough: true },
+  'send-key': {
+    usage: 'wmux send-key <key> [--ctrl] [--shift] [--alt] [--surface <id>]',
+    value: ['--surface'],
+    bool: ['--ctrl', '--shift', '--alt'],
+  },
+  'read-screen': {
+    usage: `wmux read-screen [--lines N] [--surface <id>]   ${SURFACE_NOTE}`,
+    value: ['--lines', '--surface'],
+  },
+  'trigger-flash': { usage: 'wmux trigger-flash [surfaceId]' },
+
+  // Browser (free-form text for type/fill/eval)
+  browser: {
+    usage: [
+      'wmux browser open <url> | snapshot | click <ref> | type <ref> <text> | fill <ref> <value>',
+      'wmux browser screenshot [--full] | get-text [ref] | eval <js> | wait <ref> [ms]',
+      'wmux browser back | forward | reload',
+    ].join('\n'),
+    passthrough: true,
+  },
+
+  // Agent
+  agent: {
+    usage: [
+      'wmux agent spawn --cmd <C> [--label L] [--cwd D] [--pane P] [--workspace W] [--replace-tab]',
+      'wmux agent spawn-batch --json \'[...]\' [--strategy distribute|stack|split]',
+      'wmux agent status <agentId> | list [--workspace <id>] | kill <agentId>',
+    ].join('\n'),
+    value: ['--cmd', '--label', '--cwd', '--pane', '--workspace', '--json', '--strategy'],
+    bool: ['--replace-tab'],
+  },
+
+  // Markdown (--content takes free-form text)
+  markdown: {
+    usage: [
+      'wmux markdown <file>                                   (open a file in a new markdown view)',
+      'wmux markdown set <id> --content <text> [--title T]',
+      'wmux markdown set <id> --file <path>',
+      'wmux markdown get <id>',
+    ].join('\n'),
+    passthrough: true,
+  },
+
+  // Notifications
+  notify: { usage: 'wmux notify <text>', passthrough: true },
+  'list-notifications': { usage: 'wmux list-notifications' },
+  'clear-notifications': { usage: 'wmux clear-notifications [notificationId]' },
+
+  // Sidebar
+  'set-status': {
+    usage: [
+      'wmux set-status --workspace <id> --state <idle|running|interrupted> [--text "<label>"]',
+      'wmux set-status <key> <value>                          (legacy positional form)',
+    ].join('\n'),
+    value: ['--workspace', '--state', '--text'],
+  },
+  'set-progress': { usage: 'wmux set-progress <value> [--label L]', value: ['--label'] },
+  log: { usage: 'wmux log <level> <message>', passthrough: true },
+  'sidebar-state': { usage: 'wmux sidebar-state' },
+
+  diff: { usage: 'wmux diff [--file <path>]', value: ['--file'] },
+  hook: {
+    usage: 'wmux hook --event <type> --tool <name> [--agent <id>]',
+    value: ['--event', '--tool', '--agent'],
+  },
+  'agent-activity': {
+    usage: `wmux agent-activity [--tool T] [--skill S] [--done|--active] [--surface <id>]   ${SURFACE_NOTE}`,
+    value: ['--tool', '--skill', '--surface'],
+    bool: ['--done', '--active'],
+  },
+
+  // Declared agent state (issue #128)
+  'report-agent': {
+    usage: [
+      'wmux report-agent --blocked [reason] [--choices <json>] | --unblocked',
+      'wmux report-agent --run-start | --run-end | --run-depth <N>',
+      `  [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+    ].join('\n'),
+    // --blocked's reason is optional; treating it as value-taking only ever
+    // skips one token that a later flag would have re-validated anyway.
+    value: ['--blocked', '--reason', '--choices', '--run-depth', '--seq', '--surface'],
+    bool: ['--unblocked', '--run-start', '--run-end'],
+  },
+  'report-metadata': {
+    usage: `wmux report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms] [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+    value: ['--model', '--tokens', '--context-pct', '--ttl', '--seq', '--surface'],
+  },
+  'report-session': {
+    usage: `wmux report-session <sessionId> [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+    value: ['--session', '--seq', '--surface'],
+  },
+  'answer-agent': {
+    usage: 'wmux answer-agent --surface <id> --choice <choiceId>   (reply to ANOTHER pane; no ambient default)',
+    value: ['--surface', '--choice'],
+  },
+  'release-agent': {
+    usage: `wmux release-agent [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+    value: ['--seq', '--surface'],
+  },
+  'agent-state': {
+    usage: 'wmux agent-state [--surface <id>]   (no --surface → every pane, plus the blocked list)',
+    value: ['--surface'],
+  },
+} satisfies Record<string, CommandSpec>;
+
+type CommandName = keyof typeof COMMAND_SPECS;
+
+/**
+ * Reject flags the command does not declare, instead of running with defaults.
+ *
+ * Only `--` flags are judged: single-dash tokens belong to passthrough commands
+ * (ssh options) and bare words are positional arguments.
+ */
+function checkFlags(command: string, args: string[], spec: CommandSpec): void {
+  if (spec.passthrough) return;
+  const takesValue = new Set(spec.value ?? []);
+  const standalone = new Set(spec.bool ?? []);
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith('--')) continue;
+    if (standalone.has(arg)) continue;
+    if (takesValue.has(arg)) {
+      // A trailing value flag is the same silent default in a different
+      // costume: `getFlag` returns undefined and the command runs anyway.
+      // --blocked is the one flag whose value is genuinely optional.
+      if (i === args.length - 1 && arg !== '--blocked') {
+        fail(command, spec, `Flag '${arg}' needs a value.`);
+      }
+      i++;
+      continue;
+    }
+    fail(command, spec, `Unknown flag for '${command}': ${arg}`);
+  }
+}
+
+/** Print why the argv was rejected, then that command's usage, then exit 1. */
+function fail(command: string, spec: CommandSpec, message: string): never {
+  console.error(message);
+  console.error('');
+  console.error(spec.usage);
+  process.exit(1);
+}
+
+/** `wmux help [command]` — the only help route that works for passthrough commands. */
+function cmdHelp(args: string[]): void {
+  const topic = args[1];
+  if (!topic) { printUsage(); return; }
+  const spec = (COMMAND_SPECS as Record<string, CommandSpec>)[topic];
+  if (!spec) {
+    console.error(`Unknown command: ${topic}`);
+    printUsage();
+    process.exit(1);
+  }
+  console.log(spec.usage);
+}
+
 // Command dispatch table. Each handler receives the raw argv (args[0] is the
 // command name). Replaces a single giant switch so each command stays small and
-// independently testable.
-const COMMANDS: Record<string, (args: string[]) => Promise<void> | void> = {
+// independently testable. Typed against COMMAND_SPECS so the compiler — not a
+// bug report — catches a command that ships without usage text, or usage text
+// for a command that no longer exists.
+const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = {
   // System
   ping: async () => console.log(await sendV1('ping')),
   identify: async () => print(await sendV2('system.identify')),
@@ -684,17 +947,26 @@ async function main() {
 
   const command = args[0];
 
-  if (!command) {
-    printUsage();
+  if (!command || command === 'help' || command === '--help' || command === '-h') {
+    cmdHelp(command === 'help' ? args : []);
     process.exit(0);
   }
 
-  const handler = COMMANDS[command];
+  const handler = COMMANDS[command as CommandName];
   if (!handler) {
     console.error(`Unknown command: ${command}`);
     printUsage();
     process.exit(1);
   }
+
+  // Usage and flag checks both happen before a single byte reaches the pipe, so
+  // probing the CLI can no longer mutate the user's layout (issue #143).
+  const spec: CommandSpec = COMMAND_SPECS[command as CommandName];
+  if (!spec.passthrough && (args.includes('--help') || args.includes('-h'))) {
+    console.log(spec.usage);
+    process.exit(0);
+  }
+  checkFlags(command, args, spec);
 
   try {
     await handler(args);
@@ -744,6 +1016,11 @@ Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
             (surface defaults to $WMUX_SURFACE_ID — an agent in a pane needs no id)
 Config:     config show|reload|path   (edits ~/.wmux/config.toml — see docs)
             reload-config             (shorthand for 'config reload')
+
+Help:       wmux help <command>       (per-command usage; works for every command)
+            wmux <command> --help     (same, except for free-form commands such as
+                                       send / notify / log / ssh / browser / markdown,
+                                       where --help is part of the text you are sending)
 `);
 }
 

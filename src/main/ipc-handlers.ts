@@ -20,7 +20,7 @@ import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
-import { sessionWindows, toRestorePayload } from './session-windows';
+import { sessionWindows, toRestorePayload, restoreAnswerFor } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
 import { readConsent, updateConsent } from './agent-integration';
 import { handleAgentStateV2 } from './agent-state-rpc';
@@ -319,7 +319,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // could never restore more than one window's worth of state.
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_AUTO, (event) => {
     const windowId = windowManager.idForWebContents(event.sender);
-    if (windowId) return toRestorePayload(sessionWindows.get(windowId));
+    if (windowId) {
+      return restoreAnswerFor(sessionWindows.get(windowId), {
+        startup: sessionWindows.isStartup(windowId),
+      });
+    }
     // Unattributable sender: fall back to the file's first window rather than
     // leaving a legitimately-restored window empty.
     return toRestorePayload(loadSession()?.windows?.[0] ?? null);

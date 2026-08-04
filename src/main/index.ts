@@ -497,14 +497,20 @@ app.whenReady().then(() => {
   // Each gets its own slot in the registry so its renderer restores its own
   // workspaces — `SESSION_LOAD_AUTO` used to hand windows[0] to whoever asked,
   // which made a second window a clone of the first.
+  //
+  // These are also the only windows allowed to fall back to the newest *named*
+  // session when they have no slot: a window opened later in the run must come
+  // up empty instead of cloning one, which would duplicate its surface ids —
+  // and PTY id is surface id, so the clone would attach to live PTYs (#143).
   const savedSession = loadSession();
   const savedWindows = (savedSession?.windows ?? []).slice(0, MAX_RESTORED_WINDOWS);
   if (savedWindows.length === 0) {
-    windowManager.createWindow();
+    sessionWindows.markStartup(windowManager.createWindow());
   } else {
     for (const saved of savedWindows) {
       const id = windowManager.createWindow(saved.bounds, saved.maximized);
       sessionWindows.prime(id, saved);
+      sessionWindows.markStartup(id);
     }
   }
 

@@ -28,6 +28,21 @@ export class SessionWindowRegistry {
   // they were created rather than the order they happened to answer in.
   private slots = new Map<string, SessionWindowState>();
 
+  // Windows the startup restore created, as opposed to ones opened mid-run.
+  // Only the former may fall back to the newest *named* session; see
+  // restoreAnswerFor.
+  private startup = new Set<string>();
+
+  /** Mark a window as one of the app's launch windows. */
+  markStartup(windowId: string): void {
+    this.startup.add(windowId);
+  }
+
+  /** Was this window created by the startup restore rather than during the run? */
+  isStartup(windowId: string): boolean {
+    return this.startup.has(windowId);
+  }
+
   /** Seed a freshly created window with the state it was restored from. */
   prime(windowId: string, state: SessionWindowState): void {
     this.slots.set(windowId, state);
@@ -46,6 +61,7 @@ export class SessionWindowRegistry {
   /** Drop one window's slot — it was closed and should not come back. */
   forget(windowId: string): void {
     this.slots.delete(windowId);
+    this.startup.delete(windowId);
   }
 
   /**
@@ -58,6 +74,9 @@ export class SessionWindowRegistry {
     const live = new Set(liveWindowIds);
     for (const id of [...this.slots.keys()]) {
       if (!live.has(id)) this.slots.delete(id);
+    }
+    for (const id of [...this.startup]) {
+      if (!live.has(id)) this.startup.delete(id);
     }
   }
 
@@ -94,4 +113,36 @@ export function toRestorePayload(state: SessionWindowState | null): {
     sidebarWidth: state.sidebarWidth,
     activeIndex: activeIndex >= 0 ? activeIndex : 0,
   };
+}
+
+/** What `session:load-auto` answers a window with. */
+export type RestoreAnswer =
+  | NonNullable<ReturnType<typeof toRestorePayload>>
+  /** "Come up empty" — do NOT fall back to a named session. */
+  | { fresh: true }
+  /** "I have nothing for you" — the renderer's own fallbacks apply. */
+  | null;
+
+/**
+ * The answer for one window, which hinges on WHEN the window was created.
+ *
+ * `null` used to mean both "nothing saved" and "deliberately empty", and the
+ * renderer reads it as the former: it falls back to the newest *named* session.
+ * That is right at launch, and wrong for a window opened during the run — which
+ * came up as a clone of that named session, re-using its workspace, pane and
+ * surface ids (issue #143). Duplicated surface ids are not cosmetic here: PTY id
+ * IS surface id in wmux, so the clone's terminals attach to the original
+ * window's PTYs, and every id-based CLI lookup has two equally valid answers.
+ *
+ * So a mid-run window gets an explicit `{ fresh: true }` instead — the same
+ * contract the per-window restore has claimed since issue #118, now actually
+ * enforceable on the renderer side.
+ */
+export function restoreAnswerFor(
+  state: SessionWindowState | null,
+  opts: { startup: boolean },
+): RestoreAnswer {
+  const payload = toRestorePayload(state);
+  if (payload) return payload;
+  return opts.startup ? null : { fresh: true };
 }
