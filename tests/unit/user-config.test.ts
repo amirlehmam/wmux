@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -131,6 +131,44 @@ describe('loadUserConfig', () => {
     `);
     const out = loadUserConfig(tmpPath);
     expect(out.browser).toBeUndefined();
+  });
+
+  // Issue #146 — `[keys]` remaps: the config file is the plugin-shaped ask,
+  // answered without a plugin runtime.
+  it('parses the [keys] section into validated remaps', () => {
+    tmpPath = writeTmp(`
+      [keys]
+      "ctrl+k" = "<C-k><Delete>"
+      "ctrl+alt+r" = "clear<CR>"
+    `);
+    const out = loadUserConfig(tmpPath);
+    expect(out.errors).toEqual([]);
+    expect(out.keys).toHaveLength(2);
+    expect(out.keys?.[0]).toEqual({
+      chord: { key: 'k', ctrl: true, shift: false, alt: false },
+      send: '\x0b\x1b[3~',
+      source: 'ctrl+k',
+    });
+    expect(out.keys?.[1].send).toBe('clear\r');
+  });
+
+  it('reports a bad remap without dropping the good ones', () => {
+    tmpPath = writeTmp(`
+      [keys]
+      "ctrl+j" = "<Nope>"
+      "ctrl+k" = "<Delete>"
+    `);
+    const out = loadUserConfig(tmpPath);
+    expect(out.keys?.map((k) => k.source)).toEqual(['ctrl+k']);
+    expect(out.errors?.some((e) => e.includes('unknown key <Nope>'))).toBe(true);
+  });
+
+  it('leaves keys undefined when the section is absent', () => {
+    tmpPath = writeTmp(`
+      [terminal]
+      font-size = 13
+    `);
+    expect(loadUserConfig(tmpPath).keys).toBeUndefined();
   });
 
   it('clamps palette to 16 entries', () => {

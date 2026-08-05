@@ -24,6 +24,10 @@ export interface SessionData {
       shell: string;
       cwd?: string; // last reported working dir — restored so new terminals reopen here (issue #20)
       splitTree: any; // SplitNode serialized
+      // The renderer has always written these two; the interface omitting them
+      // is what let backupAutoSession drop them without tsc noticing (#145).
+      browserUrl?: string;
+      browserWidth?: number;
     }>;
   }>;
 }
@@ -83,25 +87,39 @@ const AUTO_BACKUP_KEEP = 3;
  * the post-update startup path already auto-restores the most recent named
  * session when no auto-session exists, this backup brings the user's tabs
  * back on the first launch of the new version with zero action on their part.
+ *
+ * Fidelity is the whole contract (issue #145): this file is what the user gets
+ * restored after an update, so it must carry everything a manual Save does. It
+ * previously copied a subset — no browserUrl, browserWidth or pinned — and only
+ * ever looked at windows[0]. Users experienced that as "the autobackup does its
+ * own thing": browsers back on the default page, pinned tabs unpinned, and a
+ * second window's workspaces simply gone.
  */
 function backupAutoSession(previousVersion: string): void {
   try {
     if (!fs.existsSync(SESSION_FILE)) return;
     const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')) as SessionData;
-    const win = data?.windows?.[0];
-    if (!win || !Array.isArray(win.workspaces) || win.workspaces.length === 0) return;
+    const windows = Array.isArray(data?.windows) ? data.windows : [];
+    // Every window's workspaces, in window order. A named session restores into
+    // a single window, so a multi-window layout comes back flattened — losing
+    // the window split is a far smaller surprise than losing the tabs.
+    const workspaces = windows.flatMap(w => (Array.isArray(w?.workspaces) ? w.workspaces : []));
+    if (workspaces.length === 0) return;
 
     const backup = {
       name: previousVersion ? `${AUTO_BACKUP_PREFIX} v${previousVersion}` : AUTO_BACKUP_PREFIX,
       savedAt: Date.now(),
-      workspaces: win.workspaces.map(w => ({
+      workspaces: workspaces.map(w => ({
         title: w.title,
         customColor: w.customColor,
+        pinned: !!w.pinned,
         shell: w.shell,
         cwd: w.cwd || '',
         splitTree: w.splitTree,
+        browserUrl: w.browserUrl || '',
+        browserWidth: w.browserWidth,
       })),
-      sidebarWidth: win.sidebarWidth ?? 260,
+      sidebarWidth: windows[0]?.sidebarWidth ?? 260,
     };
 
     // Write directly instead of via saveNamedSession: a safety net must not

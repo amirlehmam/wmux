@@ -406,6 +406,22 @@ wmux set-color-scheme "Solarized Dark"
 
 Define custom named schemes in Settings > Terminal > Custom Schemes.
 
+### Key remaps
+
+Change what a key sends to the program running in a terminal — add a `[keys]`
+section to `~/.wmux/config.toml`:
+
+```toml
+[keys]
+"ctrl+k"       = "<C-k><Delete>"   # kill to end of line, then pull the next line up
+"ctrl+alt+r"   = "clear<CR>"       # text outside <> is typed literally
+"ctrl+shift+q" = ""                # empty value swallows the key
+```
+
+Remaps apply inside terminal panes and take priority over wmux's own shortcuts
+there. `wmux reload-config` applies edits without a restart. Full token list in
+[docs/config.md](docs/config.md#key-remaps).
+
 ### Import from existing terminal configs
 
 wmux reads configuration from:

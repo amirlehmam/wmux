@@ -226,6 +226,10 @@ export interface SavedSession {
     cwd: string;
     splitTree: SplitNode;
     browserUrl?: string;
+    // Both written since 0.4x; declared here as of #145, which was caused by a
+    // save path quietly dropping fields the type never mentioned.
+    browserWidth?: number;
+    pinned?: boolean;
   }>;
   sidebarWidth: number;
   // Optional for backward-compat with pre-0.7.6 sessions.

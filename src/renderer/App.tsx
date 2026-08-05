@@ -19,6 +19,7 @@ import BrowserPane from './components/Browser/BrowserPane';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
 import { initPipeBridge } from './pipe-bridge';
+import { setKeyRemaps } from './key-remaps';
 import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
 import type {
@@ -133,7 +134,15 @@ async function restoreAutoSaved(t: T, setWidth: SetWidth): Promise<'restored' | 
   }
 }
 
-/** Fall back to the most recent manually-saved session. Returns whether it restored one. */
+/**
+ * Fall back to the most recent manually-saved session. Returns whether it
+ * restored one.
+ *
+ * This is also the post-update path (the version change clears the auto-session
+ * and leaves an "Auto-backup vX" named session behind), so it has to restore
+ * exactly what the Sessions menu's Load does — including terminalPrefs, which
+ * it used to skip (issue #145).
+ */
 async function restoreNamedSession(t: T, setWidth: SetWidth): Promise<boolean> {
   try {
     const sessions = await window.wmux?.session?.list();
@@ -143,6 +152,7 @@ async function restoreNamedSession(t: T, setWidth: SetWidth): Promise<boolean> {
     if (!session) return false;
     useStore.getState().replaceAllWorkspaces(session.workspaces, undefined, t);
     if (session.sidebarWidth) setWidth(session.sidebarWidth);
+    if (session.terminalPrefs) useStore.getState().setTerminalPrefs(session.terminalPrefs);
     return true;
   } catch {
     return false;
@@ -558,6 +568,9 @@ export default function App() {
       const state = useStore.getState();
       applyUserConfigTerminal(state, result?.terminal);
       applyUserConfigBrowser(result?.browser);
+      // `[keys]` remaps (issue #146) — main has already parsed and validated
+      // them, so this is a straight hand-off to the terminal key handler.
+      setKeyRemaps(result?.keys);
 
       // App UI theme override (issue #67): `[appearance] ui-theme = "..."`.
       const uiTheme = result?.appearance?.uiTheme;
@@ -803,6 +816,9 @@ export default function App() {
       workspaces: state.workspaces.map(ws => ({
         title: ws.title,
         customColor: ws.customColor,
+        // Pinning is part of the layout the user arranged — the auto-save has
+        // always kept it, so a named save must too (issue #145).
+        pinned: ws.pinned,
         shell: ws.shell,
         cwd: ws.cwd || '',
         // See the auto-save path below — a named session is the case #134

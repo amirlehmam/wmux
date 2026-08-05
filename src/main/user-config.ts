@@ -31,6 +31,10 @@
  *   dev-ports = [8501, 4321]   # extra dev-server ports, merged with built-in defaults
  *   auto-open = true           # auto-navigate the browser to a newly-detected dev port
  *
+ *   [keys]                     # remap what a key sends to the terminal (issue #146)
+ *   "ctrl+k"     = "<C-k><Delete>"
+ *   "ctrl+alt+r" = "clear<CR>"
+ *
  * File-wins-at-startup, app-wins-at-runtime: this data seeds the store
  * on boot; users can still tweak via the Settings UI afterwards.
  * A `wmux reload-config` command re-applies the file over runtime state.
@@ -39,6 +43,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parseToml, TomlTable, TomlValue } from './toml-parser';
+import { parseKeyRemaps, KeyRemap } from '../shared/key-sequence';
 
 export interface UserColorScheme {
   background?: string;
@@ -73,6 +78,12 @@ export interface UserConfig {
     /** Auto-navigate the workspace browser to a newly-detected dev port (default true). */
     autoOpen?: boolean;
   };
+  /**
+   * User key remaps (issue #146) — chord → bytes the terminal should send.
+   * Already parsed here so a malformed binding is reported once, at load, with
+   * the rest of the config's errors, rather than failing silently per keypress.
+   */
+  keys?: KeyRemap[];
   /** Absolute path the config was read from (for diagnostics). */
   path?: string;
   /** Any parse or mapping errors — non-fatal, surfaced to the renderer. */
@@ -266,6 +277,21 @@ function mapBrowserSection(root: TomlTable, errors: string[]): NonNullable<UserC
   return Object.keys(out).length ? out : undefined;
 }
 
+/**
+ * Key remaps: `[keys] "ctrl+k" = "<C-k><Delete>"` (issue #146).
+ *
+ * Parsing happens here rather than in the renderer so the errors land in the
+ * same place as every other config mistake — and so the renderer receives a
+ * plain, already-validated array it can match against without re-parsing on
+ * every keystroke.
+ */
+function mapKeysSection(root: TomlTable, errors: string[]): KeyRemap[] | undefined {
+  const keys = asTable(root.keys);
+  if (!keys) return undefined;
+  const remaps = parseKeyRemaps(keys, errors);
+  return remaps.length ? remaps : undefined;
+}
+
 function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
   const out: UserConfig = {};
 
@@ -277,6 +303,9 @@ function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
 
   const browser = mapBrowserSection(root, errors);
   if (browser) out.browser = browser;
+
+  const keys = mapKeysSection(root, errors);
+  if (keys) out.keys = keys;
 
   return out;
 }

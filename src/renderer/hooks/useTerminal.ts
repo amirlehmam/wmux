@@ -16,6 +16,7 @@ import { openInWmuxBrowser } from '../utils/open-in-browser';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
+import { applyKeyRemap } from '../key-remaps';
 import { isConEmuSubcommand } from './osc9';
 import '@xterm/xterm/css/xterm.css';
 
@@ -669,6 +670,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Attach custom key handler for Ctrl+C and Ctrl+V (image paste)
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      // User key remaps from `~/.wmux/config.toml` win over everything,
+      // including wmux's own shortcuts — that is the point of remapping
+      // (issue #146). Routed through terminal.input (→ onData) rather than
+      // pty.write so broadcast-input fans a remapped key out like any other.
+      if (applyKeyRemap(event, (data) => terminal.input(data, true))) return false;
       if (event.type === 'keydown' && event.ctrlKey && event.key === 'c') {
         // ConPTY pads lines to full width with real spaces — trim them or
         // pasted blocks carry ragged trailing whitespace (issue #102).

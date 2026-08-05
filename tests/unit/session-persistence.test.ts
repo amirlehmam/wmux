@@ -157,6 +157,78 @@ describe('handleVersionChange (issue #35)', () => {
     expect(mod.listNamedSessions()[0].name).toBe('Auto-backup v1.0.0');
   });
 
+  // Issue #145: "autobackup does its own thing". The backup is what the user
+  // gets restored after an update, so it has to be as complete as the manual
+  // save it stands in for. It used to copy 5 of the 8 fields the auto-save
+  // writes, and the missing browserUrl was visible as every workspace's browser
+  // reverting to the default page on the first launch of a new version.
+  it('carries browser state, width and pinning into the backup', () => {
+    mod.handleVersionChange('1.1.0');
+    mod.saveSession({
+      version: 1,
+      windows: [{
+        bounds: { x: 0, y: 0, width: 1200, height: 800 },
+        sidebarWidth: 240,
+        activeWorkspaceId: 'ws-1',
+        workspaces: [
+          {
+            id: 'ws-1', title: 'Docs', pinned: true, shell: 'pwsh.exe', cwd: 'C:\\proj',
+            splitTree: { type: 'leaf' },
+            browserUrl: 'https://example.com/dashboard',
+            browserWidth: 640,
+          },
+        ],
+      }],
+    } as any);
+
+    mod.handleVersionChange('1.1.1');
+
+    const ws = mod.loadNamedSession('Auto-backup v1.1.0')!.workspaces[0];
+    expect(ws.browserUrl).toBe('https://example.com/dashboard');
+    expect(ws.browserWidth).toBe(640);
+    expect(ws.pinned).toBe(true);
+  });
+
+  it('normalizes a workspace that never opened a browser', () => {
+    mod.handleVersionChange('1.2.0');
+    mod.saveSession({
+      version: 1,
+      windows: [{
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        sidebarWidth: 200,
+        activeWorkspaceId: 'ws-1',
+        workspaces: [{ id: 'ws-1', title: 'Plain', pinned: false, shell: 'bash', splitTree: {} }],
+      }],
+    } as any);
+    mod.handleVersionChange('1.2.1');
+
+    const ws = mod.loadNamedSession('Auto-backup v1.2.0')!.workspaces[0];
+    expect(ws.browserUrl).toBe('');
+    expect(ws.browserWidth).toBeUndefined();
+    expect(ws.pinned).toBe(false);
+  });
+
+  // Multi-window sessions (issue #118) put each window in its own slot. Backing
+  // up windows[0] alone silently dropped every other window's workspaces on
+  // update — the exact data loss #113 added this backup to prevent.
+  it('backs up every window, not just the first', () => {
+    mod.handleVersionChange('1.3.0');
+    const win = (id: string, titles: string[]) => ({
+      bounds: { x: 0, y: 0, width: 1, height: 1 },
+      sidebarWidth: 260,
+      activeWorkspaceId: id,
+      workspaces: titles.map((title, i) => ({
+        id: `${id}-${i}`, title, pinned: false, shell: 'pwsh.exe', splitTree: {},
+      })),
+    });
+    mod.saveSession({ version: 1, windows: [win('a', ['One', 'Two']), win('b', ['Three'])] } as any);
+
+    mod.handleVersionChange('1.3.1');
+
+    const backup = mod.loadNamedSession('Auto-backup v1.3.0')!;
+    expect(backup.workspaces.map((w) => w.title)).toEqual(['One', 'Two', 'Three']);
+  });
+
   it('does not create a backup when there is no auto session or it is empty', () => {
     mod.handleVersionChange('2.0.0'); // no session.json at all
     expect(mod.listNamedSessions()).toEqual([]);
