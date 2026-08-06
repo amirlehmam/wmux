@@ -18,6 +18,7 @@ describe('i18n: translate (issue #56)', () => {
     expect(translate('fr', 'settings.title')).toBe('Paramètres');
     expect(translate('es', 'settings.title')).toBe('Ajustes');
     expect(translate('zh', 'settings.title')).toBe('设置');
+    expect(translate('ko', 'settings.title')).toBe('설정');
   });
 
   it('falls back to English for an untranslated key', () => {
@@ -37,12 +38,13 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'es', 'fr', 'it', 'zh']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'es', 'fr', 'it', 'ko', 'zh']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
       'Español',
       'Français',
       'Italiano',
+      '한국어',
       '中文',
     ]);
   });
@@ -116,6 +118,9 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     expect(detectDefaultLanguage()).toBe('es');
     stubPreferred(['zh-Hans-CN']);
     expect(detectDefaultLanguage()).toBe('zh');
+    // issue #147: a Korean-display machine lands on Korean without touching Settings.
+    stubPreferred(['ko-KR']);
+    expect(detectDefaultLanguage()).toBe('ko');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {
