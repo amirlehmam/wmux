@@ -17,6 +17,7 @@ export const zh: Translation = {
   'settings.general.languageSection': '语言',
   'settings.general.language': '界面语言',
   'settings.general.languageHint': '更改立即生效。未翻译的文本将回退为英文。',
+  'settings.general.languageCustomHint': '将 JSON 文件放入以下目录即可添加或修正语言：',
   'settings.general.appearanceSection': '外观',
   'settings.general.uiTheme': '应用主题',
   'settings.general.uiTheme.system': '跟随系统',

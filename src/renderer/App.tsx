@@ -575,6 +575,12 @@ export default function App() {
       // App UI theme override (issue #67): `[appearance] ui-theme = "..."`.
       const uiTheme = result?.appearance?.uiTheme;
       if (uiTheme) state.setAppearancePrefs({ uiTheme });
+
+      // Community translations from ~/.wmux/locales (issue #147) ride the same
+      // reload so `wmux reload-config` refreshes everything under ~/.wmux, not
+      // just config.toml. Absent on the startup read — the registry already
+      // loaded them synchronously before the store existed.
+      if (result?.locales) state.reloadUserLocales(result.locales);
     };
 
     cfg.getUserConfig().then(apply).catch(() => { /* no-op */ });

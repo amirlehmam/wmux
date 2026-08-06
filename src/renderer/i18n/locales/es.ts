@@ -18,6 +18,8 @@ export const es: Translation = {
   'settings.general.language': 'Idioma de la interfaz',
   'settings.general.languageHint':
     'Los cambios se aplican inmediatamente. El texto sin traducir se muestra en inglés.',
+  'settings.general.languageCustomHint':
+    'Añade un idioma, o corrige uno, colocando un archivo JSON en',
   'settings.general.appearanceSection': 'Apariencia',
   'settings.general.uiTheme': 'Tema de la aplicación',
   'settings.general.uiTheme.system': 'Seguir al sistema',

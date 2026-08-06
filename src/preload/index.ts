@@ -149,6 +149,16 @@ contextBridge.exposeInMainWorld('wmux', {
         return [];
       }
     },
+    // Community translations from ~/.wmux/locales (issue #147). Synchronous:
+    // the i18n registry is built at module load, before the store reads the
+    // persisted language and validates it against the shipped language set.
+    getUserLocalesSync: (): unknown => {
+      try {
+        return ipcRenderer.sendSync('locales:get-all-sync') ?? { locales: [], errors: [] };
+      } catch {
+        return { locales: [], errors: [] };
+      }
+    },
   },
   update: {
     getLatest: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_LATEST),

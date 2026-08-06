@@ -15,6 +15,7 @@ import { isContextMenuInstalled, installContextMenu, uninstallContextMenu } from
 import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-loader';
 import { parseWindowsTerminalConfig, parseGhosttyConfig, loadProjectProfiles, importWindowsTerminalProfiles } from './config-loader';
 import { loadUserConfig, getConfigPath } from './user-config';
+import { loadUserLocales } from './user-locales';
 import { WindowManager } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
@@ -191,7 +192,9 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.handle(IPC_CHANNELS.CONFIG_RELOAD_USER_CONFIG, async () => {
-    const cfg = loadUserConfig();
+    // A reload covers everything under ~/.wmux, so edited community
+    // translations (issue #147) apply without a restart too.
+    const cfg = { ...loadUserConfig(), locales: loadUserLocales() };
     // Broadcast to every open window so all surfaces live-apply the new prefs.
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
@@ -336,6 +339,19 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
   ipcMain.on('settings:set', (_event, key: string, value: unknown) => {
     saveSetting(key, value);
+  });
+
+  // Community translations (~/.wmux/locales/*.json, issue #147). Synchronous
+  // for the same reason as settings:get-all-sync, plus one of its own: the
+  // persisted-language guard rejects any code the registry doesn't know, so a
+  // user-defined language has to be merged in *before* the store initializes or
+  // it would reset to English on every restart.
+  ipcMain.on('locales:get-all-sync', (event) => {
+    try {
+      event.returnValue = loadUserLocales();
+    } catch {
+      event.returnValue = { locales: [], errors: [], dir: '' };
+    }
   });
 
   // The #128 back-channel from the sidebar: answer a blocked pane in place.

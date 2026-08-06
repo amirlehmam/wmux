@@ -17,5 +17,11 @@ export * from './core';
  */
 export function useT(): Translator {
   const lang = useStore((s) => s.language);
+  // Subscribing to the locale revision is what repaints translated UI after
+  // `wmux reload-config` swaps in edited ~/.wmux/locales files (issue #147):
+  // the dictionaries change in place, so no other store value would tell React
+  // to re-render. The value itself is unused — applyUserLocales has already
+  // invalidated the translator cache, so makeT hands back a fresh closure.
+  useStore((s) => s.localeRevision);
   return makeT(lang as Language);
 }

@@ -676,12 +676,36 @@ app.whenReady().then(() => {
         })();
         break;
       }
+      case 'locales.get': {
+        // What ~/.wmux/locales currently yields, including the reasons any file
+        // was rejected — a translator's only feedback loop (issue #147).
+        (async () => {
+          try {
+            const { loadUserLocales } = await import('./user-locales');
+            const result = loadUserLocales();
+            respond({
+              dir: result.dir,
+              errors: result.errors,
+              locales: result.locales.map((l) => ({
+                code: l.code,
+                label: l.label,
+                strings: Object.keys(l.strings).length,
+                path: l.path,
+              })),
+            });
+          } catch (err: any) { respondError(-32000, err.message); }
+        })();
+        break;
+      }
       case 'config.reload': {
         // Re-read ~/.wmux/config.toml and live-apply to every open window.
         (async () => {
           try {
             const { loadUserConfig } = await import('./user-config');
-            const cfg = loadUserConfig();
+            const { loadUserLocales } = await import('./user-locales');
+            // Same contract as the IPC path: one reload covers all of ~/.wmux,
+            // including community translations (issue #147).
+            const cfg = { ...loadUserConfig(), locales: loadUserLocales() };
             for (const win of BrowserWindow.getAllWindows()) {
               if (!win.isDestroyed()) {
                 win.webContents.send('config:userConfigUpdated', cfg);

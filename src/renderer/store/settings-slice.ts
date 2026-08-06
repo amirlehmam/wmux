@@ -1,6 +1,12 @@
 import { StateCreator } from 'zustand';
 import { QuickLaunchProfile } from '../../shared/types';
-import { Language, detectDefaultLanguage, isLanguage } from '../i18n/core';
+import {
+  Language,
+  applyUserLocales,
+  detectDefaultLanguage,
+  getLocaleRevision,
+  isLanguage,
+} from '../i18n/core';
 
 // ─── Persistence helpers (issue #12 + issue #15 + issue #19) ─────────────────
 // Zustand has no persistence middleware here, so any pref that lives only in
@@ -437,6 +443,13 @@ export interface SettingsSlice {
   /** Selected UI language (issue #56). */
   language: Language;
   /**
+   * Bumped when ~/.wmux/locales is re-read (issue #147). Runtime-only: it
+   * exists so `useT` has something to subscribe to, since swapping the
+   * dictionaries in place changes no other store value and React would
+   * otherwise keep the stale strings on screen until the next unrelated render.
+   */
+  localeRevision: number;
+  /**
    * Broadcast-input mode (issue #64, tmux `synchronize-panes`): when on, typed
    * input + Enter fan out to every terminal pane in the workspace. Runtime-only
    * (deliberately not persisted) — it's a transient "drive all agents at once"
@@ -455,6 +468,8 @@ export interface SettingsSlice {
   setAppearancePrefs(prefs: Partial<AppearancePrefs>): void;
   setQuickLaunchProfiles(profiles: QuickLaunchProfile[]): void;
   setLanguage(language: Language): void;
+  /** Re-read ~/.wmux/locales into the i18n registry and repaint (issue #147). */
+  reloadUserLocales(payload: unknown): void;
   toggleBroadcastInput(): void;
 }
 
@@ -471,6 +486,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   appearancePrefs:   { ...DEFAULT_APPEARANCE_PREFS,   ...loadPersisted<AppearancePrefs>(STORAGE_KEYS.appearancePrefs) },
   quickLaunchProfiles: loadPersistedArray<QuickLaunchProfile>(STORAGE_KEYS.quickLaunchProfiles),
   language:          loadPersistedLanguage(),
+  localeRevision:    getLocaleRevision(),
   broadcastInputActive: false,
 
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void {
@@ -546,6 +562,17 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setLanguage(language: Language): void {
     persist(STORAGE_KEYS.language, language);
     set({ language });
+  },
+
+  reloadUserLocales(payload: unknown): void {
+    applyUserLocales(payload);
+    set((state) => ({
+      localeRevision: getLocaleRevision(),
+      // The active language can vanish mid-session if the user deletes the file
+      // that defined it. isLanguage() re-checks against the rebuilt registry, so
+      // we fall back to a real language instead of rendering raw keys.
+      language: isLanguage(state.language) ? state.language : detectDefaultLanguage(),
+    }));
   },
 
   toggleBroadcastInput(): void {

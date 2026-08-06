@@ -23,6 +23,9 @@ export const en = {
   'settings.general.language': 'Interface language',
   'settings.general.languageHint':
     'Changes apply immediately. Untranslated text falls back to English.',
+  // Community translations (issue #147) — the path is appended by the panel.
+  'settings.general.languageCustomHint':
+    'Add a language, or correct one, by dropping a JSON file into',
   // Settings — General panel — Appearance (issue #67)
   'settings.general.appearanceSection': 'Appearance',
   'settings.general.uiTheme': 'App theme',

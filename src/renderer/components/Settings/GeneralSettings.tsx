@@ -104,6 +104,12 @@ export default function GeneralSettings() {
       </div>
 
       <p className="settings-hint">{t('settings.general.languageHint')}</p>
+      {/* Someone who wants to fix a translation looks here, not in the docs
+          (issue #147). The path is the discoverable part — `wmux locales`
+          reports what loaded and why anything was rejected. */}
+      <p className="settings-hint">
+        {t('settings.general.languageCustomHint')} <code>~/.wmux/locales</code>
+      </p>
 
       <h3 className="settings-section-title">{t('settings.general.appearanceSection')}</h3>
 

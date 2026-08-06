@@ -220,6 +220,25 @@ async function cmdConfig(args: string[]): Promise<void> {
   }
 }
 
+/**
+ * Community translations (issue #147). `list` is the default because the whole
+ * point is telling a translator which of their files loaded and which were
+ * rejected — silence on a typo'd filename is the failure mode to avoid.
+ */
+async function cmdLocales(args: string[]): Promise<void> {
+  const sub = args[1];
+  if (!sub || sub === 'list' || sub === 'show') {
+    print(await sendV2('locales.get'));
+  } else if (sub === 'reload') {
+    print(await sendV2('config.reload'));
+  } else if (sub === 'path') {
+    const home = process.env.USERPROFILE || process.env.HOME || '';
+    console.log(`${home}\\.wmux\\locales`);
+  } else {
+    console.error('Usage: wmux locales [list|reload|path]'); process.exit(1);
+  }
+}
+
 async function cmdLayout(args: string[]): Promise<void> {
   if (args[1] !== 'grid') { console.error(`Unknown layout command: ${args[1]}`); process.exit(1); }
   const params: any = {};
@@ -603,6 +622,7 @@ const COMMAND_SPECS = {
   // User config
   'reload-config': { usage: 'wmux reload-config' },
   config: { usage: 'wmux config <show|reload|path>' },
+  locales: { usage: 'wmux locales [list|reload|path]' },
 
   // Pane
   split: {
@@ -849,6 +869,8 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
   // User config (~/.wmux/config.toml)
   'reload-config': async () => print(await sendV2('config.reload')),
   config: cmdConfig,
+  // Community translations (~/.wmux/locales/*.json)
+  locales: cmdLocales,
 
   // Pane
   split: async (args) => {
@@ -1016,6 +1038,7 @@ Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
             (surface defaults to $WMUX_SURFACE_ID — an agent in a pane needs no id)
 Config:     config show|reload|path   (edits ~/.wmux/config.toml — see docs)
             reload-config             (shorthand for 'config reload')
+Locales:    locales [list|reload|path] (community UI translations in ~/.wmux/locales)
 
 Help:       wmux help <command>       (per-command usage; works for every command)
             wmux <command> --help     (same, except for free-form commands such as

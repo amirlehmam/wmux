@@ -24,6 +24,9 @@ export const ko: Translation = {
   'settings.general.language': '인터페이스 언어',
   'settings.general.languageHint':
     '변경 사항은 즉시 적용됩니다. 번역되지 않은 텍스트는 영어로 표시됩니다.',
+  // 커뮤니티 번역 (issue #147) — 경로는 패널에서 뒤에 붙습니다.
+  'settings.general.languageCustomHint':
+    'JSON 파일을 다음 폴더에 넣으면 언어를 추가하거나 수정할 수 있습니다:',
   // 설정 — 일반 패널 — 모양 (issue #67)
   'settings.general.appearanceSection': '모양',
   'settings.general.uiTheme': '앱 테마',
