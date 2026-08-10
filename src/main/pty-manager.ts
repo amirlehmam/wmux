@@ -6,6 +6,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { SurfaceId } from '../shared/types';
 import { getPipePath, readPipeToken } from '../shared/instance';
 import { PtyLedger } from './pty-ledger';
+import { attachErrorSink, installPtyCrashGuard } from './pty-crash-guard';
+
+// Applied once, at load, before any PTY can exist — the exit callback it guards
+// is registered by node-pty inside pty.spawn(), so a later install would leave
+// every already-spawned pane on the unguarded path (issue #150).
+installPtyCrashGuard();
 
 // ─── Shell resolution ──────────────────────────────────────────────────────
 // Validates that a shell executable exists before spawning.
@@ -383,6 +389,15 @@ export class PtyManager {
       console.warn('[wmux] spawn with bundled conpty.dll failed, retrying with inbox ConPTY:', err);
       ptyProcess = pty.spawn(shell, args, { ...spawnOptions, useConptyDll: false });
     }
+
+    // node-pty re-throws unrecognised socket errors out of a libuv callback
+    // unless the terminal already carries error listeners, and it registers
+    // none of its own — so an error on this pane's pipe crashes the main
+    // process and every other pane with it (issue #150). Claim the error here
+    // and let the pane die alone.
+    attachErrorSink(ptyProcess as unknown as Parameters<typeof attachErrorSink>[0], (err) => {
+      console.warn(`[wmux] pty ${id} socket error (contained):`, err);
+    });
 
     const entry: PtyEntry = {
       pty: ptyProcess,

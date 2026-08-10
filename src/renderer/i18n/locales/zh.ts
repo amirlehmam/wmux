@@ -511,7 +511,7 @@ export const zh: Translation = {
   'surfaceTab.profileBadge': '项目',
   // 设置 — 代理集成授权 (issue #132)
   'settings.integration.section': '代理集成',
-  'settings.integration.enable': '允许 wmux 配置 Claude Code 与 OpenCode',
+  'settings.integration.enable': '允许 wmux 配置 Claude Code、OpenCode 与 Kiro',
   'settings.integration.hint':
     'wmux 会修改主目录中的文件，使编码代理能够驱动其浏览器面板、Markdown 视图和侧边栏状态。在此关闭某项时，也会一并移除它写入的内容。',
   'settings.integration.instructions': '代理指令',

@@ -531,7 +531,7 @@ export const en = {
   'surfaceTab.profileBadge': 'project',
   // Settings — agent integration consent (issue #132)
   'settings.integration.section': 'Agent integration',
-  'settings.integration.enable': 'Let wmux configure Claude Code and OpenCode',
+  'settings.integration.enable': 'Let wmux configure Claude Code, OpenCode and Kiro',
   'settings.integration.hint':
     'wmux edits files in your home directory so coding agents can drive its browser panel, markdown views and sidebar status. Turning something off here also removes what it wrote.',
   'settings.integration.instructions': 'Agent instructions',

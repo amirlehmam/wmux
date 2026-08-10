@@ -5,7 +5,7 @@ import type { TranslationKey } from '../../i18n';
 /**
  * Settings → General → Agent integration (issue #132).
  *
- * wmux writes into ~/.claude and ~/.config/opencode so coding agents can drive
+ * wmux writes into ~/.claude, ~/.config/opencode and ~/.kiro so coding agents drive
  * its browser panel, markdown views and sidebar. It used to do that silently on
  * every launch, which made deleting any of it pointless — the next launch put it
  * straight back. This panel is the "you can change your mind" half of the fix:
@@ -35,7 +35,7 @@ const FEATURES: Array<{ key: Feature; labelKey: TranslationKey; labelFallback: s
     key: 'instructions',
     labelKey: 'settings.integration.instructions',
     labelFallback: 'Agent instructions',
-    pathHint: '~/.claude/CLAUDE.md · ~/.config/opencode/AGENTS.md',
+    pathHint: '~/.claude/CLAUDE.md · ~/.config/opencode/AGENTS.md · ~/.kiro/steering/wmux.md',
   },
   {
     key: 'hooks',
@@ -96,7 +96,7 @@ export default function AgentIntegrationSettings() {
 
       <div className="settings-row">
         <label className="settings-label">
-          {t('settings.integration.enable', 'Let wmux configure Claude Code and OpenCode')}
+          {t('settings.integration.enable', 'Let wmux configure Claude Code, OpenCode and Kiro')}
         </label>
         <input
           type="checkbox"

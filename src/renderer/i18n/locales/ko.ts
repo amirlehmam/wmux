@@ -537,7 +537,7 @@ export const ko: Translation = {
   'surfaceTab.profileBadge': '프로젝트',
   // 설정 — 에이전트 연동 동의 (issue #132)
   'settings.integration.section': '에이전트 연동',
-  'settings.integration.enable': 'wmux가 Claude Code와 OpenCode를 설정하도록 허용',
+  'settings.integration.enable': 'wmux가 Claude Code, OpenCode, Kiro를 설정하도록 허용',
   'settings.integration.hint':
     '코딩 에이전트가 wmux의 브라우저 패널, 마크다운 보기, 사이드바 상태를 제어할 수 있도록 wmux가 홈 디렉터리의 파일을 수정합니다. 여기서 항목을 끄면 wmux가 기록한 내용도 함께 제거됩니다.',
   'settings.integration.instructions': '에이전트 지침',

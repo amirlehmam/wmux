@@ -51,6 +51,7 @@
     { "from": "dist/cli/wmux.js", "to": "cli/wmux.js" },
     { "from": "dist/cli/wmux-hook.js", "to": "cli/wmux-hook.js" },
     { "from": "src/cli-bin", "to": "cli-bin" },
-    { "from": "resources/wmux-orchestrator", "to": "wmux-orchestrator" }
+    { "from": "resources/wmux-orchestrator", "to": "wmux-orchestrator" },
+    { "from": "resources/opencode-plugin", "to": "opencode-plugin" }
   ]
 }

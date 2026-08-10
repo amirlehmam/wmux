@@ -54,6 +54,7 @@ docs/             Planning docs
 |------|------|
 | `index.ts` | Entry point, AppUserModelId, auto-save (30s), pipe server startup, V2 pipe handlers (workspace/pane/surface/markdown/sidebar/notification) |
 | `pty-manager.ts` | PTY lifecycle (create with surfaceId, write, resize, kill) |
+| `pty-crash-guard.ts` | Keeps a PTY-side error from killing the whole app (issue #150). Every pane's PTY lives in main, so a throw there takes the window down: wraps node-pty's `_$onProcessExit` (a throw there becomes an unhandled C++ `Napi::Error` in `conpty.node` → `abort()`) and claims each terminal's `error` event (node-pty re-throws socket errors when fewer than 2 listeners exist, and registers none). Installed at module load — after `pty.spawn` is too late |
 | `pipe-server.ts` | Named pipe `\\.\pipe\wmux` — V1 text (shell hooks), V2 JSON-RPC (CLI/agents) |
 | `cdp-bridge.ts` | Browser webview control via Chrome DevTools Protocol |
 | `cdp-proxy.ts` | CDP WebSocket proxy |
@@ -61,7 +62,8 @@ docs/             Planning docs
 | `window-manager.ts` | Electron BrowserWindow creation/management |
 | `ipc-handlers.ts` | All IPC channel handlers |
 | `claude-context.ts` | Injects wmux instructions into `~/.claude/CLAUDE.md`, configures hooks, installs wmux-orchestrator plugin — **and the inverse of each**, since 0.40.0 |
-| `agent-integration.ts` | Consent gate for every write outside `%APPDATA%\wmux` (issue #132). Asks on first launch, stores `unset`/`granted`/`declined` in wmux's own settings.json, and reconciles `~/.claude` + `~/.config/opencode` to match. Nothing in `claude-context.ts` or `opencode-context.ts` may be called directly from startup any more — route it through here |
+| `agent-integration.ts` | Consent gate for every write outside `%APPDATA%\wmux` (issue #132). Asks on first launch, stores `unset`/`granted`/`declined` in wmux's own settings.json, and reconciles `~/.claude` + `~/.config/opencode` + `~/.kiro` to match. Nothing in `claude-context.ts`, `opencode-context.ts` or `kiro-context.ts` may be called directly from startup any more — route it through here |
+| `kiro-context.ts` | Kiro CLI support (issue #148). Writes `~/.kiro/steering/wmux.md` — a dedicated global steering file, since Kiro loads every `.md` in that dir, so there is no shared file to splice into. No hooks: Kiro's are per-project (`.kiro/hooks/`), and writing into every repo the user opens is the #132 mistake. State comes from `wmux report-agent` instead |
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
 | `agent-state.ts` | Declared agent run state — blocked/working/idle, run refcount, `seq` dedupe, metadata TTL (issue #128). Also the back-channel: declared `choices` + `answerAgent`. **Answering never clears `blocked`** — the agent must confirm, or a mis-declared key silently stops a stuck pane asking for help |
 | `agent-state-rpc.ts` | `pane.report_agent` & friends, routed off the main V2 switch |
@@ -215,6 +217,7 @@ cp dist/cli/wmux-hook.js ../wmux-release-staging/resources/cli/wmux-hook.js   # 
 rm -rf ../wmux-release-staging/resources/shell-integration && mkdir -p ../wmux-release-staging/resources/shell-integration
 cp -r src/shell-integration/* ../wmux-release-staging/resources/shell-integration/
 rm -rf ../wmux-release-staging/resources/wmux-orchestrator && cp -r resources/wmux-orchestrator ../wmux-release-staging/resources/wmux-orchestrator
+rm -rf ../wmux-release-staging/resources/opencode-plugin && cp -r resources/opencode-plugin ../wmux-release-staging/resources/opencode-plugin   # missing from every zip until 0.47.0 → OpenCode integration silently absent in installs (issue #149)
 
 # 8. Embed icon + metadata in exe (rcedit)
 # CRITICAL: rcedit exports `{ rcedit }` (named export). `const rcedit =
@@ -288,6 +291,7 @@ rm -rf .asar-staging build-out /tmp/asar-verify ../wmux-release-staging
 - [ ] node-pty native modules present in `app.asar.unpacked/node_modules/node-pty/prebuilds/win32-x64/`
 - [ ] PR-specific markers grep-confirmed inside the packed ASAR (extracted to /tmp)
 - [ ] wmux-orchestrator plugin copied to release staging
+- [ ] opencode-plugin copied to release staging (issue #149) — `npm test` now derives this from `process.resourcesPath` usage in `src/main/`, so a new runtime resource that isn't in `extraResources` fails the release build
 - [ ] rcedit applied (icon + version metadata) — `{ rcedit }` destructured
 - [ ] `latest.yml` generated (sha512 + size of the final zip) and uploaded as a release asset — electron-updater 404s without it (issue #68)
 - [ ] Zip created and uploaded to GitHub release
