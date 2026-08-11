@@ -8,6 +8,7 @@ import DiffPane from '../Diff/DiffPane';
 import NotificationRing from '../Terminal/NotificationRing';
 import SurfaceTabBar from './SurfaceTabBar';
 import { useStore } from '../../store';
+import { keyDismissesAttention } from './attention-dismiss';
 import type { SurfaceDragCommitOptions, SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import {
   getSurfaceDragDropDecision,
@@ -64,6 +65,9 @@ export default function PaneWrapper({
 
   const surfaceIds = useMemo(() => surfaces.map((s) => s.id), [surfaces]);
 
+  // Root element — the attention ring's interaction listeners hang off it.
+  const paneRef = useRef<HTMLDivElement>(null);
+
   const hasUnread = useMemo(
     () => notifications.some((n) => !n.read && surfaceIds.includes(n.surfaceId as SurfaceId)),
     [notifications, surfaceIds],
@@ -99,14 +103,54 @@ export default function PaneWrapper({
     prevUnreadCount.current = currentCount;
   }, [unreadCount]);
 
-  // When pane receives focus, mark all surfaces as read
+  const markPaneRead = useCallback(() => {
+    for (const surfaceId of surfaceIds) markRead(surfaceId as SurfaceId);
+  }, [surfaceIds, markRead]);
+
+  // When pane receives focus, mark all surfaces as read.
+  //
+  // Deliberately keyed on the focus TRANSITION and nothing else. Adding
+  // `hasUnread` here is the tempting one-word fix for the stuck ring below, and
+  // it is wrong: the effect would then run on the same render the notification
+  // arrives, so a pane you are already looking at would clear its ring before
+  // ever painting it — no glow, and the 950ms flash above cut off mid-animation.
+  // That trades a ring that will not leave for one you can never see.
+  //
+  // Still needed alongside the interaction listener: switching panes by keyboard
+  // (Ctrl+Alt+arrow) lands no click and no keystroke inside the new pane.
   useEffect(() => {
-    if (isFocused && hasUnread) {
-      for (const surfaceId of surfaceIds) {
-        markRead(surfaceId as SurfaceId);
-      }
-    }
+    if (isFocused && hasUnread) markPaneRead();
   }, [isFocused]);
+
+  // ...and clear it on actual INTERACTION, which is the case focus alone misses.
+  //
+  // A notification that arrives while the pane is ALREADY focused never changes
+  // `isFocused`, so the effect above does not re-run and the ring sits there
+  // while the user types into the very pane it is pointing at. The only way out
+  // was to click another pane and click back — manufacturing the transition by
+  // hand.
+  //
+  // Capture phase is load-bearing for keydown: xterm's hidden helper textarea is
+  // a descendant of this element and consumes the event, so a bubble-phase
+  // listener here would never see a keystroke — only clicks would dismiss, and
+  // typing (the exact case reported) still would not.
+  //
+  // Attached only while there is something to dismiss, so the common case costs
+  // no listeners at all.
+  useEffect(() => {
+    const el = paneRef.current;
+    if (!hasUnread || !el) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (keyDismissesAttention(e.key)) markPaneRead();
+    };
+    el.addEventListener('keydown', onKeyDown, true);
+    el.addEventListener('mousedown', markPaneRead, true);
+    return () => {
+      el.removeEventListener('keydown', onKeyDown, true);
+      el.removeEventListener('mousedown', markPaneRead, true);
+    };
+  }, [hasUnread, markPaneRead]);
 
   // Keyboard shortcut listeners for find (Ctrl+F) and copy mode (Ctrl+Alt+[)
   useEffect(() => {
@@ -570,7 +614,10 @@ export default function PaneWrapper({
   };
 
   return (
-    <div className={`pane-wrapper ${isFocused ? 'pane-wrapper--focused' : ''} ${dragActive ? 'pane-wrapper--drag-active' : ''}`}>
+    <div
+      ref={paneRef}
+      className={`pane-wrapper ${isFocused ? 'pane-wrapper--focused' : ''} ${dragActive ? 'pane-wrapper--drag-active' : ''}`}
+    >
       <SurfaceTabBar
         paneId={paneId}
         workspaceShell={workspace?.shell}
