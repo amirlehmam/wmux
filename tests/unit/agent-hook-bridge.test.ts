@@ -4,52 +4,107 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
-import { hookToAgentReport, applyHookToAgentState } from '../../src/main/agent-hook-bridge';
+import { hookToAgentReport, applyHookToAgentState, hookEventName, resetHookBridge } from '../../src/main/agent-hook-bridge';
 import { getAgentState, resetAgentState } from '../../src/main/agent-state';
 import { SurfaceId } from '../../src/shared/types';
 
 const surf = 'surf-hook-1' as SurfaceId;
 
-beforeEach(() => resetAgentState());
+beforeEach(() => {
+  resetAgentState();
+  resetHookBridge();
+});
+
+/**
+ * Turn context for the pure mapper. Defaults to a mid-turn pane on the 0.48.0
+ * hook set, which is what every event other than Notification ignores anyway.
+ */
+const ctx = (over: Partial<Parameters<typeof hookToAgentReport>[2]> = {}) =>
+  ({ known: true, runDepth: 1, turnStartTracked: true, ...over });
 
 describe('hookToAgentReport', () => {
   it('Notification parks the pane on the user and keeps the message as the reason', () => {
-    expect(hookToAgentReport('Notification', 'Claude needs your permission to use Bash'))
+    expect(hookToAgentReport('Notification', 'Claude needs your permission to use Bash', ctx()))
       .toEqual({ awaitingHuman: true, reason: 'Claude needs your permission to use Bash' });
   });
 
-  it('the 60s idle nudge also counts as blocked', () => {
-    // Deliberate: the agent genuinely is waiting on the user. Text-sniffing to
-    // tell a nudge from a permission prompt would break on any rewording, and
-    // would fail in the dangerous direction.
-    expect(hookToAgentReport('Notification', 'Claude is waiting for your input')?.awaitingHuman).toBe(true);
+  it('the 60s idle nudge after a finished turn is NOT blocked (issue #151)', () => {
+    // Same hook, different situation. A prompt can only exist inside a live
+    // turn, so depth 0 at Notification time means this is the idle nudge — and
+    // "Needs you" on a pane with nothing to answer is how a session that was
+    // /clear'd and left alone starts asking for attention a minute later.
+    expect(hookToAgentReport('Notification', 'Claude is waiting for your input', ctx({ runDepth: 0 })))
+      .toBeNull();
+  });
+
+  it('a prompt inside a live turn is still blocked', () => {
+    expect(hookToAgentReport('Notification', 'permission to use Bash', ctx({ runDepth: 1 }))?.awaitingHuman)
+      .toBe(true);
+  });
+
+  it('parks the pane for both when the opening hooks are not installed', () => {
+    // A settings.json written before 0.48.0 sits at depth 0 through an entire
+    // turn, so the discriminator carries no information — and guessing would
+    // fail in the dangerous direction, swallowing a real permission prompt.
+    expect(hookToAgentReport('Notification', 'permission to use Bash', ctx({ runDepth: 0, turnStartTracked: false }))?.awaitingHuman)
+      .toBe(true);
+  });
+
+  it('parks the pane for a surface it holds no record for', () => {
+    // Depth 0 by default rather than by observation — what a main process
+    // restarted in the middle of someone's turn sees.
+    expect(hookToAgentReport('Notification', 'permission to use Bash', ctx({ known: false, runDepth: 0 }))?.awaitingHuman)
+      .toBe(true);
   });
 
   it('PostToolUse asserts a run and clears any block, idempotently', () => {
-    expect(hookToAgentReport('PostToolUse', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
+    expect(hookToAgentReport('PostToolUse', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
   });
 
   it('SubagentStop keeps the parent turn running (issue #151)', () => {
     // Not a decrement: subagents share the parent's surface id, so the first one
     // to finish used to drain the refcount and report the pane idle while the
     // parent and its siblings were still working.
-    expect(hookToAgentReport('SubagentStop', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
+    expect(hookToAgentReport('SubagentStop', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
   });
 
   it('Stop is decisive: nothing running, nothing waiting', () => {
-    expect(hookToAgentReport('Stop', null)).toEqual({ awaitingHuman: false, runDepth: 0 });
+    expect(hookToAgentReport('Stop', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 0 });
   });
 
   it('SessionStart registers the pane as an idle session (issue #151)', () => {
-    expect(hookToAgentReport('SessionStart', null)).toEqual({ awaitingHuman: false, runDepth: 0 });
+    expect(hookToAgentReport('SessionStart', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 0 });
   });
 
   it('UserPromptSubmit starts the turn and ends the wait (issue #151)', () => {
-    expect(hookToAgentReport('UserPromptSubmit', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
+    expect(hookToAgentReport('UserPromptSubmit', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
   });
 
   it('PreToolUse asserts the run before the tool, not after it (issue #151)', () => {
-    expect(hookToAgentReport('PreToolUse', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
+    expect(hookToAgentReport('PreToolUse', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
+  });
+});
+
+describe('hookEventName', () => {
+  it('reads the event when the payload names one', () => {
+    expect(hookEventName({ event: 'Stop' })).toBe('Stop');
+  });
+
+  it('resolves a bare tool payload to PostToolUse (issue #151)', () => {
+    // The per-tool PostToolUse entries invoke the hook helper by bare tool
+    // name, so they arrive with a `tool` and no `event` at all. Gating on
+    // `params.event` dropped every one of them and made the PostToolUse case
+    // unreachable.
+    expect(hookEventName({ tool: 'Bash' })).toBe('PostToolUse');
+  });
+
+  it('ignores an event outside the model', () => {
+    expect(hookEventName({ event: 'PreCompact' })).toBeNull();
+  });
+
+  it('ignores a payload that names neither', () => {
+    expect(hookEventName({})).toBeNull();
+    expect(hookEventName(null)).toBeNull();
   });
 });
 
@@ -139,6 +194,25 @@ describe('applyHookToAgentState', () => {
     applyHookToAgentState(surf, 'Notification', 'waiting');
     applyHookToAgentState(surf, 'Stop', null);
     expect(getAgentState(surf)).toMatchObject({ state: 'idle', blockedReason: null });
+  });
+
+  it('the idle nudge does not resurrect a finished turn (issue #151)', () => {
+    // The sequence that produced the report: a session is /clear'd and left
+    // alone. /clear wipes the transcript but not Claude Code's idle timer, so
+    // 60s after the Stop the nudge lands on an empty conversation.
+    applyHookToAgentState(surf, 'SessionStart', null);
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    applyHookToAgentState(surf, 'Stop', null);
+    expect(getAgentState(surf)?.state).toBe('idle');
+
+    applyHookToAgentState(surf, 'Notification', 'Claude is waiting for your input');
+    expect(getAgentState(surf)).toMatchObject({ state: 'idle', blockedReason: null });
+  });
+
+  it('but a permission prompt mid-turn still parks the pane', () => {
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    applyHookToAgentState(surf, 'Notification', 'permission to use Bash');
+    expect(getAgentState(surf)).toMatchObject({ state: 'blocked', blockedReason: 'permission to use Bash' });
   });
 
   it('a subagent finishing does not end the outer turn (issue #151)', () => {

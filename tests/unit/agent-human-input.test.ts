@@ -102,3 +102,51 @@ describe('noteHumanInput', () => {
     expect(getAgentState(SID)).toMatchObject({ state: 'blocked', blockedReason: 'still waiting' });
   });
 });
+
+describe('Escape interrupts a run (issue #151)', () => {
+  beforeEach(() => resetAgentState());
+
+  it('retracts a run the user cancelled', () => {
+    // Claude Code fires NO hook on interrupt — measured directly, `updatedAt`
+    // is identical before and after. Without this the pane keeps claiming
+    // `working` for a turn that is over, until the next prompt or the 15-minute
+    // trust window.
+    reportAgent(SID, { awaitingHuman: false, runDepth: 1 });
+    expect(noteHumanInput(SID, '')).toBe(true);
+    expect(getAgentState(SID)?.state).toBe('idle');
+  });
+
+  it('escaping a permission prompt clears the prompt with the run', () => {
+    reportAgent(SID, { awaitingHuman: true, reason: 'permission to use Bash', runDepth: 1 });
+    noteHumanInput(SID, '');
+    expect(getAgentState(SID)).toMatchObject({ state: 'idle', blockedReason: null, choices: [] });
+  });
+
+  it('an arrow key is not an interrupt', () => {
+    // Being sent to a pane and scrolling to see what it wants is the normal
+    // first move; it must not retract the run that sent you there.
+    reportAgent(SID, { awaitingHuman: false, runDepth: 1 });
+    expect(noteHumanInput(SID, '[A')).toBe(false);
+    expect(getAgentState(SID)?.state).toBe('working');
+  });
+
+  it('Alt+key is not an interrupt', () => {
+    // Alt+b arrives as ESC followed by a character, which is why the test is an
+    // exact match on the single byte rather than isAnsweringInput's "contains a
+    // bare ESC".
+    reportAgent(SID, { awaitingHuman: false, runDepth: 1 });
+    expect(noteHumanInput(SID, 'b')).toBe(false);
+    expect(getAgentState(SID)?.state).toBe('working');
+  });
+
+  it('leaves a plain shell alone', () => {
+    expect(noteHumanInput('surf-shell' as SurfaceId, '')).toBe(false);
+    expect(getAgentState('surf-shell' as SurfaceId)).toBeUndefined();
+  });
+
+  it('never asserts anything — an idle pane stays idle', () => {
+    reportAgent(SID, { awaitingHuman: false, runDepth: 0 });
+    expect(noteHumanInput(SID, '')).toBe(false);
+    expect(getAgentState(SID)?.state).toBe('idle');
+  });
+});
