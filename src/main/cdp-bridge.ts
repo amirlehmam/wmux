@@ -215,7 +215,14 @@ export class CDPBridge {
     try { wc = webContents.fromId(target.wcId); } catch { throw new Error('browser_not_open'); }
     if (!wc || wc.isDestroyed()) throw new Error('browser_not_open');
     const loadPromise = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { wc?.removeListener('did-finish-load', onFinish); reject(new Error('timeout')); }, timeout);
+      const timer = setTimeout(() => {
+        wc?.removeListener('did-finish-load', onFinish);
+        // Say which page and how long. The CLI used to hang up before this could
+        // arrive, so a bare 'timeout' was indistinguishable from its own.
+        reject(new Error(
+          `navigate timed out after ${timeout}ms — ${url} never finished loading. It may still be loading in the browser pane.`,
+        ));
+      }, timeout);
       const onFinish = () => { clearTimeout(timer); resolve(); };
       wc?.once('did-finish-load', onFinish);
     });
@@ -383,6 +390,8 @@ export class CDPBridge {
       }
       await new Promise((r) => setTimeout(r, 300));
     }
-    throw new Error('timeout');
+    throw new Error(
+      `wait timed out after ${timeout}ms — ${ref} never appeared. Run browser.snapshot to see what the page exposes now.`,
+    );
   }
 }

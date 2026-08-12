@@ -396,6 +396,8 @@ wmux read-screen [--lines N] [--surface <id>] | trigger-flash
 wmux browser open <url> | snapshot | click eN | type eN <text>
 wmux browser fill eN <value> | get-text | screenshot | eval <js>
 wmux browser back | forward | reload
+wmux browser <verb> [--surface <id>]   # whose browser to drive; defaults to
+                                       # $WMUX_SURFACE_ID inside a pane
 
 # Declared agent state (issue #128) — blocked / working / idle, no screen scraping.
 # Surface defaults to $WMUX_SURFACE_ID, so an agent inside a pane needs no id.
