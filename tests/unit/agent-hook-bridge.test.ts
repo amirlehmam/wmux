@@ -68,6 +68,15 @@ describe('hookToAgentReport', () => {
     expect(hookToAgentReport('SubagentStop', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
   });
 
+  it('SubagentStop sustains a live turn but never starts one (issue #151)', () => {
+    // Measured, twice, on two panes: Claude Code fires SubagentStop 1.8-2.2s
+    // AFTER the parent's Stop, not before it. Asserting depth 1 unconditionally
+    // therefore resurrects the run Stop had just ended — and with a strictly
+    // newer hookAt, so the wall-clock ordering gate waves it through.
+    expect(hookToAgentReport('SubagentStop', null, ctx({ runDepth: 0 }))).toBeNull();
+    expect(hookToAgentReport('SubagentStop', null, ctx({ known: false, runDepth: 0 }))).toBeNull();
+  });
+
   it('Stop is decisive: nothing running, nothing waiting', () => {
     expect(hookToAgentReport('Stop', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 0 });
   });
@@ -225,6 +234,24 @@ describe('applyHookToAgentState', () => {
       expect(getAgentState(surf)?.state).toBe('working');
     }
     applyHookToAgentState(surf, 'Stop', null);
+    expect(getAgentState(surf)?.state).toBe('idle');
+  });
+
+  it('a SubagentStop trailing the parent Stop does not resurrect the turn (issue #151)', () => {
+    // The real wire order, with the real stamps: Stop at T, SubagentStop at
+    // T+2s. The later stamp is what makes this bite — acceptHookAt orders by
+    // hookAt, so the trailing report is newer and cannot be dropped as a replay.
+    applyHookToAgentState(surf, 'UserPromptSubmit', null, 1000);
+    applyHookToAgentState(surf, 'PostToolUse', null, 2000);
+    applyHookToAgentState(surf, 'Stop', null, 3000);
+    expect(getAgentState(surf)?.state).toBe('idle');
+
+    applyHookToAgentState(surf, 'SubagentStop', null, 5000);
+    expect(getAgentState(surf)?.state).toBe('idle');
+
+    // And the 60s idle nudge that follows must still read as a nudge, not as a
+    // prompt — the resurrection defeated that gate too.
+    applyHookToAgentState(surf, 'Notification', 'Claude is waiting for your input', 65000);
     expect(getAgentState(surf)?.state).toBe('idle');
   });
 });

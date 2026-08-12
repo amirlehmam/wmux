@@ -195,9 +195,8 @@ export function hookToAgentReport(
     case 'PostToolUse':
       return { awaitingHuman: false, runDepth: 1 };
 
-    // One parallel subagent finished — and the parent turn is, by construction,
-    // still running: it has a result to read, and Claude Code fires the parent's
-    // `Stop` after every subagent has stopped.
+    // One parallel subagent finished. It may SUSTAIN a turn; it may never START
+    // one.
     //
     // This used to decrement the refcount, which was wrong in the way that
     // produced the loudest half of issue #151. Subagent hooks inherit the
@@ -207,7 +206,37 @@ export function hookToAgentReport(
     // with the parent and two siblings still working. A refcount only survives
     // contact with reality when every increment is paired, and these are not
     // paired; the parent's `Stop` is the pairing, and it is already decisive.
+    //
+    // Fixing that by asserting an unconditional depth of 1 rested on a premise
+    // that measurement does not support: that Claude Code fires the parent's
+    // `Stop` only after every subagent has stopped. It does not. Traced at the
+    // hook helper on two independent panes, the wire order is `Stop` first and
+    // `SubagentStop` 1.8-2.2s LATER — so the unconditional form resurrected the
+    // very run `Stop` had just ended, and the pane sat on "Running" until the
+    // 15-minute trust window with the agent idle at its prompt.
+    //
+    // The wall-clock gate in agent-state.ts cannot catch it, and that is the
+    // point worth remembering: it drops reports that are OLDER than what has
+    // been accepted, which is the right defence against two hook processes
+    // racing to the pipe. This is not a race. The trailing report is genuinely
+    // newer; it is the EVENT ORDER that is counter-intuitive, and no amount of
+    // timestamp discipline fixes a report that is late by design.
+    //
+    // Reading the current depth is what separates the two situations, using the
+    // one fact that distinguishes them: the parent's `Stop` has already zeroed
+    // it. So a subagent finishing inside a live turn holds that turn open, and
+    // a subagent finishing after the turn ended says nothing at all. Declining
+    // to report also leaves the freshness stamp alone, so the 60s idle
+    // `Notification` that follows still sees depth 0 and is correctly read as a
+    // nudge rather than a prompt — the resurrection defeated that gate too, and
+    // the pane went on to claim "Needs you" with nothing to answer.
+    //
+    // `known` is checked for the same reason `Notification` checks it: a pane
+    // wmux holds no record for has a depth of 0 by DEFAULT, not by observation.
+    // Nothing is lost by staying quiet there — a turn wmux never saw begin is
+    // not one a subagent's completion should invent.
     case 'SubagentStop':
+      if (!ctx.known || ctx.runDepth === 0) return null;
       return { awaitingHuman: false, runDepth: 1 };
 
     // The turn is over: nothing can still be running and nothing can still be
