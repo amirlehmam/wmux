@@ -111,6 +111,36 @@ export interface HookTurnContext {
  * resolved to `idle`, which for a turn that thinks for a minute or runs one long
  * command is most of the turn (issue #151). The three opening events below are
  * the missing half of the lifecycle.
+ *
+ * ## Who owns the block
+ *
+ * `runDepth` and `awaitingHuman` are two independent facts, and the tool
+ * lifecycle only speaks to the first. A tool starting, finishing, or a subagent
+ * finishing says a turn is in flight; NONE of them is evidence that a question
+ * already on screen has been answered.
+ *
+ * That distinction is not academic, because every hook a pane's agent fires —
+ * including its background shells and its parallel subagents — carries the same
+ * WMUX_SURFACE_ID and lands on the one surface. So an agent that kicks off a
+ * background command and then asks the user a question is, from wmux's side,
+ * a pane that is blocked AND busy at the same time. That is a legitimate state,
+ * and `resolveState` in agent-state.ts already renders it correctly: `blocked`
+ * outranks `runDepth > 0`, so the pane says "needs you" while the work continues
+ * underneath. What broke it was these events retracting the flag on the way past.
+ *
+ * So a block is ended only by something that actually knows a human dealt with it:
+ *
+ *   - `UserPromptSubmit`  — the human replied
+ *   - `Stop`              — the turn ended, so there is nothing left to answer
+ *   - `noteHumanInput`    — the human typed in the pane (agent-state.ts)
+ *   - an explicit `report-agent --unblocked` from the agent
+ *
+ * The cost is that a prompt answered through `wmux answer-agent` — a relay, not
+ * a local keystroke — keeps saying "needs you" until the turn ends rather than
+ * until the next tool. That is answerAgent's rule 3 working as designed: the
+ * agent confirms, wmux does not assume. `answeredAt` is what the UI shows in the
+ * meantime ("sent — waiting for the agent"). A block that lingers is visible and
+ * self-correcting; one that vanishes while the agent is still stuck is the bug.
  */
 export function hookToAgentReport(
   event: ClaudeHookEvent,
@@ -139,8 +169,12 @@ export function hookToAgentReport(
     // A tool is about to run. Fires BEFORE the permission check, so it cannot
     // clear a prompt that has not appeared yet — its job is the long tool: a
     // three-minute test run reported nothing at all until it finished.
+    //
+    // It says nothing about `awaitingHuman` for the same reason, in the other
+    // direction: a tool STARTING is not evidence that a question already on
+    // screen was answered. See the block-ownership note above.
     case 'PreToolUse':
-      return { awaitingHuman: false, runDepth: 1 };
+      return { runDepth: 1 };
 
     // Claude Code wants the user. This fires for two different situations: a
     // permission/question prompt, and the ~60s "Claude is waiting for your
@@ -184,16 +218,24 @@ export function hookToAgentReport(
       if (ctx.known && ctx.turnStartTracked && ctx.runDepth === 0) return null;
       return { awaitingHuman: true, reason: message };
 
-    // A tool finished, so a turn is in flight — and nobody is parked on a
-    // prompt, because a pending permission dialog would have stopped the tool
-    // from running at all.
+    // A tool finished, so a turn is in flight.
+    //
+    // It used to also clear the block, on the premise that "a pending permission
+    // dialog would have stopped the tool from running at all". That premise
+    // holds only for an agent doing one thing at a time, and it is false for the
+    // two things agents do most: a BACKGROUND shell, and PARALLEL SUBAGENTS.
+    // Both carry the pane's WMUX_SURFACE_ID, so their tool lifecycle reports to
+    // the surface that is asking the question — and the pane snapped back to
+    // "Running" with the prompt still on screen and no event left to correct it
+    // (Claude Code arms the 60s idle nudge only after a turn ENDS, and the turn
+    // is still open). See the block-ownership note above.
     //
     // Absolute runDepth rather than a delta: this fires on EVERY tool call and
     // nothing decrements per-call, so `runDelta: +1` would climb forever. An
     // absolute value is idempotent — five hundred tool calls still leave the
     // depth at 1.
     case 'PostToolUse':
-      return { awaitingHuman: false, runDepth: 1 };
+      return { runDepth: 1 };
 
     // One parallel subagent finished. It may SUSTAIN a turn; it may never START
     // one.
@@ -237,7 +279,7 @@ export function hookToAgentReport(
     // not one a subagent's completion should invent.
     case 'SubagentStop':
       if (!ctx.known || ctx.runDepth === 0) return null;
-      return { awaitingHuman: false, runDepth: 1 };
+      return { runDepth: 1 };
 
     // The turn is over: nothing can still be running and nothing can still be
     // waiting on the user. Decisive on purpose — this is the backstop that

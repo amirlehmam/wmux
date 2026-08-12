@@ -57,15 +57,15 @@ describe('hookToAgentReport', () => {
       .toBe(true);
   });
 
-  it('PostToolUse asserts a run and clears any block, idempotently', () => {
-    expect(hookToAgentReport('PostToolUse', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
+  it('PostToolUse asserts a run, idempotently, and leaves the block alone', () => {
+    expect(hookToAgentReport('PostToolUse', null, ctx())).toEqual({ runDepth: 1 });
   });
 
   it('SubagentStop keeps the parent turn running (issue #151)', () => {
     // Not a decrement: subagents share the parent's surface id, so the first one
     // to finish used to drain the refcount and report the pane idle while the
     // parent and its siblings were still working.
-    expect(hookToAgentReport('SubagentStop', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
+    expect(hookToAgentReport('SubagentStop', null, ctx())).toEqual({ runDepth: 1 });
   });
 
   it('SubagentStop sustains a live turn but never starts one (issue #151)', () => {
@@ -90,7 +90,9 @@ describe('hookToAgentReport', () => {
   });
 
   it('PreToolUse asserts the run before the tool, not after it (issue #151)', () => {
-    expect(hookToAgentReport('PreToolUse', null, ctx())).toEqual({ awaitingHuman: false, runDepth: 1 });
+    // No `awaitingHuman`: a tool starting cannot mean a question was answered,
+    // and under a background shell or parallel subagents it routinely is not.
+    expect(hookToAgentReport('PreToolUse', null, ctx())).toEqual({ runDepth: 1 });
   });
 });
 
@@ -183,13 +185,41 @@ describe('applyHookToAgentState', () => {
     applyHookToAgentState(surf, 'Notification', 'permission to use Bash');
     expect(getAgentState(surf)).toMatchObject({ state: 'blocked', blockedReason: 'permission to use Bash' });
 
-    // The user approved: the next tool ran, which can only happen once the
-    // prompt is gone.
-    applyHookToAgentState(surf, 'PostToolUse', null);
-    expect(getAgentState(surf)).toMatchObject({ state: 'working', blockedReason: null });
+    // The user replied. A tool running is NOT what proves that — see the
+    // background-work tests below — so the block ends on the turn ending.
+    applyHookToAgentState(surf, 'Stop', null);
+    expect(getAgentState(surf)).toMatchObject({ state: 'idle', blockedReason: null });
+  });
 
+  it('background work does not retract a live question (issue #151)', () => {
+    // The reported case: the agent starts a background shell, then asks a
+    // question with options. The background command's own hooks carry the SAME
+    // WMUX_SURFACE_ID, so its tool lifecycle lands on the pane that is asking.
+    // Every one of these used to assert awaitingHuman: false and snap the pane
+    // back to "Running" with the question still on screen.
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    applyHookToAgentState(surf, 'Notification', 'Claude needs your permission');
+    expect(getAgentState(surf)?.state).toBe('blocked');
+
+    for (const event of ['PreToolUse', 'PostToolUse', 'SubagentStop'] as const) {
+      applyHookToAgentState(surf, event, null);
+      expect(getAgentState(surf)).toMatchObject({ state: 'blocked', blockedReason: 'Claude needs your permission' });
+    }
+
+    // And the run is still genuinely in flight underneath — `blocked` outranks
+    // it rather than replacing it, so answering still leaves a live turn.
+    expect(getAgentState(surf)?.runDepth).toBe(1);
     applyHookToAgentState(surf, 'Stop', null);
     expect(getAgentState(surf)?.state).toBe('idle');
+  });
+
+  it('the human replying is what ends the wait, not a tool (issue #151)', () => {
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    applyHookToAgentState(surf, 'Notification', 'permission to use Bash');
+    expect(getAgentState(surf)?.state).toBe('blocked');
+
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    expect(getAgentState(surf)).toMatchObject({ state: 'working', blockedReason: null });
   });
 
   it('hundreds of tool calls do not inflate the run depth', () => {
