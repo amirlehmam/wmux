@@ -11,6 +11,7 @@
  * Reads stdin for the Claude Code hook payload (JSON):
  *   - PostToolUse Edit/Write → extracts tool_input.file_path
  *   - Notification           → extracts the `message` (what the agent is waiting for)
+ *   - PreToolUse             → extracts `tool_name` (registered matcher-less)
  * WMUX_SURFACE_ID (set by wmux in each pane's shell) ties the event to its pane.
  */
 import net from 'net';
@@ -23,6 +24,17 @@ if (argv[0] === '--event') {
 } else {
   tool = argv[0] || 'unknown';
 }
+
+/**
+ * When Claude Code fired this hook, near enough (issue #151).
+ *
+ * Taken at process start rather than at send time because the interesting delay
+ * is everything after: node boot, reading stdin, connecting to the pipe. Each
+ * hook is its own process and they race, so a `PostToolUse` can reach wmux after
+ * the `Stop` that followed it and re-assert a run that has already ended. wmux
+ * orders reports by this stamp instead of by arrival.
+ */
+const firedAt = Date.now();
 
 const pipePath = process.env.WMUX_PIPE || '\\\\.\\pipe\\wmux';
 const token = process.env.WMUX_PIPE_TOKEN || '';
@@ -70,12 +82,16 @@ function sendHook(): void {
         || '';
       // The Notification hook payload carries the prompt text in `message`.
       message = data.message || '';
+      // PreToolUse is registered matcher-less (one entry for every tool rather
+      // than one entry per tracked tool), so the tool name arrives on stdin
+      // instead of on argv.
+      if (!tool && typeof data.tool_name === 'string') tool = data.tool_name;
     }
   } catch {
     // stdin wasn't valid JSON — that's fine.
   }
 
-  const params: Record<string, string> = {};
+  const params: Record<string, string | number> = { at: firedAt };
   if (event) params.event = event;
   if (tool) params.tool = tool;
   if (file) params.file = file;

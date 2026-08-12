@@ -159,8 +159,22 @@ const stripWmux = (entries: any): any[] =>
     return !e.hooks.some((h: any) => h.command?.includes(HOOK_MARKER));
   });
 
-/** The hook arrays wmux installs into, and therefore the ones it may remove from. */
-const WMUX_HOOK_EVENTS = ['PostToolUse', 'Notification', 'Stop', 'SubagentStop'] as const;
+/**
+ * The hook arrays wmux installs into, and therefore the ones it may remove from.
+ *
+ * The first four are the original set (issue #128). The four added for issue
+ * #151 are the *opening* half of the lifecycle: without them the only thing
+ * wmux ever heard was work ending, so a turn spent thinking, or one spent inside
+ * a single long command, read as `idle` from start to finish.
+ *
+ * Anything added here must also be added to removeWmuxHooks' reach — which is
+ * this same list — or declining the integration would leave orphans behind
+ * (issue #132).
+ */
+const WMUX_HOOK_EVENTS = [
+  'PostToolUse', 'Notification', 'Stop', 'SubagentStop',
+  'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'SessionEnd',
+] as const;
 
 /**
  * Inverse of {@link applyWmuxHooks}: returns a settings object with every wmux
@@ -230,6 +244,45 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
     { hooks: [{ type: 'command', command: makeEventCmd('SubagentStop') }] },
   ];
 
+  // ── Turn-opening events (issue #151) ───────────────────────────────────────
+  // Everything above reports work FINISHING. These report it starting, which is
+  // the difference between a sidebar you can read at a glance and one that says
+  // "Idle" through the whole first half of every turn.
+
+  // SessionStart — Claude Code launched, resumed, /clear'd or /compact'd. Marks
+  // the pane a known agent session at depth 0, so a brand-new session reads
+  // "Idle" instead of borrowing the shell's "Running" (claude is a foreground
+  // command, so the shell says running for the session's whole life).
+  next.hooks.SessionStart = [
+    ...stripWmux(next.hooks.SessionStart),
+    { hooks: [{ type: 'command', command: makeEventCmd('SessionStart') }] },
+  ];
+
+  // UserPromptSubmit — the human just sent a message: the turn is in flight, and
+  // anything the pane was waiting to be told, it has now been told.
+  next.hooks.UserPromptSubmit = [
+    ...stripWmux(next.hooks.UserPromptSubmit),
+    { hooks: [{ type: 'command', command: makeEventCmd('UserPromptSubmit') }] },
+  ];
+
+  // PreToolUse — a tool is starting. Deliberately matcher-less, unlike
+  // PostToolUse: PostToolUse is per-tool because it drives the sidebar's tool
+  // LABEL and the diff view, which only make sense for the tracked tools. This
+  // one drives "is anything happening at all", and a turn spent entirely in
+  // untracked tools is still a turn. The helper reads the tool name off stdin.
+  next.hooks.PreToolUse = [
+    ...stripWmux(next.hooks.PreToolUse),
+    { hooks: [{ type: 'command', command: makeEventCmd('PreToolUse') }] },
+  ];
+
+  // SessionEnd — Claude Code exited but the shell lives on. Releases the pane so
+  // it stops claiming any agent state at all, rather than freezing on whatever
+  // it last said.
+  next.hooks.SessionEnd = [
+    ...stripWmux(next.hooks.SessionEnd),
+    { hooks: [{ type: 'command', command: makeEventCmd('SessionEnd') }] },
+  ];
+
   return next;
 }
 
@@ -239,6 +292,10 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
  *  - Notification  → fires a wmux notification when the agent needs input/permission
  *  - Stop          → fires a wmux notification when the agent finishes its turn
  *  - SubagentStop  → fires when one parallel subagent finishes (sidebar agent lines)
+ *  - SessionStart  → the pane is now an agent session, idle (issue #151)
+ *  - UserPromptSubmit → the human replied: turn started, block over (issue #151)
+ *  - PreToolUse    → a tool started, so long tools don't read as idle (issue #151)
+ *  - SessionEnd    → Claude Code exited; release the pane (issue #151)
  * Uses absolute CLI paths (not env var). Never touches non-wmux hook entries
  * (issue #53): existing user hooks in each array are preserved.
  */
@@ -270,7 +327,7 @@ export function ensureClaudeHooks(): void {
 
     const updated = applyWmuxHooks(settings, hookScript);
     fs.writeFileSync(settingsPath, JSON.stringify(updated, null, 2), 'utf-8');
-    console.log('[wmux] Configured PostToolUse/Notification/Stop/SubagentStop hooks in ~/.claude/settings.json');
+    console.log(`[wmux] Configured ${WMUX_HOOK_EVENTS.join('/')} hooks in ~/.claude/settings.json`);
   } catch (err) {
     console.warn('[wmux] Failed to update Claude hooks:', err);
   }

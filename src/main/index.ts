@@ -430,11 +430,19 @@ function handleHookEvent(params: any): void {
   // is what makes "which pane is parked on me?" work for Claude Code with no
   // plugin to install — wmux already registers these hooks.
   if (params?.surfaceId && params?.event) {
-    applyHookToAgentState(params.surfaceId as SurfaceId, String(params.event), params.message ?? null);
+    applyHookToAgentState(
+      params.surfaceId as SurfaceId,
+      String(params.event),
+      params.message ?? null,
+      Number.isFinite(params.at) ? Number(params.at) : undefined,
+    );
   }
 
-  // Always refresh the diff for Edit/Write, even without a file path.
-  if (params?.tool === 'Edit' || params?.tool === 'Write') pushDiffUpdate(params.file || '');
+  // Always refresh the diff for Edit/Write, even without a file path — but only
+  // once the write has happened. PreToolUse carries the same tool name and fires
+  // BEFORE it, so refreshing on that would render the diff as it was (issue #151).
+  const isPost = !params?.event || params.event === 'PostToolUse';
+  if (isPost && (params?.tool === 'Edit' || params?.tool === 'Write')) pushDiffUpdate(params.file || '');
 }
 
 app.whenReady().then(() => {

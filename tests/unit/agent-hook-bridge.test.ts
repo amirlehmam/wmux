@@ -29,19 +29,87 @@ describe('hookToAgentReport', () => {
     expect(hookToAgentReport('PostToolUse', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
   });
 
-  it('SubagentStop decrements rather than clearing the run', () => {
-    expect(hookToAgentReport('SubagentStop', null)).toEqual({ runDelta: -1 });
+  it('SubagentStop keeps the parent turn running (issue #151)', () => {
+    // Not a decrement: subagents share the parent's surface id, so the first one
+    // to finish used to drain the refcount and report the pane idle while the
+    // parent and its siblings were still working.
+    expect(hookToAgentReport('SubagentStop', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
   });
 
   it('Stop is decisive: nothing running, nothing waiting', () => {
     expect(hookToAgentReport('Stop', null)).toEqual({ awaitingHuman: false, runDepth: 0 });
   });
+
+  it('SessionStart registers the pane as an idle session (issue #151)', () => {
+    expect(hookToAgentReport('SessionStart', null)).toEqual({ awaitingHuman: false, runDepth: 0 });
+  });
+
+  it('UserPromptSubmit starts the turn and ends the wait (issue #151)', () => {
+    expect(hookToAgentReport('UserPromptSubmit', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
+  });
+
+  it('PreToolUse asserts the run before the tool, not after it (issue #151)', () => {
+    expect(hookToAgentReport('PreToolUse', null)).toEqual({ awaitingHuman: false, runDepth: 1 });
+  });
 });
 
 describe('applyHookToAgentState', () => {
   it('ignores hook events that are not part of the model', () => {
-    applyHookToAgentState(surf, 'SessionStart', null);
+    applyHookToAgentState(surf, 'PreCompact', null);
     expect(getAgentState(surf)).toBeUndefined();
+  });
+
+  it('a fresh session reads idle, not unknown (issue #151)', () => {
+    // The pane must become a KNOWN session immediately. Left unknown, the
+    // sidebar falls back to shell state — and `claude` is a foreground command,
+    // so a brand-new session that has done nothing showed "Running".
+    applyHookToAgentState(surf, 'SessionStart', null);
+    expect(getAgentState(surf)?.state).toBe('idle');
+  });
+
+  it('the pane is working from the moment the human hits Enter (issue #151)', () => {
+    // The gap this closes: before UserPromptSubmit, nothing said a turn had
+    // begun until the FIRST TOOL FINISHED. A turn that thinks for a minute, or
+    // runs one long command, read as idle for all of it.
+    applyHookToAgentState(surf, 'SessionStart', null);
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    expect(getAgentState(surf)?.state).toBe('working');
+  });
+
+  it('replying to a blocked pane un-blocks it without waiting for a tool (issue #151)', () => {
+    applyHookToAgentState(surf, 'Notification', 'Claude needs your permission to use Bash');
+    expect(getAgentState(surf)?.state).toBe('blocked');
+
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    expect(getAgentState(surf)).toMatchObject({ state: 'working', blockedReason: null });
+  });
+
+  it('a long tool reports working while it runs, not once it ends (issue #151)', () => {
+    applyHookToAgentState(surf, 'PreToolUse', null);
+    expect(getAgentState(surf)?.state).toBe('working');
+  });
+
+  it('SessionEnd releases the pane rather than pinning it idle (issue #151)', () => {
+    // Forgotten, not set to idle: a declared `idle` outranks the sidebar's own
+    // inference, so an ended session would freeze the pane's reading forever.
+    applyHookToAgentState(surf, 'SessionStart', null);
+    applyHookToAgentState(surf, 'SessionEnd', null);
+    expect(getAgentState(surf)).toBeUndefined();
+  });
+
+  it('orders racing hook processes by fire time, not arrival (issue #151)', () => {
+    // PostToolUse fired first but its node process lost the race to the pipe.
+    // Applied in arrival order it would re-assert a run that Stop had ended, and
+    // the pane would claim `working` for the full 15-minute trust window.
+    applyHookToAgentState(surf, 'Stop', null, 2000);
+    applyHookToAgentState(surf, 'PostToolUse', null, 1000);
+    expect(getAgentState(surf)?.state).toBe('idle');
+  });
+
+  it('still applies hook events that arrive in order', () => {
+    applyHookToAgentState(surf, 'Stop', null, 1000);
+    applyHookToAgentState(surf, 'UserPromptSubmit', null, 2000);
+    expect(getAgentState(surf)?.state).toBe('working');
   });
 
   it('drives a full turn: tool use → permission prompt → answered → done', () => {
@@ -73,12 +141,16 @@ describe('applyHookToAgentState', () => {
     expect(getAgentState(surf)).toMatchObject({ state: 'idle', blockedReason: null });
   });
 
-  it('a subagent finishing does not end the outer turn', () => {
-    applyHookToAgentState(surf, 'PostToolUse', null);
-    applyHookToAgentState(surf, 'SubagentStop', null);
-    // PostToolUse set depth to exactly 1, so one SubagentStop drains it; the
-    // clamp is what keeps a second one from going negative.
-    applyHookToAgentState(surf, 'SubagentStop', null);
-    expect(getAgentState(surf)?.runDepth).toBe(0);
+  it('a subagent finishing does not end the outer turn (issue #151)', () => {
+    // Three subagents on one surface. Every one of them finishing must leave the
+    // pane working — only the parent's Stop ends the turn.
+    applyHookToAgentState(surf, 'UserPromptSubmit', null);
+    for (let i = 0; i < 3; i++) {
+      applyHookToAgentState(surf, 'PostToolUse', null);
+      applyHookToAgentState(surf, 'SubagentStop', null);
+      expect(getAgentState(surf)?.state).toBe('working');
+    }
+    applyHookToAgentState(surf, 'Stop', null);
+    expect(getAgentState(surf)?.state).toBe('idle');
   });
 });

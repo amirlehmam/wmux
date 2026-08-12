@@ -674,17 +674,25 @@ export default function App() {
       // Legacy events without surfaceId fall back to the active workspace id.
       const key = event.surfaceId || state.activeWorkspaceId;
       if (!key) return;
+
+      // PreToolUse says the same tool is STARTING (issue #151). It refreshes the
+      // label and the freshness stamp — that is the whole point, a three-minute
+      // Bash used to show nothing until it ended — but it must not touch the
+      // counter: `toolCount` is TRACE mode's odometer of completed tool calls,
+      // and counting each tool at both ends would double every reading.
+      const starting = event.event === 'PreToolUse';
       setHookActivity(prev => {
         const existing = prev[key] || { lastTool: '', toolCount: 0, lastSeen: 0 };
         return {
           ...prev,
           [key]: {
             lastTool: event.tool,
-            toolCount: existing.toolCount + 1,
+            toolCount: existing.toolCount + (starting ? 0 : 1),
             lastSeen: Date.now(),
           },
         };
       });
+      if (starting) return;
 
       // Diff tab opens in the workspace that OWNS the pane (issue #63). A
       // surfaceId that doesn't resolve here belongs to another window —

@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId } from '../shared/types';
 import { observePtyData, clearActivity } from './claude-observer';
-import { clearAgentState } from './agent-state';
+import { clearAgentState, noteHumanInput } from './agent-state';
 import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
 import { getAppDataDir } from '../shared/instance';
@@ -114,6 +114,13 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.on(IPC_CHANNELS.PTY_WRITE, (_event, id: SurfaceId, data: string) => {
+    // This channel is the HUMAN's keyboard, and only that: it originates in the
+    // terminal component. wmux's own relayed answers (pane.answer_agent) go
+    // straight to ptyManager.write in main, so they cannot reach here — which is
+    // what keeps answerAgent's "answering never clears blocked" rule intact
+    // while still letting a human who typed the answer themselves clear it
+    // (issue #151).
+    noteHumanInput(id, data);
     ptyManager.write(id, data);
   });
 

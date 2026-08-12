@@ -21,19 +21,58 @@
  */
 
 import { SurfaceId } from '../shared/types';
-import { reportAgent, ReportAgentParams } from './agent-state';
+import { reportAgent, releaseAgent, ReportAgentParams } from './agent-state';
 
 /** The hook events wmux registers. */
-export type ClaudeHookEvent = 'PostToolUse' | 'Notification' | 'Stop' | 'SubagentStop';
+export type ClaudeHookEvent =
+  | 'SessionStart'
+  | 'UserPromptSubmit'
+  | 'PreToolUse'
+  | 'PostToolUse'
+  | 'Notification'
+  | 'Stop'
+  | 'SubagentStop'
+  | 'SessionEnd';
 
 /**
  * Map one Claude Code hook event to a report_agent payload, or null to ignore it.
+ *
+ * The original four events (issue #128) were all *terminal* — a tool finished, a
+ * turn finished, a subagent finished. Nothing said when work STARTED, so the
+ * entire stretch between the user pressing Enter and the first tool completing
+ * resolved to `idle`, which for a turn that thinks for a minute or runs one long
+ * command is most of the turn (issue #151). The three opening events below are
+ * the missing half of the lifecycle.
  */
 export function hookToAgentReport(
   event: ClaudeHookEvent,
   message: string | null,
 ): ReportAgentParams | null {
   switch (event) {
+    // Claude Code just started (launch, resume, /clear, /compact). Nothing is
+    // running yet, and that is precisely the point: registering the pane as a
+    // known agent session at depth 0 is what makes it read `idle` instead of
+    // inheriting the shell's verdict. `claude` is a foreground command, so shell
+    // integration correctly calls the pane "running" for the entire life of the
+    // session — a brand-new session that has done nothing showed "Running" with
+    // no session state to outrank it (issue #151).
+    case 'SessionStart':
+      return { awaitingHuman: false, runDepth: 0 };
+
+    // The human just sent a message. Two facts in one event, and both matter:
+    // the turn is now in flight (no tool has run yet, so nothing else would say
+    // so), and whatever the pane was waiting to be told, it has now been told.
+    // This is the event that ends a "needs you" the moment the user replies,
+    // rather than whenever the next tool happens to finish.
+    case 'UserPromptSubmit':
+      return { awaitingHuman: false, runDepth: 1 };
+
+    // A tool is about to run. Fires BEFORE the permission check, so it cannot
+    // clear a prompt that has not appeared yet — its job is the long tool: a
+    // three-minute test run reported nothing at all until it finished.
+    case 'PreToolUse':
+      return { awaitingHuman: false, runDepth: 1 };
+
     // Claude Code wants the user. This fires both for permission/question
     // prompts and for the ~60s "still waiting on you" idle nudge, and we park
     // the pane for both: in either case the agent genuinely is waiting on a
@@ -55,12 +94,20 @@ export function hookToAgentReport(
     case 'PostToolUse':
       return { awaitingHuman: false, runDepth: 1 };
 
-    // One parallel subagent finished. The outer turn normally continues, so
-    // this decrements rather than clearing — that is the whole reason runDepth
-    // is a refcount. reportAgent clamps at zero, so an unbalanced decrement
-    // (a subagent whose start we never saw) cannot go negative.
+    // One parallel subagent finished — and the parent turn is, by construction,
+    // still running: it has a result to read, and Claude Code fires the parent's
+    // `Stop` after every subagent has stopped.
+    //
+    // This used to decrement the refcount, which was wrong in the way that
+    // produced the loudest half of issue #151. Subagent hooks inherit the
+    // parent's WMUX_SURFACE_ID, so all of them report to ONE pane: three
+    // subagents' PostToolUse events each pin the depth to the absolute value 1,
+    // and then the FIRST SubagentStop drains it to 0 — the pane reads `idle`
+    // with the parent and two siblings still working. A refcount only survives
+    // contact with reality when every increment is paired, and these are not
+    // paired; the parent's `Stop` is the pairing, and it is already decisive.
     case 'SubagentStop':
-      return { runDelta: -1 };
+      return { awaitingHuman: false, runDepth: 1 };
 
     // The turn is over: nothing can still be running and nothing can still be
     // waiting on the user. Decisive on purpose — this is the backstop that
@@ -70,24 +117,47 @@ export function hookToAgentReport(
     case 'Stop':
       return { awaitingHuman: false, runDepth: 0 };
 
+    // The session is over — handled by release, not by a report. See below.
+    case 'SessionEnd':
+      return null;
+
     default:
       return null;
   }
 }
 
+const KNOWN_EVENTS: ClaudeHookEvent[] = [
+  'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
+  'Notification', 'Stop', 'SubagentStop', 'SessionEnd',
+];
+
 /**
  * Apply a Claude Code hook event to the declared agent state for `surfaceId`.
  * Called from the hook.event pipe handler in index.ts.
+ *
+ * `hookAt` is the wall-clock the hook helper stamped at process start. Each hook
+ * is its own node process and they race to the pipe, so without it a slow
+ * `PostToolUse` can land after the `Stop` it preceded and re-assert a run that
+ * has ended (issue #151).
  */
 export function applyHookToAgentState(
   surfaceId: SurfaceId,
   event: string,
   message: string | null,
+  hookAt?: number,
 ): void {
-  const known: ClaudeHookEvent[] = ['PostToolUse', 'Notification', 'Stop', 'SubagentStop'];
-  if (!known.includes(event as ClaudeHookEvent)) return;
+  if (!KNOWN_EVENTS.includes(event as ClaudeHookEvent)) return;
+
+  // Claude Code exited. Forgetting the pane is right where clearing it is not:
+  // a record set to `idle` is a CLAIM, and the sidebar ranks a declared state
+  // above its own inference — so an ended session would pin the pane idle
+  // forever. Dropping it hands the pane back to the shell's own state.
+  if (event === 'SessionEnd') {
+    releaseAgent(surfaceId);
+    return;
+  }
 
   const params = hookToAgentReport(event as ClaudeHookEvent, message);
   if (!params) return;
-  reportAgent(surfaceId, params);
+  reportAgent(surfaceId, { ...params, hookAt });
 }
