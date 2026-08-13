@@ -241,6 +241,29 @@ export function browserRequest(args: string[], caller?: string): BrowserRequest 
   return caller ? { ...req, params: { ...req.params, caller } } : req;
 }
 
+/**
+ * What a group command says when its subcommand is missing or unknown.
+ *
+ * `browser`, `agent`, `pane` and `layout` all dispatched on `args[1]` and
+ * interpolated it into the error unchecked, so a bare `wmux browser` — the
+ * natural thing to type when you want to know the verbs — answered
+ * `Unknown browser command: undefined` (issue #156). That reads like the CLI
+ * malfunctioned rather than like a usage error, and it was a dead end: nothing
+ * in it pointed at `wmux help browser`, and `wmux browser --help` cannot fill
+ * the gap because browser is passthrough (`--help` is text to send, not a
+ * request for usage). `markdown` and `config` already printed usage here.
+ */
+export function subcommandError(command: string, sub: string | undefined): string {
+  return sub === undefined || sub === ''
+    ? `wmux ${command} needs a subcommand.`
+    : `Unknown ${command} subcommand: ${sub}`;
+}
+
+/** Print why the subcommand was rejected, then that group's usage, then exit 1. */
+function failSubcommand(command: CommandName, sub: string | undefined): never {
+  return fail(command, COMMAND_SPECS[command] as CommandSpec, subcommandError(command, sub));
+}
+
 async function cmdBrowser(args: string[]): Promise<void> {
   // --surface says which pane's browser to drive, mirroring send / read-screen /
   // agent-activity. Strip it before the verb reads its positional args, or
@@ -248,7 +271,7 @@ async function cmdBrowser(args: string[]): Promise<void> {
   const caller = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
   const rest = stripFlag(args, '--surface');
   const req = browserRequest(rest, caller);
-  if (!req) { console.error(`Unknown browser command: ${rest[1]}`); process.exit(1); return; }
+  if (!req) failSubcommand('browser', rest[1]);
   print(await sendV2(req.method, req.params, req.timeoutMs));
 }
 
@@ -289,7 +312,7 @@ const AGENT_CMDS: Record<string, (args: string[]) => Promise<any>> = {
 
 async function cmdAgent(args: string[]): Promise<void> {
   const handler = AGENT_CMDS[args[1]];
-  if (!handler) { console.error(`Unknown agent command: ${args[1]}`); process.exit(1); return; }
+  if (!handler) failSubcommand('agent', args[1]);
   print(await handler(args));
 }
 
@@ -308,7 +331,7 @@ async function cmdPane(args: string[]): Promise<void> {
   } else if (sub === 'list') {
     print(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') }));
   } else {
-    console.error(`Unknown pane subcommand: ${sub}`); process.exit(1);
+    failSubcommand('pane', sub);
   }
 }
 
@@ -346,7 +369,7 @@ async function cmdLocales(args: string[]): Promise<void> {
 }
 
 async function cmdLayout(args: string[]): Promise<void> {
-  if (args[1] !== 'grid') { console.error(`Unknown layout command: ${args[1]}`); process.exit(1); }
+  if (args[1] !== 'grid') failSubcommand('layout', args[1]);
   const params: any = {};
   for (let i = 2; i < args.length; i += 2) {
     if (args[i] === '--count') params.count = parseInt(args[i + 1], 10);
