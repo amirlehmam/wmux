@@ -499,8 +499,24 @@ async function cmdConfig(args: string[]): Promise<void> {
   } else if (sub === 'reload') {
     print(await sendV2('config.reload'));
   } else if (sub === 'path') {
-    const home = process.env.USERPROFILE || process.env.HOME || '';
-    console.log(`${home}\\.wmux\\config.toml`);
+    // Ask the instance rather than reconstructing the path here. The config lives
+    // on the Windows host, but this CLI routinely runs somewhere that cannot name
+    // it: inside WSL, or inside a devcontainer reaching wmux over the TCP bridge.
+    // There $HOME is the Linux home and the old `${home}\.wmux\config.toml` form
+    // produced `/home/vscode\.wmux\config.toml` — neither the file wmux reads nor
+    // a well-formed path on either OS. loadUserConfig() already reports the real
+    // one in `path` (user-config.ts), which config.get returns verbatim.
+    try {
+      const cfg = await sendV2('config.get');
+      if (cfg && typeof cfg.path === 'string') {
+        console.log(cfg.path);
+        return;
+      }
+    } catch {
+      // No reachable instance — fall through to a local guess. path.join at least
+      // keeps it self-consistent with whichever filesystem we are actually on.
+    }
+    console.log(path.join(os.homedir(), '.wmux', 'config.toml'));
   } else {
     console.error('Usage: wmux config <show|reload|path>'); process.exit(1);
   }
