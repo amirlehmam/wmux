@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 0.6.0
+**Version**: 0.50.0
 
 ---
 
@@ -70,6 +70,7 @@ docs/             Planning docs
 | `agent-hook-bridge.ts` | Claude Code hooks → declared state, so it works with no plugin to install |
 | `session-persistence.ts` | Auto-save/restore window state |
 | `port-scanner.ts` | Active port detection for running dev servers |
+| `powershell-shim.ts` | The `wmux.ps1` gate (issue #154). PowerShell resolves a .ps1 ahead of every PATHEXT entry, which is how cmd.exe's argument parser is kept out of the PowerShell path — but a .ps1 PowerShell refuses (Restricted policy, or Mark of the Web under RemoteSigned) is a hard error with NO fallback to the .cmd beside it. So the shim dir goes on PATH only after a probe script in that same dir has actually run in every installed host |
 | `shell-context-menu.ts` | "Open in wmux" Explorer verb — HKCU shell keys for Directory/Directory\Background/Drive, plus `directoryFromArgv` for the launch path. Win11 places it under "Show more options"; the modern menu needs a signed MSIX, which unsigned wmux cannot ship |
 | `theme-loader.ts` | Theme loading |
 | `config-loader.ts` | WT/Ghostty config import |
@@ -218,6 +219,8 @@ rm -rf ../wmux-release-staging/resources/shell-integration && mkdir -p ../wmux-r
 cp -r src/shell-integration/* ../wmux-release-staging/resources/shell-integration/
 rm -rf ../wmux-release-staging/resources/wmux-orchestrator && cp -r resources/wmux-orchestrator ../wmux-release-staging/resources/wmux-orchestrator
 rm -rf ../wmux-release-staging/resources/opencode-plugin && cp -r resources/opencode-plugin ../wmux-release-staging/resources/opencode-plugin   # missing from every zip until 0.47.0 → OpenCode integration silently absent in installs (issue #149)
+rm -rf ../wmux-release-staging/resources/cli-bin && cp -r src/cli-bin ../wmux-release-staging/resources/cli-bin
+rm -rf ../wmux-release-staging/resources/cli-bin-ps && cp -r src/cli-bin-ps ../wmux-release-staging/resources/cli-bin-ps   # the PowerShell shim (issue #154); without it PowerShell falls back to wmux.cmd and loses argument quoting
 
 # 8. Embed icon + metadata in exe (rcedit)
 # CRITICAL: rcedit exports `{ rcedit }` (named export). `const rcedit =
@@ -291,6 +294,7 @@ rm -rf .asar-staging build-out /tmp/asar-verify ../wmux-release-staging
 - [ ] node-pty native modules present in `app.asar.unpacked/node_modules/node-pty/prebuilds/win32-x64/`
 - [ ] PR-specific markers grep-confirmed inside the packed ASAR (extracted to /tmp)
 - [ ] wmux-orchestrator plugin copied to release staging
+- [ ] cli-bin + cli-bin-ps copied to release staging (issue #154)
 - [ ] opencode-plugin copied to release staging (issue #149) — `npm test` now derives this from `process.resourcesPath` usage in `src/main/`, so a new runtime resource that isn't in `extraResources` fails the release build
 - [ ] rcedit applied (icon + version metadata) — `{ rcedit }` destructured
 - [ ] `latest.yml` generated (sha512 + size of the final zip) and uploaded as a release asset — electron-updater 404s without it (issue #68)
