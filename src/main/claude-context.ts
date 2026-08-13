@@ -22,11 +22,92 @@ function getClaudeMdPath(): string {
   return path.join(os.homedir(), '.claude', 'CLAUDE.md');
 }
 
+/** An H1 that opens a block wmux wrote before it delimited them with markers. */
+const LEGACY_HEADING = /^#\s+[ws]mux\s*$/;
+/** Text only wmux's own block contains — a user's `# wmux` notes must survive. */
+const LEGACY_SIGNATURES = [
+  /You are running inside [ws]mux/,
+  /^[ws]mux browser open <url>/m,
+];
+
+/**
+ * Remove copies of the wmux block that predate the markers (and the smux-era
+ * name), so the managed section is the only one left.
+ *
+ * Early versions appended the block with no `<!-- wmux:start -->` around it.
+ * Splicing keys off the FIRST marker pair, so those copies were never updated
+ * and never removed: they accumulate, one per rename or marker change, and are
+ * loaded into every session on the machine forever. The file this was found on
+ * carried six — five `# wmux`, one `# smux` — several contradicting each other
+ * about the CLI's own name.
+ *
+ * Only a `# wmux` / `# smux` H1 whose body carries one of wmux's own sentences
+ * is taken. Fenced code is tracked so a `# Title` inside an example cannot end
+ * a span early, and the managed block is excluded from the scan entirely — it
+ * has the same heading and is handled by the markers.
+ */
+export function stripLegacyBlocks(content: string): string {
+  const managed = managedSpan(content);
+  if (managed) {
+    return collapse(
+      stripLegacyBlocks(content.substring(0, managed.start))
+      + content.substring(managed.start, managed.end)
+      + stripLegacyBlocks(content.substring(managed.end)),
+    );
+  }
+  return collapse(dropLegacySections(content.split('\n')).join('\n'));
+}
+
+/** The marker-delimited block, which the scan must leave alone. */
+function managedSpan(content: string): { start: number; end: number } | null {
+  const start = content.indexOf(START_MARKER);
+  if (start === -1) return null;
+  const end = content.indexOf(END_MARKER, start);
+  return end === -1 ? null : { start, end: end + END_MARKER.length };
+}
+
+const isFence = (line: string): boolean => line.trimStart().startsWith('```');
+
+/** Index just past the section opened at `from`: the next unfenced H1, or EOF. */
+function sectionEnd(lines: string[], from: number): number {
+  let end = from + 1;
+  let fenced = false;
+  while (end < lines.length) {
+    if (isFence(lines[end])) fenced = !fenced;
+    else if (!fenced && /^#\s+\S/.test(lines[end])) break;
+    end++;
+  }
+  return end;
+}
+
+function dropLegacySections(lines: string[]): string[] {
+  const kept: string[] = [];
+  let inFence = false;
+  let i = 0;
+  while (i < lines.length) {
+    if (isFence(lines[i])) inFence = !inFence;
+    const end = !inFence && LEGACY_HEADING.test(lines[i]) ? sectionEnd(lines, i) : -1;
+    if (end !== -1 && LEGACY_SIGNATURES.some((re) => re.test(lines.slice(i, end).join('\n')))) {
+      i = end;
+      continue;
+    }
+    kept.push(lines[i]);
+    i++;
+  }
+  return kept;
+}
+
+/** Removal leaves gaps behind; three or more blank lines become one break. */
+function collapse(text: string): string {
+  return text.replace(/\n{3,}/g, '\n\n');
+}
+
 /**
  * Ensures the user's global ~/.claude/CLAUDE.md contains the wmux section.
  * - Creates ~/.claude/ and CLAUDE.md if they don't exist
  * - Inserts the wmux block if not present
  * - Updates the wmux block if it's outdated
+ * - Drops marker-less copies left by older versions (they are ours, and stale)
  * - Never touches content outside the <!-- wmux:start --> / <!-- wmux:end --> markers
  */
 export function ensureClaudeContext(): void {
@@ -54,14 +135,19 @@ export function ensureClaudeContext(): void {
     }
 
     // CLAUDE.md exists — check for existing wmux block
-    const existing = fs.readFileSync(claudeMdPath, 'utf-8');
+    const raw = fs.readFileSync(claudeMdPath, 'utf-8');
+    const existing = stripLegacyBlocks(raw);
     const startIdx = existing.indexOf(START_MARKER);
     const endIdx = existing.indexOf(END_MARKER);
 
     if (startIdx === -1) {
       // No wmux block — append it
-      const separator = existing.endsWith('\n') ? '\n' : '\n\n';
-      fs.writeFileSync(claudeMdPath, existing + separator + wmuxBlock, 'utf-8');
+      if (existing.trim() === '') {
+        fs.writeFileSync(claudeMdPath, wmuxBlock, 'utf-8');
+      } else {
+        const separator = existing.endsWith('\n') ? '\n' : '\n\n';
+        fs.writeFileSync(claudeMdPath, existing + separator + wmuxBlock, 'utf-8');
+      }
       console.log('[wmux] Appended wmux context to ~/.claude/CLAUDE.md');
       return;
     }
@@ -76,8 +162,8 @@ export function ensureClaudeContext(): void {
 
     // Both markers found — replace the block
     const currentBlock = existing.substring(startIdx, endIdx + END_MARKER.length);
-    if (currentBlock.trim() === wmuxBlock.trim()) {
-      // Already up to date
+    if (currentBlock.trim() === wmuxBlock.trim() && existing === raw) {
+      // Already up to date, and nothing stale left beside it
       return;
     }
 

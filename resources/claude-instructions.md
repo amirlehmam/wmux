@@ -2,24 +2,46 @@
 
 # wmux
 
-You are running inside wmux, a terminal multiplexer with a browser panel on the right side that the user can see in real-time.
+wmux is a terminal multiplexer with a browser panel on the right that the user
+watches in real time. It writes this section into a **global** agent-context
+file, so every session on this machine loads it — including sessions that are
+not running inside wmux at all (a desktop app, a plain terminal, CI, an SSH
+session, a scheduled run). Whether it applies to you is a fact about *your*
+session, so check it rather than assume it:
+
+```bash
+wmux ping     # "pong" → wmux is here; anything else → it is not
+```
+
+**If `wmux ping` answers**, everything below is available and preferred.
+
+**If it does not answer** — command not found, no reply, or an error — then wmux
+is not running for this session. Ignore the whole section and use your normal
+tools. Nothing here is a restriction on what you may otherwise do.
+
+One check per session is enough; `wmux ping` needs no arguments and no auth, and
+fails immediately when nothing is listening.
 
 ## Browser
 
-For any web browsing task, use the `wmux browser` commands so the user can watch in the browser panel. Do NOT use Playwright, Firecrawl, or WebSearch — they open invisible windows the user cannot see. If the user explicitly asks for one of those tools, use it.
+For web browsing, prefer the `wmux browser` commands over Playwright, Firecrawl
+or WebSearch: those open windows the user cannot see, while the browser panel
+lets them watch what you are doing. Use whichever tool the user explicitly asks
+for, and use your own web tools when `wmux ping` says wmux is absent.
 
 ```bash
 wmux browser open <url>          # navigate
 wmux browser snapshot            # get accessibility tree with eN refs
-wmux browser click eN           # click element
-wmux browser type eN <text>     # type into element
-wmux browser fill eN <value>    # set input value
+wmux browser click eN            # click element
+wmux browser type eN <text>      # type into element
+wmux browser fill eN <value>     # set input value
 wmux browser get-text            # get page text
 wmux browser screenshot          # capture screenshot
 wmux browser eval <js>           # run JavaScript
 wmux browser back                # go back
 wmux browser forward             # go forward
 wmux browser reload              # reload page
+wmux browser <verb> --surface <id>   # drive a specific pane's browser
 ```
 
 Workflow: `browser open <url>` → `browser snapshot` → read tree → `browser click/type eN` → `browser snapshot` again.

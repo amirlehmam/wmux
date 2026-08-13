@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { stripWmuxBlock } from './claude-context';
+import { stripWmuxBlock, stripLegacyBlocks } from './claude-context';
 
 const START_MARKER = '<!-- wmux:start';
 const END_MARKER = '<!-- wmux:end -->';
@@ -12,8 +12,11 @@ const END_MARKER = '<!-- wmux:end -->';
  * even when the instructions source ends with a newline (otherwise the trailing
  * newline accumulates on every run).
  */
-export function injectWmuxBlock(existing: string, wmuxBlock: string): string {
+export function injectWmuxBlock(rawExisting: string, wmuxBlock: string): string {
   const block = wmuxBlock.trimEnd();
+  // Marker-less copies from older versions are ours and stale; splicing keys off
+  // the markers, so without this they would sit beside the managed block forever.
+  const existing = stripLegacyBlocks(rawExisting);
   if (existing.trim() === '') return block;
   const startIdx = existing.indexOf(START_MARKER);
   const endIdx = existing.indexOf(END_MARKER);
