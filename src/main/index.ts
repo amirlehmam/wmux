@@ -21,6 +21,7 @@ import { startOrchestrationWatcher } from './orchestration-watcher';
 import { readMarkdownFile } from './markdown-file';
 import { grantMarkdownPath, clearMarkdownGrants } from './markdown-grants';
 import { directoryFromArgv } from './shell-context-menu';
+import { ensurePowerShellShim } from './powershell-shim';
 import fs from 'fs';
 import path from 'path';
 
@@ -449,6 +450,12 @@ app.whenReady().then(() => {
   // A losing second instance is already quitting; don't run startup side effects.
   if (!gotInstanceLock) return;
   hardenWebContents();
+
+  // Find out whether PowerShell will run the .ps1 shim before the renderer asks
+  // for its first PTY (issue #154). Unawaited on purpose: the answer only
+  // decides one PATH entry, and a pane that wins the race just gets the old
+  // wmux.cmd behaviour rather than a slower startup for everyone.
+  ensurePowerShellShim().catch(() => {});
 
   // IPC: renderer pushes session state (auto-save response or explicit save).
   // Every window answers the same broadcast, each with a one-entry `windows`

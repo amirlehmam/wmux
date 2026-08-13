@@ -7,6 +7,7 @@ import { SurfaceId } from '../shared/types';
 import { getPipePath, readPipeToken } from '../shared/instance';
 import { PtyLedger } from './pty-ledger';
 import { attachErrorSink, installPtyCrashGuard } from './pty-crash-guard';
+import { powerShellShimDir } from './powershell-shim';
 
 // Applied once, at load, before any PTY can exist — the exit callback it guards
 // is registered by node-pty inside pty.spawn(), so a later install would leave
@@ -326,9 +327,17 @@ export class PtyManager {
     // the interactive `wmux` shell function cannot reach. Prepend (not append)
     // so this instance's shim wins; it is instance-scoped via $WMUX_CLI/$WMUX_PIPE
     // anyway. The Windows env key is `Path`, so match case-insensitively.
+    // The .ps1 shim dir goes AHEAD of cli-bin when — and only when — wmux has
+    // verified PowerShell will run it (issue #154). PowerShell prefers a .ps1
+    // over every PATHEXT entry, so this is what takes cmd.exe's argument parser
+    // out of the PowerShell path; unverified, it is left off entirely rather
+    // than risk a `wmux` that errors instead of merely mis-quoting. Order does
+    // not matter to any other shell: bash and cmd.exe ignore .ps1 files.
     const cliBinDir = getCliBinPath();
+    const shimDirs = [powerShellShimDir(), cliBinDir].filter((d): d is string => d !== null);
     const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'PATH';
-    env[pathKey] = env[pathKey] ? `${cliBinDir}${path.delimiter}${env[pathKey]}` : cliBinDir;
+    const prefix = shimDirs.join(path.delimiter);
+    env[pathKey] = env[pathKey] ? `${prefix}${path.delimiter}${env[pathKey]}` : prefix;
 
     const args = [...buildShellArgs(shellType, env, integrationDir, options.cwd), ...shellExtraArgs];
 
