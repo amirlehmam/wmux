@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 import { useStore } from './store';
 import { PaneId, SurfaceId, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
+import { cwdReportPatch } from '../shared/paths';
 import SplitContainer from './components/SplitPane/SplitContainer';
 import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds } from './store/split-utils';
 import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
@@ -288,7 +289,10 @@ function handleSurfaceMetadata(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): voi
   switch (cmd.command) {
     case 'report_pwd': {
       const pwd = cmd.args?.[0];
-      deps.updateWorkspaceMetadata(ws.id, { cwd: pwd });
+      // Records the POSIX path separately so a pwsh report cannot erase the
+      // WSL fallback its neighbours depend on — without this, the next WSL
+      // pane in the workspace gets `--cd ~`.
+      deps.updateWorkspaceMetadata(ws.id, cwdReportPatch(pwd));
       // Also store cwd at the surface level so the tab label can show the project folder.
       if (pwd && cmd.surfaceId) {
         const { updateSurface } = useStore.getState();
@@ -768,6 +772,10 @@ export default function App() {
             pinned: ws.pinned,
             shell: ws.shell,
             cwd: ws.cwd, // issue #20 — restore so new terminals reopen in the workspace folder
+            // The WSL half of that: ws.cwd is whichever pane reported last, so a
+            // pwsh pane leaves a Win32 path behind and every restored WSL pane
+            // falls through to `--cd ~`. Persist the POSIX one alongside it.
+            posixCwd: ws.posixCwd,
             // Per-tab directories, frozen at save time (issue #134): ws.cwd above
             // is a single value for the whole workspace, so on its own it sends
             // every restored terminal to the same place.
@@ -835,6 +843,7 @@ export default function App() {
         pinned: ws.pinned,
         shell: ws.shell,
         cwd: ws.cwd || '',
+        posixCwd: ws.posixCwd || '',
         // See the auto-save path below — a named session is the case #134
         // reported, where losing a worktree's drive makes the session
         // unidentifiable after a restore.

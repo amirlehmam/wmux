@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PtyManager, parseShellSpec, resolveSpawnCwd } from '../../src/main/pty-manager';
+import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShellForCwd, shellEnv } from '../../src/main/pty-manager';
 import type { SurfaceId } from '../../src/shared/types';
 
 const TEST_SHELL = 'cmd.exe';
@@ -268,3 +268,53 @@ describe('resolveSpawnCwd', () => {
     expect(resolveSpawnCwd(undefined)).toBeUndefined();
   });
 });
+/**
+ * resolveSpawnCwd above is the honest Win32 answer — %USERPROFILE% — but it is
+ * also why a new tab in a WSL/devcontainer workspace silently opened in the
+ * Windows home folder instead of the project. A UNC working directory is not an
+ * option (CreateProcess rejects it), so the fix is to pick the one shell that
+ * can actually reach the path.
+ */
+describe('resolveShellForCwd (POSIX cwd → WSL shell)', () => {
+  const POSIX = '/home/user/agent/project';
+
+  beforeEach(() => {
+    vi.spyOn(shellEnv, 'isWindows').mockReturnValue(true);
+    vi.spyOn(shellEnv, 'hasWsl').mockReturnValue(true);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('swaps a Win32 shell for wsl.exe when the cwd is POSIX', () => {
+    expect(resolveShellForCwd('pwsh.exe', POSIX)).toBe('wsl.exe');
+    expect(resolveShellForCwd('powershell.exe', POSIX)).toBe('wsl.exe');
+    expect(resolveShellForCwd('cmd.exe', POSIX)).toBe('wsl.exe');
+  });
+
+  it('leaves a Win32 cwd alone', () => {
+    expect(resolveShellForCwd('pwsh.exe', 'C:\\work\\project')).toBe('pwsh.exe');
+    expect(resolveShellForCwd('pwsh.exe', undefined)).toBe('pwsh.exe');
+  });
+
+  it('leaves a shell that is already WSL alone', () => {
+    expect(resolveShellForCwd('wsl.exe', POSIX)).toBe('wsl.exe');
+  });
+
+  it('does not hijack a deliberate remote command line (issue #78)', () => {
+    // `wmux ssh user@host` resolves to a shell wmux cannot classify. Replacing
+    // it with wsl.exe would drop the user somewhere else entirely, which is a
+    // worse failure than opening in the wrong directory.
+    expect(resolveShellForCwd('ssh', POSIX)).toBe('ssh');
+  });
+
+  it('keeps today\'s behaviour when WSL is not installed', () => {
+    vi.spyOn(shellEnv, 'hasWsl').mockReturnValue(false);
+    expect(resolveShellForCwd('pwsh.exe', POSIX)).toBe('pwsh.exe');
+  });
+
+  it('is a no-op off Windows', () => {
+    vi.spyOn(shellEnv, 'isWindows').mockReturnValue(false);
+    expect(resolveShellForCwd('/bin/bash', POSIX)).toBe('/bin/bash');
+  });
+});
+

@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { WorkspaceId, WorkspaceInfo, SplitNode } from '../../shared/types';
+import { isPosixPath } from '../../shared/paths';
 import { createLeaf } from './split-utils';
 import { killTreeTerminalPtys } from './pty-teardown';
 import type { TranslationKey } from '../i18n/core';
@@ -64,6 +65,12 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       gitBranch: options.gitBranch,
       gitDirty: options.gitDirty,
       cwd: options.cwd,
+      // Seed the WSL fallback from the folder the workspace was opened on
+      // ("Open in wmux" on a \\wsl.localhost path, `wmux new-workspace --cwd`,
+      // a restored session). Without this seed a workspace whose only reporting
+      // pane is pwsh would have no POSIX path at all, and its WSL panes would
+      // stay on `--cd ~` for the rest of the session.
+      posixCwd: options.posixCwd ?? (options.cwd && isPosixPath(options.cwd) ? options.cwd : undefined),
       prNumber: options.prNumber,
       prStatus: options.prStatus,
       prLabel: options.prLabel,
@@ -181,6 +188,11 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       unreadCount: 0,
       customColor: config.customColor,
       cwd: config.cwd,
+      // Same seed as createWorkspace, which is what repairs a session saved
+      // before this field existed: its workspaces come back with `cwd` already
+      // rewritten to C:\Users\<user> by a pwsh pane, so falling back to `cwd`
+      // when it is POSIX is the only place the project path can still be found.
+      posixCwd: config.posixCwd ?? (config.cwd && isPosixPath(config.cwd) ? config.cwd : undefined),
       browserUrl: config.browserUrl,
       browserWidth: config.browserWidth,
     }));
