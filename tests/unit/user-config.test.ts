@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { loadUserConfig } from '../../src/main/user-config';
+import { loadUserConfig, resetConfigWarnings } from '../../src/main/user-config';
 
 function writeTmp(contents: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-cfg-'));
@@ -180,5 +180,72 @@ describe('loadUserConfig', () => {
     `);
     const out = loadUserConfig(tmpPath);
     expect(out.terminal?.userColorSchemes?.big?.palette?.length).toBe(16);
+  });
+});
+
+/**
+ * A read or parse failure discards the WHOLE file — every [terminal], [keys],
+ * [browser] and [appearance] section reverts to its default. That used to happen
+ * in silence: one stray character and the user's entire config stopped applying,
+ * with nothing in any log to say so.
+ */
+describe('loadUserConfig diagnostics', () => {
+  let tmpPath: string | null = null;
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetConfigWarnings();
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (tmpPath) {
+      try { fs.rmSync(path.dirname(tmpPath), { recursive: true, force: true }); } catch { /* noop */ }
+      tmpPath = null;
+    }
+  });
+
+  it('warns, naming the file, when a syntax error discards the config', () => {
+    tmpPath = writeTmp('[terminal\nfont-size = 13\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.errors.length).toBeGreaterThan(0);
+    expect(out.terminal).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0].join(' ')).toContain(tmpPath);
+  });
+
+  it('warns once per problem, however often the file is read', () => {
+    // loadUserConfig runs on every startup and every `reload-config`; without
+    // dedupe one bad file would fill the log.
+    tmpPath = writeTmp('[terminal\n');
+    for (let i = 0; i < 10; i++) loadUserConfig(tmpPath);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the file afresh after resetConfigWarnings', () => {
+    // What `wmux reload-config` calls: the user is iterating on the file and
+    // needs to see whether their edit fixed it.
+    tmpPath = writeTmp('[terminal\n');
+    loadUserConfig(tmpPath);
+    resetConfigWarnings();
+    loadUserConfig(tmpPath);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('says nothing about a config that parses', () => {
+    tmpPath = writeTmp('[terminal]\nfont-size = 13\n');
+    expect(loadUserConfig(tmpPath).errors).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('warns about a section-level mistake without discarding the rest', () => {
+    // A mapping error is not fatal — the good sections still apply — but it is
+    // still the reason a setting "did nothing", so it has to be said out loud.
+    tmpPath = writeTmp('[appearance]\nui-theme = "purple"\n\n[terminal]\nfont-size = 13\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.terminal?.fontSize).toBe(13);
+    expect(out.errors.length).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

@@ -95,6 +95,30 @@ export function getConfigPath(): string {
   return path.join(home, '.wmux', 'config.toml');
 }
 
+/**
+ * Complaints already made, so the log is not spammed. loadUserConfig() is called
+ * on every WSL pane spawn (pty-manager.ts) as well as at startup and on reload —
+ * without this a single bad file would warn once per pane for the life of the app.
+ */
+const warnedConfigProblems = new Set<string>();
+
+/** Forget past complaints, so `wmux reload-config` reports the file's state afresh. */
+export function resetConfigWarnings(): void {
+  warnedConfigProblems.clear();
+}
+
+// A read or parse failure discards the WHOLE file: every [terminal], [keys],
+// [browser] and [appearance] section silently reverts to its default. The errors
+// were always returned to the caller and printed by `wmux config show`, but
+// nothing ever told you to go and look — so a typo presented as "my setting has
+// no effect", with no way to tell a mis-set value from an unread file.
+function warnConfig(filePath: string, problem: string): void {
+  const key = `${filePath}\0${problem}`;
+  if (warnedConfigProblems.has(key)) return;
+  warnedConfigProblems.add(key);
+  console.warn(`[wmux] ${filePath}: ${problem} — see \`wmux config show\``);
+}
+
 export function loadUserConfig(filePath: string = getConfigPath()): UserConfig {
   const errors: string[] = [];
   if (!fs.existsSync(filePath)) {
@@ -105,17 +129,26 @@ export function loadUserConfig(filePath: string = getConfigPath()): UserConfig {
   try {
     text = fs.readFileSync(filePath, 'utf-8');
   } catch (e: any) {
-    return { path: filePath, errors: [`read failed: ${e?.message || e}`] };
+    const problem = `read failed: ${e?.message || e}`;
+    warnConfig(filePath, `${problem} — the entire config was ignored`);
+    return { path: filePath, errors: [problem] };
   }
 
   let parsed: TomlTable;
   try {
     parsed = parseToml(text);
   } catch (e: any) {
-    return { path: filePath, errors: [`parse failed: ${e?.message || e}`] };
+    const problem = `parse failed: ${e?.message || e}`;
+    warnConfig(filePath, `${problem} — the entire config was ignored`);
+    return { path: filePath, errors: [problem] };
   }
 
-  return { ...mapToConfig(parsed, errors), path: filePath, errors };
+  // Per-key mapping errors are survivable: the rest of the file still applies.
+  // Still worth one line, or a skipped key looks like a wmux bug.
+  const mapped = mapToConfig(parsed, errors);
+  for (const err of errors) warnConfig(filePath, err);
+
+  return { ...mapped, path: filePath, errors };
 }
 
 // ---------------------------------------------------------------------------
