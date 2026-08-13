@@ -8,6 +8,10 @@ function makeWc(id: number, respond?: (method: string, params: any) => any) {
   const sent: Array<{ method: string; params: any }> = [];
   const wc = {
     isDestroyed: () => false,
+    // navigate() subscribes to did-finish-load; a page that never loads simply
+    // never fires it, which is the case the timeout message is for.
+    once: () => {},
+    removeListener: () => {},
     sent,
     debugger: {
       isAttached: () => attached,
@@ -209,6 +213,33 @@ describe('CDP Bridge', () => {
       bridge.attach(1);
       bridge.detach();
       expect(bridge.attachedWebContentsId).toBeNull();
+    });
+  });
+
+  /**
+   * Both of these used to throw a bare `new Error('timeout')`. Nobody ever read
+   * it: navigate's budget is 30s and wait's is 10s, while the CLI hung up at 5s
+   * and printed its own indistinguishable `timeout`. Now that the CLI outwaits
+   * the main process, whatever these say is what the user actually sees — so
+   * they have to say which operation stalled, for how long, and on what.
+   */
+  describe('timeout messages say what stalled', () => {
+    it('navigate names the page it was waiting on and the budget it spent', async () => {
+      makeWc(70);
+      const bridge = new CDPBridge();
+      bridge.attach(70);
+      await expect(bridge.navigate('https://slow.example', 20, 70)).rejects.toThrow(
+        /navigate timed out after 20ms .* https:\/\/slow\.example never finished loading/,
+      );
+    });
+
+    it('wait names the ref that never arrived and points at the next step', async () => {
+      makeWc(71, () => ({ nodes: [] })); // an empty tree, so the ref never resolves
+      const bridge = new CDPBridge();
+      bridge.attach(71);
+      await expect(bridge.wait('e9', 30, 71)).rejects.toThrow(
+        /wait timed out after 30ms .* e9 never appeared.*browser\.snapshot/,
+      );
     });
   });
 });

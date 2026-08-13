@@ -75,7 +75,35 @@ function sendV1(command: string): Promise<string> {
   });
 }
 
-function sendV2(method: string, params: Record<string, any> = {}): Promise<any> {
+/**
+ * How long to wait for a V2 reply before giving up.
+ *
+ * This deadline has to stay LARGER than whatever budget the main process spends
+ * serving the same request. When it is shorter the CLI loses a race it should
+ * never have been in: a command that succeeds late is reported as a failure, and
+ * the server's own diagnosis ('Could not open browser panel', 'browser_not_open',
+ * 'ref_not_found: …') is discarded unread because it arrives after we hung up.
+ * Only the browser verbs currently need more than this — see BROWSER_CMDS.
+ */
+const DEFAULT_V2_TIMEOUT_MS = 5000;
+
+/**
+ * What a stalled request says when it gives up.
+ *
+ * The bare 'timeout' this used to reject with named neither the method nor the
+ * deadline, so an operation that was merely slow was indistinguishable from a
+ * broken install — and since the deadline was also shorter than the server's own
+ * budget, it was usually the *only* thing a slow browser command ever printed.
+ */
+export function timeoutMessage(method: string, timeoutMs: number): string {
+  return `${method} timed out after ${timeoutMs}ms — wmux accepted the request but sent no reply. The command may still have completed.`;
+}
+
+function sendV2(
+  method: string,
+  params: Record<string, any> = {},
+  timeoutMs: number = DEFAULT_V2_TIMEOUT_MS,
+): Promise<any> {
   // Every command carries the caller's surface (WMUX_SURFACE_ID). Browser
   // commands use it to route each agent to its OWN browser pane, so concurrent
   // agents no longer share and clobber one browser window (issue #62); the
@@ -90,7 +118,10 @@ function sendV2(method: string, params: Record<string, any> = {}): Promise<any> 
       client.write(request + '\n');
     });
     let data = '';
-    const timer = setTimeout(() => { client.end(); reject(new Error('timeout')); }, 5000);
+    const timer = setTimeout(() => {
+      client.end();
+      reject(new Error(timeoutMessage(method, timeoutMs)));
+    }, timeoutMs);
     client.on('data', (chunk) => {
       data += chunk.toString();
       if (data.includes('\n')) {
@@ -123,27 +154,102 @@ function stripFlag(args: string[], name: string): string[] {
 
 const print = (v: any) => console.log(JSON.stringify(v, null, 2));
 
-// Each browser subcommand maps to the V2 request it issues. sendV2 auto-attaches
-// the caller surface so concurrent agents get isolated browsers (issue #62).
-const BROWSER_CMDS: Record<string, (args: string[]) => Promise<any>> = {
-  open: (args) => sendV2('browser.navigate', { url: args[2] }),
-  snapshot: () => sendV2('browser.snapshot'),
-  click: (args) => sendV2('browser.click', { ref: args[2] }),
-  type: (args) => sendV2('browser.type', { ref: args[2], text: args.slice(3).join(' ') }),
-  fill: (args) => sendV2('browser.fill', { ref: args[2], value: args.slice(3).join(' ') }),
-  screenshot: (args) => sendV2('browser.screenshot', { fullPage: args.includes('--full') }),
-  'get-text': (args) => sendV2('browser.get_text', { ref: args[2] }),
-  eval: (args) => sendV2('browser.eval', { js: args.slice(2).join(' ') }),
-  wait: (args) => sendV2('browser.wait', { ref: args[2], timeout: parseInt(args[3]) || undefined }),
-  back: () => sendV2('browser.back'),
-  forward: () => sendV2('browser.forward'),
-  reload: () => sendV2('browser.reload'),
+/**
+ * Server-side budgets a browser command can legitimately spend before it is even
+ * able to reply. Mirrored from the main process so the CLI can outwait it:
+ *
+ *   BROWSER_READY_MS   v2-browser.ts readies a browser first — it splits a pane
+ *                      and then polls up to 5s for CDP to attach.
+ *   CDP_NAVIGATE_MS    cdp-bridge.ts navigate() waits for did-finish-load.
+ *   CDP_WAIT_MS        cdp-bridge.ts wait() polls for a ref.
+ *
+ * Both cdp-bridge budgets already exceeded the old flat 5s CLI deadline on their
+ * own, so `browser open` on any slow page and `browser wait` on any absent ref
+ * could not report anything but 'timeout' — including when they went on to
+ * succeed. Keep these in step if the main-process defaults change.
+ */
+const BROWSER_READY_MS = 5000;
+const CDP_NAVIGATE_MS = 30000;
+const CDP_WAIT_MS = 10000;
+/** Pane split plus the executeJavaScript round-trips around it. */
+const BROWSER_SLACK_MS = 5000;
+
+/** The CLI deadline for a browser verb whose own server-side budget is `verbMs`. */
+const browserDeadline = (verbMs: number): number => BROWSER_READY_MS + verbMs + BROWSER_SLACK_MS;
+
+export interface BrowserRequest {
+  method: string;
+  params: Record<string, any>;
+  timeoutMs: number;
+}
+
+// Each browser subcommand maps to the V2 request it issues.
+const BROWSER_CMDS: Record<string, (args: string[]) => BrowserRequest> = {
+  open: (args) => ({
+    method: 'browser.navigate',
+    params: { url: args[2] },
+    timeoutMs: browserDeadline(CDP_NAVIGATE_MS),
+  }),
+  snapshot: () => ({ method: 'browser.snapshot', params: {}, timeoutMs: browserDeadline(0) }),
+  click: (args) => ({ method: 'browser.click', params: { ref: args[2] }, timeoutMs: browserDeadline(0) }),
+  type: (args) => ({
+    method: 'browser.type',
+    params: { ref: args[2], text: args.slice(3).join(' ') },
+    timeoutMs: browserDeadline(0),
+  }),
+  fill: (args) => ({
+    method: 'browser.fill',
+    params: { ref: args[2], value: args.slice(3).join(' ') },
+    timeoutMs: browserDeadline(0),
+  }),
+  screenshot: (args) => ({
+    method: 'browser.screenshot',
+    params: { fullPage: args.includes('--full') },
+    timeoutMs: browserDeadline(0),
+  }),
+  'get-text': (args) => ({ method: 'browser.get_text', params: { ref: args[2] }, timeoutMs: browserDeadline(0) }),
+  eval: (args) => ({ method: 'browser.eval', params: { js: args.slice(2).join(' ') }, timeoutMs: browserDeadline(0) }),
+  wait: (args) => {
+    const explicit = parseInt(args[3]) || undefined;
+    return {
+      method: 'browser.wait',
+      params: { ref: args[2], timeout: explicit },
+      // An explicit ms is the budget the server will honour; outwait that one.
+      timeoutMs: browserDeadline(explicit ?? CDP_WAIT_MS),
+    };
+  },
+  back: () => ({ method: 'browser.back', params: {}, timeoutMs: browserDeadline(0) }),
+  forward: () => ({ method: 'browser.forward', params: {}, timeoutMs: browserDeadline(0) }),
+  reload: () => ({ method: 'browser.reload', params: {}, timeoutMs: browserDeadline(0) }),
 };
 
+/**
+ * Resolve `wmux browser <verb> …` to the request it issues. Null for an unknown
+ * verb. Pure, so the deadlines and the caller wiring are testable without a
+ * running app.
+ *
+ * `caller` is the *terminal* surface the command is issued on behalf of, not a
+ * browser surface: the main process maps it to that pane's own browser, which is
+ * what keeps concurrent agents isolated (issue #62). Passing it explicitly does
+ * not change that routing — it only supplies from a flag what a shell inside a
+ * pane supplies from $WMUX_SURFACE_ID.
+ */
+export function browserRequest(args: string[], caller?: string): BrowserRequest | null {
+  const build = BROWSER_CMDS[args[1]];
+  if (!build) return null;
+  const req = build(args);
+  return caller ? { ...req, params: { ...req.params, caller } } : req;
+}
+
 async function cmdBrowser(args: string[]): Promise<void> {
-  const handler = BROWSER_CMDS[args[1]];
-  if (!handler) { console.error(`Unknown browser command: ${args[1]}`); process.exit(1); return; }
-  print(await handler(args));
+  // --surface says which pane's browser to drive, mirroring send / read-screen /
+  // agent-activity. Strip it before the verb reads its positional args, or
+  // `browser type e5 --surface surf-x hi` would type the flag into the page.
+  const caller = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+  const rest = stripFlag(args, '--surface');
+  const req = browserRequest(rest, caller);
+  if (!req) { console.error(`Unknown browser command: ${rest[1]}`); process.exit(1); return; }
+  print(await sendV2(req.method, req.params, req.timeoutMs));
 }
 
 function agentSpawn(args: string[]): Promise<any> {
@@ -669,6 +775,7 @@ const COMMAND_SPECS = {
       'wmux browser open <url> | snapshot | click <ref> | type <ref> <text> | fill <ref> <value>',
       'wmux browser screenshot [--full] | get-text [ref] | eval <js> | wait <ref> [ms]',
       'wmux browser back | forward | reload',
+      `  [--surface <id>]   ${SURFACE_NOTE}`,
     ].join('\n'),
     passthrough: true,
   },
@@ -1022,6 +1129,7 @@ Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-p
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
 Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>], trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
+            browser <verb> [--surface <id>]   # which pane's browser to drive
 Agent:      agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-tab] | spawn-batch|status|list|kill
 Markdown:   markdown <file>   (open a file in a new markdown view)
             markdown set <id> --content <text> | --file <path>
@@ -1047,4 +1155,6 @@ Help:       wmux help <command>       (per-command usage; works for every comman
 `);
 }
 
-main();
+// Run only when invoked as the CLI. The pure helpers above are exported so the
+// unit tests can import this file without it trying to execute a command.
+if (require.main === module) main();
