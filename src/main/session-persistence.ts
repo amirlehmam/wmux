@@ -23,6 +23,10 @@ export interface SessionData {
       pinned: boolean;
       shell: string;
       cwd?: string; // last reported working dir — restored so new terminals reopen here (issue #20)
+      // The POSIX/WSL directory. `cwd` is last-writer-wins across both
+      // filesystems, so a pwsh pane leaves a Win32 path there and restored WSL
+      // panes get `--cd ~`; this one is only ever written by a POSIX report.
+      posixCwd?: string;
       splitTree: any; // SplitNode serialized
       // The renderer has always written these two; the interface omitting them
       // is what let backupAutoSession drop them without tsc noticing (#145).
@@ -115,6 +119,7 @@ function backupAutoSession(previousVersion: string): void {
         pinned: !!w.pinned,
         shell: w.shell,
         cwd: w.cwd || '',
+        posixCwd: w.posixCwd || '',
         splitTree: w.splitTree,
         browserUrl: w.browserUrl || '',
         browserWidth: w.browserWidth,

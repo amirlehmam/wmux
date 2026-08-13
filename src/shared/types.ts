@@ -89,6 +89,15 @@ export interface WorkspaceInfo {
   gitBranch?: string;
   gitDirty?: boolean;
   cwd?: string;
+  // The last POSIX/WSL directory known for this workspace, kept apart from
+  // `cwd` because one workspace can hold panes in two filesystems at once.
+  // `cwd` is whichever pane reported last, so a single pwsh/cmd pane rewrites
+  // it to a Win32 path — and a WSL pane with no cwd of its own then falls back
+  // to a path wsl.exe cannot open, so `--cd` degrades to `~` and the pane
+  // silently lands in the WSL home instead of the project. Only POSIX reports
+  // (and a POSIX folder at creation) write here, so the WSL fallback survives
+  // a Win32 pane living in the same workspace.
+  posixCwd?: string;
   prNumber?: number;
   prStatus?: 'open' | 'merged' | 'closed';
   prLabel?: string;
@@ -224,6 +233,11 @@ export interface SavedSession {
     customColor?: string;
     shell: string;
     cwd: string;
+    // The POSIX/WSL directory, kept apart from `cwd` because a pwsh pane's
+    // report overwrites the latter with a Win32 path and strands every WSL pane
+    // in the workspace on `--cd ~`. Optional: sessions saved before this field
+    // existed recover via the isPosixPath(cwd) seed in replaceAllWorkspaces.
+    posixCwd?: string;
     splitTree: SplitNode;
     browserUrl?: string;
     // Both written since 0.4x; declared here as of #145, which was caused by a

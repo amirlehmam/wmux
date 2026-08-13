@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { PaneId, SplitNode, SurfaceId, WorkspaceId, QuickLaunchProfile, ShellInfo } from '../../../shared/types';
+import { workspaceFallbackCwd } from '../../../shared/paths';
 import { findLeaf, splitNode } from '../../store/split-utils';
 import TerminalPane from '../Terminal/TerminalPane';
 import BrowserPane from '../Browser/BrowserPane';
@@ -258,7 +259,7 @@ export default function PaneWrapper({
             <TerminalPane
               surfaceId={surface.id}
               shell={surface.shell || workspace?.shell}
-              cwd={surface.cwd || workspace?.cwd}
+              cwd={surface.cwd || workspaceFallbackCwd(surface.shell || workspace?.shell, workspace)}
               colorScheme={surface.colorScheme}
               startupCommands={surface.startupCommands}
               focused={isFocused && isActive}
