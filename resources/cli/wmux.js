@@ -4,13 +4,171 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.timeoutMessage = timeoutMessage;
+exports.browserRequest = browserRequest;
+exports.subcommandError = subcommandError;
 const net_1 = __importDefault(require("net"));
 const fs_1 = __importDefault(require("fs"));
 const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
+const child_process_1 = require("child_process");
+const stream_1 = require("stream");
 // Respect WMUX_PIPE when set (e.g. by a parent wmux running with WMUX_INSTANCE),
 // so the CLI talks to the same instance that spawned the shell.
 const PIPE_PATH = process.env.WMUX_PIPE || '\\\\.\\pipe\\wmux';
+// ─── Remote transport (issue #78: remote wmux management) ────────────────────
+// When --remote host[:port] (or WMUX_REMOTE) is set, every command connects
+// over TCP instead of the local named pipe — typically through an SSH tunnel
+// (`ssh -L 9787:127.0.0.1:9787 user@host`) to a `wmux bridge` running on the
+// remote machine. Auth is unchanged: the remote instance's pipe token must be
+// supplied via --token or WMUX_REMOTE_TOKEN (print it there with `wmux token`).
+const DEFAULT_BRIDGE_PORT = 9787;
+let remoteTarget = null;
+// How long `wmux bridge` lets a relay keep draining after its client socket has
+// closed, before forcing teardown. Must exceed the pipe round-trip, or the frame
+// a write-then-close client just sent is discarded mid-flight. Measured worst
+// case inside a devcontainer on a corporate-managed Windows host is ~7s (a fresh
+// npiperelay.exe is spawned per connection over WSL interop, and AV/EDR scans it
+// on every exec), so the default leaves generous headroom. The relay normally
+// exits on its own well before this — the timer is only the backstop.
+const BRIDGE_DRAIN_GRACE_MS = parseInt(process.env.WMUX_BRIDGE_DRAIN_MS || '', 10) || 15000;
+// How many npiperelay relays `wmux bridge` keeps spawned and attached to the pipe
+// ahead of demand (see the pool in cmdBridge). 0 disables pre-warming and restores
+// spawn-per-connection. Only ever used on the npiperelay path — the Unix-socket and
+// native-pipe transports connect instantly and have nothing to pre-warm.
+const BRIDGE_WARM_RELAYS = (() => {
+    const raw = process.env.WMUX_BRIDGE_WARM?.trim();
+    if (!raw)
+        return 2;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 2;
+})();
+function parseRemoteTarget(spec) {
+    const idx = spec.lastIndexOf(':');
+    if (idx === -1)
+        return { host: spec, port: DEFAULT_BRIDGE_PORT };
+    const port = parseInt(spec.slice(idx + 1), 10);
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+        console.error(`Invalid --remote target: ${spec} (expected host[:port])`);
+        process.exit(1);
+    }
+    return { host: spec.slice(0, idx) || '127.0.0.1', port };
+}
+// ─── WSL2 transport: reach the Windows \\.\pipe\wmux from inside WSL2 ─────────
+//
+// A wmux CLI (or `wmux bridge`) running inside WSL2 needs to talk to the wmux
+// process on the Windows host over the \\.\pipe\wmux named pipe. AF_VSOCK,
+// TCP-over-gateway and cross-boundary Unix sockets were all evaluated and
+// rejected (HCS-managed WSL2 UVMs ignore GuestCommunicationServices; gateway
+// IPs/firewall policy are unreliable on corporate networks; 9P does not forward
+// AF_UNIX). The chosen mechanism is npiperelay.exe:
+//
+//   npiperelay.exe is a tiny (~2MB) open-source Windows binary that forwards a
+//   named pipe to its own stdin/stdout. WSL2 executes Windows binaries via
+//   interop, so from inside WSL2 we spawn it and use its stdio as the transport
+//   duplex — zero pre-setup, no socat needed. Install it (SHA-256 pinned) with
+//   scripts/install-npiperelay.sh; see docs/DEVCONTAINER.md for the full setup.
+//   Source: https://github.com/albertony/npiperelay (MIT, fork of jstarks/npiperelay)
+//   Pinned version: v1.11.4  SHA-256: cea82cf5c9c22a28bef8075750acb7958f766393baebff4597cf21442f71c4b3
+//
+//   Transport selection order:
+//     0. remoteTarget set (--remote / WMUX_REMOTE) → TCP (the devcontainer path,
+//        served by a `wmux bridge` reachable at host.docker.internal:9787)
+//     1. WMUX_PIPE starts with '/' → use as a Unix socket path
+//     2. WSL_DISTRO_NAME / WSLENV set → spawn npiperelay.exe automatically
+//     3. native Windows → connect directly to the named pipe
+// ─────────────────────────────────────────────────────────────────────────────
+function connectTransport(onConnect) {
+    if (remoteTarget)
+        return net_1.default.connect({ host: remoteTarget.host, port: remoteTarget.port }, onConnect);
+    if (PIPE_PATH.startsWith('/'))
+        return net_1.default.connect({ path: PIPE_PATH }, onConnect);
+    if (process.env.WSL_DISTRO_NAME || process.env.WSLENV)
+        return connectViaNpiperelay(PIPE_PATH, onConnect);
+    return net_1.default.connect({ path: PIPE_PATH }, onConnect);
+}
+// Mirrors the selection order above: true when connectTransport() will take the
+// npiperelay branch. That is the only transport whose setup costs anything worth
+// pre-warming — a Unix socket or a native named pipe connects in microseconds.
+function usesNpiperelay() {
+    return (!remoteTarget && !PIPE_PATH.startsWith('/') && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSLENV));
+}
+// Search common installation locations for npiperelay.exe.
+function findNpiperelay() {
+    const readable = (p) => {
+        try {
+            fs_1.default.accessSync(p);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    };
+    const fromPath = (process.env.PATH || '')
+        .split(':')
+        .map((d) => path_1.default.join(d, 'npiperelay.exe'))
+        .find(readable);
+    if (fromPath)
+        return fromPath;
+    return ([
+        path_1.default.join(os_1.default.homedir(), '.local', 'bin', 'npiperelay.exe'),
+        '/usr/local/bin/npiperelay.exe',
+        '/usr/bin/npiperelay.exe',
+    ].find(readable) ?? null);
+}
+// Spawn npiperelay.exe and expose its stdin/stdout as a Duplex stream.
+function connectViaNpiperelay(pipePath, onConnect) {
+    const bin = findNpiperelay();
+    if (!bin) {
+        console.error('wmux: npiperelay.exe not found.');
+        console.error('  Install it with scripts/install-npiperelay.sh, or fetch it from:');
+        console.error('  https://github.com/albertony/npiperelay/releases/latest');
+        process.exit(1);
+    }
+    // npiperelay names the pipe with forward slashes: \\.\pipe\wmux → //./pipe/wmux
+    const child = (0, child_process_1.spawn)(bin, ['-ei', '-s', pipePath.replace(/\\/g, '/')], {
+        stdio: ['pipe', 'pipe', 'inherit'],
+    });
+    const duplex = new stream_1.Duplex({
+        read() { },
+        write(chunk, enc, cb) {
+            if (!child.stdin?.writable) {
+                cb(new Error('npiperelay stdin closed'));
+                return;
+            }
+            child.stdin.write(chunk, enc, cb);
+        },
+        final(cb) {
+            child.stdin?.end();
+            cb();
+        },
+        // Kills the relay, discarding anything still buffered in its stdin. Callers
+        // must only reach here on error or after the stream has drained — see the
+        // teardown in cmdBridge.
+        destroy(err, cb) {
+            child.kill();
+            cb(err);
+        },
+        allowHalfOpen: true,
+    });
+    child.stdout?.on('data', (chunk) => duplex.push(chunk));
+    child.stdout?.on('end', () => duplex.push(null));
+    child.on('error', (err) => duplex.destroy(err));
+    child.on('exit', (code) => {
+        if (code !== 0 && code !== null)
+            duplex.destroy(new Error(`npiperelay exited with code ${code}`));
+    });
+    // "Ready" here means the relay process exists — NOT that it has attached to the
+    // named pipe, which over WSL interop can take seconds longer. onConnect must
+    // still fire now regardless: callers write their request from inside it, and the
+    // Duplex buffers those bytes until the pipe is live. (Deferring it until the
+    // first byte comes back would deadlock — nothing would ever be written.)
+    //
+    // The cost is that a caller's deadline starts before the pipe is up, so it has
+    // to cover the attach latency too — that is what SLOW_TRANSPORT_FLOOR_MS is for.
+    process.nextTick(onConnect);
+    return duplex;
+}
 // Auth token for privileged (V2) pipe requests. wmux injects WMUX_PIPE_TOKEN
 // into the shells it spawns; for CLIs launched elsewhere, fall back to the
 // token file in the instance's APPDATA dir (readable only by this user).
@@ -27,29 +185,101 @@ function readPipeToken() {
         return '';
     }
 }
-const PIPE_TOKEN = readPipeToken();
+// Mutable: overridden by --token / WMUX_REMOTE_TOKEN when talking to a remote
+// instance, whose token differs from this machine's.
+let PIPE_TOKEN = readPipeToken();
 function sendV1(command) {
+    // V1 state updates authenticate with an "auth <token> " prefix (issue #72).
+    const line = PIPE_TOKEN ? `auth ${PIPE_TOKEN} ${command}` : command;
     return new Promise((resolve, reject) => {
-        const client = net_1.default.connect({ path: PIPE_PATH }, () => {
-            client.write(command + '\n');
+        const client = connectTransport(() => {
+            client.write(line + '\n');
         });
         let data = '';
-        client.on('data', (chunk) => { data += chunk.toString(); });
-        client.on('end', () => resolve(data.trim()));
-        client.on('error', (err) => reject(err));
-        setTimeout(() => { client.end(); resolve(data.trim()); }, 5000);
+        const timer = setTimeout(() => { client.end(); resolve(data.trim()); }, deadline(5000));
+        const finish = () => { clearTimeout(timer); resolve(data.trim()); };
+        client.on('data', (chunk) => {
+            data += chunk.toString();
+            // V1 replies are a single newline-terminated line (pong/ok/unauthorized).
+            // Resolve as soon as it arrives instead of blocking on the server closing
+            // the socket (it doesn't) — otherwise every call waited the full 5s timer.
+            if (data.includes('\n')) {
+                client.end();
+                finish();
+            }
+        });
+        client.on('end', finish);
+        client.on('error', (err) => { clearTimeout(timer); reject(err); });
     });
 }
-function sendV2(method, params = {}) {
+/**
+ * How long to wait for a V2 reply before giving up.
+ *
+ * This deadline has to stay LARGER than whatever budget the main process spends
+ * serving the same request. When it is shorter the CLI loses a race it should
+ * never have been in: a command that succeeds late is reported as a failure, and
+ * the server's own diagnosis ('Could not open browser panel', 'browser_not_open',
+ * 'ref_not_found: …') is discarded unread because it arrives after we hung up.
+ * Only the browser verbs currently need more than this — see BROWSER_CMDS.
+ */
+const DEFAULT_V2_TIMEOUT_MS = 5000;
+/**
+ * A floor under every deadline, for transports slower than a local named pipe.
+ *
+ * The budgets above are all sized for a pipe on the same machine, where a
+ * round-trip is sub-millisecond and the whole deadline is the server's own
+ * thinking time. Neither transport this file grew for issue #19 is that: TCP to
+ * a `wmux bridge` from inside a devcontainer, and npiperelay over WSL interop,
+ * both measure ~7s worst case on a corporate-managed host — above the 5s default
+ * on their own, before wmux has done anything. Every request from a container
+ * therefore reported a timeout for a call that had already succeeded.
+ *
+ * A floor rather than a replacement, so a browser verb keeps the longer budget
+ * it asked for, and a local run keeps master's timings unchanged (floor 0).
+ */
+const SLOW_TRANSPORT_FLOOR_MS = 30000;
+/** `base`, raised to the slow-transport floor when the transport is a slow one. */
+function deadline(base) {
+    const override = parseInt(process.env.WMUX_RPC_TIMEOUT_MS || '', 10);
+    if (Number.isFinite(override) && override > 0)
+        return Math.max(base, override);
+    return remoteTarget || usesNpiperelay() ? Math.max(base, SLOW_TRANSPORT_FLOOR_MS) : base;
+}
+/**
+ * What a stalled request says when it gives up.
+ *
+ * The bare 'timeout' this used to reject with named neither the method nor the
+ * deadline, so an operation that was merely slow was indistinguishable from a
+ * broken install — and since the deadline was also shorter than the server's own
+ * budget, it was usually the *only* thing a slow browser command ever printed.
+ */
+function timeoutMessage(method, timeoutMs) {
+    return `${method} timed out after ${timeoutMs}ms — wmux accepted the request but sent no reply. The command may still have completed.`;
+}
+function sendV2(method, params = {}, timeoutMs = DEFAULT_V2_TIMEOUT_MS) {
+    // Every command carries the caller's surface (WMUX_SURFACE_ID). Browser
+    // commands use it to route each agent to its OWN browser pane, so concurrent
+    // agents no longer share and clobber one browser window (issue #62); the
+    // workspace/pane/surface commands use it to answer about the window the
+    // calling shell actually lives in rather than an arbitrary one (issue #141).
+    if (params.caller === undefined && process.env.WMUX_SURFACE_ID) {
+        params = { ...params, caller: process.env.WMUX_SURFACE_ID };
+    }
     return new Promise((resolve, reject) => {
-        const client = net_1.default.connect({ path: PIPE_PATH }, () => {
+        const client = connectTransport(() => {
             const request = JSON.stringify({ method, params, id: 1, token: PIPE_TOKEN });
             client.write(request + '\n');
         });
         let data = '';
+        const deadlineMs = deadline(timeoutMs);
+        const timer = setTimeout(() => {
+            client.end();
+            reject(new Error(timeoutMessage(method, deadlineMs)));
+        }, deadlineMs);
         client.on('data', (chunk) => {
             data += chunk.toString();
             if (data.includes('\n')) {
+                clearTimeout(timer);
                 client.end();
                 try {
                     const response = JSON.parse(data.trim());
@@ -63,8 +293,7 @@ function sendV2(method, params = {}) {
                 }
             }
         });
-        client.on('error', (err) => reject(err));
-        setTimeout(() => { client.end(); reject(new Error('timeout')); }, 5000);
+        client.on('error', (err) => { clearTimeout(timer); reject(err); });
     });
 }
 // Simple flag helpers shared across commands.
@@ -82,441 +311,1130 @@ function stripFlag(args, name) {
     copy.splice(i, i === args.length - 1 ? 1 : 2);
     return copy;
 }
-async function main() {
-    const args = process.argv.slice(2);
-    const command = args[0];
-    if (!command) {
+const print = (v) => console.log(JSON.stringify(v, null, 2));
+/**
+ * Server-side budgets a browser command can legitimately spend before it is even
+ * able to reply. Mirrored from the main process so the CLI can outwait it:
+ *
+ *   BROWSER_READY_MS   v2-browser.ts readies a browser first — it splits a pane
+ *                      and then polls up to 5s for CDP to attach.
+ *   CDP_NAVIGATE_MS    cdp-bridge.ts navigate() waits for did-finish-load.
+ *   CDP_WAIT_MS        cdp-bridge.ts wait() polls for a ref.
+ *
+ * Both cdp-bridge budgets already exceeded the old flat 5s CLI deadline on their
+ * own, so `browser open` on any slow page and `browser wait` on any absent ref
+ * could not report anything but 'timeout' — including when they went on to
+ * succeed. Keep these in step if the main-process defaults change.
+ */
+const BROWSER_READY_MS = 5000;
+const CDP_NAVIGATE_MS = 30000;
+const CDP_WAIT_MS = 10000;
+/** Pane split plus the executeJavaScript round-trips around it. */
+const BROWSER_SLACK_MS = 5000;
+/** The CLI deadline for a browser verb whose own server-side budget is `verbMs`. */
+const browserDeadline = (verbMs) => BROWSER_READY_MS + verbMs + BROWSER_SLACK_MS;
+// Each browser subcommand maps to the V2 request it issues.
+const BROWSER_CMDS = {
+    open: (args) => ({
+        method: 'browser.navigate',
+        params: { url: args[2] },
+        timeoutMs: browserDeadline(CDP_NAVIGATE_MS),
+    }),
+    snapshot: () => ({ method: 'browser.snapshot', params: {}, timeoutMs: browserDeadline(0) }),
+    click: (args) => ({ method: 'browser.click', params: { ref: args[2] }, timeoutMs: browserDeadline(0) }),
+    type: (args) => ({
+        method: 'browser.type',
+        params: { ref: args[2], text: args.slice(3).join(' ') },
+        timeoutMs: browserDeadline(0),
+    }),
+    fill: (args) => ({
+        method: 'browser.fill',
+        params: { ref: args[2], value: args.slice(3).join(' ') },
+        timeoutMs: browserDeadline(0),
+    }),
+    screenshot: (args) => ({
+        method: 'browser.screenshot',
+        params: { fullPage: args.includes('--full') },
+        timeoutMs: browserDeadline(0),
+    }),
+    'get-text': (args) => ({ method: 'browser.get_text', params: { ref: args[2] }, timeoutMs: browserDeadline(0) }),
+    eval: (args) => ({ method: 'browser.eval', params: { js: args.slice(2).join(' ') }, timeoutMs: browserDeadline(0) }),
+    wait: (args) => {
+        const explicit = parseInt(args[3]) || undefined;
+        return {
+            method: 'browser.wait',
+            params: { ref: args[2], timeout: explicit },
+            // An explicit ms is the budget the server will honour; outwait that one.
+            timeoutMs: browserDeadline(explicit ?? CDP_WAIT_MS),
+        };
+    },
+    back: () => ({ method: 'browser.back', params: {}, timeoutMs: browserDeadline(0) }),
+    forward: () => ({ method: 'browser.forward', params: {}, timeoutMs: browserDeadline(0) }),
+    reload: () => ({ method: 'browser.reload', params: {}, timeoutMs: browserDeadline(0) }),
+};
+/**
+ * Resolve `wmux browser <verb> …` to the request it issues. Null for an unknown
+ * verb. Pure, so the deadlines and the caller wiring are testable without a
+ * running app.
+ *
+ * `caller` is the *terminal* surface the command is issued on behalf of, not a
+ * browser surface: the main process maps it to that pane's own browser, which is
+ * what keeps concurrent agents isolated (issue #62). Passing it explicitly does
+ * not change that routing — it only supplies from a flag what a shell inside a
+ * pane supplies from $WMUX_SURFACE_ID.
+ */
+function browserRequest(args, caller) {
+    const build = BROWSER_CMDS[args[1]];
+    if (!build)
+        return null;
+    const req = build(args);
+    return caller ? { ...req, params: { ...req.params, caller } } : req;
+}
+/**
+ * What a group command says when its subcommand is missing or unknown.
+ *
+ * `browser`, `agent`, `pane` and `layout` all dispatched on `args[1]` and
+ * interpolated it into the error unchecked, so a bare `wmux browser` — the
+ * natural thing to type when you want to know the verbs — answered
+ * `Unknown browser command: undefined` (issue #156). That reads like the CLI
+ * malfunctioned rather than like a usage error, and it was a dead end: nothing
+ * in it pointed at `wmux help browser`, and `wmux browser --help` cannot fill
+ * the gap because browser is passthrough (`--help` is text to send, not a
+ * request for usage). `markdown` and `config` already printed usage here.
+ */
+function subcommandError(command, sub) {
+    return sub === undefined || sub === ''
+        ? `wmux ${command} needs a subcommand.`
+        : `Unknown ${command} subcommand: ${sub}`;
+}
+/** Print why the subcommand was rejected, then that group's usage, then exit 1. */
+function failSubcommand(command, sub) {
+    return fail(command, COMMAND_SPECS[command], subcommandError(command, sub));
+}
+async function cmdBrowser(args) {
+    // --surface says which pane's browser to drive, mirroring send / read-screen /
+    // agent-activity. Strip it before the verb reads its positional args, or
+    // `browser type e5 --surface surf-x hi` would type the flag into the page.
+    const caller = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+    const rest = stripFlag(args, '--surface');
+    const req = browserRequest(rest, caller);
+    if (!req)
+        failSubcommand('browser', rest[1]);
+    print(await sendV2(req.method, req.params, req.timeoutMs));
+}
+function agentSpawn(args) {
+    const params = {};
+    // Valueless flags must be stripped before the pairwise --flag value loop.
+    const rest = args.slice(2).filter((a) => {
+        if (a === '--replace-tab') {
+            params.replaceTab = true;
+            return false;
+        }
+        return true;
+    });
+    for (let i = 0; i < rest.length; i += 2) {
+        if (rest[i] === '--cmd')
+            params.cmd = rest[i + 1];
+        if (rest[i] === '--label')
+            params.label = rest[i + 1];
+        if (rest[i] === '--cwd')
+            params.cwd = rest[i + 1];
+        if (rest[i] === '--pane')
+            params.paneId = rest[i + 1];
+        if (rest[i] === '--workspace')
+            params.workspaceId = rest[i + 1];
+    }
+    if (!params.cmd) {
+        console.error('--cmd is required');
+        process.exit(1);
+    }
+    if (!params.label)
+        params.label = params.cmd.split(/\s+/)[0];
+    return sendV2('agent.spawn', params);
+}
+function agentSpawnBatch(args) {
+    const jsonIdx = args.indexOf('--json');
+    if (jsonIdx === -1) {
+        console.error('Usage: wmux agent spawn-batch --json \'[...]\'');
+        process.exit(1);
+    }
+    const parsed = JSON.parse(args[jsonIdx + 1]);
+    const strategy = args.find((a, i) => args[i - 1] === '--strategy') || 'distribute';
+    return sendV2('agent.spawn_batch', { agents: parsed, strategy });
+}
+const AGENT_CMDS = {
+    spawn: agentSpawn,
+    'spawn-batch': agentSpawnBatch,
+    status: (args) => sendV2('agent.status', { agentId: args[2] }),
+    list: (args) => sendV2('agent.list', { workspaceId: args.find((a, i) => args[i - 1] === '--workspace') }),
+    kill: (args) => sendV2('agent.kill', { agentId: args[2] }),
+};
+async function cmdAgent(args) {
+    const handler = AGENT_CMDS[args[1]];
+    if (!handler)
+        failSubcommand('agent', args[1]);
+    print(await handler(args));
+}
+async function cmdPane(args) {
+    const sub = args[1];
+    if (sub === 'new' || sub === 'split') {
+        const rest = args.slice(2);
+        const direction = rest.includes('--down') ? 'down' : 'right';
+        const type = getFlag(rest, '--type') || 'terminal';
+        const colorScheme = getFlag(rest, '--color-scheme');
+        print(await sendV2('pane.split', { direction, type, ...(colorScheme ? { colorScheme } : {}) }));
+    }
+    else if (sub === 'close') {
+        print(await sendV2('pane.close', { id: args[2] }));
+    }
+    else if (sub === 'focus') {
+        print(await sendV2('pane.focus', { id: args[2] }));
+    }
+    else if (sub === 'list') {
+        print(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') }));
+    }
+    else {
+        failSubcommand('pane', sub);
+    }
+}
+async function cmdConfig(args) {
+    const sub = args[1];
+    if (sub === 'show' || sub === 'get') {
+        print(await sendV2('config.get'));
+    }
+    else if (sub === 'reload') {
+        print(await sendV2('config.reload'));
+    }
+    else if (sub === 'path') {
+        const home = process.env.USERPROFILE || process.env.HOME || '';
+        console.log(`${home}\\.wmux\\config.toml`);
+    }
+    else {
+        console.error('Usage: wmux config <show|reload|path>');
+        process.exit(1);
+    }
+}
+/**
+ * Community translations (issue #147). `list` is the default because the whole
+ * point is telling a translator which of their files loaded and which were
+ * rejected — silence on a typo'd filename is the failure mode to avoid.
+ */
+async function cmdLocales(args) {
+    const sub = args[1];
+    if (!sub || sub === 'list' || sub === 'show') {
+        print(await sendV2('locales.get'));
+    }
+    else if (sub === 'reload') {
+        print(await sendV2('config.reload'));
+    }
+    else if (sub === 'path') {
+        const home = process.env.USERPROFILE || process.env.HOME || '';
+        console.log(`${home}\\.wmux\\locales`);
+    }
+    else {
+        console.error('Usage: wmux locales [list|reload|path]');
+        process.exit(1);
+    }
+}
+async function cmdLayout(args) {
+    if (args[1] !== 'grid')
+        failSubcommand('layout', args[1]);
+    const params = {};
+    for (let i = 2; i < args.length; i += 2) {
+        if (args[i] === '--count')
+            params.count = parseInt(args[i + 1], 10);
+        if (args[i] === '--type')
+            params.type = args[i + 1];
+        if (args[i] === '--anchor-surface')
+            params.anchorSurfaceId = args[i + 1];
+        if (args[i] === '--anchor-pane')
+            params.anchorPaneId = args[i + 1];
+        if (args[i] === '--workspace')
+            params.workspaceId = args[i + 1];
+    }
+    if (!params.count || params.count < 1) {
+        console.error('--count <N> is required and must be >= 1');
+        process.exit(1);
+    }
+    // If no explicit anchor, fall back to the current shell's surface so the command "just works" from inside a pane.
+    if (!params.anchorSurfaceId && !params.anchorPaneId && process.env.WMUX_SURFACE_ID) {
+        params.anchorSurfaceId = process.env.WMUX_SURFACE_ID;
+    }
+    print(await sendV2('layout.grid', params));
+}
+async function cmdMarkdown(args) {
+    const sub = args[1];
+    if (sub === 'set') {
+        // Existing behaviour: target an existing surface by id.
+        const surfaceId = args[2];
+        const contentFlag = args.indexOf('--content');
+        const fileFlag = args.indexOf('--file');
+        const titleFlag = args.indexOf('--title');
+        const title = titleFlag !== -1 ? args[titleFlag + 1] : undefined;
+        if (contentFlag !== -1) {
+            // Stop at --title so it isn't swallowed into the content when it comes last.
+            const end = titleFlag > contentFlag ? titleFlag : args.length;
+            print(await sendV2('markdown.set_content', {
+                surfaceId, markdown: args.slice(contentFlag + 1, end).join(' '), title,
+            }));
+        }
+        else if (fileFlag !== -1) {
+            // Resolve against the terminal's cwd — the main-process cwd differs.
+            const filePath = path_1.default.resolve(process.cwd(), args[fileFlag + 1] || '');
+            print(await sendV2('markdown.load_file', { surfaceId, filePath }));
+        }
+        else {
+            console.error('Usage: wmux markdown set <id> --content <text> [--title T] | --file <path>');
+            process.exit(1);
+        }
+    }
+    else if (sub === 'get') {
+        // Read a surface's buffer back out — mirrors `read-screen` for terminals.
+        print(await sendV2('markdown.get_content', { surfaceId: args[2] }));
+    }
+    else if (sub) {
+        // One-shot: `wmux markdown <file>` — create a markdown surface and load the
+        // file into it. Relative paths resolve against the caller's cwd.
+        const filePath = path_1.default.resolve(process.cwd(), sub);
+        const created = await sendV2('surface.create', { type: 'markdown' });
+        const surfaceId = created?.surfaceId;
+        if (!surfaceId) {
+            console.error('Failed to create markdown surface');
+            process.exit(1);
+        }
+        print(await sendV2('markdown.load_file', { surfaceId, filePath }));
+    }
+    else {
+        console.error('Usage: wmux markdown <file>  |  wmux markdown set <id> --content <text> [--title T] | --file <path>  |  wmux markdown get <id>');
+        process.exit(1);
+    }
+}
+async function cmdNewWorkspace(args) {
+    const params = {};
+    for (let i = 1; i < args.length; i += 2) {
+        if (args[i] === '--title')
+            params.title = args[i + 1];
+        if (args[i] === '--shell')
+            params.shell = args[i + 1];
+        if (args[i] === '--cwd')
+            params.cwd = args[i + 1];
+    }
+    print(await sendV2('workspace.create', params));
+}
+// Remote terminal (issue #78): open a workspace whose shell is the OpenSSH
+// client connecting to <target>. Everything that isn't a wmux flag is passed
+// through to ssh, so `wmux ssh -p 2222 user@host` works as expected.
+async function cmdSsh(args) {
+    const title = getFlag(args, '--title');
+    const sshArgs = [];
+    for (let i = 1; i < args.length; i++) {
+        if (args[i] === '--title') {
+            i++;
+            continue;
+        }
+        sshArgs.push(args[i]);
+    }
+    if (sshArgs.length === 0) {
+        console.error('Usage: wmux ssh [ssh options] <user@host> [--title T]');
+        process.exit(1);
+    }
+    // Title heuristic: the last non-flag token is the destination (`-p 2222
+    // user@host` → "user@host"), matching how ssh itself orders its argv.
+    const target = [...sshArgs].reverse().find((a) => !a.startsWith('-')) ?? sshArgs[sshArgs.length - 1];
+    print(await sendV2('workspace.create', {
+        title: title || `ssh ${target}`,
+        shell: `ssh ${sshArgs.join(' ')}`,
+    }));
+}
+// TCP↔pipe bridge (issue #78): exposes this machine's wmux pipe on a TCP port
+// so a remote CLI can drive it through an SSH tunnel. Pure byte relay — no
+// parsing, no auth of its own; the pipe token is still verified end-to-end by
+// wmux's pipe server, so the bridge grants nothing by itself.
+async function cmdBridge(args) {
+    const port = parseInt(getFlag(args, '--port') || '', 10) || DEFAULT_BRIDGE_PORT;
+    // --wsl binds 0.0.0.0 so a container on the Windows host can reach a bridge
+    // running inside WSL2 (issue #19). WSL2's NAT gives the distro an address the
+    // container resolves as host.docker.internal, but 127.0.0.1 inside the distro
+    // is not it. The pipe token still authenticates every request end to end.
+    const wslMode = args.includes('--wsl');
+    const host = getFlag(args, '--host') || (wslMode ? '0.0.0.0' : '127.0.0.1');
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+        console.warn('WARNING: binding beyond localhost exposes the wmux pipe to the network.');
+        console.warn(`Prefer the default 127.0.0.1 + an SSH tunnel: ssh -L ${port}:127.0.0.1:${port} user@host`);
+    }
+    // ── Warm relay pool ─────────────────────────────────────────────────────────
+    // Spawn-per-connection made every request pay the relay's whole startup: a fresh
+    // npiperelay.exe launched over WSL interop (AV/EDR scans the binary on each exec
+    // on a corporate-managed host) and then the pipe dial. Measured worst case from a
+    // devcontainer is ~7s — on every hook. Keeping relays open ahead of demand moves
+    // that cost off the request path: a warm relay has already spawned AND attached
+    // by the time a client arrives, so hand-off is just pipe().
+    //
+    // Deliberately a POOL of exclusive relays, not one shared relay multiplexed
+    // across clients. Multiplexing would force the bridge to parse frames and rewrite
+    // JSON-RPC ids to route replies back to the right socket, which:
+    //   * breaks V1 entirely — `pong` / `ok` / `unauthorized` carry no id to route on;
+    //   * makes every client a casualty when the single relay dies;
+    //   * costs the bridge its one real virtue, being a transparent byte pipe (any
+    //     future streaming or server-pushed method would have to be taught to it).
+    // Pooling buys the same latency win and the bridge stays dumb.
+    //
+    // Only on the npiperelay path — elsewhere this would hold idle sockets open to
+    // buy nothing.
+    const warmSize = usesNpiperelay() ? BRIDGE_WARM_RELAYS : 0;
+    const warm = [];
+    let warmFailures = 0;
+    let refillTimer = null;
+    const scheduleRefill = (delayMs) => {
+        if (refillTimer || warm.length >= warmSize)
+            return;
+        refillTimer = setTimeout(() => {
+            refillTimer = null;
+            fillWarm();
+        }, delayMs);
+        refillTimer.unref();
+    };
+    function fillWarm() {
+        while (warm.length < warmSize) {
+            const stream = connectTransport(() => { });
+            const entry = { stream, claim: () => { } };
+            // Dying before being claimed means the upstream isn't there — wmux not
+            // running, or the pipe gone. npiperelay exits immediately in that case, so
+            // without a backoff the bridge would respawn a Windows process in a tight
+            // loop for as long as wmux stays down.
+            const onDead = () => {
+                const i = warm.indexOf(entry);
+                if (i === -1)
+                    return; // already claimed — the client's teardown owns it now
+                warm.splice(i, 1);
+                warmFailures = Math.min(warmFailures + 1, 6);
+                scheduleRefill(Math.min(30000, 500 * 2 ** warmFailures));
+            };
+            entry.claim = () => {
+                stream.off('error', onDead);
+                stream.off('close', onDead);
+            };
+            stream.on('error', onDead);
+            stream.on('close', onDead);
+            warm.push(entry);
+        }
+    }
+    // An idle relay reads nothing, so anything the upstream sent while it waited stays
+    // buffered in the stream and is delivered the moment the client pipes it — no need
+    // to drain before hand-off.
+    const takeWarm = () => {
+        while (warm.length) {
+            const entry = warm.pop();
+            entry.claim();
+            // wmux may have restarted since this relay attached.
+            if (!entry.stream.destroyed && entry.stream.writable) {
+                warmFailures = 0;
+                return entry.stream;
+            }
+            entry.stream.destroy();
+        }
+        return null;
+    };
+    const server = net_1.default.createServer((sock) => {
+        // Connect to the local wmux through the same selector the CLI uses. In the
+        // bridge process remoteTarget is always null, so this resolves to a Unix
+        // socket, npiperelay (inside WSL2), or the named pipe directly — which is
+        // what lets `wmux bridge` run inside WSL2 and still reach the Windows pipe.
+        // A warm relay is the same thing, already connected.
+        const pipe = takeWarm() ?? connectTransport(() => { });
+        // Replace what we just consumed so the next client is served warm too.
+        scheduleRefill(0);
+        sock.pipe(pipe);
+        pipe.pipe(sock);
+        // Teardown is half-close-aware on purpose. Destroying BOTH sides on either
+        // 'close' silently ate hook events: wmux-hook.js writes its frame and end()s
+        // immediately, and over npiperelay the Duplex's destroy() is child.kill() —
+        // so the relay died with the frame still buffered in its stdin and never
+        // forwarded it. Clients that write-then-close are the normal case here
+        // (every Claude Code hook is one), not an abort.
+        //
+        // 'end' (peer finished sending) therefore FLUSHES rather than destroys: end()
+        // the other side so its buffered bytes drain and the pipe sees a clean EOF.
+        // destroy() is reserved for 'error', where there is nothing left to save.
+        let done = false;
+        const destroyBoth = () => {
+            if (done)
+                return;
+            done = true;
+            sock.destroy();
+            pipe.destroy();
+        };
+        // A closed socket can no longer drain anything, so 'close' still tears down —
+        // but only after a grace period, giving an in-flight relay time to finish
+        // forwarding what it already holds.
+        const closeAfterDrain = () => {
+            if (done)
+                return;
+            setTimeout(destroyBoth, BRIDGE_DRAIN_GRACE_MS).unref();
+        };
+        sock.on('error', destroyBoth);
+        pipe.on('error', destroyBoth);
+        sock.on('end', () => { pipe.end(); });
+        pipe.on('end', () => { sock.end(); });
+        sock.on('close', closeAfterDrain);
+        pipe.on('close', closeAfterDrain);
+    });
+    server.on('error', (err) => { console.error(`bridge error: ${err.message}`); process.exit(1); });
+    // Warm relays hold a live pipe connection (and an npiperelay.exe) for as long as
+    // the bridge runs, so retire them on the way out rather than orphaning them.
+    const shutdown = () => {
+        if (refillTimer)
+            clearTimeout(refillTimer);
+        warm.splice(0).forEach((e) => { e.claim(); e.stream.destroy(); });
+        process.exit(0);
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+    server.listen(port, host, () => {
+        console.log(`wmux bridge listening on ${host}:${port} ↔ ${PIPE_PATH}`);
+        if (warmSize > 0) {
+            fillWarm();
+            console.log(`Keeping ${warmSize} npiperelay relay(s) warm (WMUX_BRIDGE_WARM=0 to disable).`);
+        }
+        if (wslMode) {
+            console.log('WSL2 mode. From a container on this host:');
+            console.log(`  WMUX_REMOTE=host.docker.internal:${port}`);
+            console.log("  WMUX_REMOTE_TOKEN=<run 'wmux token' here>");
+        }
+        else {
+            console.log('From another machine:');
+            console.log(`  ssh -L ${port}:127.0.0.1:${port} <user>@<this-host>`);
+            console.log(`  wmux --remote 127.0.0.1:${port} --token <run 'wmux token' here> list-workspaces`);
+        }
+        console.log('Ctrl+C to stop.');
+    });
+}
+// Prints this instance's pipe auth token so it can be passed to --token /
+// WMUX_REMOTE_TOKEN on the machine that will drive this one remotely.
+function cmdToken() {
+    if (!PIPE_TOKEN) {
+        console.error('No pipe token found — has wmux been started on this machine?');
+        process.exit(1);
+    }
+    console.log(PIPE_TOKEN);
+}
+async function cmdSetColorScheme(args) {
+    // Two forms:
+    //   wmux set-color-scheme <scheme>             → apply to current surface
+    //   wmux set-color-scheme <surfaceId> <scheme> → apply to a specific surface
+    let surfaceId = args[1];
+    let scheme = args[2];
+    if (!scheme) {
+        scheme = surfaceId;
+        surfaceId = process.env.WMUX_SURFACE_ID || '';
+    }
+    if (!surfaceId) {
+        console.error('No surface id. Pass one as argument or run inside a wmux pane.');
+        process.exit(1);
+    }
+    if (!scheme) {
+        console.error('Usage: wmux set-color-scheme [surfaceId] <scheme>');
+        process.exit(1);
+    }
+    print(await sendV2('surface.set_color_scheme', { surfaceId, colorScheme: scheme }));
+}
+async function cmdSend(args) {
+    // Drop --surface <id> (and its value) from the free-form text args.
+    const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+    const textArgs = stripFlag(args.slice(1), '--surface');
+    const payload = { text: textArgs.join(' ') };
+    if (surfaceId)
+        payload.surfaceId = surfaceId;
+    print(await sendV2('surface.send_text', payload));
+}
+async function cmdSendKey(args) {
+    const key = args[1];
+    const modifiers = [];
+    if (args.includes('--ctrl'))
+        modifiers.push('ctrl');
+    if (args.includes('--shift'))
+        modifiers.push('shift');
+    if (args.includes('--alt'))
+        modifiers.push('alt');
+    const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+    const payload = { key, modifiers };
+    if (surfaceId)
+        payload.surfaceId = surfaceId;
+    print(await sendV2('surface.send_key', payload));
+}
+async function cmdNotify(args) {
+    const titleIdx = args.indexOf('--title');
+    const bodyIdx = args.indexOf('--body');
+    const body = bodyIdx !== -1 ? args[bodyIdx + 1] : undefined;
+    const text = args.filter((_, i) => i > 0 && ![titleIdx, titleIdx + 1, bodyIdx, bodyIdx + 1].includes(i)).join(' ') || body || '';
+    await sendV1(`notify ${process.env.WMUX_SURFACE_ID || ''} ${text}`);
+    console.log('Notification sent');
+}
+async function cmdHook(args) {
+    const params = {};
+    for (let i = 1; i < args.length; i += 2) {
+        if (args[i] === '--event')
+            params.event = args[i + 1];
+        if (args[i] === '--tool')
+            params.tool = args[i + 1];
+        if (args[i] === '--agent')
+            params.agentId = args[i + 1];
+    }
+    await sendV2('hook.event', params);
+}
+async function cmdAgentActivity(args) {
+    const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+    if (!surfaceId) {
+        console.error('agent-activity: --surface or WMUX_SURFACE_ID required');
+        process.exit(1);
+    }
+    const params = { surfaceId };
+    const tool = getFlag(args, '--tool');
+    if (tool)
+        params.tool = tool;
+    const skill = getFlag(args, '--skill');
+    if (skill)
+        params.skill = skill;
+    if (args.includes('--done'))
+        params.done = true;
+    if (args.includes('--active'))
+        params.done = false;
+    await sendV2('agent.activity', params);
+}
+// Generic V1 passthrough (issue #19: devcontainer support). Lets a caller send
+// any raw V1 command line (report_pwd, report_git_branch, report_shell_state,
+// report_startup_command, …) without the CLI growing a near-identical wrapper
+// for each. wmux-bash-integration.sh writes those lines straight to the local
+// pipe when it can reach one; inside a devcontainer it can't, so it calls
+// `wmux raw-v1` instead and gets the CLI's transport — including TCP via
+// --remote / WMUX_REMOTE to a `wmux bridge` (issue #78) — for free. Auth is
+// unchanged: sendV1 still prefixes `auth <token>`.
+async function cmdRawV1(args) {
+    const line = args.slice(1).join(' ');
+    if (!line) {
+        console.error('Usage: wmux raw-v1 <command> [surfaceId] [args...]');
+        process.exit(1);
+    }
+    console.log(await sendV1(line));
+}
+// ─── Declared agent state (issue #128) ───────────────────────────────────────
+// The reporting side of the protocol. An agent running inside a wmux pane can
+// call these with no arguments beyond the state itself — WMUX_SURFACE_ID is
+// already in its environment, so it never has to discover which pane it is in.
+/** Resolve the pane this command is about: --surface, else the ambient pane. */
+function reportingSurface(args, command) {
+    const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+    if (!surfaceId) {
+        console.error(`${command}: --surface or WMUX_SURFACE_ID required`);
+        process.exit(1);
+    }
+    return surfaceId;
+}
+/** Optional monotonic sequence — wmux drops any report at or below the last seen. */
+function seqFlag(args) {
+    const raw = getFlag(args, '--seq');
+    if (!raw)
+        return undefined;
+    const seq = Number(raw);
+    return Number.isFinite(seq) ? seq : undefined;
+}
+async function cmdReportAgent(args) {
+    const surfaceId = reportingSurface(args, 'report-agent');
+    const params = { surfaceId, seq: seqFlag(args) };
+    // --blocked [reason] parks the pane on the user; --unblocked releases it.
+    if (args.includes('--blocked')) {
+        params.awaitingHuman = true;
+        params.reason = getFlag(args, '--blocked') || getFlag(args, '--reason') || null;
+    }
+    else if (args.includes('--unblocked')) {
+        params.awaitingHuman = false;
+    }
+    if (args.includes('--run-start'))
+        params.runDelta = 1;
+    if (args.includes('--run-end'))
+        params.runDelta = -1;
+    const depth = getFlag(args, '--run-depth');
+    if (depth !== undefined)
+        params.runDepth = Number(depth);
+    // --choices declares what wmux may offer as an answer (issue #128). JSON
+    // rather than a packed string because each choice carries four fields and the
+    // payload is exact bytes — the one place a cramped syntax would be a bug
+    // waiting to happen. Mirrors `agent spawn-batch --json`.
+    const choices = getFlag(args, '--choices');
+    if (choices !== undefined) {
+        try {
+            params.choices = JSON.parse(choices);
+        }
+        catch (err) {
+            console.error(`report-agent: --choices is not valid JSON: ${err.message}`);
+            process.exit(1);
+        }
+    }
+    print(await sendV2('pane.report_agent', params));
+}
+/**
+ * `answer-agent` — reply to a blocked pane from outside it (issue #128).
+ *
+ * Note this one defaults to NO ambient surface: the other verbs are an agent
+ * describing itself, where WMUX_SURFACE_ID is exactly right, but answering is
+ * aimed at a DIFFERENT pane — the whole point is to not be in it. Defaulting to
+ * the caller's own pane would make `wmux answer-agent --choice allow` type into
+ * whatever terminal you happen to be sitting in.
+ */
+async function cmdAnswerAgent(args) {
+    const surfaceId = getFlag(args, '--surface');
+    if (!surfaceId) {
+        console.error('answer-agent: --surface required (run `wmux agent-state` to see which panes are blocked)');
+        process.exit(1);
+    }
+    const choiceId = getFlag(args, '--choice') ?? args[1];
+    print(await sendV2('pane.answer_agent', { surfaceId, choiceId: choiceId ?? null }));
+}
+async function cmdReportMetadata(args) {
+    const surfaceId = reportingSurface(args, 'report-metadata');
+    const params = { surfaceId, seq: seqFlag(args) };
+    const model = getFlag(args, '--model');
+    if (model)
+        params.model = model;
+    const tokens = getFlag(args, '--tokens');
+    if (tokens)
+        params.tokens = tokens;
+    const pct = getFlag(args, '--context-pct');
+    if (pct)
+        params.contextPct = Number(pct);
+    const ttl = getFlag(args, '--ttl');
+    if (ttl)
+        params.ttlMs = Number(ttl);
+    print(await sendV2('pane.report_metadata', params));
+}
+// Keys stay inferred (no Record<string, …> annotation) so spreading this into
+// COMMANDS still satisfies the exhaustive Record<CommandName, …> check.
+const AGENT_STATE_COMMANDS = {
+    'report-agent': cmdReportAgent,
+    'report-metadata': cmdReportMetadata,
+    'report-session': async (args) => {
+        const surfaceId = reportingSurface(args, 'report-session');
+        print(await sendV2('pane.report_agent_session', {
+            surfaceId,
+            seq: seqFlag(args),
+            sessionId: getFlag(args, '--session') ?? args[1] ?? null,
+        }));
+    },
+    'answer-agent': cmdAnswerAgent,
+    'release-agent': async (args) => {
+        const surfaceId = reportingSurface(args, 'release-agent');
+        print(await sendV2('pane.release_agent', { surfaceId, seq: seqFlag(args) }));
+    },
+    // No --surface → the whole picture, including a `blocked` list that answers
+    // "which pane needs me?" in one call.
+    'agent-state': async (args) => {
+        const surfaceId = getFlag(args, '--surface');
+        print(await sendV2('pane.agent_state', surfaceId ? { surfaceId } : {}));
+    },
+};
+const SURFACE_NOTE = '(surface defaults to $WMUX_SURFACE_ID inside a pane)';
+const COMMAND_SPECS = {
+    // System
+    ping: { usage: 'wmux ping' },
+    identify: { usage: 'wmux identify' },
+    capabilities: { usage: 'wmux capabilities' },
+    'list-windows': { usage: 'wmux list-windows' },
+    'focus-window': { usage: 'wmux focus-window <windowId>' },
+    'new-window': { usage: 'wmux new-window' },
+    // Remote management (issue #78)
+    bridge: {
+        usage: [
+            'wmux bridge [--port P] [--host H] [--wsl]   (expose this wmux\'s pipe over TCP, default 127.0.0.1:9787)',
+            '  --wsl   bind 0.0.0.0 so a container on this host can reach a bridge running in WSL2',
+        ].join('\n'),
+        value: ['--port', '--host'],
+        bool: ['--wsl'],
+    },
+    token: { usage: 'wmux token   (print this instance\'s pipe auth token)' },
+    // Workspace
+    'new-workspace': {
+        usage: 'wmux new-workspace [--title T] [--shell S] [--cwd D]',
+        value: ['--title', '--shell', '--cwd'],
+    },
+    ssh: { usage: 'wmux ssh [ssh options] <user@host> [--title T]', passthrough: true },
+    'close-workspace': { usage: 'wmux close-workspace [workspaceId]' },
+    'select-workspace': { usage: 'wmux select-workspace <workspaceId>' },
+    'rename-workspace': { usage: 'wmux rename-workspace <workspaceId> <title>', passthrough: true },
+    'list-workspaces': { usage: 'wmux list-workspaces' },
+    // Surface
+    'new-surface': {
+        usage: 'wmux new-surface [--type terminal|browser|markdown] [--color-scheme NAME]',
+        value: ['--type', '--color-scheme'],
+    },
+    'close-surface': { usage: 'wmux close-surface [surfaceId]' },
+    'rename-surface': {
+        usage: 'wmux rename-surface [surfaceId] <title>   (renames the current surface inside a pane)',
+        passthrough: true,
+    },
+    'focus-surface': { usage: 'wmux focus-surface <surfaceId>' },
+    'list-surfaces': {
+        usage: 'wmux list-surfaces [--pane <paneId>] [--workspace <workspaceId>]',
+        value: ['--pane', '--workspace'],
+    },
+    'set-color-scheme': { usage: 'wmux set-color-scheme [surfaceId] <scheme>' },
+    'clear-color-scheme': { usage: 'wmux clear-color-scheme [surfaceId]' },
+    'list-themes': { usage: 'wmux list-themes' },
+    themes: { usage: 'wmux themes   (alias of list-themes)' },
+    // User config
+    'reload-config': { usage: 'wmux reload-config' },
+    config: { usage: 'wmux config <show|reload|path>' },
+    locales: { usage: 'wmux locales [list|reload|path]' },
+    // Pane
+    split: {
+        usage: 'wmux split [--down] [--type terminal|browser|markdown] [--color-scheme NAME]',
+        value: ['--type', '--color-scheme'],
+        bool: ['--down'],
+    },
+    pane: {
+        usage: [
+            'wmux pane new [--down] [--type T] [--color-scheme NAME]',
+            'wmux pane close <paneId> | focus <paneId> | list [--workspace <id>]',
+        ].join('\n'),
+        value: ['--type', '--color-scheme', '--workspace'],
+        bool: ['--down'],
+    },
+    'close-pane': { usage: 'wmux close-pane [paneId]' },
+    'focus-pane': { usage: 'wmux focus-pane <paneId>' },
+    'zoom-pane': { usage: 'wmux zoom-pane [paneId]' },
+    'list-panes': { usage: 'wmux list-panes [--workspace <workspaceId>]', value: ['--workspace'] },
+    tree: { usage: 'wmux tree [--workspace <workspaceId>]', value: ['--workspace'] },
+    // Layout
+    layout: {
+        usage: 'wmux layout grid --count <N> [--type T] [--anchor-surface <id>] [--anchor-pane <id>] [--workspace <id>]',
+        value: ['--count', '--type', '--anchor-surface', '--anchor-pane', '--workspace'],
+    },
+    // Terminal interaction
+    send: { usage: 'wmux send [--surface <id>] <text>', passthrough: true },
+    'send-key': {
+        usage: 'wmux send-key <key> [--ctrl] [--shift] [--alt] [--surface <id>]',
+        value: ['--surface'],
+        bool: ['--ctrl', '--shift', '--alt'],
+    },
+    'read-screen': {
+        usage: `wmux read-screen [--lines N] [--surface <id>]   ${SURFACE_NOTE}`,
+        value: ['--lines', '--surface'],
+    },
+    'trigger-flash': { usage: 'wmux trigger-flash [surfaceId]' },
+    // Browser (free-form text for type/fill/eval)
+    browser: {
+        usage: [
+            'wmux browser open <url> | snapshot | click <ref> | type <ref> <text> | fill <ref> <value>',
+            'wmux browser screenshot [--full] | get-text [ref] | eval <js> | wait <ref> [ms]',
+            'wmux browser back | forward | reload',
+            `  [--surface <id>]   ${SURFACE_NOTE}`,
+        ].join('\n'),
+        passthrough: true,
+    },
+    // Agent
+    agent: {
+        usage: [
+            'wmux agent spawn --cmd <C> [--label L] [--cwd D] [--pane P] [--workspace W] [--replace-tab]',
+            'wmux agent spawn-batch --json \'[...]\' [--strategy distribute|stack|split]',
+            'wmux agent status <agentId> | list [--workspace <id>] | kill <agentId>',
+        ].join('\n'),
+        value: ['--cmd', '--label', '--cwd', '--pane', '--workspace', '--json', '--strategy'],
+        bool: ['--replace-tab'],
+    },
+    // Markdown (--content takes free-form text)
+    markdown: {
+        usage: [
+            'wmux markdown <file>                                   (open a file in a new markdown view)',
+            'wmux markdown set <id> --content <text> [--title T]',
+            'wmux markdown set <id> --file <path>',
+            'wmux markdown get <id>',
+        ].join('\n'),
+        passthrough: true,
+    },
+    // Notifications
+    notify: { usage: 'wmux notify <text>', passthrough: true },
+    'list-notifications': { usage: 'wmux list-notifications' },
+    'clear-notifications': { usage: 'wmux clear-notifications [notificationId]' },
+    // Sidebar
+    'set-status': {
+        usage: [
+            'wmux set-status --workspace <id> --state <idle|running|interrupted> [--text "<label>"]',
+            'wmux set-status <key> <value>                          (legacy positional form)',
+        ].join('\n'),
+        value: ['--workspace', '--state', '--text'],
+    },
+    'set-progress': { usage: 'wmux set-progress <value> [--label L]', value: ['--label'] },
+    log: { usage: 'wmux log <level> <message>', passthrough: true },
+    'sidebar-state': { usage: 'wmux sidebar-state' },
+    diff: { usage: 'wmux diff [--file <path>]', value: ['--file'] },
+    hook: {
+        usage: 'wmux hook --event <type> --tool <name> [--agent <id>]',
+        value: ['--event', '--tool', '--agent'],
+    },
+    'agent-activity': {
+        usage: `wmux agent-activity [--tool T] [--skill S] [--done|--active] [--surface <id>]   ${SURFACE_NOTE}`,
+        value: ['--tool', '--skill', '--surface'],
+        bool: ['--done', '--active'],
+    },
+    'raw-v1': {
+        usage: 'wmux raw-v1 <command> [surfaceId] [args...]   (send a raw V1 line; used by shell integration)',
+        passthrough: true,
+    },
+    // Declared agent state (issue #128)
+    'report-agent': {
+        usage: [
+            'wmux report-agent --blocked [reason] [--choices <json>] | --unblocked',
+            'wmux report-agent --run-start | --run-end | --run-depth <N>',
+            `  [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+        ].join('\n'),
+        // --blocked's reason is optional; treating it as value-taking only ever
+        // skips one token that a later flag would have re-validated anyway.
+        value: ['--blocked', '--reason', '--choices', '--run-depth', '--seq', '--surface'],
+        bool: ['--unblocked', '--run-start', '--run-end'],
+    },
+    'report-metadata': {
+        usage: `wmux report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms] [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+        value: ['--model', '--tokens', '--context-pct', '--ttl', '--seq', '--surface'],
+    },
+    'report-session': {
+        usage: `wmux report-session <sessionId> [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+        value: ['--session', '--seq', '--surface'],
+    },
+    'answer-agent': {
+        usage: 'wmux answer-agent --surface <id> --choice <choiceId>   (reply to ANOTHER pane; no ambient default)',
+        value: ['--surface', '--choice'],
+    },
+    'release-agent': {
+        usage: `wmux release-agent [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+        value: ['--seq', '--surface'],
+    },
+    'agent-state': {
+        usage: 'wmux agent-state [--surface <id>]   (no --surface → every pane, plus the blocked list)',
+        value: ['--surface'],
+    },
+};
+/**
+ * Reject flags the command does not declare, instead of running with defaults.
+ *
+ * Only `--` flags are judged: single-dash tokens belong to passthrough commands
+ * (ssh options) and bare words are positional arguments.
+ */
+function checkFlags(command, args, spec) {
+    if (spec.passthrough)
+        return;
+    const takesValue = new Set(spec.value ?? []);
+    const standalone = new Set(spec.bool ?? []);
+    for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        if (!arg.startsWith('--'))
+            continue;
+        if (standalone.has(arg))
+            continue;
+        if (takesValue.has(arg)) {
+            // A trailing value flag is the same silent default in a different
+            // costume: `getFlag` returns undefined and the command runs anyway.
+            // --blocked is the one flag whose value is genuinely optional.
+            if (i === args.length - 1 && arg !== '--blocked') {
+                fail(command, spec, `Flag '${arg}' needs a value.`);
+            }
+            i++;
+            continue;
+        }
+        fail(command, spec, `Unknown flag for '${command}': ${arg}`);
+    }
+}
+/** Print why the argv was rejected, then that command's usage, then exit 1. */
+function fail(command, spec, message) {
+    console.error(message);
+    console.error('');
+    console.error(spec.usage);
+    process.exit(1);
+}
+/** `wmux help [command]` — the only help route that works for passthrough commands. */
+function cmdHelp(args) {
+    const topic = args[1];
+    if (!topic) {
         printUsage();
+        return;
+    }
+    const spec = COMMAND_SPECS[topic];
+    if (!spec) {
+        console.error(`Unknown command: ${topic}`);
+        printUsage();
+        process.exit(1);
+    }
+    console.log(spec.usage);
+}
+// Command dispatch table. Each handler receives the raw argv (args[0] is the
+// command name). Replaces a single giant switch so each command stays small and
+// independently testable. Typed against COMMAND_SPECS so the compiler — not a
+// bug report — catches a command that ships without usage text, or usage text
+// for a command that no longer exists.
+const COMMANDS = {
+    // System
+    ping: async () => console.log(await sendV1('ping')),
+    identify: async () => print(await sendV2('system.identify')),
+    capabilities: async () => print(await sendV2('system.capabilities')),
+    'list-windows': async () => print(await sendV2('window.list')),
+    'focus-window': async (args) => print(await sendV2('window.focus', { id: args[1] })),
+    'new-window': async () => print(await sendV2('window.create')),
+    // Remote management (issue #78)
+    bridge: cmdBridge,
+    token: cmdToken,
+    // Workspace
+    'new-workspace': cmdNewWorkspace,
+    ssh: cmdSsh,
+    'close-workspace': async (args) => print(await sendV2('workspace.close', { id: args[1] })),
+    'select-workspace': async (args) => print(await sendV2('workspace.select', { id: args[1] })),
+    'rename-workspace': async (args) => print(await sendV2('workspace.rename', { id: args[1], title: args[2] })),
+    'list-workspaces': async () => print(await sendV2('workspace.list')),
+    // Surface
+    'new-surface': async (args) => {
+        const type = getFlag(args, '--type') || 'terminal';
+        const colorScheme = getFlag(args, '--color-scheme');
+        print(await sendV2('surface.create', { type, ...(colorScheme ? { colorScheme } : {}) }));
+    },
+    'close-surface': async (args) => print(await sendV2('surface.close', { id: args[1] })),
+    // `rename-surface <id> <title>`, or `rename-surface <title>` from inside a
+    // pane (renames the current surface via WMUX_SURFACE_ID).
+    'rename-surface': async (args) => {
+        let id = args[1];
+        let title = args[2];
+        if (title === undefined && process.env.WMUX_SURFACE_ID) {
+            title = id;
+            id = process.env.WMUX_SURFACE_ID;
+        }
+        print(await sendV2('surface.rename', { id, title }));
+    },
+    'focus-surface': async (args) => print(await sendV2('surface.focus', { id: args[1] })),
+    'list-surfaces': async (args) => print(await sendV2('surface.list', {
+        paneId: getFlag(args, '--pane'),
+        workspaceId: getFlag(args, '--workspace'),
+    })),
+    'set-color-scheme': cmdSetColorScheme,
+    'clear-color-scheme': async (args) => {
+        const surfaceId = args[1] || process.env.WMUX_SURFACE_ID || '';
+        if (!surfaceId) {
+            console.error('No surface id. Pass one as argument or run inside a wmux pane.');
+            process.exit(1);
+        }
+        print(await sendV2('surface.set_color_scheme', { surfaceId, colorScheme: null }));
+    },
+    'list-themes': async () => print(await sendV2('theme.list')),
+    themes: async () => print(await sendV2('theme.list')),
+    // User config (~/.wmux/config.toml)
+    'reload-config': async () => print(await sendV2('config.reload')),
+    config: cmdConfig,
+    // Community translations (~/.wmux/locales/*.json)
+    locales: cmdLocales,
+    // Pane
+    split: async (args) => {
+        const direction = args.includes('--down') ? 'down' : 'right';
+        const type = getFlag(args, '--type') || 'terminal';
+        const colorScheme = getFlag(args, '--color-scheme');
+        print(await sendV2('pane.split', { direction, type, ...(colorScheme ? { colorScheme } : {}) }));
+    },
+    pane: cmdPane,
+    'close-pane': async (args) => print(await sendV2('pane.close', { id: args[1] })),
+    'focus-pane': async (args) => print(await sendV2('pane.focus', { id: args[1] })),
+    'zoom-pane': async (args) => print(await sendV2('pane.zoom', { id: args[1] })),
+    'list-panes': async (args) => print(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') })),
+    // `--workspace` used to be parsed by nobody: the flag was accepted on the
+    // command line and silently dropped here, so every call reported the ACTIVE
+    // workspace's tree whatever id you passed (issue #141).
+    tree: async (args) => print(await sendV2('system.tree', { workspaceId: getFlag(args, '--workspace') })),
+    // Layout
+    layout: cmdLayout,
+    // Terminal interaction
+    send: cmdSend,
+    'send-key': cmdSendKey,
+    'read-screen': async (args) => {
+        const lines = args.find((a, i) => args[i - 1] === '--lines');
+        // Same targeting rule as send/send-key: inside a pane the caller's own
+        // surface is the default; cross-pane reads take --surface explicitly.
+        const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+        print(await sendV2('surface.read_text', {
+            ...(surfaceId ? { surfaceId } : {}),
+            lines: lines ? parseInt(lines) : 50,
+        }));
+    },
+    'trigger-flash': async (args) => print(await sendV2('surface.trigger_flash', { id: args[1] })),
+    // Browser
+    browser: cmdBrowser,
+    // Agent
+    agent: cmdAgent,
+    // Markdown
+    markdown: cmdMarkdown,
+    // Notifications
+    notify: cmdNotify,
+    'list-notifications': async () => print(await sendV2('notification.list')),
+    'clear-notifications': async (args) => print(await sendV2('notification.clear', { id: args[1] })),
+    // Sidebar
+    'set-status': async (args) => {
+        // `set-status --workspace <id> --state <idle|running|interrupted> [--text "<label>"]`
+        // sets a named workspace's sidebar status from anywhere (works outside a
+        // pane, unlike the surface-scoped shell integration). Without --workspace it
+        // falls back to the legacy positional `set-status <key> <value>` form.
+        const workspaceId = getFlag(args, '--workspace');
+        if (workspaceId) {
+            const state = getFlag(args, '--state');
+            const valid = ['idle', 'running', 'interrupted'];
+            if (!state || !valid.includes(state)) {
+                console.error(`set-status --workspace requires --state <${valid.join('|')}>`);
+                process.exit(1);
+            }
+            const text = getFlag(args, '--text');
+            print(await sendV2('workspace.set_status', { workspaceId, state, ...(text ? { text } : {}) }));
+            return;
+        }
+        print(await sendV2('sidebar.set_status', { key: args[1], value: args[2] }));
+    },
+    'set-progress': async (args) => {
+        const label = args.find((a, i) => args[i - 1] === '--label');
+        print(await sendV2('sidebar.set_progress', { value: parseFloat(args[1]), label }));
+    },
+    log: async (args) => print(await sendV2('sidebar.log', { level: args[1], message: args.slice(2).join(' ') })),
+    'sidebar-state': async () => print(await sendV2('sidebar.get_state')),
+    diff: async (args) => {
+        const file = args.find((a, i) => args[i - 1] === '--file') || '';
+        print(await sendV2('diff.refresh', { file }));
+    },
+    hook: cmdHook,
+    'agent-activity': cmdAgentActivity,
+    // Devcontainer support (issue #19)
+    'raw-v1': cmdRawV1,
+    ...AGENT_STATE_COMMANDS,
+};
+async function main() {
+    let args = process.argv.slice(2);
+    // Global flags (issue #78 remote management) — may appear anywhere in argv.
+    const remoteSpec = getFlag(args, '--remote') ?? process.env.WMUX_REMOTE;
+    const tokenOverride = getFlag(args, '--token') ?? process.env.WMUX_REMOTE_TOKEN;
+    args = stripFlag(stripFlag(args, '--remote'), '--token');
+    if (remoteSpec)
+        remoteTarget = parseRemoteTarget(remoteSpec);
+    if (tokenOverride)
+        PIPE_TOKEN = tokenOverride;
+    const command = args[0];
+    if (!command || command === 'help' || command === '--help' || command === '-h') {
+        cmdHelp(command === 'help' ? args : []);
         process.exit(0);
     }
+    const handler = COMMANDS[command];
+    if (!handler) {
+        console.error(`Unknown command: ${command}`);
+        printUsage();
+        process.exit(1);
+    }
+    // Usage and flag checks both happen before a single byte reaches the pipe, so
+    // probing the CLI can no longer mutate the user's layout (issue #143).
+    const spec = COMMAND_SPECS[command];
+    if (!spec.passthrough && (args.includes('--help') || args.includes('-h'))) {
+        console.log(spec.usage);
+        process.exit(0);
+    }
+    checkFlags(command, args, spec);
     try {
-        switch (command) {
-            // System
-            case 'ping':
-                console.log(await sendV1('ping'));
-                break;
-            case 'identify':
-                console.log(JSON.stringify(await sendV2('system.identify'), null, 2));
-                break;
-            case 'capabilities':
-                console.log(JSON.stringify(await sendV2('system.capabilities'), null, 2));
-                break;
-            case 'list-windows':
-                console.log(JSON.stringify(await sendV2('window.list'), null, 2));
-                break;
-            case 'focus-window':
-                console.log(JSON.stringify(await sendV2('window.focus', { id: args[1] }), null, 2));
-                break;
-            // Workspace
-            case 'new-workspace': {
-                const params = {};
-                for (let i = 1; i < args.length; i += 2) {
-                    if (args[i] === '--title')
-                        params.title = args[i + 1];
-                    if (args[i] === '--shell')
-                        params.shell = args[i + 1];
-                    if (args[i] === '--cwd')
-                        params.cwd = args[i + 1];
-                }
-                console.log(JSON.stringify(await sendV2('workspace.create', params), null, 2));
-                break;
-            }
-            case 'close-workspace':
-                console.log(JSON.stringify(await sendV2('workspace.close', { id: args[1] }), null, 2));
-                break;
-            case 'select-workspace':
-                console.log(JSON.stringify(await sendV2('workspace.select', { id: args[1] }), null, 2));
-                break;
-            case 'rename-workspace':
-                console.log(JSON.stringify(await sendV2('workspace.rename', { id: args[1], title: args[2] }), null, 2));
-                break;
-            case 'list-workspaces':
-                console.log(JSON.stringify(await sendV2('workspace.list'), null, 2));
-                break;
-            // Surface
-            case 'new-surface': {
-                const type = getFlag(args, '--type') || 'terminal';
-                const colorScheme = getFlag(args, '--color-scheme');
-                console.log(JSON.stringify(await sendV2('surface.create', { type, ...(colorScheme ? { colorScheme } : {}) }), null, 2));
-                break;
-            }
-            case 'close-surface':
-                console.log(JSON.stringify(await sendV2('surface.close', { id: args[1] }), null, 2));
-                break;
-            case 'focus-surface':
-                console.log(JSON.stringify(await sendV2('surface.focus', { id: args[1] }), null, 2));
-                break;
-            case 'list-surfaces':
-                console.log(JSON.stringify(await sendV2('surface.list', { paneId: getFlag(args, '--pane') }), null, 2));
-                break;
-            // Surface: per-pane color scheme override (issue #4)
-            case 'set-color-scheme': {
-                // Two forms:
-                //   wmux set-color-scheme <scheme>            → apply to current surface
-                //   wmux set-color-scheme <surfaceId> <scheme> → apply to a specific surface
-                let surfaceId = args[1];
-                let scheme = args[2];
-                if (!scheme) {
-                    scheme = surfaceId;
-                    surfaceId = process.env.WMUX_SURFACE_ID || '';
-                }
-                if (!surfaceId) {
-                    console.error('No surface id. Pass one as argument or run inside a wmux pane.');
-                    process.exit(1);
-                }
-                if (!scheme) {
-                    console.error('Usage: wmux set-color-scheme [surfaceId] <scheme>');
-                    process.exit(1);
-                }
-                console.log(JSON.stringify(await sendV2('surface.set_color_scheme', { surfaceId, colorScheme: scheme }), null, 2));
-                break;
-            }
-            case 'clear-color-scheme': {
-                const surfaceId = args[1] || process.env.WMUX_SURFACE_ID || '';
-                if (!surfaceId) {
-                    console.error('No surface id. Pass one as argument or run inside a wmux pane.');
-                    process.exit(1);
-                }
-                console.log(JSON.stringify(await sendV2('surface.set_color_scheme', { surfaceId, colorScheme: null }), null, 2));
-                break;
-            }
-            case 'list-themes':
-            case 'themes': {
-                // Discovery for users writing scripts: what names are valid for --color-scheme?
-                console.log(JSON.stringify(await sendV2('theme.list'), null, 2));
-                break;
-            }
-            // User config (~/.wmux/config.toml)
-            case 'reload-config': {
-                // Re-read the TOML dotfile and broadcast the new prefs to every window.
-                console.log(JSON.stringify(await sendV2('config.reload'), null, 2));
-                break;
-            }
-            case 'config': {
-                const sub = args[1];
-                if (sub === 'show' || sub === 'get') {
-                    console.log(JSON.stringify(await sendV2('config.get'), null, 2));
-                }
-                else if (sub === 'reload') {
-                    console.log(JSON.stringify(await sendV2('config.reload'), null, 2));
-                }
-                else if (sub === 'path') {
-                    const home = process.env.USERPROFILE || process.env.HOME || '';
-                    console.log(`${home}\\.wmux\\config.toml`);
-                }
-                else {
-                    console.error('Usage: wmux config <show|reload|path>');
-                    process.exit(1);
-                }
-                break;
-            }
-            // Pane
-            case 'split': {
-                const direction = args.includes('--down') ? 'down' : 'right';
-                const type = getFlag(args, '--type') || 'terminal';
-                const colorScheme = getFlag(args, '--color-scheme');
-                console.log(JSON.stringify(await sendV2('pane.split', { direction, type, ...(colorScheme ? { colorScheme } : {}) }), null, 2));
-                break;
-            }
-            // "pane <sub>" verb form — mirrors the syntax from the issue example.
-            case 'pane': {
-                const sub = args[1];
-                if (sub === 'new' || sub === 'split') {
-                    const rest = args.slice(2);
-                    const direction = rest.includes('--down') ? 'down' : 'right';
-                    const type = getFlag(rest, '--type') || 'terminal';
-                    const colorScheme = getFlag(rest, '--color-scheme');
-                    console.log(JSON.stringify(await sendV2('pane.split', { direction, type, ...(colorScheme ? { colorScheme } : {}) }), null, 2));
-                }
-                else if (sub === 'close') {
-                    console.log(JSON.stringify(await sendV2('pane.close', { id: args[2] }), null, 2));
-                }
-                else if (sub === 'focus') {
-                    console.log(JSON.stringify(await sendV2('pane.focus', { id: args[2] }), null, 2));
-                }
-                else if (sub === 'list') {
-                    console.log(JSON.stringify(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') }), null, 2));
-                }
-                else {
-                    console.error(`Unknown pane subcommand: ${sub}`);
-                    process.exit(1);
-                }
-                break;
-            }
-            case 'close-pane':
-                console.log(JSON.stringify(await sendV2('pane.close', { id: args[1] }), null, 2));
-                break;
-            case 'focus-pane':
-                console.log(JSON.stringify(await sendV2('pane.focus', { id: args[1] }), null, 2));
-                break;
-            case 'zoom-pane':
-                console.log(JSON.stringify(await sendV2('pane.zoom', { id: args[1] }), null, 2));
-                break;
-            case 'list-panes':
-                console.log(JSON.stringify(await sendV2('pane.list', { workspaceId: getFlag(args, '--workspace') }), null, 2));
-                break;
-            case 'tree':
-                console.log(JSON.stringify(await sendV2('system.tree'), null, 2));
-                break;
-            // Layout
-            case 'layout': {
-                const sub = args[1];
-                if (sub === 'grid') {
-                    const params = {};
-                    for (let i = 2; i < args.length; i += 2) {
-                        if (args[i] === '--count')
-                            params.count = parseInt(args[i + 1], 10);
-                        if (args[i] === '--type')
-                            params.type = args[i + 1];
-                        if (args[i] === '--anchor-surface')
-                            params.anchorSurfaceId = args[i + 1];
-                        if (args[i] === '--anchor-pane')
-                            params.anchorPaneId = args[i + 1];
-                        if (args[i] === '--workspace')
-                            params.workspaceId = args[i + 1];
-                    }
-                    if (!params.count || params.count < 1) {
-                        console.error('--count <N> is required and must be >= 1');
-                        process.exit(1);
-                    }
-                    // If no explicit anchor, fall back to the current shell's surface so the command "just works" from inside a pane.
-                    if (!params.anchorSurfaceId && !params.anchorPaneId && process.env.WMUX_SURFACE_ID) {
-                        params.anchorSurfaceId = process.env.WMUX_SURFACE_ID;
-                    }
-                    console.log(JSON.stringify(await sendV2('layout.grid', params), null, 2));
-                }
-                else {
-                    console.error(`Unknown layout command: ${sub}`);
-                    process.exit(1);
-                }
-                break;
-            }
-            // Terminal interaction
-            case 'send': {
-                // Drop --surface <id> (and its value) from the free-form text args.
-                const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
-                const textArgs = stripFlag(args.slice(1), '--surface');
-                const payload = { text: textArgs.join(' ') };
-                if (surfaceId)
-                    payload.surfaceId = surfaceId;
-                console.log(JSON.stringify(await sendV2('surface.send_text', payload), null, 2));
-                break;
-            }
-            case 'send-key': {
-                const key = args[1];
-                const modifiers = [];
-                if (args.includes('--ctrl'))
-                    modifiers.push('ctrl');
-                if (args.includes('--shift'))
-                    modifiers.push('shift');
-                if (args.includes('--alt'))
-                    modifiers.push('alt');
-                const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
-                const payload = { key, modifiers };
-                if (surfaceId)
-                    payload.surfaceId = surfaceId;
-                console.log(JSON.stringify(await sendV2('surface.send_key', payload), null, 2));
-                break;
-            }
-            case 'read-screen': {
-                const lines = args.find((a, i) => args[i - 1] === '--lines');
-                console.log(JSON.stringify(await sendV2('surface.read_text', { lines: lines ? parseInt(lines) : 50 }), null, 2));
-                break;
-            }
-            case 'trigger-flash':
-                console.log(JSON.stringify(await sendV2('surface.trigger_flash', { id: args[1] }), null, 2));
-                break;
-            // Browser
-            case 'browser': {
-                const sub = args[1];
-                switch (sub) {
-                    case 'open':
-                        console.log(JSON.stringify(await sendV2('browser.navigate', { url: args[2] }), null, 2));
-                        break;
-                    case 'snapshot':
-                        console.log(JSON.stringify(await sendV2('browser.snapshot'), null, 2));
-                        break;
-                    case 'click':
-                        console.log(JSON.stringify(await sendV2('browser.click', { ref: args[2] }), null, 2));
-                        break;
-                    case 'type':
-                        console.log(JSON.stringify(await sendV2('browser.type', { ref: args[2], text: args.slice(3).join(' ') }), null, 2));
-                        break;
-                    case 'fill':
-                        console.log(JSON.stringify(await sendV2('browser.fill', { ref: args[2], value: args.slice(3).join(' ') }), null, 2));
-                        break;
-                    case 'screenshot':
-                        console.log(JSON.stringify(await sendV2('browser.screenshot', { fullPage: args.includes('--full') }), null, 2));
-                        break;
-                    case 'get-text':
-                        console.log(JSON.stringify(await sendV2('browser.get_text', { ref: args[2] }), null, 2));
-                        break;
-                    case 'eval':
-                        console.log(JSON.stringify(await sendV2('browser.eval', { js: args.slice(2).join(' ') }), null, 2));
-                        break;
-                    case 'wait':
-                        console.log(JSON.stringify(await sendV2('browser.wait', { ref: args[2], timeout: parseInt(args[3]) || undefined }), null, 2));
-                        break;
-                    case 'back':
-                        console.log(JSON.stringify(await sendV2('browser.back'), null, 2));
-                        break;
-                    case 'forward':
-                        console.log(JSON.stringify(await sendV2('browser.forward'), null, 2));
-                        break;
-                    case 'reload':
-                        console.log(JSON.stringify(await sendV2('browser.reload'), null, 2));
-                        break;
-                    default:
-                        console.error(`Unknown browser command: ${sub}`);
-                        process.exit(1);
-                }
-                break;
-            }
-            // Agent
-            case 'agent': {
-                const sub = args[1];
-                switch (sub) {
-                    case 'spawn': {
-                        const params = {};
-                        for (let i = 2; i < args.length; i += 2) {
-                            if (args[i] === '--cmd')
-                                params.cmd = args[i + 1];
-                            if (args[i] === '--label')
-                                params.label = args[i + 1];
-                            if (args[i] === '--cwd')
-                                params.cwd = args[i + 1];
-                            if (args[i] === '--pane')
-                                params.paneId = args[i + 1];
-                            if (args[i] === '--workspace')
-                                params.workspaceId = args[i + 1];
-                        }
-                        if (!params.cmd) {
-                            console.error('--cmd is required');
-                            process.exit(1);
-                        }
-                        if (!params.label)
-                            params.label = params.cmd.split(/\s+/)[0];
-                        console.log(JSON.stringify(await sendV2('agent.spawn', params), null, 2));
-                        break;
-                    }
-                    case 'spawn-batch': {
-                        const jsonIdx = args.indexOf('--json');
-                        if (jsonIdx === -1) {
-                            console.error('Usage: wmux agent spawn-batch --json \'[...]\'');
-                            process.exit(1);
-                        }
-                        const json = args[jsonIdx + 1];
-                        const parsed = JSON.parse(json);
-                        const strategy = args.find((a, i) => args[i - 1] === '--strategy') || 'distribute';
-                        console.log(JSON.stringify(await sendV2('agent.spawn_batch', { agents: parsed, strategy }), null, 2));
-                        break;
-                    }
-                    case 'status':
-                        console.log(JSON.stringify(await sendV2('agent.status', { agentId: args[2] }), null, 2));
-                        break;
-                    case 'list':
-                        console.log(JSON.stringify(await sendV2('agent.list', { workspaceId: args.find((a, i) => args[i - 1] === '--workspace') }), null, 2));
-                        break;
-                    case 'kill':
-                        console.log(JSON.stringify(await sendV2('agent.kill', { agentId: args[2] }), null, 2));
-                        break;
-                    default:
-                        console.error(`Unknown agent command: ${sub}`);
-                        process.exit(1);
-                }
-                break;
-            }
-            // Markdown
-            case 'markdown': {
-                const sub = args[1];
-                if (sub === 'set') {
-                    const surfaceId = args[2];
-                    const contentFlag = args.indexOf('--content');
-                    const fileFlag = args.indexOf('--file');
-                    if (contentFlag !== -1) {
-                        console.log(JSON.stringify(await sendV2('markdown.set_content', { surfaceId, markdown: args.slice(contentFlag + 1).join(' ') }), null, 2));
-                    }
-                    else if (fileFlag !== -1) {
-                        console.log(JSON.stringify(await sendV2('markdown.load_file', { surfaceId, filePath: args[fileFlag + 1] }), null, 2));
-                    }
-                }
-                break;
-            }
-            // Notifications
-            case 'notify': {
-                const titleIdx = args.indexOf('--title');
-                const bodyIdx = args.indexOf('--body');
-                const title = titleIdx !== -1 ? args[titleIdx + 1] : undefined;
-                const body = bodyIdx !== -1 ? args[bodyIdx + 1] : undefined;
-                const text = args.filter((_, i) => i > 0 && ![titleIdx, titleIdx + 1, bodyIdx, bodyIdx + 1].includes(i)).join(' ') || body || '';
-                await sendV1(`notify ${process.env.WMUX_SURFACE_ID || ''} ${text}`);
-                console.log('Notification sent');
-                break;
-            }
-            case 'list-notifications':
-                console.log(JSON.stringify(await sendV2('notification.list'), null, 2));
-                break;
-            case 'clear-notifications':
-                console.log(JSON.stringify(await sendV2('notification.clear', { id: args[1] }), null, 2));
-                break;
-            // Sidebar
-            case 'set-status':
-                console.log(JSON.stringify(await sendV2('sidebar.set_status', { key: args[1], value: args[2] }), null, 2));
-                break;
-            case 'set-progress': {
-                const label = args.find((a, i) => args[i - 1] === '--label');
-                console.log(JSON.stringify(await sendV2('sidebar.set_progress', { value: parseFloat(args[1]), label }), null, 2));
-                break;
-            }
-            case 'log':
-                console.log(JSON.stringify(await sendV2('sidebar.log', { level: args[1], message: args.slice(2).join(' ') }), null, 2));
-                break;
-            case 'sidebar-state':
-                console.log(JSON.stringify(await sendV2('sidebar.get_state'), null, 2));
-                break;
-            case 'diff': {
-                const file = args.find((a, i) => args[i - 1] === '--file') || '';
-                console.log(JSON.stringify(await sendV2('diff.refresh', { file }), null, 2));
-                break;
-            }
-            case 'hook': {
-                const params = {};
-                for (let i = 1; i < args.length; i += 2) {
-                    if (args[i] === '--event')
-                        params.event = args[i + 1];
-                    if (args[i] === '--tool')
-                        params.tool = args[i + 1];
-                    if (args[i] === '--agent')
-                        params.agentId = args[i + 1];
-                }
-                await sendV2('hook.event', params);
-                break;
-            }
-            case 'agent-activity': {
-                const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
-                if (!surfaceId) {
-                    console.error('agent-activity: --surface or WMUX_SURFACE_ID required');
-                    process.exit(1);
-                }
-                const params = { surfaceId };
-                const tool = getFlag(args, '--tool');
-                if (tool)
-                    params.tool = tool;
-                const skill = getFlag(args, '--skill');
-                if (skill)
-                    params.skill = skill;
-                if (args.includes('--done'))
-                    params.done = true;
-                if (args.includes('--active'))
-                    params.done = false;
-                await sendV2('agent.activity', params);
-                break;
-            }
-            default:
-                console.error(`Unknown command: ${command}`);
-                printUsage();
-                process.exit(1);
-        }
+        await handler(args);
     }
     catch (err) {
         if (err.code === 'ENOENT' || err.code === 'ECONNREFUSED') {
@@ -533,23 +1451,47 @@ function printUsage() {
 
 Usage: wmux <command> [options]
 
-System:     ping, identify, capabilities, list-windows, focus-window <id>
+System:     ping, identify, capabilities, list-windows, focus-window <id>, new-window
 Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, list-workspaces
+Remote:     ssh [ssh options] <user@host> [--title T]   (remote terminal in a new workspace)
+            bridge [--port P] [--host H] [--wsl]   (expose this wmux's pipe over TCP, default 127.0.0.1:9787)
+            token                          (print this instance's auth token, for --token)
+Global:     --remote host[:port] --token <T>   (drive a REMOTE wmux through an SSH tunnel;
+            env equivalents: WMUX_REMOTE, WMUX_REMOTE_TOKEN)
 Surface:    new-surface [--type T] [--color-scheme NAME], close-surface, focus-surface, list-surfaces
+            rename-surface [surfaceId] <title>   (renames the current surface when run inside a pane)
             set-color-scheme [surfaceId] <scheme>, clear-color-scheme [surfaceId], list-themes
 Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-pane, zoom-pane, list-panes, tree
             pane new|close|focus|list   (verb form, mirrors issue #4 example)
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
-Terminal:   send <text>, send-key <key>, read-screen, trigger-flash
+Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>], trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
-Agent:      agent spawn|spawn-batch|status|list|kill
-Markdown:   markdown set <id> --content <text> | --file <path>
+            browser <verb> [--surface <id>]   # which pane's browser to drive
+Agent:      agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-tab] | spawn-batch|status|list|kill
+Markdown:   markdown <file>   (open a file in a new markdown view)
+            markdown set <id> --content <text> | --file <path>
 Diff:       diff [--file <path>]
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state
 Hook:       hook --event <type> --tool <name> [--agent <id>]
+Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
+            report-agent --run-start | --run-end
+            answer-agent --surface <id> --choice <id>   # reply without leaving your pane
+                          [--run-depth N] [--seq N] [--surface <id>]
+            report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms]
+            report-session <id> | release-agent | agent-state [--surface <id>]
+            (surface defaults to $WMUX_SURFACE_ID — an agent in a pane needs no id)
 Config:     config show|reload|path   (edits ~/.wmux/config.toml — see docs)
             reload-config             (shorthand for 'config reload')
+Locales:    locales [list|reload|path] (community UI translations in ~/.wmux/locales)
+
+Help:       wmux help <command>       (per-command usage; works for every command)
+            wmux <command> --help     (same, except for free-form commands such as
+                                       send / notify / log / ssh / browser / markdown,
+                                       where --help is part of the text you are sending)
 `);
 }
-main();
+// Run only when invoked as the CLI. The pure helpers above are exported so the
+// unit tests can import this file without it trying to execute a command.
+if (require.main === module)
+    main();

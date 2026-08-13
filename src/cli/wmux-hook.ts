@@ -37,8 +37,31 @@ if (argv[0] === '--event') {
 const firedAt = Date.now();
 
 const pipePath = process.env.WMUX_PIPE || '\\\\.\\pipe\\wmux';
-const token = process.env.WMUX_PIPE_TOKEN || '';
 const surfaceId = process.env.WMUX_SURFACE_ID || '';
+
+/**
+ * TCP transport for a hook firing where the pipe does not exist (issue #19).
+ *
+ * Inside a devcontainer, Claude Code runs on Linux while wmux runs on the
+ * Windows host: `\\.\pipe\wmux` is unreachable, so every hook failed silently
+ * and the sidebar never left "Running". WMUX_REMOTE points at a `wmux bridge`
+ * (issue #78) instead — same JSON-RPC frame, same auth, different socket. The
+ * env-var form is deliberate: Claude Code owns this process's argv, so there is
+ * nowhere to put a --remote flag.
+ *
+ * The token is the REMOTE instance's, which is not this machine's: on the
+ * container side WMUX_PIPE_TOKEN is either absent or something else entirely.
+ */
+const remote = (() => {
+  const spec = process.env.WMUX_REMOTE?.trim();
+  if (!spec) return null;
+  const idx = spec.lastIndexOf(':');
+  const port = idx === -1 ? NaN : parseInt(spec.slice(idx + 1), 10);
+  return Number.isFinite(port) && port > 0 && port <= 65535
+    ? { host: spec.slice(0, idx) || '127.0.0.1', port }
+    : { host: spec, port: 9787 };
+})();
+const token = (remote ? process.env.WMUX_REMOTE_TOKEN : process.env.WMUX_PIPE_TOKEN) || '';
 
 let stdinData = '';
 let sent = false;
@@ -55,8 +78,13 @@ const MAX_STDIN = 64 * 1024; // 64KB cap
  * tears the connection down rather than half-closing it. The wmux CLI has
  * always armed this same 5s timer before connecting (see sendV1/sendV2); the
  * hook helper was the one client without it, and matching costs nothing.
+ *
+ * The bridge path gets longer: there the frame crosses a TCP hop and then
+ * npiperelay over WSL interop, which measures ~7s worst case on a corporate
+ * host. Firing at 5s there would destroy() the socket mid-flight and drop the
+ * very event this process exists to deliver.
  */
-const PIPE_DEADLINE_MS = 5000;
+const PIPE_DEADLINE_MS = remote ? 30000 : 5000;
 
 /** Cleared once we stop reading, so the happy path is not held open by it. */
 let stdinTimer: NodeJS.Timeout | null = null;
@@ -98,7 +126,7 @@ function sendHook(): void {
   if (message) params.message = message;
   if (surfaceId) params.surfaceId = surfaceId;
 
-  const client = net.connect({ path: pipePath }, () => {
+  const client = net.connect(remote ? { host: remote.host, port: remote.port } : { path: pipePath }, () => {
     const msg = JSON.stringify({ method: 'hook.event', params, id: 1, token });
     client.write(msg + '\n', () => client.end());
     // Drain the reply we do not care about. This is not cosmetic: wmux answers

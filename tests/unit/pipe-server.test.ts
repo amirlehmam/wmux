@@ -59,6 +59,26 @@ describe('PipeServer', () => {
     expect(commands[0].args).toEqual(['C:\\Users\\test']);
   });
 
+  // A restore command is a whole shell line — `cd '/some/path' && ./relaunch.sh`
+  // (issue #19). Splitting it on whitespace like the default V1 case would turn
+  // it into eight useless args, so it joins report_pwd/notify in the
+  // single-free-text-argument group.
+  it('keeps a report_startup_command line intact, spaces and all', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'test-token');
+    const commands: any[] = [];
+    server.on('v1', (cmd) => commands.push(cmd));
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const line = "cd '/workspaces/my project' && ./relaunch.sh --attach";
+    const response = await connectAndSend(pipe, `auth test-token report_startup_command surf-123 ${line}`);
+    expect(response).toBe('ok');
+    expect(commands[0].command).toBe('report_startup_command');
+    expect(commands[0].surfaceId).toBe('surf-123');
+    expect(commands[0].args).toEqual([line]);
+  });
+
   it('rejects V1 state updates without a token', async () => {
     const pipe = uniquePipe();
     server = new PipeServer(pipe, 'secret');
