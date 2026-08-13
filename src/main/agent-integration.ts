@@ -3,9 +3,9 @@
  *
  * wmux integrates with Claude Code, OpenCode and Kiro by editing files in the
  * user's home: it appends a block to ~/.claude/CLAUDE.md and
- * ~/.config/opencode/AGENTS.md, writes ~/.kiro/steering/wmux.md, registers four
- * hooks in ~/.claude/settings.json, points chrome-devtools-mcp at its own CDP
- * proxy, and installs the orchestrator plugin into Claude Code's plugin cache.
+ * ~/.config/opencode/AGENTS.md, writes ~/.kiro/steering/wmux.md, registers eight
+ * hook families in ~/.claude/settings.json, points chrome-devtools-mcp at its
+ * own CDP proxy, and installs Claude Code and OpenCode orchestrator plugins.
  *
  * All of that used to happen unconditionally on every launch, with no prompt and
  * no record of a decision — so deleting any of it was futile, because the next
@@ -76,6 +76,25 @@ const ALL_ON: Record<IntegrationFeature, boolean> = {
 };
 
 export const DEFAULT_CONSENT: IntegrationConsent = { decision: 'unset', features: { ...ALL_ON } };
+
+/** Exact disclosure shown before wmux writes outside its own data directory. */
+export const INTEGRATION_CONSENT_DETAIL =
+  'wmux can teach your coding agents to drive its browser panel, markdown views ' +
+  'and sidebar status. Doing so edits files in your home directory:\n\n' +
+  '  • ~/.claude/CLAUDE.md and ~/.config/opencode/AGENTS.md\n' +
+  '      a wmux section, between markers, leaving your own text untouched\n' +
+  '  • ~/.kiro/steering/wmux.md\n' +
+  '      a steering file of wmux\'s own; your other Kiro steering is untouched\n' +
+  '  • ~/.claude/settings.json\n' +
+  '      eight hook families: PostToolUse, Notification, Stop, SubagentStop,\n' +
+  '      SessionStart, UserPromptSubmit, PreToolUse and SessionEnd\n' +
+  '  • ~/.claude/plugins/ and ~/.config/opencode/plugin/wmux.js\n' +
+  '      the wmux-orchestrator plugins\n' +
+  '  • ~/.claude/settings.json\n' +
+  '      a pinned chrome-devtools-mcp pointed at the browser panel instead of its own Chrome\n\n' +
+  '"Not now" asks again next launch. "Never" writes nothing and removes anything ' +
+  'a previous version added. You can change this any time, feature by feature, ' +
+  'in Settings → General.';
 
 /**
  * Normalise whatever is on disk into a usable consent record.
@@ -173,22 +192,7 @@ export async function promptForConsent(parent?: Electron.BrowserWindow): Promise
       cancelId: 1,
       title: 'wmux — agent integration',
       message: 'Let wmux set up Claude Code, OpenCode and Kiro?',
-      detail:
-        'wmux can teach your coding agents to drive its browser panel, markdown views ' +
-        'and sidebar status. Doing so edits files in your home directory:\n\n' +
-        '  • ~/.claude/CLAUDE.md and ~/.config/opencode/AGENTS.md\n' +
-        '      a wmux section, between markers, leaving your own text untouched\n' +
-        '  • ~/.kiro/steering/wmux.md\n' +
-        '      a steering file of wmux\'s own; your other Kiro steering is untouched\n' +
-        '  • ~/.claude/settings.json\n' +
-        '      four hooks that drive the sidebar and "needs you" notifications\n' +
-        '  • ~/.claude/plugins/\n' +
-        '      the wmux-orchestrator plugin\n' +
-        '  • ~/.claude/settings.json\n' +
-        '      chrome-devtools-mcp pointed at the browser panel instead of its own Chrome\n\n' +
-        '"Not now" asks again next launch. "Never" writes nothing and removes anything ' +
-        'a previous version added. You can change this any time, feature by feature, ' +
-        'in Settings → General.',
+      detail: INTEGRATION_CONSENT_DETAIL,
       noLink: true,
     };
     // Parent it to the app window when there is one, so the question arrives

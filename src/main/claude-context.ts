@@ -442,6 +442,21 @@ export function removeClaudeHooks(): void {
 }
 
 /**
+ * Version selected for this wmux release. Do not use a mutable npm dist-tag
+ * here: this command is persisted in Claude's settings and may execute long
+ * after the wmux release that wrote it.
+ */
+export const CHROME_DEVTOOLS_MCP_PACKAGE = 'chrome-devtools-mcp@1.7.0';
+
+/** Build the custom MCP server entry written to Claude's settings. */
+export function buildChromeDevtoolsMcpServer(): { command: string; args: string[] } {
+  return {
+    command: 'npx',
+    args: ['-y', CHROME_DEVTOOLS_MCP_PACKAGE, '--browserUrl=http://127.0.0.1:9222'],
+  };
+}
+
+/**
  * Configures chrome-devtools-mcp to connect to wmux's CDP proxy on localhost:9222.
  * Disables the plugin version and adds a custom MCP server in settings.json with
  * --browserUrl pointing to wmux. This is more reliable than modifying the plugin cache.
@@ -467,11 +482,9 @@ export function ensureChromeDevtoolsConfig(): void {
     // Add as custom MCP server with --browserUrl
     if (!settings.mcpServers) settings.mcpServers = {};
     const existing = settings.mcpServers['chrome-devtools'];
-    if (!existing || !JSON.stringify(existing).includes('9222')) {
-      settings.mcpServers['chrome-devtools'] = {
-        command: 'npx',
-        args: ['-y', 'chrome-devtools-mcp@latest', '--browserUrl=http://127.0.0.1:9222'],
-      };
+    const desired = buildChromeDevtoolsMcpServer();
+    if (JSON.stringify(existing) !== JSON.stringify(desired)) {
+      settings.mcpServers['chrome-devtools'] = desired;
       changed = true;
     }
 
