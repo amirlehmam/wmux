@@ -721,8 +721,12 @@ app.whenReady().then(() => {
         // Re-read ~/.wmux/config.toml and live-apply to every open window.
         (async () => {
           try {
-            const { loadUserConfig } = await import('./user-config');
+            const { loadUserConfig, resetConfigWarnings } = await import('./user-config');
             const { loadUserLocales } = await import('./user-locales');
+            // A reload is the user saying "I have edited it" — so re-report the
+            // problems the file still has rather than staying quiet because the
+            // pre-edit version already warned about them.
+            resetConfigWarnings();
             // Same contract as the IPC path: one reload covers all of ~/.wmux,
             // including community translations (issue #147).
             const cfg = { ...loadUserConfig(), locales: loadUserLocales() };

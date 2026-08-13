@@ -14,7 +14,7 @@ import { listSystemFonts } from './font-detector';
 import { isContextMenuInstalled, installContextMenu, uninstallContextMenu } from './shell-context-menu';
 import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-loader';
 import { parseWindowsTerminalConfig, parseGhosttyConfig, loadProjectProfiles, importWindowsTerminalProfiles } from './config-loader';
-import { loadUserConfig, getConfigPath } from './user-config';
+import { loadUserConfig, getConfigPath, resetConfigWarnings } from './user-config';
 import { loadUserLocales } from './user-locales';
 import { WindowManager } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
@@ -199,6 +199,9 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.handle(IPC_CHANNELS.CONFIG_RELOAD_USER_CONFIG, async () => {
+    // See the config.reload pipe handler in index.ts: a reload re-reports the
+    // file's remaining problems instead of staying quiet about pre-edit ones.
+    resetConfigWarnings();
     // A reload covers everything under ~/.wmux, so edited community
     // translations (issue #147) apply without a restart too.
     const cfg = { ...loadUserConfig(), locales: loadUserLocales() };
