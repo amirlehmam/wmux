@@ -93,13 +93,44 @@ export default function BrowserPane({ initialUrl = 'https://github.com/amirlehma
     webviewRef.current?.executeJavaScript?.(popupBridgeSource()).catch(() => {});
   }, []);
 
+  // Last automatic recovery, so a page that crashes on load can't be reloaded in
+  // a tight loop. One retry per RECOVERY_COOLDOWN_MS; after that the pane stays
+  // on the crash screen and the user reloads it themselves.
+  const lastRecoveryRef = useRef(0);
+  const RECOVERY_COOLDOWN_MS = 10000;
+
   useEffect(() => {
     const wv = webviewRef.current;
     if (!wv) return;
     const onDomReady = () => { claimCdp(); installPopupBridge(); };
+    // A dead guest renderer used to leave a permanently stale CDP target: detach
+    // was reachable only from this effect's cleanup — i.e. only from a React
+    // unmount — so a webview that died while the component stayed mounted kept
+    // its entry in the bridge, kept matching by surface id, and answered every
+    // browser command with `browser_not_open` with no way back short of closing
+    // the pane (issue #155). Attach only re-runs on dom-ready, and a dead
+    // renderer does not reload itself, so nothing re-attached either.
+    const onGone = () => {
+      if (wcIdRef.current !== null) window.wmux?.cdp?.detach?.(wcIdRef.current);
+      wcIdRef.current = null;
+      const now = Date.now();
+      if (now - lastRecoveryRef.current < RECOVERY_COOLDOWN_MS) return;
+      lastRecoveryRef.current = now;
+      // Reload so the SAME pane comes back and re-attaches on its next
+      // dom-ready. Without this the bridge heals by adopting or creating a
+      // different browser, leaving this surface a dead rectangle that
+      // list-surfaces still advertises as a browser.
+      try { wv.reload(); } catch { /* already torn down */ }
+    };
     wv.addEventListener('dom-ready', onDomReady);
+    wv.addEventListener('render-process-gone', onGone);
+    wv.addEventListener('crashed', onGone);
+    wv.addEventListener('destroyed', onGone);
     return () => {
       wv.removeEventListener('dom-ready', onDomReady);
+      wv.removeEventListener('render-process-gone', onGone);
+      wv.removeEventListener('crashed', onGone);
+      wv.removeEventListener('destroyed', onGone);
       // Only detach if this pane still owns the connection — closing a split-tree
       // browser pane must not kill another open pane's CDP (issue #27).
       if (wcIdRef.current !== null) window.wmux?.cdp?.detach?.(wcIdRef.current);

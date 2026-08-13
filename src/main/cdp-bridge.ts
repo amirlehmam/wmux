@@ -166,6 +166,7 @@ export class CDPBridge {
   }
 
   get isAttached(): boolean {
+    this.pruneDead();
     return this.lastWcId !== null && this.targets.has(this.lastWcId);
   }
 
@@ -173,8 +174,45 @@ export class CDPBridge {
     return this.targets.has(wcId);
   }
 
+  /**
+   * The webContents behind a target, or null if it has died.
+   *
+   * A guest renderer can die without its React component unmounting — a crash,
+   * chrome://crash, killing that renderer's process — and detach() has exactly
+   * one production trigger, BrowserPane's effect cleanup. So nothing pruned a
+   * dead target: it stayed in `targets`, kept matching by surface id, and every
+   * command against it threw `browser_not_open` forever while surface.list —
+   * which reads the renderer store and knows nothing about CDP — kept reporting
+   * a live browser (issue #155).
+   */
+  private liveWebContents(target: CDPTarget): Electron.WebContents | null {
+    try {
+      const wc = webContents.fromId(target.wcId);
+      return wc && !wc.isDestroyed() ? wc : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Forget targets whose webContents is gone.
+   *
+   * This is the half of the fix that does not depend on anyone noticing the
+   * death: dropping a corpse turns a permanent wedge into one failed command,
+   * because the NEXT lookup finds no target for that surface and
+   * resolveBrowserWcId takes its existing `wcId === null` branch — clearing the
+   * caller binding and adopting or creating a browser that works. It also covers
+   * deaths that arrive by routes nobody thought to listen for.
+   */
+  private pruneDead(): void {
+    for (const target of [...this.targets.values()]) {
+      if (!this.liveWebContents(target)) this.detach(target.wcId);
+    }
+  }
+
   // Find a live browser attached for a given workspace (issue #62 routing).
   wcIdForWorkspace(workspaceId: string): number | null {
+    this.pruneDead();
     for (const target of this.targets.values()) {
       if (target.workspaceId === workspaceId) return target.wcId;
     }
@@ -182,6 +220,10 @@ export class CDPBridge {
   }
 
   wcIdForSurface(surfaceId: string): number | null {
+    // Pruning first is what lets a caller bound to a dead browser rebind: this
+    // returned a NON-null id for a corpse, so v2-browser's self-healing branch —
+    // guarded on null — never ran (issue #155).
+    this.pruneDead();
     for (const target of this.targets.values()) {
       if (target.surfaceId === surfaceId) return target.wcId;
     }
@@ -191,6 +233,7 @@ export class CDPBridge {
   // Resolve which target a command runs against: the explicit wcId when it's a
   // live target, otherwise the most-recently attached one.
   private resolveTarget(wcId?: number): CDPTarget {
+    this.pruneDead();
     const id = wcId !== undefined && this.targets.has(wcId) ? wcId : this.lastWcId;
     if (id === null) throw new Error('browser_not_open');
     const target = this.targets.get(id);
@@ -199,9 +242,18 @@ export class CDPBridge {
   }
 
   private getDebugger(target: CDPTarget) {
-    let wc;
-    try { wc = webContents.fromId(target.wcId); } catch { throw new Error('browser_not_open'); }
-    if (!wc || wc.isDestroyed() || !wc.debugger.isAttached()) throw new Error('browser_not_open');
+    const wc = this.liveWebContents(target);
+    // The one place that noticed the death used to throw without pruning, so
+    // every later command repeated the identical detection and the identical
+    // throw. Drop it here too — resolveTarget cannot see a target that dies
+    // between resolution and use.
+    if (!wc) { this.detach(target.wcId); throw new Error('browser_not_open'); }
+    // A live guest whose debugger came unattached (DevTools took the session and
+    // gave it back, an Electron-side detach) is recoverable — and must NOT be
+    // pruned, or a working pane would be replaced by a new one.
+    if (!wc.debugger.isAttached()) {
+      try { wc.debugger.attach('1.3'); } catch { throw new Error('browser_not_open'); }
+    }
     return wc.debugger;
   }
 
@@ -211,9 +263,8 @@ export class CDPBridge {
 
   async navigate(url: string, timeout = 30000, wcId?: number): Promise<void> {
     const target = this.resolveTarget(wcId);
-    let wc;
-    try { wc = webContents.fromId(target.wcId); } catch { throw new Error('browser_not_open'); }
-    if (!wc || wc.isDestroyed()) throw new Error('browser_not_open');
+    const wc = this.liveWebContents(target);
+    if (!wc) { this.detach(target.wcId); throw new Error('browser_not_open'); }
     const loadPromise = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         wc?.removeListener('did-finish-load', onFinish);
