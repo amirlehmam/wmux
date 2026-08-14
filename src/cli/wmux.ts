@@ -934,18 +934,42 @@ async function cmdAgentActivity(args: string[]): Promise<void> {
   await sendV2('agent.activity', params);
 }
 
-// Generic V1 passthrough (issue #19: devcontainer support). Lets a caller send
-// any raw V1 command line (report_pwd, report_git_branch, report_shell_state,
-// report_startup_command, …) without the CLI growing a near-identical wrapper
-// for each. wmux-bash-integration.sh writes those lines straight to the local
-// pipe when it can reach one; inside a devcontainer it can't, so it calls
-// `wmux raw-v1` instead and gets the CLI's transport — including TCP via
-// --remote / WMUX_REMOTE to a `wmux bridge` (issue #78) — for free. Auth is
-// unchanged: sendV1 still prefixes `auth <token>`.
+/**
+ * V1 passthrough for the shell integration (issue #19: devcontainer support).
+ *
+ * wmux-bash-integration.sh writes its state lines straight to the local pipe
+ * when it can reach one. Inside a devcontainer it can't, so it calls
+ * `wmux raw-v1` instead and gets the CLI's transport — including TCP via
+ * --remote / WMUX_REMOTE to a `wmux bridge` (issue #78) — without the CLI
+ * growing a near-identical wrapper per verb. Auth is unchanged: sendV1 still
+ * prefixes `auth <token>`.
+ *
+ * Restricted to the verbs the integration actually emits. A generic passthrough
+ * would make this a permanent side door into V1: every future V1 command becomes
+ * reachable from a container the day it is added, with no review of whether that
+ * was intended, and the pipe's V1 surface stops being something the V1 handler
+ * alone defines. Nothing is lost by naming them — the set is short, and a real
+ * new caller wants a real CLI command anyway.
+ */
+export const RAW_V1_VERBS = [
+  'report_pwd',
+  'report_git_branch',
+  'clear_git_branch',
+  'report_shell_state',
+  'ports_kick',
+  'report_startup_command',
+] as const;
+
+export function rawV1Error(verb: string | undefined): string | null {
+  if (!verb) return 'Usage: wmux raw-v1 <command> [surfaceId] [args...]';
+  if ((RAW_V1_VERBS as readonly string[]).includes(verb)) return null;
+  return `raw-v1: ${verb} is not a passthrough command. Accepted: ${RAW_V1_VERBS.join(', ')}`;
+}
+
 async function cmdRawV1(args: string[]): Promise<void> {
-  const line = args.slice(1).join(' ');
-  if (!line) { console.error('Usage: wmux raw-v1 <command> [surfaceId] [args...]'); process.exit(1); }
-  console.log(await sendV1(line));
+  const problem = rawV1Error(args[1]);
+  if (problem) { console.error(problem); process.exit(1); }
+  console.log(await sendV1(args.slice(1).join(' ')));
 }
 
 // ─── Declared agent state (issue #128) ───────────────────────────────────────
