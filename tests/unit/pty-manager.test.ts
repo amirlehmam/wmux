@@ -10,7 +10,25 @@ const TEST_ENV = Object.fromEntries(
   Object.entries(process.env).filter(([, v]) => v !== undefined)
 ) as Record<string, string>;
 
-describe('PtyManager', () => {
+/**
+ * These spawn REAL ConPTY processes, which is the point — the bugs this suite
+ * exists for (#150's crash guard, the double-spawn guard, orphan reaping) all
+ * live in node-pty's actual behaviour rather than in anything mockable.
+ *
+ * The cost is that `pty.spawn()` competes for a shared CI runner, and it is a
+ * synchronous call: when the runner is loaded it can stall well past the 15s
+ * global timeout, failing a test that does nothing but check an id prefix.
+ * That happened to the v1.0.1 tag — with `src/main/pty-manager.ts` byte-identical
+ * to the v1.0.0 that had passed — so the flake blocked a release rather than
+ * catching anything.
+ *
+ * A generous per-suite timeout is the right lever, not a longer global one. It
+ * only ever costs wall-clock on a spawn that was going to fail anyway, and the
+ * global 15s stays tight for the ~1000 tests that touch no processes. The
+ * readiness barrier below still resolves rather than rejects, so a slow runner
+ * degrades into a slower test rather than a hang either way.
+ */
+describe('PtyManager', { timeout: 60_000 }, () => {
   const managers: PtyManager[] = [];
 
   function makeManager(): PtyManager {
