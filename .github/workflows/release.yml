@@ -51,6 +51,18 @@ jobs:
       - name: Build main + preload + CLI
         run: npm run build:main
 
+      # resources/cli/*.js is a checked-in copy of this build's output, and
+      # nothing kept it in step — it was ~1700 diff lines behind its own source
+      # when #168 measured it. Nothing shipped reads it (extraResources maps
+      # dist/cli), but dev-mode Claude hook registration does, so a stale copy
+      # means dev behaves unlike production for no visible reason.
+      #
+      # Runs AFTER build:main because that is what makes dist/cli exist; the
+      # build-free half of the same invariant (shell-integration) is covered by
+      # npm test above, so it gates a release even if this step is ever moved.
+      - name: Verify checked-in resources match their sources
+        run: npm run verify:resources
+
       - name: Build renderer
         run: npx vite build
 

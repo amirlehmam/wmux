@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "verify:resources": "node scripts/verify-resources.mjs"
   },
   "dependencies": {
     "@types/ws": "8.18.1",
