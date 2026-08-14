@@ -4,6 +4,8 @@ import net from 'net';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawn } from 'child_process';
+import { Duplex } from 'stream';
 
 // Respect WMUX_PIPE when set (e.g. by a parent wmux running with WMUX_INSTANCE),
 // so the CLI talks to the same instance that spawned the shell.
@@ -18,6 +20,26 @@ const PIPE_PATH = process.env.WMUX_PIPE || '\\\\.\\pipe\\wmux';
 const DEFAULT_BRIDGE_PORT = 9787;
 let remoteTarget: { host: string; port: number } | null = null;
 
+// How long `wmux bridge` lets a relay keep draining after its client socket has
+// closed, before forcing teardown. Must exceed the pipe round-trip, or the frame
+// a write-then-close client just sent is discarded mid-flight. Measured worst
+// case inside a devcontainer on a corporate-managed Windows host is ~7s (a fresh
+// npiperelay.exe is spawned per connection over WSL interop, and AV/EDR scans it
+// on every exec), so the default leaves generous headroom. The relay normally
+// exits on its own well before this — the timer is only the backstop.
+const BRIDGE_DRAIN_GRACE_MS = parseInt(process.env.WMUX_BRIDGE_DRAIN_MS || '', 10) || 15000;
+
+// How many npiperelay relays `wmux bridge` keeps spawned and attached to the pipe
+// ahead of demand (see the pool in cmdBridge). 0 disables pre-warming and restores
+// spawn-per-connection. Only ever used on the npiperelay path — the Unix-socket and
+// native-pipe transports connect instantly and have nothing to pre-warm.
+const BRIDGE_WARM_RELAYS = (() => {
+  const raw = process.env.WMUX_BRIDGE_WARM?.trim();
+  if (!raw) return 2;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 2;
+})();
+
 function parseRemoteTarget(spec: string): { host: string; port: number } {
   const idx = spec.lastIndexOf(':');
   if (idx === -1) return { host: spec, port: DEFAULT_BRIDGE_PORT };
@@ -29,10 +51,122 @@ function parseRemoteTarget(spec: string): { host: string; port: number } {
   return { host: spec.slice(0, idx) || '127.0.0.1', port };
 }
 
-function connectTransport(onConnect: () => void): net.Socket {
-  return remoteTarget
-    ? net.connect({ host: remoteTarget.host, port: remoteTarget.port }, onConnect)
-    : net.connect({ path: PIPE_PATH }, onConnect);
+// ─── WSL2 transport: reach the Windows \\.\pipe\wmux from inside WSL2 ─────────
+//
+// A wmux CLI (or `wmux bridge`) running inside WSL2 needs to talk to the wmux
+// process on the Windows host over the \\.\pipe\wmux named pipe. AF_VSOCK,
+// TCP-over-gateway and cross-boundary Unix sockets were all evaluated and
+// rejected (HCS-managed WSL2 UVMs ignore GuestCommunicationServices; gateway
+// IPs/firewall policy are unreliable on corporate networks; 9P does not forward
+// AF_UNIX). The chosen mechanism is npiperelay.exe:
+//
+//   npiperelay.exe is a tiny (~2MB) open-source Windows binary that forwards a
+//   named pipe to its own stdin/stdout. WSL2 executes Windows binaries via
+//   interop, so from inside WSL2 we spawn it and use its stdio as the transport
+//   duplex — zero pre-setup, no socat needed. Install it (SHA-256 pinned) with
+//   scripts/install-npiperelay.sh; see docs/DEVCONTAINER.md for the full setup.
+//   Source: https://github.com/albertony/npiperelay (MIT, fork of jstarks/npiperelay)
+//   Pinned version: v1.11.4  SHA-256: cea82cf5c9c22a28bef8075750acb7958f766393baebff4597cf21442f71c4b3
+//
+//   Transport selection order:
+//     0. remoteTarget set (--remote / WMUX_REMOTE) → TCP (the devcontainer path,
+//        served by a `wmux bridge` reachable at host.docker.internal:9787)
+//     1. WMUX_PIPE starts with '/' → use as a Unix socket path
+//     2. WSL_DISTRO_NAME / WSLENV set → spawn npiperelay.exe automatically
+//     3. native Windows → connect directly to the named pipe
+// ─────────────────────────────────────────────────────────────────────────────
+function connectTransport(onConnect: () => void): net.Socket | Duplex {
+  if (remoteTarget) return net.connect({ host: remoteTarget.host, port: remoteTarget.port }, onConnect);
+  if (PIPE_PATH.startsWith('/')) return net.connect({ path: PIPE_PATH }, onConnect);
+  if (process.env.WSL_DISTRO_NAME || process.env.WSLENV) return connectViaNpiperelay(PIPE_PATH, onConnect);
+  return net.connect({ path: PIPE_PATH }, onConnect);
+}
+
+// Mirrors the selection order above: true when connectTransport() will take the
+// npiperelay branch. That is the only transport whose setup costs anything worth
+// pre-warming — a Unix socket or a native named pipe connects in microseconds.
+function usesNpiperelay(): boolean {
+  return (
+    !remoteTarget && !PIPE_PATH.startsWith('/') && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSLENV)
+  );
+}
+
+// Search common installation locations for npiperelay.exe.
+function findNpiperelay(): string | null {
+  const readable = (p: string): boolean => {
+    try {
+      fs.accessSync(p);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const binPaths = (process.env.PATH || process.env.Path || '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((d) => path.join(d, 'npiperelay.exe'));
+  const fromPath = binPaths.find(readable);
+  if (fromPath) return fromPath;
+  return (
+    [
+      path.join(os.homedir(), '.local', 'bin', 'npiperelay.exe'),
+      '/usr/local/bin/npiperelay.exe',
+      '/usr/bin/npiperelay.exe',
+    ].find(readable) ?? null
+  );
+}
+
+// Spawn npiperelay.exe and expose its stdin/stdout as a Duplex stream.
+function connectViaNpiperelay(pipePath: string, onConnect: () => void): Duplex {
+  const bin = findNpiperelay();
+  if (!bin) {
+    console.error('wmux: npiperelay.exe not found.');
+    console.error('  Install it with scripts/install-npiperelay.sh, or fetch it from:');
+    console.error('  https://github.com/albertony/npiperelay/releases/latest');
+    process.exit(1);
+  }
+  // npiperelay names the pipe with forward slashes: \\.\pipe\wmux → //./pipe/wmux
+  const child = spawn(bin, ['-ei', '-s', pipePath.replace(/\\/g, '/')], {
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  const duplex = new Duplex({
+    read() {},
+    write(chunk, enc, cb) {
+      if (!child.stdin?.writable) {
+        cb(new Error('npiperelay stdin closed'));
+        return;
+      }
+      child.stdin.write(chunk, enc, cb);
+    },
+    final(cb) {
+      child.stdin?.end();
+      cb();
+    },
+    // Kills the relay, discarding anything still buffered in its stdin. Callers
+    // must only reach here on error or after the stream has drained — see the
+    // teardown in cmdBridge.
+    destroy(err, cb) {
+      child.kill();
+      cb(err);
+    },
+    allowHalfOpen: true,
+  });
+  child.stdout?.on('data', (chunk: Buffer) => duplex.push(chunk));
+  child.stdout?.on('end', () => duplex.push(null));
+  child.on('error', (err: Error) => duplex.destroy(err));
+  child.on('exit', (code: number | null) => {
+    if (code !== 0 && code !== null) duplex.destroy(new Error(`npiperelay exited with code ${code}`));
+  });
+  // "Ready" here means the relay process exists — NOT that it has attached to the
+  // named pipe, which over WSL interop can take seconds longer. onConnect must
+  // still fire now regardless: callers write their request from inside it, and the
+  // Duplex buffers those bytes until the pipe is live. (Deferring it until the
+  // first byte comes back would deadlock — nothing would ever be written.)
+  //
+  // The cost is that a caller's deadline starts before the pipe is up, so it has
+  // to cover the attach latency too — that is what SLOW_TRANSPORT_FLOOR_MS is for.
+  process.nextTick(onConnect);
+  return duplex;
 }
 
 // Auth token for privileged (V2) pipe requests. wmux injects WMUX_PIPE_TOKEN
@@ -61,7 +195,7 @@ function sendV1(command: string): Promise<string> {
       client.write(line + '\n');
     });
     let data = '';
-    const timer = setTimeout(() => { client.end(); resolve(data.trim()); }, 5000);
+    const timer = setTimeout(() => { client.end(); resolve(data.trim()); }, deadline(5000));
     const finish = () => { clearTimeout(timer); resolve(data.trim()); };
     client.on('data', (chunk) => {
       data += chunk.toString();
@@ -86,6 +220,29 @@ function sendV1(command: string): Promise<string> {
  * Only the browser verbs currently need more than this — see BROWSER_CMDS.
  */
 const DEFAULT_V2_TIMEOUT_MS = 5000;
+
+/**
+ * A floor under every deadline, for transports slower than a local named pipe.
+ *
+ * The budgets above are all sized for a pipe on the same machine, where a
+ * round-trip is sub-millisecond and the whole deadline is the server's own
+ * thinking time. Neither transport this file grew for issue #19 is that: TCP to
+ * a `wmux bridge` from inside a devcontainer, and npiperelay over WSL interop,
+ * both measure ~7s worst case on a corporate-managed host — above the 5s default
+ * on their own, before wmux has done anything. Every request from a container
+ * therefore reported a timeout for a call that had already succeeded.
+ *
+ * A floor rather than a replacement, so a browser verb keeps the longer budget
+ * it asked for, and a local run keeps master's timings unchanged (floor 0).
+ */
+const SLOW_TRANSPORT_FLOOR_MS = 30000;
+
+/** `base`, raised to the slow-transport floor when the transport is a slow one. */
+function deadline(base: number): number {
+  const override = parseInt(process.env.WMUX_RPC_TIMEOUT_MS || '', 10);
+  if (Number.isFinite(override) && override > 0) return Math.max(base, override);
+  return remoteTarget || usesNpiperelay() ? Math.max(base, SLOW_TRANSPORT_FLOOR_MS) : base;
+}
 
 /**
  * What a stalled request says when it gives up.
@@ -118,10 +275,11 @@ function sendV2(
       client.write(request + '\n');
     });
     let data = '';
+    const deadlineMs = deadline(timeoutMs);
     const timer = setTimeout(() => {
       client.end();
-      reject(new Error(timeoutMessage(method, timeoutMs)));
-    }, timeoutMs);
+      reject(new Error(timeoutMessage(method, deadlineMs)));
+    }, deadlineMs);
     client.on('data', (chunk) => {
       data += chunk.toString();
       if (data.includes('\n')) {
@@ -490,27 +648,163 @@ async function cmdSsh(args: string[]): Promise<void> {
 // wmux's pipe server, so the bridge grants nothing by itself.
 async function cmdBridge(args: string[]): Promise<void> {
   const port = parseInt(getFlag(args, '--port') || '', 10) || DEFAULT_BRIDGE_PORT;
-  const host = getFlag(args, '--host') || '127.0.0.1';
+  // --wsl binds 0.0.0.0 so a container on the Windows host can reach a bridge
+  // running inside WSL2 (issue #19). WSL2's NAT gives the distro an address the
+  // container resolves as host.docker.internal, but 127.0.0.1 inside the distro
+  // is not it. The pipe token still authenticates every request end to end.
+  const wslMode = args.includes('--wsl');
+  const host = getFlag(args, '--host') || (wslMode ? '0.0.0.0' : '127.0.0.1');
   if (host !== '127.0.0.1' && host !== 'localhost') {
     console.warn('WARNING: binding beyond localhost exposes the wmux pipe to the network.');
     console.warn(`Prefer the default 127.0.0.1 + an SSH tunnel: ssh -L ${port}:127.0.0.1:${port} user@host`);
   }
+
+  // ── Warm relay pool ─────────────────────────────────────────────────────────
+  // Spawn-per-connection made every request pay the relay's whole startup: a fresh
+  // npiperelay.exe launched over WSL interop (AV/EDR scans the binary on each exec
+  // on a corporate-managed host) and then the pipe dial. Measured worst case from a
+  // devcontainer is ~7s — on every hook. Keeping relays open ahead of demand moves
+  // that cost off the request path: a warm relay has already spawned AND attached
+  // by the time a client arrives, so hand-off is just pipe().
+  //
+  // Deliberately a POOL of exclusive relays, not one shared relay multiplexed
+  // across clients. Multiplexing would force the bridge to parse frames and rewrite
+  // JSON-RPC ids to route replies back to the right socket, which:
+  //   * breaks V1 entirely — `pong` / `ok` / `unauthorized` carry no id to route on;
+  //   * makes every client a casualty when the single relay dies;
+  //   * costs the bridge its one real virtue, being a transparent byte pipe (any
+  //     future streaming or server-pushed method would have to be taught to it).
+  // Pooling buys the same latency win and the bridge stays dumb.
+  //
+  // Only on the npiperelay path — elsewhere this would hold idle sockets open to
+  // buy nothing.
+  const warmSize = usesNpiperelay() ? BRIDGE_WARM_RELAYS : 0;
+  const warm: Array<{ stream: net.Socket | Duplex; claim: () => void }> = [];
+  let warmFailures = 0;
+  let refillTimer: NodeJS.Timeout | null = null;
+
+  const scheduleRefill = (delayMs: number): void => {
+    if (refillTimer || warm.length >= warmSize) return;
+    refillTimer = setTimeout(() => {
+      refillTimer = null;
+      fillWarm();
+    }, delayMs);
+    refillTimer.unref();
+  };
+
+  function fillWarm(): void {
+    while (warm.length < warmSize) {
+      const stream = connectTransport(() => {});
+      const entry = { stream, claim: () => {} };
+      // Dying before being claimed means the upstream isn't there — wmux not
+      // running, or the pipe gone. npiperelay exits immediately in that case, so
+      // without a backoff the bridge would respawn a Windows process in a tight
+      // loop for as long as wmux stays down.
+      const onDead = (): void => {
+        const i = warm.indexOf(entry);
+        if (i === -1) return; // already claimed — the client's teardown owns it now
+        warm.splice(i, 1);
+        warmFailures = Math.min(warmFailures + 1, 6);
+        scheduleRefill(Math.min(30000, 500 * 2 ** warmFailures));
+      };
+      entry.claim = () => {
+        stream.off('error', onDead);
+        stream.off('close', onDead);
+      };
+      stream.on('error', onDead);
+      stream.on('close', onDead);
+      warm.push(entry);
+    }
+  }
+
+  // An idle relay reads nothing, so anything the upstream sent while it waited stays
+  // buffered in the stream and is delivered the moment the client pipes it — no need
+  // to drain before hand-off.
+  const takeWarm = (): net.Socket | Duplex | null => {
+    while (warm.length) {
+      const entry = warm.pop()!;
+      entry.claim();
+      // wmux may have restarted since this relay attached.
+      if (!entry.stream.destroyed && entry.stream.writable) {
+        warmFailures = 0;
+        return entry.stream;
+      }
+      entry.stream.destroy();
+    }
+    return null;
+  };
+
   const server = net.createServer((sock) => {
-    const pipe = net.connect({ path: PIPE_PATH });
+    // Connect to the local wmux through the same selector the CLI uses. In the
+    // bridge process remoteTarget is always null, so this resolves to a Unix
+    // socket, npiperelay (inside WSL2), or the named pipe directly — which is
+    // what lets `wmux bridge` run inside WSL2 and still reach the Windows pipe.
+    // A warm relay is the same thing, already connected.
+    const pipe = takeWarm() ?? connectTransport(() => {});
+    // Replace what we just consumed so the next client is served warm too.
+    scheduleRefill(0);
     sock.pipe(pipe);
     pipe.pipe(sock);
-    const drop = () => { sock.destroy(); pipe.destroy(); };
-    sock.on('error', drop);
-    pipe.on('error', drop);
-    sock.on('close', drop);
-    pipe.on('close', drop);
+
+    // Teardown is half-close-aware on purpose. Destroying BOTH sides on either
+    // 'close' silently ate hook events: wmux-hook.js writes its frame and end()s
+    // immediately, and over npiperelay the Duplex's destroy() is child.kill() —
+    // so the relay died with the frame still buffered in its stdin and never
+    // forwarded it. Clients that write-then-close are the normal case here
+    // (every Claude Code hook is one), not an abort.
+    //
+    // 'end' (peer finished sending) therefore FLUSHES rather than destroys: end()
+    // the other side so its buffered bytes drain and the pipe sees a clean EOF.
+    // destroy() is reserved for 'error', where there is nothing left to save.
+    let done = false;
+    const destroyBoth = (): void => {
+      if (done) return;
+      done = true;
+      sock.destroy();
+      pipe.destroy();
+    };
+    // A closed socket can no longer drain anything, so 'close' still tears down —
+    // but only after a grace period, giving an in-flight relay time to finish
+    // forwarding what it already holds.
+    const closeAfterDrain = (): void => {
+      if (done) return;
+      setTimeout(destroyBoth, BRIDGE_DRAIN_GRACE_MS).unref();
+    };
+
+    sock.on('error', destroyBoth);
+    pipe.on('error', destroyBoth);
+    sock.on('end', () => { pipe.end(); });
+    pipe.on('end', () => { sock.end(); });
+    sock.on('close', closeAfterDrain);
+    pipe.on('close', closeAfterDrain);
   });
   server.on('error', (err) => { console.error(`bridge error: ${err.message}`); process.exit(1); });
+
+  // Warm relays hold a live pipe connection (and an npiperelay.exe) for as long as
+  // the bridge runs, so retire them on the way out rather than orphaning them.
+  const shutdown = (): void => {
+    if (refillTimer) clearTimeout(refillTimer);
+    warm.splice(0).forEach((e) => { e.claim(); e.stream.destroy(); });
+    process.exit(0);
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+
   server.listen(port, host, () => {
     console.log(`wmux bridge listening on ${host}:${port} ↔ ${PIPE_PATH}`);
-    console.log('From another machine:');
-    console.log(`  ssh -L ${port}:127.0.0.1:${port} <user>@<this-host>`);
-    console.log(`  wmux --remote 127.0.0.1:${port} --token <run 'wmux token' here> list-workspaces`);
+    if (warmSize > 0) {
+      fillWarm();
+      console.log(`Keeping ${warmSize} npiperelay relay(s) warm (WMUX_BRIDGE_WARM=0 to disable).`);
+    }
+    if (wslMode) {
+      console.log('WSL2 mode. From a container on this host:');
+      console.log(`  WMUX_REMOTE=host.docker.internal:${port}`);
+      console.log("  WMUX_REMOTE_TOKEN=<run 'wmux token' here>");
+    } else {
+      console.log('From another machine:');
+      console.log(`  ssh -L ${port}:127.0.0.1:${port} <user>@<this-host>`);
+      console.log(`  wmux --remote 127.0.0.1:${port} --token <run 'wmux token' here> list-workspaces`);
+    }
     console.log('Ctrl+C to stop.');
   });
 }
@@ -589,6 +883,20 @@ async function cmdAgentActivity(args: string[]): Promise<void> {
   if (args.includes('--done')) params.done = true;
   if (args.includes('--active')) params.done = false;
   await sendV2('agent.activity', params);
+}
+
+// Generic V1 passthrough (issue #19: devcontainer support). Lets a caller send
+// any raw V1 command line (report_pwd, report_git_branch, report_shell_state,
+// report_startup_command, …) without the CLI growing a near-identical wrapper
+// for each. wmux-bash-integration.sh writes those lines straight to the local
+// pipe when it can reach one; inside a devcontainer it can't, so it calls
+// `wmux raw-v1` instead and gets the CLI's transport — including TCP via
+// --remote / WMUX_REMOTE to a `wmux bridge` (issue #78) — for free. Auth is
+// unchanged: sendV1 still prefixes `auth <token>`.
+async function cmdRawV1(args: string[]): Promise<void> {
+  const line = args.slice(1).join(' ');
+  if (!line) { console.error('Usage: wmux raw-v1 <command> [surfaceId] [args...]'); process.exit(1); }
+  console.log(await sendV1(line));
 }
 
 // ─── Declared agent state (issue #128) ───────────────────────────────────────
@@ -738,8 +1046,12 @@ const COMMAND_SPECS = {
 
   // Remote management (issue #78)
   bridge: {
-    usage: 'wmux bridge [--port P] [--host H]   (expose this wmux\'s pipe over TCP, default 127.0.0.1:9787)',
+    usage: [
+      'wmux bridge [--port P] [--host H] [--wsl]   (expose this wmux\'s pipe over TCP, default 127.0.0.1:9787)',
+      '  --wsl   bind 0.0.0.0 so a container on this host can reach a bridge running in WSL2',
+    ].join('\n'),
     value: ['--port', '--host'],
+    bool: ['--wsl'],
   },
   token: { usage: 'wmux token   (print this instance\'s pipe auth token)' },
 
@@ -877,6 +1189,10 @@ const COMMAND_SPECS = {
     usage: `wmux agent-activity [--tool T] [--skill S] [--done|--active] [--surface <id>]   ${SURFACE_NOTE}`,
     value: ['--tool', '--skill', '--surface'],
     bool: ['--done', '--active'],
+  },
+  'raw-v1': {
+    usage: 'wmux raw-v1 <command> [surfaceId] [args...]   (send a raw V1 line; used by shell integration)',
+    passthrough: true,
   },
 
   // Declared agent state (issue #128)
@@ -1110,6 +1426,8 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
   },
   hook: cmdHook,
   'agent-activity': cmdAgentActivity,
+  // Devcontainer support (issue #19)
+  'raw-v1': cmdRawV1,
   ...AGENT_STATE_COMMANDS,
 };
 
@@ -1166,7 +1484,7 @@ Usage: wmux <command> [options]
 System:     ping, identify, capabilities, list-windows, focus-window <id>, new-window
 Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, list-workspaces
 Remote:     ssh [ssh options] <user@host> [--title T]   (remote terminal in a new workspace)
-            bridge [--port P] [--host H]   (expose this wmux's pipe over TCP, default 127.0.0.1:9787)
+            bridge [--port P] [--host H] [--wsl]   (expose this wmux's pipe over TCP, default 127.0.0.1:9787)
             token                          (print this instance's auth token, for --token)
 Global:     --remote host[:port] --token <T>   (drive a REMOTE wmux through an SSH tunnel;
             env equivalents: WMUX_REMOTE, WMUX_REMOTE_TOKEN)

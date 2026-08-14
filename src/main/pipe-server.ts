@@ -132,6 +132,7 @@ export class PipeServer extends EventEmitter {
     let args: string[];
     switch (command) {
       case 'report_pwd':
+      case 'report_startup_command':
       case 'notify':
         // Single free-text argument — may contain spaces (issue #53).
         args = argsRaw ? [argsRaw] : [];

@@ -10,7 +10,20 @@ export -f wmux
 
 _wmux_report() {
     local msg="$1"
-    # Write to temp file for main process to pick up
+    # Devcontainer transport (issue #19): a shell inside a Linux container can
+    # reach neither the Windows named pipe nor the host's Temp dir, so the file
+    # drop below is a no-op there and the pane never reports anything. When
+    # WMUX_REMOTE is set, relay the same V1 line through `wmux raw-v1` instead —
+    # the `wmux` shim resolves to `node "$WMUX_CLI"`, which already speaks TCP to
+    # a `wmux bridge` (issue #78). No protocol is duplicated here.
+    #
+    # Fire-and-forget: backgrounded with output discarded, so a slow or absent
+    # bridge delays no prompt and fails no command.
+    if [ -n "${WMUX_REMOTE}" ] && command -v wmux &>/dev/null; then
+        ( wmux raw-v1 "$msg" >/dev/null 2>&1 & )
+        return
+    fi
+    # Native: write to temp file for the main process to pick up
     local tmpdir="/mnt/c/Users/${USER}/AppData/Local/Temp/wmux"
     mkdir -p "$tmpdir" 2>/dev/null
     echo "$msg" >> "$tmpdir/messages"

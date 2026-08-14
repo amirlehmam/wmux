@@ -326,6 +326,12 @@ wmux --remote 127.0.0.1:9787 --token <TOKEN> list-workspaces
 wmux --remote 127.0.0.1:9787 --token <TOKEN> new-workspace --title "api"
 # Or set once: WMUX_REMOTE=127.0.0.1:9787 and WMUX_REMOTE_TOKEN=<TOKEN>
 
+# From a devcontainer — same transport, no SSH tunnel. Run the bridge in WSL2
+# (--wsl binds 0.0.0.0 there, reachable from the container, not from the LAN):
+wmux bridge --wsl                  # relays to \\.\pipe\wmux via npiperelay.exe
+# Then in the container: WMUX_REMOTE=host.docker.internal:9787 + WMUX_REMOTE_TOKEN
+# Full setup: docs/DEVCONTAINER.md
+
 # Agents
 wmux agent spawn --cmd "claude --resume abc" --label "Research"
 wmux agent spawn-batch --json '[{"cmd":"claude","label":"Agent 1"},{"cmd":"claude","label":"Agent 2"}]'
@@ -345,9 +351,14 @@ Connect to `\\.\pipe\wmux` for programmatic control. Two protocols supported:
 report_pwd <surface_id> <path>
 report_git_branch <surface_id> <branch> [dirty]
 report_shell_state <surface_id> idle|running|interrupted
+report_startup_command <surface_id> <command>   # how to restore this surface; must be cwd-independent
 notify <surface_id> <text>
 ping
 ```
+
+`wmux raw-v1 "<line>"` sends any of these through the CLI's transport, which is
+what lets a shell with no reachable pipe — inside a devcontainer — still report.
+See [docs/DEVCONTAINER.md](docs/DEVCONTAINER.md).
 
 **V2** (JSON-RPC, used by CLI and automation):
 ```json
