@@ -13,6 +13,13 @@ import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
 import { SplitNode, ThemeConfig } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
 import { activateTerminalLink, terminalLinkHandler } from '../utils/terminal-links';
+import {
+  MouseModeState,
+  applyMouseModeSequences,
+  emptyMouseModeState,
+  isMouseTracking,
+  mouseModeReplaySequence,
+} from '../utils/mouse-modes';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
@@ -170,10 +177,31 @@ function buildXtermTheme(base: ThemeConfig, override?: UserColorScheme, bgAlpha 
 
 const themeCache = new Map<string, ThemeConfig>();
 
-// Tracks whether mouse reporting is active for a given surface. Survives React
-// remounts so the wheel handler can distinguish tmux (mouse-enabled) from a
-// plain shell even when xterm's buffer.active.type is reset after remount.
-const surfaceMouseEnabled = new Map<string, boolean>();
+// Tracks the DEC private mouse modes active for a given surface. Survives React
+// remounts, for two reasons that used to be one:
+//
+//   1. the wheel handler needs to tell tmux (mouse-enabled) from a plain shell
+//      even when xterm's buffer.active.type is reset after remount, and
+//   2. the replacement xterm has to be put back into the mode the still-running
+//      TUI believes it is in (issue #164). SerializeAddon carries the tracking
+//      protocol across but NOT the coordinate encoding, so a remounted pane
+//      tracked drags while reporting them in the legacy encoding — and the
+//      application never re-sends its DECSET, because from its side nothing
+//      happened.
+//
+// This was a single boolean until 1.0.0, which is what made (2) invisible: the
+// encoding had nowhere to live.
+const surfaceMouseModes = new Map<string, MouseModeState>();
+
+/** The mode state for a surface, created on first use. */
+function mouseModesFor(surfaceId: string): MouseModeState {
+  let state = surfaceMouseModes.get(surfaceId);
+  if (!state) {
+    state = emptyMouseModeState();
+    surfaceMouseModes.set(surfaceId, state);
+  }
+  return state;
+}
 
 // Cache of serialized xterm buffers keyed by surfaceId. A split-tree
 // restructure remounts PaneWrapper (React reconciliation moves it to a
@@ -185,7 +213,7 @@ const MAX_BUFFER_CACHE = 32;
 
 // Live xterm instances keyed by surfaceId, so the pipe bridge can read screen
 // content (surface.read_text / `wmux read-screen`) from the active buffer.
-// Module-level like surfaceMouseEnabled: survives remounts; entries are
+// Module-level like surfaceMouseModes: survives remounts; entries are
 // registered on mount and removed on unmount (guarded so a StrictMode
 // setup→cleanup→setup sequence can't delete the replacement instance).
 export const surfaceTerminalRegistry = new Map<string, Terminal>();
@@ -248,7 +276,7 @@ function writeWheelToPty(
 // compositor otherwise steals un-prevented wheel events, #47):
 //   normal buffer + plain shell     → scroll wmux's own scrollback
 //   alt buffer OR mouse-tracking app → forward to the PTY
-// surfaceMouseEnabled (survives remounts) is the reliable mouse-active signal,
+// surfaceMouseModes (survives remounts) is the reliable mouse-active signal,
 // since tmux doesn't re-send its DECSET enables on SIGWINCH after a remount.
 function handleTerminalWheel(
   ev: WheelEvent,
@@ -259,7 +287,7 @@ function handleTerminalWheel(
 ): void {
   if (ev.deltaY === 0) return;
   const isAltBuffer = terminal.buffer.active.type !== 'normal';
-  const isMouseEnabled = !!(surfaceId && surfaceMouseEnabled.get(surfaceId));
+  const isMouseEnabled = !!surfaceId && isMouseTracking(surfaceMouseModes.get(surfaceId));
 
   if (!isAltBuffer && !isMouseEnabled) {
     ev.preventDefault();
@@ -471,6 +499,29 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         surfaceBufferCache.delete(surfaceId);
         terminal.write(snapshot);
       }
+
+      // Put the replacement terminal back into the mouse modes the STILL-RUNNING
+      // application believes are active (issue #164).
+      //
+      // This has to happen even though the snapshot above already carries some
+      // of it, because SerializeAddon emits the tracking protocol (?1000/?1002/
+      // ?1003) and not the coordinate encoding (?1006/?1016). A remounted pane
+      // therefore came up tracking drags but reporting them in the legacy
+      // encoding, while the TUI was still decoding SGR — and nothing corrected
+      // it, since from the application's side nothing happened and there is no
+      // reason for it to re-send its DECSET.
+      //
+      // Written AFTER the snapshot so it wins: the snapshot's own protocol
+      // sequence is idempotent with this one, and replaying every active mode
+      // means the new terminal's flags match the original rather than merely
+      // behaving the same, so a later DECRST from the application lands on the
+      // state it expects.
+      //
+      // Unconditional on having a snapshot, deliberately: the modes are the
+      // application's state, not the buffer's, and a mount that reattaches to a
+      // live PTY needs them whether or not a buffer came with it.
+      const replay = mouseModeReplaySequence(surfaceMouseModes.get(surfaceId));
+      if (replay) terminal.write(replay);
     }
 
     // Wheel handling — we always take ownership on the capture phase (xterm's
@@ -484,7 +535,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Buffer type alone is unreliable: after a React remount tmux doesn't re-send
     // \x1b[?1049h on SIGWINCH (only on a fresh client attach), so
     // xterm's buffer.active.type stays 'normal' even though tmux is drawn there.
-    // surfaceMouseEnabled (module-level, survives remounts) is the reliable signal.
+    // surfaceMouseModes (module-level, survives remounts) is the reliable signal.
     const wheelHost = terminalRef.current;
     const onWheelCapture = (ev: WheelEvent) =>
       handleTerminalWheel(ev, terminal, terminalRef.current, ptyIdRef.current, surfaceId);
@@ -737,11 +788,17 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // Wire PTY data → xterm
       const unsubData = window.wmux.pty.onData(id, (data: string) => {
         if (disposed) return;
-        // Track SGR/button mouse enable (?1006h, ?1000h, ?1002h, ?1003h) and disable
-        // so the wheel handler can distinguish tmux from a plain shell after remount.
-        // Mirror the enable pattern for disable so any of the four modes clears the flag.
-        if (/\x1b\[\?100[0236]h/.test(data)) surfaceMouseEnabled.set(id, true);
-        else if (/\x1b\[\?100[0236]l/.test(data)) surfaceMouseEnabled.set(id, false);
+        // Fold every DEC private mouse mode change in this chunk into the
+        // surface's state, so the wheel handler can tell tmux from a plain
+        // shell after a remount AND a remount can restore the ENCODING too.
+        //
+        // The previous form tested two single-mode regexes with an `else if`,
+        // which missed three real shapes: a combined `ESC[?1002;1006h` (the
+        // usual spelling) registered only one mode; a chunk that disabled and
+        // re-enabled saw only the first; and the encoding had nowhere to be
+        // recorded at all, which is the actual defect in issue #164.
+        // See utils/mouse-modes.ts.
+        applyMouseModeSequences(mouseModesFor(id), data);
         terminal.write(data);
       });
 
@@ -753,6 +810,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // An exited process can't be making progress — drop any leftover
         // OSC 9;4 indicator (same stuck-badge reasoning as above).
         useStore.getState().setSurfaceProgress(id, null);
+        // Mouse modes belong to the application that asked for them, and it is
+        // gone. Keeping them would replay tracking into the next terminal on
+        // this surface — a plain shell that never requested it — and would also
+        // let the map grow one entry per surface for the life of the process.
+        surfaceMouseModes.delete(id);
       });
 
       cleanupFnsRef.current.push(unsubData, unsubExit);
@@ -885,7 +947,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // Skip for mouse-enabled apps (tmux, vim…): they receive SIGWINCH from the
         // pty.resize() call above and redraw themselves. A premature refresh here
         // would paint stale/clipped buffer content before their redraw arrives.
-        if (!surfaceId || !surfaceMouseEnabled.get(surfaceId)) {
+        if (!surfaceId || !isMouseTracking(surfaceMouseModes.get(surfaceId))) {
           try { terminal.refresh(0, terminal.rows - 1); } catch {}
         }
       });
@@ -934,6 +996,29 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // Release the GPU renderer (and its WebGL budget slot) before disposing
       rendererRef.current?.dispose();
       rendererRef.current = null;
+
+      // End any mouse gesture that is still in flight before disposing.
+      //
+      // xterm 6.0.0 attaches its drag listeners to the DOCUMENT on mousedown
+      // and removes them on mouseup, and those transient listeners are not
+      // owned by the terminal's disposable store — so a gesture that spans a
+      // remount survives Terminal.dispose(). The next mousemove/mouseup then
+      // runs getMouseReportCoords against a disposed RenderService and throws
+      // "Cannot read properties of undefined (reading 'dimensions')", once per
+      // event for as long as the button is held (issue #164, and upstream
+      // xtermjs/xterm.js#6070).
+      //
+      // Synthesising the mouseup lets xterm's own handler run and unregister
+      // itself while the terminal is still alive, which is the same teardown it
+      // would have done had the user released the button first. The upstream
+      // fix (#6019) makes those listeners disposable, but it is not in stable
+      // 6.0.0 — this can go when it ships.
+      //
+      // Safe to send unconditionally: with no gesture in flight there is no
+      // listener and the event goes nowhere.
+      try {
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      } catch { /* jsdom-less environments and exotic hosts — nothing to end */ }
 
       // Dispose terminal
       terminal.dispose();
