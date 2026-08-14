@@ -41,20 +41,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { readRenderedInstructions } from './agent-instructions';
 
 /** Identifies a file as wmux-managed. Shared with the other two agent paths. */
 const START_MARKER = '<!-- wmux:start';
-
-function getInstructionsPath(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { app } = require('electron') as typeof import('electron');
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'claude-instructions', 'claude-instructions.md');
-    }
-  } catch { /* not running under Electron */ }
-  return path.join(__dirname, '../../resources/claude-instructions.md');
-}
 
 /**
  * ~/.kiro/steering/wmux.md — the *global* steering location, which applies to
@@ -72,12 +62,10 @@ export function isWmuxManaged(content: string): boolean {
 /** Writes the wmux steering file into ~/.kiro/steering/. */
 export function ensureKiroContext(): void {
   try {
-    const instructionsPath = getInstructionsPath();
-    if (!fs.existsSync(instructionsPath)) {
-      console.warn('[wmux] instructions source not found at', instructionsPath);
-      return;
-    }
-    const block = fs.readFileSync(instructionsPath, 'utf-8').trimEnd() + '\n';
+    // Rendered, not read: carries this install's absolute CLI path (#158).
+    const rendered = readRenderedInstructions();
+    if (rendered === null) return;
+    const block = rendered.trimEnd() + '\n';
     const steeringPath = getKiroSteeringPath();
 
     // A pre-existing wmux.md that is NOT ours belongs to the user. Overwriting

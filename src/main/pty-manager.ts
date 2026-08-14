@@ -9,6 +9,7 @@ import { isPosixPath } from '../shared/paths';
 import { PtyLedger } from './pty-ledger';
 import { attachErrorSink, installPtyCrashGuard } from './pty-crash-guard';
 import { powerShellShimDir } from './powershell-shim';
+import { getCliBinPath } from './cli-paths';
 
 // Applied once, at load, before any PTY can exist — the exit callback it guards
 // is registered by node-pty inside pty.spawn(), so a later install would leave
@@ -104,23 +105,6 @@ function getCliPath(): string {
   return path.join(__dirname, '../cli/wmux.js');
 }
 
-// Dir holding the `wmux`/`wmux.cmd` shims (each runs `node $WMUX_CLI`). Prepended
-// to PATH in every spawned shell so bare `wmux` resolves in NON-interactive shells
-// too (Claude Code's Bash tool, orchestrator hook scripts) — the interactive
-// `wmux` shell function only exists in the pane's own interactive shell. The dir
-// has no wmux.exe, so there is no PATHEXT collision with the GUI.
-function getCliBinPath(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { app } = require('electron') as typeof import('electron');
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'cli-bin');
-    }
-  } catch {
-    // Not running in Electron
-  }
-  return path.join(__dirname, '../../src/cli-bin');
-}
 
 function getShellType(shell: string): 'powershell' | 'cmd' | 'wsl' | 'unknown' {
   const lower = shell.toLowerCase();

@@ -1,22 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { readRenderedInstructions } from './agent-instructions';
 
 const START_MARKER = '<!-- wmux:start';
 const END_MARKER = '<!-- wmux:end -->';
 
-function getInstructionsPath(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { app } = require('electron') as typeof import('electron');
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'claude-instructions', 'claude-instructions.md');
-    }
-  } catch {
-    // Not in Electron
-  }
-  return path.join(__dirname, '../../resources/claude-instructions.md');
-}
 
 function getClaudeMdPath(): string {
   return path.join(os.homedir(), '.claude', 'CLAUDE.md');
@@ -112,13 +101,11 @@ function collapse(text: string): string {
  */
 export function ensureClaudeContext(): void {
   try {
-    const instructionsPath = getInstructionsPath();
-    if (!fs.existsSync(instructionsPath)) {
-      console.warn('[wmux] claude-instructions.md not found at', instructionsPath);
-      return;
-    }
-
-    const wmuxBlock = fs.readFileSync(instructionsPath, 'utf-8');
+    // Rendered rather than read: the block carries this install's absolute CLI
+    // path, so a session that wmux did not spawn (and therefore has no `wmux`
+    // on PATH) can still tell "not running" from "not reachable" — issue #158.
+    const wmuxBlock = readRenderedInstructions();
+    if (wmuxBlock === null) return;
     const claudeMdPath = getClaudeMdPath();
     const claudeDir = path.dirname(claudeMdPath);
 

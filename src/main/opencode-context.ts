@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { stripWmuxBlock, stripLegacyBlocks } from './claude-context';
+import { readRenderedInstructions } from './agent-instructions';
 
 const START_MARKER = '<!-- wmux:start';
 const END_MARKER = '<!-- wmux:end -->';
@@ -32,17 +33,6 @@ export function injectWmuxBlock(rawExisting: string, wmuxBlock: string): string 
   return before + block + after;
 }
 
-function getInstructionsPath(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { app } = require('electron') as typeof import('electron');
-    if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'claude-instructions', 'claude-instructions.md');
-    }
-  } catch { /* not running under Electron */ }
-  return path.join(__dirname, '../../resources/claude-instructions.md');
-}
-
 function getAgentsMdPath(): string {
   return path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md');
 }
@@ -50,12 +40,9 @@ function getAgentsMdPath(): string {
 /** Ensures ~/.config/opencode/AGENTS.md contains the wmux block. */
 export function ensureOpencodeContext(): void {
   try {
-    const instructionsPath = getInstructionsPath();
-    if (!fs.existsSync(instructionsPath)) {
-      console.warn('[wmux] instructions source not found at', instructionsPath);
-      return;
-    }
-    const wmuxBlock = fs.readFileSync(instructionsPath, 'utf-8');
+    // Rendered, not read: carries this install's absolute CLI path (#158).
+    const wmuxBlock = readRenderedInstructions();
+    if (wmuxBlock === null) return;
     const agentsPath = getAgentsMdPath();
     const dir = path.dirname(agentsPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

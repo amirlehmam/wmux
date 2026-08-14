@@ -37,9 +37,19 @@ describe('global agent-context block (issue #152)', () => {
   });
 
   it('says what to do when the check fails, so a false premise has an exit', () => {
-    expect(BLOCK).toMatch(/if it does not answer/i);
+    expect(BLOCK).toMatch(/if it replies something else, or nothing at all/i);
     // \s+ because the source is hard-wrapped — the sentence may straddle a line.
     expect(BLOCK).toMatch(/use your (normal|own)\s+tools/i);
+  });
+
+  it('does not read a missing CLI as a missing wmux (issue #158)', () => {
+    // The exit above must stay narrow. wmux only puts `wmux` on PATH for
+    // terminals it spawns, so "command not found" is the NORMAL state of every
+    // session this globally-loaded block was written to reach — and treating
+    // that as "wmux is absent" told every agent on a healthy machine to stand
+    // down. Only a failure to ANSWER is evidence of absence.
+    expect(BLOCK).not.toMatch(/command not found, no reply, or an error/i);
+    expect(BLOCK).toMatch(/not found[^]*does not mean wmux\s*\nis absent/i);
   });
 
   it('never removes the reader\'s alternatives outright', () => {
@@ -50,12 +60,19 @@ describe('global agent-context block (issue #152)', () => {
     expect(BLOCK).toMatch(/prefer the `wmux browser` commands|prefer/i);
   });
 
-  it('is one file, so all three agents get the same fix', () => {
+  it('is one file AND one reader, so all three agents get the same fix', () => {
     // Claude, OpenCode and Kiro are all written from this one source; a
     // per-agent variant is how they drift.
+    //
+    // Tightened for #158: sharing the FILE is no longer enough, because the
+    // block is no longer static — it carries an interpolated install path, and
+    // a fact substituted in two of three writers is worse than one substituted
+    // nowhere. So they must all go through the single renderer, and none may
+    // still resolve or read the resource for itself.
     for (const file of ['claude-context.ts', 'opencode-context.ts', 'kiro-context.ts']) {
       const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', file), 'utf-8');
-      expect(src).toContain('claude-instructions');
+      expect(src).toContain('readRenderedInstructions');
+      expect(src).not.toContain('claude-instructions.md');
     }
   });
 });

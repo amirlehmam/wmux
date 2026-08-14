@@ -8,6 +8,7 @@ import {
   getKiroSteeringPath,
   isWmuxManaged,
 } from '../../src/main/kiro-context';
+import { CLI_BIN_PLACEHOLDER, renderInstructions } from '../../src/main/agent-instructions';
 
 /**
  * Issue #148 — Kiro CLI support.
@@ -62,12 +63,23 @@ describe('#148 Kiro steering', () => {
   it('writes the same marker-wrapped block the other agents get', () => {
     ensureKiroContext();
     const written = read();
-    const source = fs.readFileSync(
-      path.join(__dirname, '../../resources/claude-instructions.md'),
-      'utf-8',
+    // Compared against the RENDERED block, not the raw resource: since #158 the
+    // source carries a placeholder for this install's CLI path, so the file on
+    // disk is deliberately not byte-identical to it. What must still hold is
+    // that Kiro gets exactly what the other two writers get.
+    const source = renderInstructions(
+      fs.readFileSync(path.join(__dirname, '../../resources/claude-instructions.md'), 'utf-8'),
     );
     expect(written.trimEnd()).toBe(source.trimEnd());
     expect(isWmuxManaged(written)).toBe(true);
+  });
+
+  it('leaves no unsubstituted placeholder in the steering file (issue #158)', () => {
+    // A placeholder that reached disk would hand the reader a literal
+    // "{{WMUX_CLI_BIN}}/wmux ping" to run, which is worse than the ambiguity it
+    // was added to remove.
+    ensureKiroContext();
+    expect(read()).not.toContain(CLI_BIN_PLACEHOLDER);
   });
 
   it('is idempotent and does not churn the file', () => {
