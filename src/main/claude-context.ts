@@ -457,6 +457,34 @@ export function buildChromeDevtoolsMcpServer(): { command: string; args: string[
 }
 
 /**
+ * Whether a `chrome-devtools` entry already in settings.json is one wmux wrote.
+ *
+ * The predicate has to be "did wmux author this", not "is this what wmux wants".
+ * Pinning the package (#161) means the desired entry changes on every release
+ * that moves the pin, and a plain inequality check would therefore rewrite the
+ * entry on every launch — including one the user had deliberately retuned. That
+ * is precisely the behaviour issue #132 was filed about, and it would have made
+ * the write path contradict {@link removeChromeDevtoolsConfig}, which already
+ * takes care to leave a user's own entry alone on the way out.
+ *
+ * wmux's signature is narrow and stable across pins: launched via npx, running
+ * the chrome-devtools-mcp package, aimed at wmux's own CDP proxy port. Anything
+ * else — a different port, a global install, extra flags someone added — is
+ * treated as the user's and left untouched.
+ */
+export function isWmuxAuthoredMcpEntry(entry: unknown): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  const e = entry as { command?: unknown; args?: unknown };
+  if (e.command !== 'npx') return false;
+  if (!Array.isArray(e.args)) return false;
+  const args = e.args.filter((a): a is string => typeof a === 'string');
+  return (
+    args.some(a => a.startsWith('chrome-devtools-mcp@')) &&
+    args.includes('--browserUrl=http://127.0.0.1:9222')
+  );
+}
+
+/**
  * Configures chrome-devtools-mcp to connect to wmux's CDP proxy on localhost:9222.
  * Disables the plugin version and adds a custom MCP server in settings.json with
  * --browserUrl pointing to wmux. This is more reliable than modifying the plugin cache.
@@ -479,11 +507,17 @@ export function ensureChromeDevtoolsConfig(): void {
       changed = true;
     }
 
-    // Add as custom MCP server with --browserUrl
+    // Add as custom MCP server with --browserUrl.
+    //
+    // Written when there is no entry at all, and rewritten only when the entry
+    // present is one wmux itself authored — which is how the @latest → pinned
+    // migration reaches existing installs without wmux clobbering an entry the
+    // user has since retuned. See isWmuxAuthoredMcpEntry.
     if (!settings.mcpServers) settings.mcpServers = {};
     const existing = settings.mcpServers['chrome-devtools'];
     const desired = buildChromeDevtoolsMcpServer();
-    if (JSON.stringify(existing) !== JSON.stringify(desired)) {
+    const mine = !existing || isWmuxAuthoredMcpEntry(existing);
+    if (mine && JSON.stringify(existing) !== JSON.stringify(desired)) {
       settings.mcpServers['chrome-devtools'] = desired;
       changed = true;
     }

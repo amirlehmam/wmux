@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import {
   applyWmuxHooks,
   buildChromeDevtoolsMcpServer,
   CHROME_DEVTOOLS_MCP_PACKAGE,
+  isWmuxAuthoredMcpEntry,
   removeWmuxHooks,
   stripWmuxBlock,
 } from '../../src/main/claude-context';
@@ -15,9 +17,12 @@ import {
 
 const HOOK = '/res/cli/wmux-hook.js';
 const require = createRequire(import.meta.url);
-const { buildClaudeArgs } = require('../../resources/wmux-orchestrator/scripts/launch-agent.js') as {
-  buildClaudeArgs: (prompt: string, env?: NodeJS.ProcessEnv) => string[];
-};
+const { buildClaudeArgs, permissionNotice, resolveExecutable } =
+  require('../../resources/wmux-orchestrator/scripts/launch-agent.js') as {
+    buildClaudeArgs: (prompt: string, env?: NodeJS.ProcessEnv) => string[];
+    permissionNotice: (env?: NodeJS.ProcessEnv) => string | null;
+    resolveExecutable: (name: string, env?: NodeJS.ProcessEnv) => string | null;
+  };
 
 // Issue #132: wmux wrote into ~/.claude on every launch with no prompt and no
 // record of a decision, so deleting any of it was futile — the next launch put
@@ -166,6 +171,61 @@ describe('safe agent integration defaults', () => {
       .toEqual(['--', 'do the task']);
     expect(buildClaudeArgs('do the task', { WMUX_ORCHESTRATOR_SKIP_PERMISSIONS: '1' }))
       .toEqual(['--dangerously-skip-permissions', '--', 'do the task']);
+  });
+
+  // The pin is a migration: existing installs carry `@latest` and have to be
+  // moved off it. What must NOT happen is the write path rewriting an entry the
+  // user retuned — uninstall already takes care to leave those alone
+  // (removeChromeDevtoolsConfig), and a plain "is this what I want" inequality
+  // would clobber them on every single launch. That is the issue #132 mistake.
+  it('recognises its own MCP entry across pins, so @latest can be migrated', () => {
+    expect(isWmuxAuthoredMcpEntry(buildChromeDevtoolsMcpServer())).toBe(true);
+    expect(isWmuxAuthoredMcpEntry({
+      command: 'npx',
+      args: ['-y', 'chrome-devtools-mcp@latest', '--browserUrl=http://127.0.0.1:9222'],
+    })).toBe(true);
+  });
+
+  it("leaves an entry it did not write alone", () => {
+    // A different port is the clearest "this is mine, not yours" signal: wmux
+    // only ever aims at its own proxy.
+    expect(isWmuxAuthoredMcpEntry({
+      command: 'npx',
+      args: ['-y', 'chrome-devtools-mcp@1.7.0', '--browserUrl=http://127.0.0.1:9333'],
+    })).toBe(false);
+    // A global install rather than npx.
+    expect(isWmuxAuthoredMcpEntry({
+      command: 'chrome-devtools-mcp',
+      args: ['--browserUrl=http://127.0.0.1:9222'],
+    })).toBe(false);
+    // Something else entirely under the same key.
+    expect(isWmuxAuthoredMcpEntry({ command: 'node', args: ['./my-server.js'] })).toBe(false);
+    for (const junk of [null, undefined, 'npx', 42, {}, { command: 'npx' }]) {
+      expect(isWmuxAuthoredMcpEntry(junk)).toBe(false);
+    }
+  });
+
+  it('tells the user why the worker is asking, unless they opted out', () => {
+    // A silent behaviour change reads as a bug — a wave that used to run
+    // unattended now stops on every Bash call with nothing explaining it.
+    const notice = permissionNotice({});
+    expect(notice).toContain('WMUX_ORCHESTRATOR_SKIP_PERMISSIONS');
+    expect(notice).toContain('answer-agent');
+    expect(permissionNotice({ WMUX_ORCHESTRATOR_SKIP_PERMISSIONS: '1' })).toBeNull();
+  });
+
+  it('resolves the agent to an absolute path instead of trusting PATH at exec time', () => {
+    // Bare-name exec lets any writable directory earlier in PATH shadow the
+    // real binary — unacceptable for the process that is handed a prompt and
+    // told to edit the repo.
+    const dir = path.dirname(process.execPath);
+    const name = path.basename(process.execPath, path.extname(process.execPath));
+    const found = resolveExecutable(name, { PATH: dir, PATHEXT: process.env.PATHEXT });
+    expect(found).toBeTruthy();
+    expect(path.isAbsolute(found as string)).toBe(true);
+
+    expect(resolveExecutable('definitely-not-a-real-agent-xyz', { PATH: dir })).toBeNull();
+    expect(resolveExecutable('anything', { PATH: '' })).toBeNull();
   });
 
   it('discloses every hook family and modified plugin path', () => {
