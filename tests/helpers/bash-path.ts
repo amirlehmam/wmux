@@ -20,7 +20,12 @@ export function bashPathCandidates(p: string): string[] {
   if (!drive) return [slashed];
   const letter = drive[1].toLowerCase();
   const rest = drive[2];
-  return [`/${letter}/${rest}`, `/mnt/${letter}/${rest}`, `/cygdrive/${letter}/${rest}`];
+  // Git Bash usually sees `C:` as `/c`, WSL sees `/mnt/c`, and Cygwin exposes
+  // `/cygdrive/c`. The actual bash on PATH decides which spelling exists, so
+  // keep the likely order but let `toBashPath()` probe and select the real one.
+  return process.platform === 'win32'
+    ? [`/${letter}/${rest}`, `/mnt/${letter}/${rest}`, `/cygdrive/${letter}/${rest}`]
+    : [`/mnt/${letter}/${rest}`, `/${letter}/${rest}`, `/cygdrive/${letter}/${rest}`];
 }
 
 /**
@@ -38,7 +43,7 @@ export function toBashPath(p: string, exists: (candidate: string) => boolean): s
 
 /** True when `candidate` names an existing path to the bash on PATH. */
 export function bashExists(candidate: string): boolean {
-  const probe = spawnSync('bash', ['-c', 'test -e "$1"', 'bash', candidate], { stdio: 'ignore' });
+  const probe = spawnSync('bash', ['-lc', 'test -e "$1"', '_', candidate], { stdio: 'ignore' });
   return !probe.error && probe.status === 0;
 }
 

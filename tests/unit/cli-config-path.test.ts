@@ -110,7 +110,8 @@ describe('wmux config path', () => {
       WMUX_REMOTE: '127.0.0.1:1',
       WMUX_REMOTE_TOKEN: 'tok',
     });
-    expect(out).toBe(path.join('/home/vscode', '.wmux', 'config.toml'));
+    const expected = path.posix.join('/home/vscode', '.wmux', 'config.toml');
+    expect(out).toBe(expected);
     expect(out).not.toContain('\\');
   });
 });

@@ -104,10 +104,11 @@ function findNpiperelay() {
             return false;
         }
     };
-    const fromPath = (process.env.PATH || '')
-        .split(':')
-        .map((d) => path_1.default.join(d, 'npiperelay.exe'))
-        .find(readable);
+    const binPaths = (process.env.PATH || process.env.Path || '')
+        .split(path_1.default.delimiter)
+        .filter(Boolean)
+        .map((d) => path_1.default.join(d, 'npiperelay.exe'));
+    const fromPath = binPaths.find(readable);
     if (fromPath)
         return fromPath;
     return ([
@@ -524,7 +525,11 @@ async function cmdConfig(args) {
             // No reachable instance — fall through to a local guess. path.join at least
             // keeps it self-consistent with whichever filesystem we are actually on.
         }
-        console.log(path_1.default.join(os_1.default.homedir(), '.wmux', 'config.toml'));
+        const home = process.env.HOME || process.env.USERPROFILE || os_1.default.homedir();
+        const fallbackPath = home.includes('/') && !home.includes('\\')
+            ? path_1.default.posix.join(home, '.wmux', 'config.toml')
+            : path_1.default.join(home, '.wmux', 'config.toml');
+        console.log(fallbackPath);
     }
     else {
         console.error('Usage: wmux config <show|reload|path>');
@@ -545,8 +550,11 @@ async function cmdLocales(args) {
         print(await sendV2('config.reload'));
     }
     else if (sub === 'path') {
-        const home = process.env.USERPROFILE || process.env.HOME || '';
-        console.log(`${home}\\.wmux\\locales`);
+        const home = process.env.HOME || process.env.USERPROFILE || '';
+        const fallbackPath = home.includes('/') && !home.includes('\\')
+            ? path_1.default.posix.join(home, '.wmux', 'locales')
+            : path_1.default.join(home, '.wmux', 'locales');
+        console.log(fallbackPath);
     }
     else {
         console.error('Usage: wmux locales [list|reload|path]');

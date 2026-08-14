@@ -61,12 +61,13 @@ function roundTrip(port: number, payload: string): Promise<string> {
 
 describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
   const cleanups: Array<() => void> = [];
+  const isWslRuntime = Boolean(process.env.WSL_DISTRO_NAME || process.env.WSLENV);
 
   afterEach(() => {
     while (cleanups.length) cleanups.pop()!();
   });
 
-  it('relays TCP ↔ a Unix-socket upstream when WMUX_PIPE is a /path', async () => {
+  it.skipIf(process.platform === 'win32')('relays TCP ↔ a Unix-socket upstream when WMUX_PIPE is a /path', async () => {
     // Stand-in for the local pipe: a Unix-socket echo server.
     const sockPath = path.join(os.tmpdir(), `wmux-bridge-test-${process.pid}.sock`);
     try { fs.unlinkSync(sockPath); } catch { /* not present */ }
@@ -91,7 +92,7 @@ describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
     expect(echoed).toContain('ping-unix');
   });
 
-  it('relays TCP ↔ npiperelay.exe stdio when running inside WSL2', async () => {
+  it.skipIf(!isWslRuntime)('relays TCP ↔ npiperelay.exe stdio when running inside WSL2', async () => {
     // Fake npiperelay.exe: ignores its args (-ei -s //./pipe/wmux) and echoes
     // stdin→stdout, standing in for the Windows named pipe over interop.
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-npiperelay-'));
@@ -127,7 +128,7 @@ describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
   // long the client held the socket open relative to the ~7s pipe round-trip:
   //     end() after 0ms ✗   2000ms ✗   6000ms ~   9000ms ✓
   // 0ms is what the hook actually does, hence the bug.
-  it('delivers a frame from a client that closes immediately, even to a slow relay', async () => {
+  it.skipIf(!isWslRuntime)('delivers a frame from a client that closes immediately, even to a slow relay', async () => {
     // Fake npiperelay that takes its time, standing in for a real one that needs
     // seconds to attach to the Windows pipe over WSL interop. It records what it
     // received to a file, so the assertion is "the upstream actually got the
@@ -219,7 +220,7 @@ describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
       while (Date.now() < deadline && !fn()) await new Promise((r) => setTimeout(r, 50));
     }
 
-    it('spawns relays before any client connects, and refills after one is claimed', async () => {
+    it.skipIf(!isWslRuntime)('spawns relays before any client connects, and refills after one is claimed', async () => {
       const { binDir, spawnLog } = makeCountingRelay();
       cleanups.push(() => fs.rmSync(binDir, { recursive: true, force: true }));
 
@@ -246,7 +247,7 @@ describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
       expect(spawnCount(spawnLog)).toBe(3);
     }, 20000);
 
-    it('spawns nothing ahead of time when WMUX_BRIDGE_WARM=0', async () => {
+    it.skipIf(!isWslRuntime)('spawns nothing ahead of time when WMUX_BRIDGE_WARM=0', async () => {
       const { binDir, spawnLog } = makeCountingRelay();
       cleanups.push(() => fs.rmSync(binDir, { recursive: true, force: true }));
 
