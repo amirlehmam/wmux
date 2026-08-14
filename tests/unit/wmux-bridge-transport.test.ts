@@ -28,11 +28,19 @@ function freePort(): Promise<number> {
   });
 }
 
-// Spawn `node wmux.js bridge --wsl --port <port>` and resolve once it logs that
-// it is listening. Returns the child so the test can kill it in afterEach.
+// Spawn `node wmux.js bridge --port <port>` and resolve once it logs that it is
+// listening. Returns the child so the test can kill it in afterEach.
+//
+// Deliberately without --wsl. Every test here connects over 127.0.0.1, so the
+// flag only ever chose the bind ADDRESS, which is a separate question from the
+// upstream transport these tests are about — and it is now a claim the CLI
+// verifies against the running environment rather than a synonym for "bind
+// 0.0.0.0". Passing it here would make the suite fail wherever it happens to run
+// outside a real WSL2 distro, for reasons unrelated to what is being asserted.
+// The bind decision has its own table test in wsl-network.test.ts.
 function startBridge(port: number, env: Record<string, string>): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
-    const child = spawn('node', [BRIDGE_SCRIPT, 'bridge', '--wsl', '--port', String(port)], { env });
+    const child = spawn('node', [BRIDGE_SCRIPT, 'bridge', '--port', String(port)], { env });
     const timer = setTimeout(() => reject(new Error('bridge did not start listening in time')), 5000);
     child.stdout.on('data', (chunk: Buffer) => {
       if (chunk.toString().includes('listening')) {
@@ -65,6 +73,39 @@ describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
 
   afterEach(() => {
     while (cleanups.length) cleanups.pop()!();
+  });
+
+  // The one thing about --wsl that a pure function cannot cover: whether the
+  // environment probe reads what it thinks it reads. chooseBridgeHost() is given
+  // `inWsl2`; readWslEnvironment() is what has to produce it, from
+  // /proc/sys/kernel/osrelease and the interop vars, on the real machine.
+  //
+  // Worth an end-to-end assertion because the obvious spelling of that probe is
+  // wrong in a way that is easy to ship: a Linux container on a Windows host runs
+  // on the WSL2 KERNEL, so its osrelease says "microsoft-standard-WSL2" while it
+  // is emphatically not a WSL2 distro with a Windows host to reach. Matching
+  // osrelease alone would bind 0.0.0.0 in every devcontainer on Windows. The
+  // interop vars are what tell the two apart — and this suite runs in exactly
+  // that container, so the case is covered rather than imagined.
+  it.skipIf(isWslRuntime || process.platform === 'win32')('refuses --wsl outside a WSL2 distro rather than binding 0.0.0.0', async () => {
+    const port = await freePort();
+    const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      const child = spawn('node', [BRIDGE_SCRIPT, 'bridge', '--wsl', '--port', String(port)], {
+        env: { ...process.env, WMUX_REMOTE: '', WMUX_PIPE: '' } as Record<string, string>,
+      });
+      let err = '';
+      child.stderr.on('data', (c: Buffer) => { err += c.toString(); });
+      child.on('error', reject);
+      child.on('exit', (c) => resolve({ code: c, stderr: err }));
+    });
+
+    expect(code).toBe(1);
+    // Naming what it looked for, so the failure is actionable rather than a bare
+    // refusal the user has to guess at.
+    expect(stderr).toContain('--wsl');
+    expect(stderr).toMatch(/osrelease|WSL_INTEROP|WSL_DISTRO_NAME/);
+    // And it must point at the way forward, not just the way blocked.
+    expect(stderr).toContain('--host');
   });
 
   it.skipIf(process.platform === 'win32')('relays TCP ↔ a Unix-socket upstream when WMUX_PIPE is a /path', async () => {
