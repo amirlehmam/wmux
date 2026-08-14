@@ -15,6 +15,7 @@
  * WMUX_SURFACE_ID (set by wmux in each pane's shell) ties the event to its pane.
  */
 import net from 'net';
+import { DEFAULT_V2_TIMEOUT_MS, transportDeadline } from './transport-deadline';
 
 const argv = process.argv.slice(2);
 let tool = '';
@@ -76,15 +77,20 @@ const MAX_STDIN = 64 * 1024; // 64KB cap
  * an absent, a responsive and a wedged (accepts, never answers) server, the
  * hook exits on its own in every case, because on Windows named pipes `end()`
  * tears the connection down rather than half-closing it. The wmux CLI has
- * always armed this same 5s timer before connecting (see sendV1/sendV2); the
- * hook helper was the one client without it, and matching costs nothing.
+ * always armed this same timer before connecting (see sendV1/sendV2); the hook
+ * helper was the one client without it, and matching costs nothing.
  *
- * The bridge path gets longer: there the frame crosses a TCP hop and then
- * npiperelay over WSL interop, which measures ~7s worst case on a corporate
- * host. Firing at 5s there would destroy() the socket mid-flight and drop the
- * very event this process exists to deliver.
+ * Derived rather than written down. This used to be `remote ? 30000 : 5000` —
+ * the same intent as the CLI's `deadline()` in a second spelling that did not
+ * know about npiperelay, so the two could drift and only one would be found by
+ * anyone changing a number. Both now ask transport-deadline.ts, describing the
+ * same connection the same way.
  */
-const PIPE_DEADLINE_MS = remote ? 30000 : 5000;
+const PIPE_DEADLINE_MS = transportDeadline(DEFAULT_V2_TIMEOUT_MS, {
+  remote: !!remote,
+  pipePath,
+  env: process.env,
+});
 
 /** Cleared once we stop reading, so the happy path is not held open by it. */
 let stdinTimer: NodeJS.Timeout | null = null;

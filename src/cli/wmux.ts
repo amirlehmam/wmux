@@ -12,6 +12,12 @@ import {
   parseNetworkingMode,
   type WslEnvironment,
 } from './wsl-network';
+import {
+  DEFAULT_V2_TIMEOUT_MS,
+  transportDeadline,
+  usesNpiperelay as usesNpiperelayFor,
+  type Transport,
+} from './transport-deadline';
 
 /** The two signals wsl-network.ts uses to decide we are inside a WSL distro. */
 function readWslEnvironment(): WslEnvironment {
@@ -120,10 +126,18 @@ function connectTransport(onConnect: () => void): net.Socket | Duplex {
 // Mirrors the selection order above: true when connectTransport() will take the
 // npiperelay branch. That is the only transport whose setup costs anything worth
 // pre-warming — a Unix socket or a native named pipe connects in microseconds.
+/**
+ * This process's transport, as transport-deadline.ts wants it described.
+ *
+ * A function rather than a constant: `remoteTarget` is set while parsing argv,
+ * after module load.
+ */
+function currentTransport(): Transport {
+  return { remote: !!remoteTarget, pipePath: PIPE_PATH, env: process.env };
+}
+
 function usesNpiperelay(): boolean {
-  return (
-    !remoteTarget && !PIPE_PATH.startsWith('/') && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSLENV)
-  );
+  return usesNpiperelayFor(currentTransport());
 }
 
 // Search common installation locations for npiperelay.exe.
@@ -245,38 +259,15 @@ function sendV1(command: string): Promise<string> {
 }
 
 /**
- * How long to wait for a V2 reply before giving up.
- *
- * This deadline has to stay LARGER than whatever budget the main process spends
- * serving the same request. When it is shorter the CLI loses a race it should
- * never have been in: a command that succeeds late is reported as a failure, and
- * the server's own diagnosis ('Could not open browser panel', 'browser_not_open',
- * 'ref_not_found: …') is discarded unread because it arrives after we hung up.
- * Only the browser verbs currently need more than this — see BROWSER_CMDS.
+ * How long to wait for a V2 reply before giving up. Only the browser verbs
+ * currently need more than this — see BROWSER_CMDS. The reasoning behind the
+ * number, and behind the floor that raises it on a slow transport, lives with
+ * it in transport-deadline.ts.
  */
-const DEFAULT_V2_TIMEOUT_MS = 5000;
-
-/**
- * A floor under every deadline, for transports slower than a local named pipe.
- *
- * The budgets above are all sized for a pipe on the same machine, where a
- * round-trip is sub-millisecond and the whole deadline is the server's own
- * thinking time. Neither transport this file grew for issue #19 is that: TCP to
- * a `wmux bridge` from inside a devcontainer, and npiperelay over WSL interop,
- * both measure ~7s worst case on a corporate-managed host — above the 5s default
- * on their own, before wmux has done anything. Every request from a container
- * therefore reported a timeout for a call that had already succeeded.
- *
- * A floor rather than a replacement, so a browser verb keeps the longer budget
- * it asked for, and a local run keeps master's timings unchanged (floor 0).
- */
-const SLOW_TRANSPORT_FLOOR_MS = 30000;
 
 /** `base`, raised to the slow-transport floor when the transport is a slow one. */
 function deadline(base: number): number {
-  const override = parseInt(process.env.WMUX_RPC_TIMEOUT_MS || '', 10);
-  if (Number.isFinite(override) && override > 0) return Math.max(base, override);
-  return remoteTarget || usesNpiperelay() ? Math.max(base, SLOW_TRANSPORT_FLOOR_MS) : base;
+  return transportDeadline(base, currentTransport());
 }
 
 /**
