@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 import { useStore } from './store';
-import { PaneId, SurfaceId, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
+import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
 import SplitContainer from './components/SplitPane/SplitContainer';
 import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds } from './store/split-utils';
@@ -284,6 +284,18 @@ function applyShellState(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): void {
   fireNotification(cmd.surfaceId, ws.id, msg, deps.addNotification);
 }
 
+/** Apply a patch to one surface of `ws`, wherever in the split tree it lives. */
+function patchSurface(ws: WorkspaceInfo, surfaceId: SurfaceId, patch: Partial<SurfaceRef>): void {
+  const { updateSurface } = useStore.getState();
+  for (const paneId of getAllPaneIds(ws.splitTree)) {
+    const leaf = findLeaf(ws.splitTree, paneId);
+    if (leaf?.surfaces.some((s) => s.id === surfaceId)) {
+      updateSurface(ws.id, paneId, surfaceId, patch);
+      return;
+    }
+  }
+}
+
 /** Dispatch a surface-scoped metadata command to the owning workspace. */
 function handleSurfaceMetadata(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): void {
   switch (cmd.command) {
@@ -294,16 +306,22 @@ function handleSurfaceMetadata(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): voi
       // pane in the workspace gets `--cd ~`.
       deps.updateWorkspaceMetadata(ws.id, cwdReportPatch(pwd));
       // Also store cwd at the surface level so the tab label can show the project folder.
-      if (pwd && cmd.surfaceId) {
-        const { updateSurface } = useStore.getState();
-        for (const paneId of getAllPaneIds(ws.splitTree)) {
-          const leaf = findLeaf(ws.splitTree, paneId);
-          if (leaf?.surfaces.some((s) => s.id === cmd.surfaceId)) {
-            updateSurface(ws.id, paneId, cmd.surfaceId, { currentCwd: pwd });
-            break;
-          }
-        }
-      }
+      if (pwd && cmd.surfaceId) patchSurface(ws, cmd.surfaceId, { currentCwd: pwd });
+      break;
+    }
+    case 'report_startup_command': {
+      // A shell declares how to bring its own surface back after a restart —
+      // a devcontainer shell reports the launcher that re-enters the container,
+      // so a restored pane starts in WSL and runs it (issue #19). Reported per
+      // surface, stored per surface: two containers in one pane restore to two
+      // different containers. No argument clears it.
+      //
+      // The command must be cwd-independent (`cd '<path>' && …`): the restored
+      // pane's shell is a fresh login shell whose rc files have had their say,
+      // so nothing guarantees it starts where the reporting shell was.
+      if (!cmd.surfaceId) break;
+      const command = cmd.args?.[0];
+      patchSurface(ws, cmd.surfaceId, { startupCommands: command ? [command] : undefined });
       break;
     }
     case 'report_git_branch':
