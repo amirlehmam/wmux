@@ -55,7 +55,17 @@ export function isAllowedCdpOrigin(origin: string | undefined): boolean {
 export class CDPProxy {
   private server: http.Server | null = null;
   private wss: WebSocketServer | null = null;
-  private port = DEFAULT_PORT;
+  /**
+   * The port this proxy actually bound, or null when it holds none (issue #157).
+   *
+   * Deliberately not seeded with DEFAULT_PORT. That initialiser was an optimistic
+   * claim made before anything was bound, and `start()` resolves even when the
+   * whole 9222-9230 range is busy — so exhausting the range left the field
+   * asserting 9222, a port the proxy does not own and never listened on.
+   * "Nothing bound" and "bound the default" then became indistinguishable to
+   * every reader, including the test written to catch exactly this.
+   */
+  private port: number | null = null;
   private webContentsId: number | null = null;
   private activeWs: WebSocket | null = null;
 
@@ -208,16 +218,29 @@ export class CDPProxy {
     for (let p = DEFAULT_PORT; p <= MAX_PORT; p++) {
       try {
         await new Promise<void>((resolve, reject) => {
-          const onListenError = (err: Error): void => reject(err);
-          this.server!.once('error', onListenError);
-          this.server!.listen(p, '127.0.0.1', () => {
+          const onListenError = (err: Error): void => {
+            // Drop this probe's SUCCESS listener too. `listen(port, host, cb)`
+            // registers cb via once('listening'), and a probe that fails never
+            // consumes it — so nine failures leave nine live callbacks, which
+            // is the MaxListenersExceededWarning seen in issue #157. They are
+            // not inert: they all fire when a later port succeeds, each one
+            // assigning its own `p`. That is harmless today only because
+            // listeners run in registration order and the winner registers
+            // last. Removing it makes that harmless by construction instead.
+            this.server!.removeListener('listening', onListening);
+            reject(err);
+          };
+          const onListening = (): void => {
             // Drop only THIS probe's listener. removeAllListeners('error') would
             // also strip the safety net above and ws's own forwarder, leaving a
             // post-bind server error with no handler — uncaught again.
             this.server!.removeListener('error', onListenError);
             this.port = p;
             resolve();
-          });
+          };
+          this.server!.once('error', onListenError);
+          this.server!.once('listening', onListening);
+          this.server!.listen(p, '127.0.0.1');
         });
         console.log(`[wmux] CDP proxy listening on localhost:${p}`);
         return;
@@ -225,7 +248,15 @@ export class CDPProxy {
         continue;
       }
     }
-    console.warn('[wmux] CDP proxy: all ports 9222-9230 busy');
+    // Nothing bound. `port` stays null rather than reverting to an optimistic
+    // DEFAULT_PORT, so getPort()/isListening() cannot present an unbound proxy
+    // as a bound one (issue #157). Still resolves rather than rejecting: the
+    // call site in index.ts treats the proxy as optional and would swallow a
+    // rejection anyway — it is the STATE that has to be truthful, not the
+    // control flow.
+    console.warn(
+      `[wmux] CDP proxy: all ports ${DEFAULT_PORT}-${MAX_PORT} busy — browser automation is unavailable`,
+    );
   }
 
   stop(): void {
@@ -234,9 +265,17 @@ export class CDPProxy {
     this.server?.close();
     this.server = null;
     this.wss = null;
+    // A stopped proxy holds nothing, and must not keep claiming otherwise.
+    this.port = null;
   }
 
-  getPort(): number {
+  /** The port this proxy bound, or null when it holds none (issue #157). */
+  getPort(): number | null {
     return this.port;
+  }
+
+  /** Whether the proxy actually holds a port. */
+  isListening(): boolean {
+    return this.port !== null;
   }
 }
