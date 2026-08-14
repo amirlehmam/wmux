@@ -4,8 +4,43 @@ import net from 'net';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { Duplex } from 'stream';
+import {
+  chooseBridgeHost,
+  isWsl2,
+  parseNetworkingMode,
+  type WslEnvironment,
+} from './wsl-network';
+
+/** The two signals wsl-network.ts uses to decide we are inside a WSL distro. */
+function readWslEnvironment(): WslEnvironment {
+  let osRelease: string | null = null;
+  try {
+    osRelease = fs.readFileSync('/proc/sys/kernel/osrelease', 'utf-8');
+  } catch {
+    // Not Linux, or a kernel that does not expose it — either way, not WSL.
+  }
+  return {
+    osRelease,
+    hasInteropEnv: !!(process.env.WSL_INTEROP || process.env.WSL_DISTRO_NAME),
+  };
+}
+
+/**
+ * `wslinfo --networking-mode`, or null if it cannot answer. Absent before WSL
+ * 2.0.5, so a null here is ordinary rather than exceptional; parseNetworkingMode
+ * turns it into `unknown` and the caller refuses to guess from there.
+ */
+function readWslNetworkingMode(): string | null {
+  try {
+    const probe = spawnSync('wslinfo', ['--networking-mode'], { encoding: 'utf-8', timeout: 5000 });
+    if (probe.error || probe.status !== 0) return null;
+    return probe.stdout;
+  } catch {
+    return null;
+  }
+}
 
 // Respect WMUX_PIPE when set (e.g. by a parent wmux running with WMUX_INSTANCE),
 // so the CLI talks to the same instance that spawned the shell.
@@ -649,15 +684,29 @@ async function cmdSsh(args: string[]): Promise<void> {
 async function cmdBridge(args: string[]): Promise<void> {
   const port = parseInt(getFlag(args, '--port') || '', 10) || DEFAULT_BRIDGE_PORT;
   // --wsl binds 0.0.0.0 so a container on the Windows host can reach a bridge
-  // running inside WSL2 (issue #19). WSL2's NAT gives the distro an address the
-  // container resolves as host.docker.internal, but 127.0.0.1 inside the distro
-  // is not it. The pipe token still authenticates every request end to end.
+  // running inside WSL2 (issue #19). Under NAT — WSL2's default — the distro has
+  // its own network namespace, so that address is an eth0 on a private 172.x the
+  // container resolves as host.docker.internal, and 127.0.0.1 inside the distro
+  // is not it. Under mirrored networking the distro shares the Windows host's
+  // interfaces instead and 0.0.0.0 is the LAN, so the mode is read at runtime
+  // rather than assumed; see wsl-network.ts for the full reasoning. The pipe
+  // token authenticates every request end to end either way.
   const wslMode = args.includes('--wsl');
-  const host = getFlag(args, '--host') || (wslMode ? '0.0.0.0' : '127.0.0.1');
-  if (host !== '127.0.0.1' && host !== 'localhost') {
-    console.warn('WARNING: binding beyond localhost exposes the wmux pipe to the network.');
-    console.warn(`Prefer the default 127.0.0.1 + an SSH tunnel: ssh -L ${port}:127.0.0.1:${port} user@host`);
+  const wslEnv = readWslEnvironment();
+  const inWsl2 = isWsl2(wslEnv);
+  const decision = chooseBridgeHost({
+    explicitHost: getFlag(args, '--host'),
+    wslMode,
+    inWsl2,
+    mode: inWsl2 ? parseNetworkingMode(readWslNetworkingMode()) : 'unknown',
+    port,
+  });
+  if (decision.host === null) {
+    console.error(`wmux bridge: ${decision.error}`);
+    process.exit(1);
   }
+  const host = decision.host;
+  for (const line of decision.notices) console.warn(line);
 
   // ── Warm relay pool ─────────────────────────────────────────────────────────
   // Spawn-per-connection made every request pay the relay's whole startup: a fresh

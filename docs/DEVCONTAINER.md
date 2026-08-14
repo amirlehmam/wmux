@@ -29,10 +29,17 @@ line (V1) protocol it would speak to a local pipe; only the socket underneath
 changes. Auth is unchanged end to end — every request still carries the wmux
 instance's pipe token, which `wmux bridge` forwards without inspecting.
 
-The bridge deliberately runs **inside WSL2**, not on Windows. From there,
-`0.0.0.0` is the WSL2 network namespace, which the container reaches through
-the Docker host gateway and the LAN does not. A Windows-side bind would expose
-the pipe to the corporate network and need a firewall rule; this needs neither.
+The bridge deliberately runs **inside WSL2**, not on Windows. Under WSL2's
+default **NAT** networking, `0.0.0.0` there is the distro's own network
+namespace, which the container reaches through the Docker host gateway and the
+LAN does not. A Windows-side bind would expose the pipe to the corporate network
+and need a firewall rule; this needs neither.
+
+That holds for NAT and not for **mirrored** networking, where the distro shares
+the Windows host's interfaces rather than having a namespace of its own — see
+[Mirrored networking](#mirrored-networking) below. `wmux bridge --wsl` reads the
+mode with `wslinfo --networking-mode` and only picks `0.0.0.0` once it has
+confirmed NAT.
 
 The WSL2 → Windows hop is [npiperelay.exe](https://github.com/albertony/npiperelay),
 a ~2 MB MIT-licensed binary that forwards a named pipe to its own stdin/stdout.
@@ -65,13 +72,48 @@ running on Windows. It stays in the foreground:
 wmux bridge --wsl --port 9787
 ```
 
-`--wsl` binds `0.0.0.0` instead of `127.0.0.1`. If `wmux` is not on your
-`PATH` inside WSL2, invoke the shipped CLI directly — any wmux pane exports
-`WMUX_CLI` for exactly this:
+`--wsl` binds `0.0.0.0` instead of `127.0.0.1`, after checking that this really
+is a WSL distro and that it runs NAT networking. If it refuses, read
+[Mirrored networking](#mirrored-networking). If `wmux` is not on your `PATH`
+inside WSL2, invoke the shipped CLI directly — any wmux pane exports `WMUX_CLI`
+for exactly this:
 
 ```bash
 node "$WMUX_CLI" bridge --wsl --port 9787
 ```
+
+#### Mirrored networking
+
+WSL 2.0+ on Windows 11 can run `networkingMode=mirrored` in `.wslconfig`. A
+mirrored distro has **no network namespace of its own** — it shares the Windows
+host's interfaces, including the physical LAN adapter and any VPN adapter. So
+`0.0.0.0` inside it is not the private 172.x this guide describes; it is the
+corporate network. Inbound traffic is filtered by the **Hyper-V firewall**
+rather than the ordinary Windows Firewall profile, and the widely-copied "make
+WSL reachable" recipe turns that filter off:
+
+```powershell
+Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
+```
+
+Mirrored mode **plus** that setting puts wmux's control pipe on the LAN. The
+pipe token still authenticates every request, so this is exposure rather than an
+open door — but it is not a default anything should pick for you, so `--wsl`
+refuses under mirrored mode and tells you to name an address:
+
+```bash
+wmux bridge --host <addr-the-container-reaches> --port 9787
+```
+
+`--host 0.0.0.0` is still honoured — with the warning upgraded to say the bind
+is on the host's real interfaces. Check which mode you are in with:
+
+```bash
+wslinfo --networking-mode      # nat | mirrored; needs WSL 2.0.5+
+```
+
+On WSL too old to answer, `--wsl` also refuses rather than assuming NAT, and
+`--host` is required.
 
 ### 3. Read the instance token
 
@@ -241,10 +283,14 @@ workspace path instead.
 
 ## Security
 
-- The bridge binds inside the WSL2 network namespace. It is reachable from
-  containers on that host and not from the LAN, and it needs no Windows
-  firewall rule. `--host` overrides this; the CLI warns when you do, because a
-  Windows-side bind really does expose the pipe to the network.
+- Under NAT networking the bridge binds inside the WSL2 network namespace: it is
+  reachable from containers on that host and not from the LAN, and it needs no
+  Windows firewall rule. **Under mirrored networking none of that is true** — the
+  distro shares the Windows host's adapters, so `0.0.0.0` is the LAN and any VPN,
+  gated only by the Hyper-V firewall's inbound policy. `wmux bridge --wsl` reads
+  the mode and refuses to choose `0.0.0.0` unless it is NAT; see
+  [Mirrored networking](#mirrored-networking). `--host` overrides the choice
+  either way, and the CLI warns when the address is beyond loopback.
 - The bridge authenticates nothing and parses nothing — it copies bytes. wmux's
   own pipe server verifies the per-instance token on every request, V1
   (`auth <token> …`) and V2 (`token` field) alike, so the bridge grants no
