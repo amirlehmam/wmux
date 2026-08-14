@@ -55,6 +55,21 @@ Run it:
 /wmux:orchestrate "Refactor the auth system to use JWT tokens"
 ```
 
+Claude workers keep their normal tool permission prompts by default. To bypass
+them for a trusted task, opt in explicitly before starting wmux:
+
+```powershell
+[Environment]::SetEnvironmentVariable('WMUX_ORCHESTRATOR_SKIP_PERMISSIONS', '1', 'User')
+```
+
+This makes orchestrated Claude workers start with
+`--dangerously-skip-permissions`. Remove the variable to restore the safe
+default:
+
+```powershell
+[Environment]::SetEnvironmentVariable('WMUX_ORCHESTRATOR_SKIP_PERMISSIONS', $null, 'User')
+```
+
 What happens next:
 
 1. The orchestrator analyzes your codebase and builds a wave plan
