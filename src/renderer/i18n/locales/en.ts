@@ -72,6 +72,7 @@ export const en = {
   'titlebar.updateReady': 'Update ready',
   'titlebar.updateRestart': 'Restart',
   'titlebar.updateRestartHint': 'Click to restart into the new version',
+  'titlebar.updateNeedsAdmin': 'Requires administrator rights',
   'titlebar.updateFailed': 'Update failed',
   'titlebar.updateRetry': 'Click to try again',
   // Settings — Help / About panel

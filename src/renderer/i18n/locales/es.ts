@@ -60,6 +60,7 @@ export const es: Translation = {
   'titlebar.updateReady': 'Actualización lista',
   'titlebar.updateRestart': 'Reiniciar',
   'titlebar.updateRestartHint': 'Haz clic para reiniciar con la nueva versión',
+  'titlebar.updateNeedsAdmin': 'Requiere permisos de administrador',
   'titlebar.updateFailed': 'La actualización ha fallado',
   'titlebar.updateRetry': 'Haz clic para intentarlo de nuevo',
   'settings.tab.help': 'Ayuda',

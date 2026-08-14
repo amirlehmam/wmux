@@ -60,6 +60,7 @@ export const fr: Translation = {
   'titlebar.updateReady': 'Mise à jour prête',
   'titlebar.updateRestart': 'Redémarrer',
   'titlebar.updateRestartHint': 'Clic pour redémarrer sur la nouvelle version',
+  'titlebar.updateNeedsAdmin': 'Nécessite des droits administrateur',
   'titlebar.updateFailed': 'Échec de la mise à jour',
   'titlebar.updateRetry': 'Clic pour réessayer',
   'settings.tab.help': 'Aide',

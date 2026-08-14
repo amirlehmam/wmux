@@ -73,6 +73,7 @@ export const ko: Translation = {
   'titlebar.updateReady': '업데이트 준비 완료',
   'titlebar.updateRestart': '다시 시작',
   'titlebar.updateRestartHint': '클릭하면 새 버전으로 다시 시작합니다',
+  'titlebar.updateNeedsAdmin': '관리자 권한이 필요합니다',
   'titlebar.updateFailed': '업데이트 실패',
   'titlebar.updateRetry': '클릭하면 다시 시도합니다',
   // 설정 — 도움말 / 정보 패널

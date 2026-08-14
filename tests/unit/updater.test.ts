@@ -1,8 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // Hoisted so the vi.mock factory (which is hoisted above imports) can close
 // over it, and so tests can flip `isPackaged` per case.
-const fakeApp = vi.hoisted(() => ({ getVersion: () => '0.0.0', isPackaged: true }));
+const fakeApp = vi.hoisted(() => ({
+  getVersion: () => '0.0.0',
+  isPackaged: true,
+  // Install root for the writability probe (#167). Tests point this at a real
+  // temp dir, or at one they have made unwritable.
+  exePath: '',
+  getPath(name: string) {
+    if (name === 'exe') return fakeApp.exePath;
+    throw new Error(`unexpected getPath(${name})`);
+  },
+}));
 
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
@@ -146,5 +159,85 @@ describe('in-app update (issue #125)', () => {
     await u.requestUpdateNow();
     await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
     expect(u.autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Issue #167: `canSelfUpdate()` answered "packaged, and not disabled" under a
+ * doc comment promising "can actually install an update in place" — a strictly
+ * stronger claim it never evaluated. Nothing anywhere in updater.ts asked
+ * whether the process could write to the directory an update replaces.
+ *
+ * The way an install gets there is ordinary: the assisted installer re-offers
+ * the scope page DURING an update, so a per-user install under %LOCALAPPDATA%
+ * that had been self-updating silently becomes a per-machine install under
+ * Program Files that cannot, via one click on a page that reads as "confirm the
+ * install location".
+ */
+describe('install-root writability (issue #167)', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-root-'));
+    // getPath('exe') returns the executable; the root is its directory.
+    fakeApp.exePath = path.join(root, 'wmux.exe');
+    fakeApp.isPackaged = true;
+  });
+
+  it('probes by writing, and leaves nothing behind', async () => {
+    const u = await freshUpdater();
+    expect(u.isInstallRootWritable()).toBe(true);
+    // A probe file that survived would accumulate one per launch inside the
+    // user's install directory.
+    expect(fs.readdirSync(root)).toEqual([]);
+  });
+
+  it('reports a root it cannot write to, rather than assuming', async () => {
+    const u = await freshUpdater();
+    // A directory that does not exist stands in for one the process cannot
+    // write: both make the write throw, which is the only signal that matters.
+    fakeApp.exePath = path.join(root, 'gone', 'wmux.exe');
+    expect(u.isInstallRootWritable()).toBe(false);
+    expect(u.updateNeedsElevation()).toBe(true);
+  });
+
+  it('does not claim elevation is needed for a writable root', async () => {
+    const u = await freshUpdater();
+    expect(u.updateNeedsElevation()).toBe(false);
+  });
+
+  it('never claims an unpackaged dev run needs elevation', async () => {
+    const u = await freshUpdater();
+    fakeApp.isPackaged = false;
+    fakeApp.exePath = path.join(root, 'gone', 'wmux.exe');
+    // There is no install root to speak of; canSelfUpdate already excludes it.
+    expect(u.updateNeedsElevation()).toBe(false);
+  });
+
+  it('caches the probe — it cannot change without a restart', async () => {
+    const u = await freshUpdater();
+    expect(u.isInstallRootWritable()).toBe(true);
+    // The process token is what the answer depends on, and that is fixed for
+    // the life of the process. Moving the exe underneath it must not re-probe.
+    fakeApp.exePath = path.join(root, 'gone', 'wmux.exe');
+    expect(u.isInstallRootWritable()).toBe(true);
+    u.resetInstallRootProbe();
+    expect(u.isInstallRootWritable()).toBe(false);
+  });
+
+  it('keeps canSelfUpdate true for a per-machine install, and says why', async () => {
+    // The deliberate non-change. An admin on a per-machine install CAN update
+    // in place, via a UAC prompt — returning false here would take a working
+    // path away from every such user. The fact is surfaced instead.
+    const u = await freshUpdater();
+    fakeApp.exePath = path.join(root, 'gone', 'wmux.exe');
+    expect(u.canSelfUpdate()).toBe(true);
+    expect(u.updateNeedsElevation()).toBe(true);
+  });
+
+  it('still refuses when the updater is switched off or unpackaged', async () => {
+    const u = await freshUpdater();
+    fakeApp.isPackaged = false;
+    expect(u.canSelfUpdate()).toBe(false);
   });
 });

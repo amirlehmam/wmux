@@ -13,6 +13,8 @@ interface UpdateState {
   version: string | null;
   percent: number;
   message?: string;
+  /** Installing will prompt for administrator rights (issue #167). */
+  needsElevation?: boolean;
 }
 
 const IDLE: UpdateState = { phase: 'idle', version: null, percent: 0 };
@@ -87,6 +89,12 @@ export default function UpdateBadge() {
     case 'ready':
       label = t('titlebar.updateRestart', 'Restart');
       title = `${t('titlebar.updateReady', 'Update ready')}: v${version}\n${t('titlebar.updateRestartHint', 'Click to restart into the new version')}`;
+      // Say it on the badge as well as in the dialog. A user who cannot grant
+      // admin rights should find that out before committing to a restart,
+      // rather than at a UAC prompt after wmux has quit (issue #167).
+      if (state.needsElevation) {
+        title += `\n${t('titlebar.updateNeedsAdmin', 'Requires administrator rights')}`;
+      }
       break;
     case 'error': {
       const detail = state.message ? `: ${state.message}` : '';

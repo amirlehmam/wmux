@@ -1,5 +1,7 @@
 import { autoUpdater } from 'electron-updater';
 import { app, BrowserWindow, dialog } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 import { IPC_CHANNELS } from '../shared/types';
 import { fetchLatestRelease } from './update-checker';
 
@@ -76,6 +78,14 @@ export interface UpdateState {
   /** 0–100 while downloading. */
   percent: number;
   message?: string;
+  /**
+   * Whether installing will prompt for administrator rights (issue #167).
+   *
+   * Carried in the state so the badge can say so BEFORE the user commits to a
+   * download, rather than having them discover it at the UAC prompt — or, if
+   * they cannot satisfy it, at a generic updater error.
+   */
+  needsElevation?: boolean;
 }
 
 let state: UpdateState = { phase: 'idle', version: null, percent: 0 };
@@ -94,7 +104,79 @@ function setState(next: Partial<UpdateState>): void {
   }
 }
 
-/** True when this build can actually install an update in place. */
+// ── Install-root writability (issue #167) ────────────────────────────────────
+// An update is applied by writing over the install root. Whether this process
+// can do that is not something wmux knew: `canSelfUpdate()` answered
+// "packaged, and not disabled" under a doc comment promising "can actually
+// install an update in place", which is a strictly stronger claim.
+//
+// The gap is reachable by ordinary use, not by anything exotic. `oneClick:
+// false` with `allowToChangeInstallationDirectory: true` and no `perMachine`
+// pin means the scope page is re-offered DURING an update, so a per-user
+// install under %LOCALAPPDATA% — which self-updates with no prompt — becomes a
+// per-machine install under Program Files, which cannot, by one click on a page
+// that reads as "confirm the install location". Nothing announced the change.
+//
+// What is deliberately NOT done here is return false for every non-writable
+// root. That conflates two populations: an admin on a per-machine install, for
+// whom in-place update works today via a UAC prompt, and a non-admin, for whom
+// it does not. Disabling the working path for the first group is a regression,
+// and reliably telling them apart needs an elevation attempt rather than a
+// probe. So the fact is recorded and surfaced instead — the app now knows, the
+// dialog says so, and a failure reports which of the two it was.
+
+let installRootWritable: boolean | null = null;
+
+/** Test seam: forget the cached probe. */
+export function resetInstallRootProbe(): void {
+  installRootWritable = null;
+}
+
+/**
+ * Whether this process can write to the directory an update would replace.
+ *
+ * Probed by actually creating and removing a file rather than by reading ACLs:
+ * on Windows the effective answer depends on the process token, integrity
+ * level, and any redirection in front of the path, and `fs.access` is
+ * documented as unreliable for exactly this question. A write that succeeds is
+ * the only proof that a write will succeed.
+ *
+ * Cached for the process lifetime, which is sound because the thing it depends
+ * on — this process's token — cannot change without a restart.
+ */
+export function isInstallRootWritable(): boolean {
+  if (installRootWritable !== null) return installRootWritable;
+  try {
+    const root = path.dirname(app.getPath('exe'));
+    const probe = path.join(root, `.wmux-write-probe-${process.pid}`);
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+    installRootWritable = true;
+  } catch {
+    installRootWritable = false;
+  }
+  return installRootWritable;
+}
+
+/**
+ * True when applying an update in place will need rights this process does not
+ * currently hold — i.e. Windows will show a UAC prompt, and a user who cannot
+ * satisfy it has no in-app path.
+ *
+ * Only meaningful for a packaged build; an unpackaged dev run has no install
+ * root to speak of and is already excluded by `canSelfUpdate`.
+ */
+export function updateNeedsElevation(): boolean {
+  return app.isPackaged && !isInstallRootWritable();
+}
+
+/**
+ * True when this build has an in-place update path at all.
+ *
+ * Note what this does and does not promise, since the previous comment
+ * over-promised (#167): it means the updater is available and enabled, NOT
+ * that the install will be silent. See `updateNeedsElevation` for that.
+ */
 export function canSelfUpdate(): boolean {
   return app.isPackaged && !isUpdaterDisabled();
 }
@@ -203,10 +285,24 @@ export function initAutoUpdater(): void {
     // Surface to the renderer (badge), then require an explicit user click to
     // install — never restart-and-replace silently.
     userDriven = false;
-    setState({ phase: 'ready', version: info.version, percent: 100 });
+    setState({
+      phase: 'ready',
+      version: info.version,
+      percent: 100,
+      needsElevation: updateNeedsElevation(),
+    });
 
     if (installPrompted) return;
     installPrompted = true;
+    // Say up front when installing will need admin (#167). Discovering that at
+    // the UAC prompt is survivable; discovering it as a generic updater error,
+    // after wmux has quit, is not — and that is what a per-machine install on a
+    // non-admin account gets.
+    const elevationNote = updateNeedsElevation()
+      ? '\n\nThis install is under a directory wmux cannot write to, so Windows ' +
+        'will ask for administrator rights. If you cannot grant them, download ' +
+        'the installer from the releases page instead.'
+      : '';
     const { response } = await dialog.showMessageBox({
       type: 'info',
       buttons: ['Install and restart', 'Later'],
@@ -214,7 +310,7 @@ export function initAutoUpdater(): void {
       cancelId: 1,
       title: 'wmux update ready',
       message: `wmux ${info.version} has been downloaded.`,
-      detail: 'Review the release notes on GitHub before installing. Install now?',
+      detail: 'Review the release notes on GitHub before installing. Install now?' + elevationNote,
     });
     if (response === 0) {
       autoUpdater.quitAndInstall();

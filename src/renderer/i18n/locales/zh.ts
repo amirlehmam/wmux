@@ -57,6 +57,7 @@ export const zh: Translation = {
   'titlebar.updateReady': '更新已就绪',
   'titlebar.updateRestart': '重启',
   'titlebar.updateRestartHint': '点击重启以使用新版本',
+  'titlebar.updateNeedsAdmin': '需要管理员权限',
   'titlebar.updateFailed': '更新失败',
   'titlebar.updateRetry': '点击重试',
   'settings.tab.help': '帮助',
