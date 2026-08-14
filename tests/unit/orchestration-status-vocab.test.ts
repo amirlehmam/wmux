@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { forBash, hasBash } from '../helpers/bash-path';
+import { bashExists, forBash, hasBash } from '../helpers/bash-path';
 import type { OrchAgentStatus, OrchWaveStatus, OrchRunStatus } from '../../src/shared/types';
 
 const SCRIPTS = path.resolve(__dirname, '../../resources/wmux-orchestrator/scripts');
@@ -20,6 +20,9 @@ let tmp: string;
 let orchDir: string;
 
 const readState = () => JSON.parse(fs.readFileSync(path.join(orchDir, 'state.json'), 'utf8'));
+
+const hookPath = forBash(HOOK);
+const canRunHookSuite = hasBash() && bashExists(hookPath);
 
 function writeState(overrides: Record<string, unknown> = {}): void {
   fs.writeFileSync(
@@ -79,7 +82,7 @@ afterEach(() => {
 
 // A Windows box without Git for Windows has no bash at all — nothing to convert
 // a path FOR. Skipping is explicit and loud rather than a silent green.
-describe.skipIf(!hasBash())('on-agent-stop.sh status vocabulary (#99)', () => {
+describe.skipIf(!canRunHookSuite)('on-agent-stop.sh status vocabulary (#99)', () => {
   it('marks a successful agent "exited" — the word the sidebar counts, not "completed"', () => {
     writeState();
     runHook();
