@@ -957,10 +957,36 @@ export function rawV1Error(verb: string | undefined): string | null {
   return `raw-v1: ${verb} is not a passthrough command. Accepted: ${RAW_V1_VERBS.join(', ')}`;
 }
 
+/**
+ * Split a `raw-v1` argv into the V1 line to send and the verb to check.
+ *
+ * The two callers disagree about argv, and both are legitimate. A hand-typed
+ * call splits naturally — `wmux raw-v1 report_pwd surf-1 /tmp` — but
+ * wmux-bash-integration.sh builds the line as a single string and passes it
+ * quoted: `wmux raw-v1 "report_pwd $surface_id $(pwd)"`. There the whole line
+ * is args[1].
+ *
+ * Checking args[1] against the allowlist therefore rejected every report the
+ * shell integration ever sent: "report_pwd surf-1 /tmp" is not in RAW_V1_VERBS,
+ * so the CLI exited 1 before sendV1 was reached. Nothing reached the wire, and
+ * because the integration fires into `>/dev/null 2>&1 &` there was no symptom
+ * beyond a sidebar that never showed a cwd or a branch.
+ *
+ * Taking the first whitespace token is not a loosening — it is what the server
+ * already does. pipe-server.ts handleV1() parses the command as the first token
+ * of the line, so this makes the allowlist agree with the parser it guards
+ * rather than with one caller's argv habits.
+ */
+export function rawV1Parse(args: string[]): { line: string; verb: string } {
+  const line = args.slice(1).join(' ');
+  return { line, verb: line.trim().split(/\s+/)[0] ?? '' };
+}
+
 async function cmdRawV1(args: string[]): Promise<void> {
-  const problem = rawV1Error(args[1]);
+  const { line, verb } = rawV1Parse(args);
+  const problem = rawV1Error(verb);
   if (problem) { console.error(problem); process.exit(1); }
-  console.log(await sendV1(args.slice(1).join(' ')));
+  console.log(await sendV1(line));
 }
 
 // ─── Declared agent state (issue #128) ───────────────────────────────────────
