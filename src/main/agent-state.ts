@@ -563,13 +563,49 @@ function skipEscapeSequence(data: string, i: number): number {
  * does — a tool, a turn end, or the 60-second idle nudge — reports the truth and
  * the pane goes back to asking. A block that clears a few seconds early is a
  * cosmetic miss; a block that never clears makes the whole sidebar untrustworthy.
+ * (The nudge only re-asserts a block INSIDE a live turn; agent-hook-bridge.ts
+ * stops it inventing one on a pane that has already finished. That is the case
+ * this self-heal needs, and the one it does not.)
  *
- * Returns true when a block was actually cleared, so the caller can tell whether
- * anything happened.
+ * The second thing a keystroke can settle is an INTERRUPT, and that one has no
+ * hook at all: pressing Escape mid-run stops the turn and Claude Code says
+ * nothing about it — measured directly, `updatedAt` is byte-identical before and
+ * after, so it is not a stale report but no report. The pane therefore keeps
+ * asserting `working` for a turn the user cancelled, until the next prompt or
+ * the 15-minute trust window. Handled here rather than by reading the TUI for an
+ * "Interrupted" line, because a keystroke wmux owns cannot break the day Claude
+ * Code rewords its output — the failure this module exists to avoid.
+ *
+ * The Escape test is exact-match rather than isAnsweringInput's "contains a bare
+ * ESC": Alt+key also arrives as ESC followed by a character, and reading that as
+ * an interrupt would retract a run nobody stopped. A real Escape keypress is one
+ * byte on its own.
+ *
+ * Like the block clear, it only ever CLEARS, and only for a pane that has
+ * declared something — a plain shell, where Escape means whatever the shell says
+ * it means, has no record and is left entirely alone. The worst a wrong guess
+ * does is under-report for one event, and the next hook corrects it.
+ *
+ * Returns true when something was actually retracted, so the caller can tell
+ * whether anything happened.
  */
 export function noteHumanInput(surfaceId: SurfaceId, data: string): boolean {
   const record = records.get(surfaceId);
-  if (!record || !record.awaitingHuman) return false;
+  if (!record) return false;
+
+  // Escape, alone, against a live run: the turn was cancelled. Clears the block
+  // too — escaping a permission prompt dismisses the question with it.
+  if (data === '\x1b' && record.runDepth > 0) {
+    record.runDepth = 0;
+    record.awaitingHuman = false;
+    record.blockedReason = null;
+    record.choices = [];
+    record.answeredAt = null;
+    commit(record);
+    return true;
+  }
+
+  if (!record.awaitingHuman) return false;
   if (!isAnsweringInput(data)) return false;
 
   record.awaitingHuman = false;
