@@ -31,9 +31,11 @@ export function bashPathCandidates(p: string): string[] {
 /**
  * First candidate spelling `exists` accepts, else the first candidate.
  *
- * Order matters beyond mere likelihood: Git Bash (`/c`) is preferred because it
- * runs in the Windows process tree and can execute the `node` the scripts call,
- * whereas WSL bash would need a second toolchain installed inside the distro.
+ * Order matters beyond mere likelihood: on Windows, Git Bash (`/c`) is preferred
+ * because it runs in the Windows process tree and can execute the `node` the
+ * scripts call, whereas WSL bash would need a second toolchain installed inside
+ * the distro. Off Windows there is no Git Bash to prefer, so `bashPathCandidates`
+ * leads with the WSL mount instead.
  */
 export function toBashPath(p: string, exists: (candidate: string) => boolean): string {
   const candidates = bashPathCandidates(p);
