@@ -3,10 +3,25 @@
 
 $env:WMUX = "1"
 
-# Named pipe client helper
+# UTF-8 I/O so multi-byte input (Korean, Japanese, Chinese, emoji, accents)
+# survives the conpty round-trip cleanly.
+try {
+    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new()
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    $OutputEncoding = [System.Text.UTF8Encoding]::new()
+    $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+} catch {}
+
+# wmux CLI shortcut — Claude Code and users can just type: wmux browser open <url>
+function wmux { node "$env:WMUX_CLI" @args }
+
+# Named pipe client helper. State updates carry an "auth <token> " prefix —
+# wmux injects WMUX_PIPE_TOKEN into every shell it spawns, and the pipe server
+# rejects unauthenticated V1 commands (issue #72).
 function Send-WmuxMessage {
     param([string]$Message)
     try {
+        if ($env:WMUX_PIPE_TOKEN) { $Message = "auth $($env:WMUX_PIPE_TOKEN) $Message" }
         $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", "wmux", [System.IO.Pipes.PipeDirection]::InOut)
         $pipe.Connect(1000)
         $writer = New-Object System.IO.StreamWriter($pipe)
@@ -86,22 +101,53 @@ function prompt {
     }
 }
 
-# PR polling background job (every 45 seconds)
-$_wmux_pr_job = Start-Job -ScriptBlock {
-    param($surfaceId, $pipeName)
-    while ($true) {
-        Start-Sleep -Seconds 45
-        try {
-            $prJson = gh pr view --json number,state,title 2>$null
-            if ($LASTEXITCODE -eq 0 -and $prJson) {
-                $pr = $prJson | ConvertFrom-Json
-                $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
-                $pipe.Connect(1000)
-                $writer = New-Object System.IO.StreamWriter($pipe)
-                $writer.AutoFlush = $true
-                $writer.WriteLine("report_pr $surfaceId $($pr.number) $($pr.state) $($pr.title)")
-                $pipe.Close()
-            }
-        } catch { }
+# PR polling background job (every 45 seconds).
+# DEFERRED: Start-Job spins up a whole child PowerShell runspace and costs
+# several hundred ms — running it during init delayed the FIRST prompt. We
+# instead start it on the shell's first idle (after the prompt is already on
+# screen), so it never sits on the startup critical path. A global guard makes it
+# fire exactly once; PR data isn't needed in the first 45s anyway.
+$global:_wmux_pr_started = $false
+$null = Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PSEngineEvent]::OnIdle) -Action {
+    if ($global:_wmux_pr_started) { return }
+    $global:_wmux_pr_started = $true
+    $global:_wmux_pr_job = Start-Job -ScriptBlock {
+        param($surfaceId, $pipeName, $pipeToken)
+        while ($true) {
+            Start-Sleep -Seconds 45
+            try {
+                $prJson = gh pr view --json number,state,title 2>$null
+                if ($LASTEXITCODE -eq 0 -and $prJson) {
+                    $pr = $prJson | ConvertFrom-Json
+                    $msg = "report_pr $surfaceId $($pr.number) $($pr.state) $($pr.title)"
+                    if ($pipeToken) { $msg = "auth $pipeToken $msg" }
+                    $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
+                    $pipe.Connect(1000)
+                    $writer = New-Object System.IO.StreamWriter($pipe)
+                    $writer.AutoFlush = $true
+                    $writer.WriteLine($msg)
+                    $pipe.Close()
+                }
+            } catch { }
+        }
+    } -ArgumentList $env:WMUX_SURFACE_ID, "wmux", $env:WMUX_PIPE_TOKEN
+}
+
+# Quick-launch profile startup commands (issue #32).
+# wmux passes these in WMUX_STARTUP_COMMANDS (newline-separated) so they run as
+# part of init — before the first interactive prompt — rather than being injected
+# as keystrokes afterward. Keystroke injection raced the shell's init-time
+# Device Attributes query (ConPTY answers DA1 with "\e[?62;4;9;22c" on stdin);
+# when that response landed on the prompt alongside an injected "<cmd>\r" the two
+# merged into a bogus executed line (e.g. "62;4;9;22ccls"). Running here avoids
+# that entirely. Runs last so the prompt override / PSReadLine handlers exist.
+if ($env:WMUX_STARTUP_COMMANDS) {
+    foreach ($_wmux_cmd in ($env:WMUX_STARTUP_COMMANDS -split "`n")) {
+        $_wmux_cmd = $_wmux_cmd.Trim()
+        if ($_wmux_cmd) {
+            try { Invoke-Expression $_wmux_cmd } catch { Write-Error $_ }
+        }
     }
-} -ArgumentList $env:WMUX_SURFACE_ID, "wmux"
+    # One-shot: don't let it leak into child shells spawned from this session.
+    Remove-Item Env:\WMUX_STARTUP_COMMANDS -ErrorAction SilentlyContinue
+}
