@@ -47,6 +47,46 @@ export function getCliBinDirForInstructions(): string {
   return getCliBinPath();
 }
 
+const START_MARKER = '<!-- wmux:start';
+const END_MARKER = '<!-- wmux:end -->';
+
+/**
+ * Splice the wmux block into a context file the user also writes in.
+ *
+ * Shared by every agent whose context file is a single shared document
+ * (Claude Code's CLAUDE.md, OpenCode's AGENTS.md, omp's AGENTS.md). Kiro is the
+ * exception — it gets a file of wmux's own, so it has nothing to splice.
+ *
+ * `trimEnd()` on the block is load-bearing and not cosmetic. The block ends
+ * with a newline and so does the text following the old END_MARKER, so keeping
+ * both appends one blank line to the file on EVERY launch — unbounded growth in
+ * a file the agent loads into context each session. Trimming the block lets the
+ * tail supply the newline exactly once, which is what makes re-splicing a
+ * fixed point.
+ *
+ * Lives here rather than being duplicated per agent because it was duplicated
+ * per agent, and the copies had already diverged on precisely that line.
+ */
+export function injectWmuxBlock(rawExisting: string, wmuxBlock: string, stripLegacy: (s: string) => string): string {
+  const block = wmuxBlock.trimEnd();
+  // Marker-less copies from older versions are ours and stale; splicing keys off
+  // the markers, so without this they would sit beside the managed block forever.
+  const existing = stripLegacy(rawExisting);
+  if (existing.trim() === '') return block;
+  const startIdx = existing.indexOf(START_MARKER);
+  const endIdx = existing.indexOf(END_MARKER);
+  if (startIdx === -1) {
+    const separator = existing.endsWith('\n') ? '\n' : '\n\n';
+    return existing + separator + block;
+  }
+  if (endIdx === -1) {
+    return existing.substring(0, startIdx) + block;
+  }
+  const before = existing.substring(0, startIdx);
+  const after = existing.substring(endIdx + END_MARKER.length);
+  return before + block + after;
+}
+
 export function getInstructionsPath(): string {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires

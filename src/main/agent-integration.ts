@@ -1,11 +1,12 @@
 /**
  * Consent gate for everything wmux writes outside its own directory (issue #132).
  *
- * wmux integrates with Claude Code, OpenCode and Kiro by editing files in the
- * user's home: it appends a block to ~/.claude/CLAUDE.md and
- * ~/.config/opencode/AGENTS.md, writes ~/.kiro/steering/wmux.md, registers eight
- * hook families in ~/.claude/settings.json, points chrome-devtools-mcp at its
- * own CDP proxy, and installs Claude Code and OpenCode orchestrator plugins.
+ * wmux integrates with Claude Code, OpenCode, Kiro and omp by editing files in
+ * the user's home: it appends a block to ~/.claude/CLAUDE.md,
+ * ~/.config/opencode/AGENTS.md and ~/.omp/agent/AGENTS.md, writes
+ * ~/.kiro/steering/wmux.md, registers eight hook families in
+ * ~/.claude/settings.json, points chrome-devtools-mcp at its own CDP proxy, and
+ * installs Claude Code and OpenCode orchestrator plugins.
  *
  * All of that used to happen unconditionally on every launch, with no prompt and
  * no record of a decision — so deleting any of it was futile, because the next
@@ -41,6 +42,7 @@ import {
   removeOpencodePlugin,
 } from './opencode-context';
 import { ensureKiroContext, removeKiroContext } from './kiro-context';
+import { ensureOmpContext, removeOmpContext } from './omp-context';
 import { loadSettings, saveSetting } from './settings-store';
 
 export type IntegrationDecision = 'unset' | 'granted' | 'declined';
@@ -81,7 +83,7 @@ export const DEFAULT_CONSENT: IntegrationConsent = { decision: 'unset', features
 export const INTEGRATION_CONSENT_DETAIL =
   'wmux can teach your coding agents to drive its browser panel, markdown views ' +
   'and sidebar status. Doing so edits files in your home directory:\n\n' +
-  '  • ~/.claude/CLAUDE.md and ~/.config/opencode/AGENTS.md\n' +
+  '  • ~/.claude/CLAUDE.md, ~/.config/opencode/AGENTS.md and ~/.omp/agent/AGENTS.md\n' +
   '      a wmux section, between markers, leaving your own text untouched\n' +
   '  • ~/.kiro/steering/wmux.md\n' +
   '      a steering file of wmux\'s own; your other Kiro steering is untouched\n' +
@@ -135,8 +137,8 @@ export function writeConsent(consent: IntegrationConsent): void {
 function applyFeature(feature: IntegrationFeature, enabled: boolean): void {
   switch (feature) {
     case 'instructions':
-      if (enabled) { ensureClaudeContext(); ensureOpencodeContext(); ensureKiroContext(); }
-      else { removeClaudeContext(); removeOpencodeContext(); removeKiroContext(); }
+      if (enabled) { ensureClaudeContext(); ensureOpencodeContext(); ensureKiroContext(); ensureOmpContext(); }
+      else { removeClaudeContext(); removeOpencodeContext(); removeKiroContext(); removeOmpContext(); }
       break;
     case 'hooks':
       if (enabled) ensureClaudeHooks();

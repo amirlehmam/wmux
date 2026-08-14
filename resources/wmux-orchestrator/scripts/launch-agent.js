@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// launch-agent.js — Launch an agent (claude by default, opencode if
-// WMUX_AGENT_CMD=opencode) with the prompt from a file.
+// launch-agent.js — Launch an agent with the prompt from a file.
+// Set WMUX_AGENT_CMD to pick one: claude (default), opencode, or omp.
 // Usage: node launch-agent.js <prompt-file>
 //
 // Uses execFileSync to bypass all shell quoting issues.
@@ -77,6 +77,33 @@ function permissionNotice(env = process.env) {
   );
 }
 
+/**
+ * The agents a worker pane can be launched as, keyed by WMUX_AGENT_CMD.
+ *
+ * A table rather than a chain of branches because #165 made it three, and the
+ * shape of the difference is only ever "which binary" and "how the prompt is
+ * passed" — everything else (resolution, notices, exit handling) is shared.
+ */
+const AGENTS = {
+  claude: {
+    bin: 'claude',
+    // NOTE: do NOT use --bare — it skips keychain/OAuth and causes "Not logged in".
+    args: prompt => buildClaudeArgs(prompt),
+  },
+  opencode: {
+    bin: 'opencode',
+    // opencode run streams formatted progress; the user can watch.
+    // '--' stops flag parsing from consuming the prompt.
+    args: prompt => ['run', '--', prompt],
+  },
+  // omp (Oh My Pi), issue #165. `omp run` is its non-interactive entry point;
+  // like the others, '--' keeps the prompt out of the flag parser.
+  omp: {
+    bin: 'omp',
+    args: prompt => ['run', '--', prompt],
+  },
+};
+
 function main() {
   const promptFile = process.argv[2];
   if (!promptFile) {
@@ -91,29 +118,24 @@ function main() {
 
   const prompt = fs.readFileSync(promptFile, 'utf8');
   const agentCmd = (process.env.WMUX_AGENT_CMD || 'claude').toLowerCase();
-  const isOpenCode = agentCmd === 'opencode';
+  const agent = AGENTS[agentCmd] || AGENTS.claude;
 
-  const exe = resolveExecutable(isOpenCode ? 'opencode' : 'claude');
+  const exe = resolveExecutable(agent.bin);
   if (!exe) {
     console.error(
-      `[wmux] Could not find "${isOpenCode ? 'opencode' : 'claude'}" on PATH. ` +
-      'Install it, or set WMUX_AGENT_CMD to the agent you do have.',
+      `[wmux] Could not find "${agent.bin}" on PATH. ` +
+      'Install it, or set WMUX_AGENT_CMD to the agent you do have ' +
+      `(one of: ${Object.keys(AGENTS).join(', ')}).`,
     );
     process.exit(127);
   }
 
-  const notice = isOpenCode ? null : permissionNotice();
+  // Only Claude's permission boundary is the one wmux changed in #161.
+  const notice = agent.bin === 'claude' ? permissionNotice() : null;
   if (notice) console.error(notice);
 
   try {
-    if (isOpenCode) {
-      // opencode run streams formatted progress; the user can watch.
-      // '--' stops flag parsing from consuming the prompt.
-      execFileSync(exe, ['run', '--', prompt], { stdio: 'inherit' });
-    } else {
-      // NOTE: do NOT use --bare — it skips keychain/OAuth and causes "Not logged in".
-      execFileSync(exe, buildClaudeArgs(prompt), { stdio: 'inherit' });
-    }
+    execFileSync(exe, agent.args(prompt), { stdio: 'inherit' });
   } catch (e) {
     process.exit(e.status || 1);
   }
@@ -121,4 +143,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { buildClaudeArgs, permissionNotice, resolveExecutable };
+module.exports = { AGENTS, buildClaudeArgs, permissionNotice, resolveExecutable };

@@ -2,35 +2,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { stripWmuxBlock, stripLegacyBlocks } from './claude-context';
-import { readRenderedInstructions } from './agent-instructions';
-
-const START_MARKER = '<!-- wmux:start';
-const END_MARKER = '<!-- wmux:end -->';
+import { injectWmuxBlock as spliceBlock, readRenderedInstructions } from './agent-instructions';
 
 /**
  * Pure: insert/replace the wmux block within existing content, preserving the rest.
- * Trailing whitespace on the block is normalized away so re-applying is idempotent
- * even when the instructions source ends with a newline (otherwise the trailing
- * newline accumulates on every run).
+ *
+ * Thin wrapper over the shared splice in agent-instructions.ts, kept as a named
+ * export because the existing tests target it here. The implementation moved
+ * when omp became the third agent needing it (#165) — and the copy written for
+ * omp had already lost the `trimEnd()` this one depends on, appending one blank
+ * line per launch to a file the agent reads every session.
  */
 export function injectWmuxBlock(rawExisting: string, wmuxBlock: string): string {
-  const block = wmuxBlock.trimEnd();
-  // Marker-less copies from older versions are ours and stale; splicing keys off
-  // the markers, so without this they would sit beside the managed block forever.
-  const existing = stripLegacyBlocks(rawExisting);
-  if (existing.trim() === '') return block;
-  const startIdx = existing.indexOf(START_MARKER);
-  const endIdx = existing.indexOf(END_MARKER);
-  if (startIdx === -1) {
-    const separator = existing.endsWith('\n') ? '\n' : '\n\n';
-    return existing + separator + block;
-  }
-  if (endIdx === -1) {
-    return existing.substring(0, startIdx) + block;
-  }
-  const before = existing.substring(0, startIdx);
-  const after = existing.substring(endIdx + END_MARKER.length);
-  return before + block + after;
+  return spliceBlock(rawExisting, wmuxBlock, stripLegacyBlocks);
 }
 
 function getAgentsMdPath(): string {
