@@ -12,7 +12,7 @@ import { useT } from '../i18n';
 import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
 import { SplitNode, ThemeConfig } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
-import { openInWmuxBrowser } from '../utils/open-in-browser';
+import { activateTerminalLink, terminalLinkHandler } from '../utils/terminal-links';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
@@ -392,6 +392,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // enabled, or toggling it would require recreating every terminal.
       allowTransparency: true,
       allowProposedApi: true,
+      linkHandler: terminalLinkHandler,
       scrollback: prefs.scrollbackLines || 10000,
     });
 
@@ -408,10 +409,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Create and load addons
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon((event, uri) => {
-      const forceExternal = !!(event as MouseEvent)?.ctrlKey || !!(event as MouseEvent)?.metaKey;
-      openInWmuxBrowser(uri, { forceExternal });
-    });
+    const webLinksAddon = new WebLinksAddon(activateTerminalLink);
     const searchAddon = new SearchAddon();
     const unicode11Addon = new Unicode11Addon();
     const imageAddon = new ImageAddon();
