@@ -91,4 +91,49 @@ describe('electron-builder packaging', () => {
   it('ships the OpenCode plugin (#149)', () => {
     expect(extraResources).toContainEqual({ from: 'resources/opencode-plugin', to: 'opencode-plugin' });
   });
+
+  /**
+   * The CLI files are packaged one by one, not as a directory, so anything they
+   * `require` from beside themselves has to be listed too — and unlike the
+   * resource lookups above, a miss here is not a silently-absent feature but a
+   * MODULE_NOT_FOUND on the first line of `wmux ping` and of every Claude Code
+   * hook. `npm run dev` cannot see it: the module is right there in dist/.
+   *
+   * Derived rather than enumerated, for the same reason as the scan above — a
+   * list of the ones we already know about is what #149 walked past.
+   */
+  function siblingImports(entry: string): string[] {
+    const seen = new Set<string>();
+    const queue = [entry];
+    while (queue.length) {
+      const name = queue.shift() as string;
+      const file = path.join(repoRoot, 'src/cli', `${name}.ts`);
+      if (!fs.existsSync(file)) continue;
+      for (const m of fs.readFileSync(file, 'utf8').matchAll(/(?:from|require\()\s*['"]\.\/([^'"]+)['"]/g)) {
+        if (!seen.has(m[1])) { seen.add(m[1]); queue.push(m[1]); }
+      }
+    }
+    return [...seen];
+  }
+
+  it('packages every sibling module the shipped CLI files require', () => {
+    const entries = extraResources
+      .filter((e) => e.from.startsWith('dist/cli/'))
+      .map((e) => path.basename(e.from, '.js'));
+    const shipped = new Set(entries);
+    const missing: string[] = [];
+    for (const entry of entries) {
+      for (const dep of siblingImports(entry)) {
+        if (!shipped.has(dep)) missing.push(`dist/cli/${dep}.js (required by ${entry}.js)`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('finds the sibling imports it is meant to be checking', () => {
+    // Guards the guard: if the CLI stops sharing modules this goes vacuous, and
+    // the next one added would slip through unnoticed.
+    expect(siblingImports('wmux')).toContain('transport-deadline');
+    expect(siblingImports('wmux-hook')).toContain('transport-deadline');
+  });
 });

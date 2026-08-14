@@ -215,6 +215,8 @@ rm -rf ../wmux-release-staging/resources/themes && cp -r resources/themes ../wmu
 rm -rf ../wmux-release-staging/resources/sounds && cp -r resources/sounds ../wmux-release-staging/resources/sounds
 mkdir -p ../wmux-release-staging/resources/cli && cp dist/cli/wmux.js ../wmux-release-staging/resources/cli/wmux.js
 cp dist/cli/wmux-hook.js ../wmux-release-staging/resources/cli/wmux-hook.js   # Claude hooks exec this via bare node — MUST ship outside the asar (missing until 0.29.1 → sidebar stuck on "Running", issue #81)
+cp dist/cli/transport-deadline.js ../wmux-release-staging/resources/cli/transport-deadline.js   # required by BOTH files above; omitting it is MODULE_NOT_FOUND on the first line, not a degraded feature
+cp dist/cli/wsl-network.js ../wmux-release-staging/resources/cli/wsl-network.js                 # required by wmux.js (bridge bind selection)
 rm -rf ../wmux-release-staging/resources/shell-integration && mkdir -p ../wmux-release-staging/resources/shell-integration
 cp -r src/shell-integration/* ../wmux-release-staging/resources/shell-integration/
 rm -rf ../wmux-release-staging/resources/wmux-orchestrator && cp -r resources/wmux-orchestrator ../wmux-release-staging/resources/wmux-orchestrator
@@ -296,6 +298,7 @@ rm -rf .asar-staging build-out /tmp/asar-verify ../wmux-release-staging
 - [ ] wmux-orchestrator plugin copied to release staging
 - [ ] cli-bin + cli-bin-ps copied to release staging (issue #154)
 - [ ] opencode-plugin copied to release staging (issue #149) — `npm test` now derives this from `process.resourcesPath` usage in `src/main/`, so a new runtime resource that isn't in `extraResources` fails the release build
+- [ ] `resources/cli/` holds all four files — `wmux.js`, `wmux-hook.js`, `transport-deadline.js`, `wsl-network.js`. The CLI is packaged file-by-file, so a shared module has to be listed on its own; `npm test` derives this from the relative imports in `src/cli/`
 - [ ] rcedit applied (icon + version metadata) — `{ rcedit }` destructured
 - [ ] `latest.yml` generated (sha512 + size of the final zip) and uploaded as a release asset — electron-updater 404s without it (issue #68)
 - [ ] Zip created and uploaded to GitHub release
