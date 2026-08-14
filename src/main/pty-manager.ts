@@ -14,7 +14,16 @@ import { getCliBinPath } from './cli-paths';
 // Applied once, at load, before any PTY can exist — the exit callback it guards
 // is registered by node-pty inside pty.spawn(), so a later install would leave
 // every already-spawned pane on the unguarded path (issue #150).
-installPtyCrashGuard();
+//
+// The result is kept rather than discarded so it can be RECORDED. "Installed at
+// module load" was a design claim nobody could check against a process that had
+// already died, which is exactly the question #150 got stuck on.
+const ptyCrashGuardInstalled = installPtyCrashGuard();
+
+/** Whether the #150 crash guard actually attached in this process. */
+export function isPtyCrashGuardInstalled(): boolean {
+  return ptyCrashGuardInstalled;
+}
 
 // ─── Shell resolution ──────────────────────────────────────────────────────
 // Validates that a shell executable exists before spawning.
@@ -594,6 +603,18 @@ export class PtyManager {
 
   has(id: SurfaceId): boolean {
     return this.ptys.has(id);
+  }
+
+  /**
+   * How many PTYs this manager is holding.
+   *
+   * Recorded at teardown for #150: each live PTY is one node-pty
+   * ThreadSafeFunction whose exit callback will fire on the main thread, so
+   * "how many were outstanding when the session ended" is the number that says
+   * how wide the teardown race was.
+   */
+  count(): number {
+    return this.ptys.size;
   }
 
   onData(id: SurfaceId, callback: (data: string) => void): () => void {

@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys } from './ipc-handlers';
+import { isPtyCrashGuardInstalled } from './pty-manager';
+import { logDiagnostic } from './crash-diagnostics';
 import { handleBrowserV2 } from './v2-browser';
 import { handleBridgeV2 } from './v2-bridge';
 import { distributeAgents } from './agent-manager';
@@ -454,6 +456,17 @@ function handleHookEvent(params: any): void {
 app.whenReady().then(() => {
   // A losing second instance is already quitting; don't run startup side effects.
   if (!gotInstanceLock) return;
+
+  // First line of the run, so a crash report can state what this process was
+  // rather than infer it (#150). `guard` in particular: whether the node-pty
+  // exit-callback guard actually attached was a design claim nobody could
+  // check against a process that had already died.
+  logDiagnostic('start', {
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    guard: isPtyCrashGuardInstalled(),
+  });
+
   hardenWebContents();
 
   // Find out whether PowerShell will run the .ps1 shim before the renderer asks
@@ -1090,7 +1103,40 @@ app.on('before-quit', () => {
   });
 });
 
+// Windows is ending the session — logoff, shutdown, or a Windows Update
+// restart (issue #150). This is not cancellable and the OS is already on a
+// deadline, so it is the earliest and last honest chance to take the PTYs down
+// ourselves.
+//
+// Why that matters here specifically. Every PTY has a node-pty
+// ThreadSafeFunction whose exit callback runs on the main thread and does
+// `cb.Call({Napi::Number::New(env, code)})` — two napi calls outside any
+// node-addon-api try/catch. When Windows kills the child processes as part of
+// tearing the session down, those callbacks all fire at once, against an
+// environment that is itself being destroyed. A napi call that fails there
+// throws Napi::Error from a frame with no handler above it, which is
+// UnhandledExceptionFilter and then __fastfail(7) — the exact signature #150
+// has carried since 0.10.
+//
+// Killing here does not stop the callbacks; it makes them fire while the
+// environment is still healthy, instead of racing its teardown. That is a
+// narrower window, not a proof, and it is deliberately described that way:
+// the throw itself is upstream in node-pty and not something wmux can catch.
+// `session-end` is a WINDOW event, not an app one, in current Electron — so it
+// is attached centrally here rather than at each creation site, and made
+// one-shot: the OS ends the session once, however many windows are open.
+let sessionEndHandled = false;
+app.on('browser-window-created', (_event, win) => {
+  win.on('session-end', () => {
+    if (sessionEndHandled) return;
+    sessionEndHandled = true;
+    logDiagnostic('session-end', { ptys: ptyManager.count(), guard: isPtyCrashGuardInstalled() });
+    ptyManager.killAll();
+  });
+});
+
 app.on('will-quit', () => {
+  logDiagnostic('will-quit', { ptys: ptyManager.count(), guard: isPtyCrashGuardInstalled() });
   // Kill all PTYs before anything else tears down. Without this, node-pty's
   // libuv async handles (batons) are still pending when the process exits,
   // triggering the "Assertion failed: remove_pty_baton" MSVC runtime error.
