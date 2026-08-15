@@ -26,23 +26,58 @@ export function isPtyCrashGuardInstalled(): boolean {
 }
 
 // ─── Shell resolution ──────────────────────────────────────────────────────
-// Validates that a shell executable exists before spawning.
-// Falls back through: pwsh.exe → powershell.exe → cmd.exe
+// Validates that a shell executable exists as a real file before spawning.
+// node-pty's Windows SearchPath concatenates PATH + the bare name and then
+// GetFileAttributes — App Execution Aliases (0-byte WindowsApps reparse
+// points) fail that check, so spawn('pwsh-preview') throws "File not found: "
+// with an empty path. `where` finds those aliases; fs.existsSync does not.
+// Fall back through: requested shell → pwsh.exe → powershell.exe → cmd.exe
 
 let cachedDefaultShell: string | null = null;
 
-function isShellAvailable(shell: string): boolean {
-  if (!shell) return false;
-  if (path.isAbsolute(shell)) {
-    return fs.existsSync(shell);
-  }
+/** First `where`/`which` hit that is a real file (skips WindowsApps aliases). */
+function firstExistingOnPath(name: string): string | undefined {
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    execFileSync(cmd, [shell], { windowsHide: true, timeout: 3000, stdio: 'ignore' });
-    return true;
+    const hits = execFileSync(cmd, [name], { windowsHide: true, timeout: 3000, encoding: 'utf8' })
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return hits.find((p) => fs.existsSync(p));
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/** Store-installed PowerShell Preview: WindowsApps\<pkg>\pwsh.exe. */
+function findStorePwshPreview(): string | undefined {
+  const root = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'WindowsApps');
+  try {
+    const dirs = fs.readdirSync(root)
+      .filter((d) => d.startsWith('Microsoft.PowerShellPreview_'))
+      .sort()
+      .reverse();
+    for (const d of dirs) {
+      const exe = path.join(root, d, 'pwsh.exe');
+      if (fs.existsSync(exe)) return exe;
+    }
+  } catch {
+    // ACL-denied listing is fine — caller falls back.
+  }
+  return undefined;
+}
+
+/** Absolute path of a real file node-pty can spawn, or undefined. */
+export function resolveExistingShellPath(shell: string): string | undefined {
+  if (!shell) return undefined;
+  if (path.isAbsolute(shell) && fs.existsSync(shell)) return shell;
+  const onPath = firstExistingOnPath(shell);
+  if (onPath) return onPath;
+  // Bare alias with no real PATH hit (the preview App Execution Alias).
+  if (process.platform === 'win32' && /pwsh-preview/i.test(shell)) {
+    return findStorePwshPreview();
+  }
+  return undefined;
 }
 
 function getDefaultShell(): string {
@@ -51,21 +86,20 @@ function getDefaultShell(): string {
     ? ['pwsh.exe', 'powershell.exe', 'cmd.exe']
     : [process.env.SHELL || '/bin/sh'];
   for (const cmd of candidates) {
-    if (isShellAvailable(cmd)) {
-      cachedDefaultShell = cmd;
-      return cmd;
+    const resolved = resolveExistingShellPath(cmd);
+    if (resolved) {
+      cachedDefaultShell = resolved;
+      return resolved;
     }
   }
-  // cmd.exe is always available on Windows
   cachedDefaultShell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
   return cachedDefaultShell;
 }
 
-function resolveShell(shell: string | undefined): string {
-  if (shell && isShellAvailable(shell)) {
-    return shell;
-  }
+export function resolveShell(shell: string | undefined): string {
   if (shell) {
+    const resolved = resolveExistingShellPath(shell);
+    if (resolved) return resolved;
     console.warn(`[wmux] Shell not found: "${shell}", falling back to ${getDefaultShell()}`);
   }
   return getDefaultShell();
@@ -130,7 +164,7 @@ let cachedWsl: boolean | null = null;
 export const shellEnv = {
   isWindows: (): boolean => process.platform === 'win32',
   hasWsl: (): boolean => {
-    if (cachedWsl === null) cachedWsl = isShellAvailable('wsl.exe');
+    if (cachedWsl === null) cachedWsl = firstExistingOnPath('wsl.exe') !== undefined;
     return cachedWsl;
   },
 };
@@ -330,8 +364,9 @@ export class PtyManager {
     const spec = parseShellSpec(options.shell);
     // A POSIX cwd forces wsl.exe — pwsh/cmd cannot open that directory at all
     // and would silently start in %USERPROFILE% instead of the project.
-    const shell = resolveShellForCwd(resolveShell(spec.command), options.cwd);
-    const shellExtraArgs = shell === spec.command ? spec.args : [];
+    const requested = resolveExistingShellPath(spec.command);
+    const shell = resolveShellForCwd(requested ?? resolveShell(spec.command), options.cwd);
+    const shellExtraArgs = requested ? spec.args : [];
     const shellType = getShellType(shell);
     const integrationDir = getShellIntegrationPath();
     const cliPath = getCliPath();
