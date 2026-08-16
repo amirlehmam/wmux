@@ -24,6 +24,8 @@ interface WTProfile {
   name?: string;
   commandline?: string;
   startingDirectory?: string;
+  /** WT dynamic-profile source (e.g. "Windows.Terminal.PowershellCore"). */
+  source?: string;
   hidden?: boolean;
   font?: { face?: string; size?: number };
   fontSize?: number;
@@ -231,6 +233,40 @@ export function loadProjectProfiles(cwd: string): QuickLaunchProfile[] {
 }
 
 /**
+ * WT's dynamic PowerShell Core profile ("PowerShell" / "PowerShell 7 Preview")
+ * ships without a `commandline` — WT itself resolves it at launch. Without an
+ * explicit mapping, the imported wmux profile ends up shell-less and silently
+ * launches the default pwsh instead of the chosen (preview) build. Map it to
+ * the App Execution Alias; at spawn time resolveShell verifies it and falls
+ * back to the default if the aliases are absent.
+ */
+function shellForDynamicPowerShell(name: string): string {
+  return /preview/i.test(name) ? 'pwsh-preview' : 'pwsh';
+}
+
+/**
+ * Pure mapping of a Windows Terminal profile list to Quick-launch profiles.
+ * A profile's `commandline` becomes its `shell`; dynamic PowerShell Core
+ * profiles (no commandline) map to `pwsh`/`pwsh-preview` by name.
+ */
+export function mapWindowsTerminalProfiles(profiles: WTProfile[]): QuickLaunchProfile[] {
+  return profiles
+    .filter((p) => !p.hidden && (p.name || p.commandline))
+    .map((p, i) => {
+      const name = (p.name || p.commandline || `Profile ${i + 1}`).trim();
+      const dynamicPs = !p.commandline && p.source === 'Windows.Terminal.PowershellCore';
+      return {
+        id: `wt-${p.guid || i}`,
+        name,
+        type: 'terminal' as SurfaceType,
+        source: 'global' as const,
+        ...(p.commandline ? { shell: p.commandline } : dynamicPs ? { shell: shellForDynamicPowerShell(name) } : {}),
+        ...(p.startingDirectory ? { cwd: p.startingDirectory.replace(/%([^%]+)%/g, (_m, v) => process.env[v] || _m) } : {}),
+      };
+    });
+}
+
+/**
  * Import Windows Terminal profiles as quick-launch profiles, mapping each
  * non-hidden profile's `commandline` (→ shell) and `startingDirectory` (→ cwd).
  * This finishes the WT import that previously kept only the color scheme.
@@ -254,19 +290,7 @@ export function importWindowsTerminalProfiles(): QuickLaunchProfile[] {
     } else if (settings.profiles && Array.isArray(settings.profiles.list)) {
       profiles = settings.profiles.list;
     }
-    return profiles
-      .filter((p) => !p.hidden && (p.name || p.commandline))
-      .map((p, i) => {
-        const name = (p.name || p.commandline || `Profile ${i + 1}`).trim();
-        return {
-          id: `wt-${p.guid || i}`,
-          name,
-          type: 'terminal' as SurfaceType,
-          source: 'global' as const,
-          ...(p.commandline ? { shell: p.commandline } : {}),
-          ...(p.startingDirectory ? { cwd: p.startingDirectory.replace(/%([^%]+)%/g, (_m, v) => process.env[v] || _m) } : {}),
-        };
-      });
+    return mapWindowsTerminalProfiles(profiles);
   } catch {
     return [];
   }

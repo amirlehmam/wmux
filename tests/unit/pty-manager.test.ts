@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShellForCwd, shellEnv } from '../../src/main/pty-manager';
+import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShellForCwd, resolveExistingShellPath, shellEnv } from '../../src/main/pty-manager';
 import type { SurfaceId } from '../../src/shared/types';
 
 const TEST_SHELL = 'cmd.exe';
@@ -236,6 +236,37 @@ describe('parseShellSpec (issue #78 — shell command lines with args)', () => {
     });
   });
 });
+
+describe('resolveExistingShellPath', () => {
+  it('returns undefined for empty input', () => {
+    expect(resolveExistingShellPath('')).toBeUndefined();
+  });
+
+  it('returns an existing absolute path unchanged', () => {
+    const exe = process.platform === 'win32'
+      ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe')
+      : '/bin/sh';
+    expect(resolveExistingShellPath(exe)).toBe(exe);
+  });
+
+  it('skips WindowsApps aliases and finds a real file for pwsh', () => {
+    if (process.platform !== 'win32') return;
+    const resolved = resolveExistingShellPath('pwsh.exe');
+    expect(resolved).toBeTruthy();
+    expect(fs.existsSync(resolved!)).toBe(true);
+    expect(resolved!.includes('WindowsApps')).toBe(false);
+  });
+
+  it('resolves pwsh-preview to a real Store pwsh.exe, not the alias', () => {
+    if (process.platform !== 'win32') return;
+    const resolved = resolveExistingShellPath('pwsh-preview');
+    if (!resolved) return; // preview not installed
+    expect(fs.existsSync(resolved)).toBe(true);
+    expect(resolved.toLowerCase()).not.toContain('\\windowsapps\\pwsh-preview');
+    expect(path.basename(resolved).toLowerCase()).toBe('pwsh.exe');
+  });
+});
+
 
 /**
  * CreateProcess fails with error 267 (ERROR_DIRECTORY) when handed a working

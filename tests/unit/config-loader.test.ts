@@ -3,6 +3,7 @@ import { getDefaultTheme } from '../../src/main/theme-loader';
 import {
   parseGhosttyConfigString,
   parseWindowsTerminalSettingsJson,
+  mapWindowsTerminalProfiles,
 } from '../../src/main/config-loader';
 
 // ---------------------------------------------------------------------------
@@ -250,5 +251,45 @@ describe('parseWindowsTerminalSettingsJson', () => {
     // Empty settings should not throw and should return a ThemeConfig (with defaults)
     // or null — either is acceptable, but it must not throw.
     expect(() => parseWindowsTerminalSettingsJson({})).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapWindowsTerminalProfiles
+// ---------------------------------------------------------------------------
+
+describe('mapWindowsTerminalProfiles', () => {
+  it('maps commandline to shell and startingDirectory to cwd', () => {
+    const result = mapWindowsTerminalProfiles([
+      {
+        guid: 'a',
+        name: 'Git Bash',
+        commandline: '"C:\\Program Files\\Git\\bin\\bash.exe" -i -l',
+        startingDirectory: '%USERPROFILE%',
+      },
+    ]);
+    expect(result[0].shell).toBe('"C:\\Program Files\\Git\\bin\\bash.exe" -i -l');
+    expect(result[0].cwd).toBe(process.env.USERPROFILE || '');
+  });
+
+  it('maps dynamic stable PowerShell Core profile to pwsh', () => {
+    const result = mapWindowsTerminalProfiles([
+      { guid: 'b', name: 'PowerShell', source: 'Windows.Terminal.PowershellCore' },
+    ]);
+    expect(result[0].shell).toBe('pwsh');
+  });
+
+  it('maps dynamic preview PowerShell Core profile to pwsh-preview', () => {
+    const result = mapWindowsTerminalProfiles([
+      { guid: 'c', name: 'PowerShell 7 Preview', source: 'Windows.Terminal.PowershellCore' },
+    ]);
+    expect(result[0].shell).toBe('pwsh-preview');
+  });
+
+  it('leaves a dynamic profile with no PowerShellCore source shell-less', () => {
+    const result = mapWindowsTerminalProfiles([
+      { guid: 'd', name: 'Ubuntu', source: 'Windows.Terminal.Wsl' },
+    ]);
+    expect(result[0].shell).toBeUndefined();
   });
 });
