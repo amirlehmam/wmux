@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShellForCwd, resolveExistingShellPath, shellEnv } from '../../src/main/pty-manager';
+import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShellForCwd, resolveExistingShellPath, comparePackageVersion, shellEnv } from '../../src/main/pty-manager';
 import type { SurfaceId } from '../../src/shared/types';
 
 const TEST_SHELL = 'cmd.exe';
@@ -267,6 +267,46 @@ describe('resolveExistingShellPath', () => {
   });
 });
 
+describe('comparePackageVersion (WindowsApps package ordering)', () => {
+  const STABLE = 'Microsoft.PowerShell_';
+  const PREVIEW = 'Microsoft.PowerShellPreview_';
+  /** A real WindowsApps directory name, version assembled from its components. */
+  const pkg = (prefix: string, version: number[]) => `${prefix}${version.join('.')}_x64__8wekyb3d8bbwe`;
+
+  it('orders newest first', () => {
+    const older = pkg(STABLE, [7, 4, 6, 0]);
+    const newer = pkg(STABLE, [7, 5, 2, 0]);
+    expect([older, newer].sort(comparePackageVersion)[0]).toBe(newer);
+  });
+
+  it('compares numerically, so a two-digit minor beats a one-digit one', () => {
+    // The reason this exists. `.sort().reverse()` is a string sort, and "7.7"
+    // sorts above "7.10" — which would silently pick the older PowerShell the
+    // first time a minor version reaches two digits.
+    const newer = pkg(STABLE, [7, 10, 0, 0]);
+    const older = pkg(STABLE, [7, 7, 1, 0]);
+    expect([newer, older].sort(comparePackageVersion)[0]).toBe(newer);
+    expect([newer, older].sort().reverse()[0]).toBe(older); // what it used to do
+  });
+
+  it('treats a missing or unparseable component as zero rather than NaN', () => {
+    // A NaN anywhere in the comparator makes the sort order undefined, so a
+    // package dir that does not match the expected shape must not poison the
+    // ordering of the ones that do.
+    const full = pkg(STABLE, [7, 5, 0, 0]);
+    const dirs = [full, STABLE, pkg(STABLE, [7, 5])];
+    expect(dirs.sort(comparePackageVersion)[0]).toBe(full);
+  });
+
+  it('keeps the stable and preview package prefixes disjoint', () => {
+    // findStorePwsh filters by prefix, and the two only stay separable because
+    // stable carries the underscore. Dropping it would make every preview
+    // package a candidate for a plain `pwsh` request.
+    expect(pkg(PREVIEW, [7, 7, 0, 1]).startsWith(STABLE)).toBe(false);
+    expect(pkg(STABLE, [7, 5, 2, 0]).startsWith(STABLE)).toBe(true);
+  });
+});
+
 
 /**
  * CreateProcess fails with error 267 (ERROR_DIRECTORY) when handed a working
@@ -364,6 +404,23 @@ describe('resolveShellForCwd (POSIX cwd → WSL shell)', () => {
   it('is a no-op off Windows', () => {
     vi.spyOn(shellEnv, 'isWindows').mockReturnValue(false);
     expect(resolveShellForCwd('/bin/bash', POSIX)).toBe('/bin/bash');
+  });
+
+  it('classifies an absolute shell by its basename, not by its directories', () => {
+    // #172 changed resolveShell to return the resolved absolute path rather
+    // than the bare name it was handed, which put every parent directory into
+    // the substring match. These are real install layouts: Cmder ships bash
+    // under a "cmder" directory, and a path can contain "wsl" or "pwsh" for
+    // reasons that have nothing to do with the executable at the end of it.
+    expect(resolveShellForCwd('C:\\tools\\cmder\\bin\\bash.exe', POSIX)).toBe('C:\\tools\\cmder\\bin\\bash.exe');
+    expect(resolveShellForCwd('C:\\Users\\wsl-admin\\bin\\bash.exe', POSIX)).toBe('C:\\Users\\wsl-admin\\bin\\bash.exe');
+  });
+
+  it('still classifies a real absolute PowerShell path', () => {
+    // The flip side: narrowing to the basename must not stop recognising the
+    // absolute pwsh path resolveShell now actually returns.
+    expect(resolveShellForCwd('C:\\Program Files\\PowerShell\\7\\pwsh.exe', POSIX)).toBe('wsl.exe');
+    expect(resolveShellForCwd('C:\\Windows\\System32\\cmd.exe', POSIX)).toBe('wsl.exe');
   });
 });
 

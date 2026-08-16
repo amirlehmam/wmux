@@ -39,7 +39,16 @@ let cachedDefaultShell: string | null = null;
 function firstExistingOnPath(name: string): string | undefined {
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const hits = execFileSync(cmd, [name], { windowsHide: true, timeout: 3000, encoding: 'utf8' })
+    // stderr is discarded rather than inherited: `where` prints a localised
+    // "could not find files for the given pattern" on every miss, and a miss is
+    // the normal case here (we probe pwsh before falling back). Inheriting it
+    // put OS-language noise in the user's terminal and in main.log.
+    const hits = execFileSync(cmd, [name], {
+      windowsHide: true,
+      timeout: 3000,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
       .split(/\r?\n/)
       .map((s) => s.trim())
       .filter(Boolean);
@@ -49,14 +58,39 @@ function firstExistingOnPath(name: string): string | undefined {
   }
 }
 
-/** Store-installed PowerShell Preview: WindowsApps\<pkg>\pwsh.exe. */
-function findStorePwshPreview(): string | undefined {
+/**
+ * Newest-first ordering of WindowsApps package directory names.
+ *
+ * Exported for tests: the failure it prevents only appears once a version
+ * number carries a two-digit component, so nothing on disk today would catch a
+ * regression back to a plain `.sort().reverse()`.
+ */
+export function comparePackageVersion(a: string, b: string): number {
+  const parts = (d: string) => (d.split('_')[1] ?? '').split('.').map((n) => Number(n) || 0);
+  const [pa, pb] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * Store-installed PowerShell: WindowsApps\<pkg>\pwsh.exe.
+ *
+ * Both the stable and the preview package are reachable only through an App
+ * Execution Alias on PATH, which is exactly what node-pty cannot spawn — so a
+ * Store-only install of *either* needs the real exe underneath. The prefixes
+ * are disjoint because stable carries the underscore: `Microsoft.PowerShell_`
+ * does not match `Microsoft.PowerShellPreview_`.
+ */
+function findStorePwsh(preview: boolean): string | undefined {
   const root = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'WindowsApps');
+  const prefix = preview ? 'Microsoft.PowerShellPreview_' : 'Microsoft.PowerShell_';
   try {
     const dirs = fs.readdirSync(root)
-      .filter((d) => d.startsWith('Microsoft.PowerShellPreview_'))
-      .sort()
-      .reverse();
+      .filter((d) => d.startsWith(prefix))
+      .sort(comparePackageVersion);
     for (const d of dirs) {
       const exe = path.join(root, d, 'pwsh.exe');
       if (fs.existsSync(exe)) return exe;
@@ -73,9 +107,14 @@ export function resolveExistingShellPath(shell: string): string | undefined {
   if (path.isAbsolute(shell) && fs.existsSync(shell)) return shell;
   const onPath = firstExistingOnPath(shell);
   if (onPath) return onPath;
-  // Bare alias with no real PATH hit (the preview App Execution Alias).
-  if (process.platform === 'win32' && /pwsh-preview/i.test(shell)) {
-    return findStorePwshPreview();
+  // Bare alias with no real PATH hit. A Store-only PowerShell — stable or
+  // preview — is reachable only as an App Execution Alias, so `where` finds it
+  // and existsSync refuses it. Without this the stable case silently fell all
+  // the way back to Windows PowerShell 5.1.
+  if (process.platform === 'win32') {
+    const base = path.basename(shell).toLowerCase().replace(/\.exe$/, '');
+    if (base === 'pwsh-preview') return findStorePwsh(true);
+    if (base === 'pwsh') return findStorePwsh(false);
   }
   return undefined;
 }
@@ -150,7 +189,12 @@ function getCliPath(): string {
 
 
 function getShellType(shell: string): 'powershell' | 'cmd' | 'wsl' | 'unknown' {
-  const lower = shell.toLowerCase();
+  // The basename, not the whole path. resolveShell used to hand back the bare
+  // name it was given; since #172 it returns the resolved absolute path, so any
+  // directory on the way to the exe would otherwise vote — and real ones do:
+  // C:\tools\cmder\bin\bash.exe would classify as cmd, and get cmd's shell
+  // integration injected into a bash session.
+  const lower = path.basename(shell).toLowerCase();
   if (lower.includes('pwsh') || lower.includes('powershell')) return 'powershell';
   if (lower.includes('cmd')) return 'cmd';
   if (lower.includes('wsl')) return 'wsl';
