@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How to report a crash safely
+    url: https://github.com/amirlehmam/wmux/blob/master/docs/crash-reports.md
+    about: What a Windows minidump contains, and what to send instead of one.
+  - name: Configuration reference
+    url: https://github.com/amirlehmam/wmux/blob/master/docs/config.md
+    about: ~/.wmux/config.toml — keys, shells, themes.

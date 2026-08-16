@@ -40,7 +40,11 @@ function readWslEnvironment(): WslEnvironment {
  */
 function readWslNetworkingMode(): string | null {
   try {
-    const probe = spawnSync('wslinfo', ['--networking-mode'], { encoding: 'utf-8', timeout: 5000 });
+    // Absolute: only ever reached from inside a WSL 2 distro, where wslinfo is
+    // a distro binary at a fixed location. Resolving it through PATH would let
+    // anything earlier on a user-writable PATH answer a question we then use to
+    // decide what address the bridge binds.
+    const probe = spawnSync('/usr/bin/wslinfo', ['--networking-mode'], { encoding: 'utf-8', timeout: 5000 });
     if (probe.error || probe.status !== 0) return null;
     return probe.stdout;
   } catch {
@@ -989,6 +993,269 @@ async function cmdRawV1(args: string[]): Promise<void> {
   console.log(await sendV1(line));
 }
 
+// ─── Crash reports (issue #174) ──────────────────────────────────────────────
+//
+// "wmux crashed, here's a dump" is a request a maintainer makes casually and a
+// user answers casually. On Windows a minidump carries the process ENVIRONMENT
+// BLOCK, and wmux's users are by construction developers who keep credentials
+// in the environment so the shells wmux spawns can see them. The reporter who
+// raised this checked eight dumps before uploading; every one held live
+// credentials, the worst eleven of them.
+//
+// So this command exists to make the safe answer the easy one. Everything the
+// maintainer actually needed in #150 — same-signature or new — is in the
+// Windows Event Log line, which carries no memory at all. Asking for a warning
+// and still making the dump the path of least resistance would change nothing.
+//
+// It deliberately runs with no wmux instance: the moment you want it is after
+// the process died.
+
+/** Fields of an `Application Error` record — the crash fingerprint, no memory. */
+export interface CrashEventFields {
+  time: string;
+  version: string;
+  faultingModule: string;
+  exceptionCode: string;
+  faultOffset: string;
+  additionalParameter: string;
+}
+
+/**
+ * Fold the two records Windows writes for one crash into a single fingerprint.
+ *
+ * ## Why not parse the rendered message
+ *
+ * Because it is localised. On a French Windows the label is "Nom du module
+ * défaillant", and an English-only regex quietly reports "(not found)" for
+ * every field — the exact failure mode where a diagnostic looks like it ran.
+ * Reading the event's positional `Properties` (the raw insertion strings) is
+ * language-independent, and it also means the executable and module PATHS are
+ * never read at all rather than stripped afterwards. Those carry the home
+ * directory, and on a work machine the Windows username is usually a real name.
+ *
+ * ## Why two records
+ *
+ * `Application Error` (1000) carries the module, exception code and fault
+ * offset. The `Additional parameter` — the one that says 0xc0000409 was a
+ * deliberate `__fastfail(7)` rather than memory corruption, and the field #150
+ * turns on — lives only in the `Windows Error Reporting` (1001) record. They
+ * share a report id, so the join is exact rather than by timestamp proximity.
+ */
+export function joinCrashRecords(
+  appErrors: Array<Omit<CrashEventFields, 'additionalParameter'> & { reportId: string }>,
+  werReports: Array<{ reportId: string; additionalParameter: string; eventType: string }>,
+): CrashEventFields[] {
+  const byReport = new Map(werReports.map((w) => [w.reportId.toLowerCase(), w]));
+  return appErrors.map((e) => {
+    const wer = byReport.get(e.reportId.toLowerCase());
+    return {
+      time: e.time,
+      version: e.version || '(not recorded)',
+      faultingModule: e.faultingModule || '(not recorded)',
+      exceptionCode: e.exceptionCode || '(not recorded)',
+      faultOffset: e.faultOffset || '(not recorded)',
+      additionalParameter: wer
+        ? `${wer.additionalParameter} (${wer.eventType})`
+        : '(no Windows Error Reporting record)',
+    };
+  });
+}
+
+/** One `<TAB>`-separated row emitted by the PowerShell probe. */
+export function parseEventRows(stdout: string): CrashEventFields[] {
+  const appErrors: Array<Omit<CrashEventFields, 'additionalParameter'> & { reportId: string }> = [];
+  const werReports: Array<{ reportId: string; additionalParameter: string; eventType: string }> = [];
+  for (const row of stdout.split(/\r?\n/)) {
+    const f = row.split('\t');
+    // 0x-prefix here rather than in PowerShell: the properties are raw hex and
+    // every published report of this crash quotes them prefixed.
+    if (f[0] === 'AE' && f.length >= 8) {
+      appErrors.push({
+        time: f[1], version: f[3], faultingModule: f[4],
+        exceptionCode: `0x${f[5]}`, faultOffset: `0x${f[6]}`, reportId: f[7],
+      });
+    } else if (f[0] === 'WER' && f.length >= 5) {
+      werReports.push({ eventType: f[2], additionalParameter: `0x${f[3]}`, reportId: f[4] });
+    }
+  }
+  return joinCrashRecords(appErrors, werReports);
+}
+
+/** Windows Error Reporting local-dump config for wmux.exe, if any. */
+export interface WerDumpConfig {
+  configured: boolean;
+  /** 1 = mini, 2 = full (heap — every secret the process holds). */
+  dumpType?: string;
+  folder?: string;
+}
+
+/**
+ * True when this machine is set up to write dumps of wmux on the next crash.
+ *
+ * Worth surfacing unprompted: a user who turned this on did so because a
+ * maintainer asked, and is therefore precisely the user about to hand the file
+ * over. `DumpType=2` is the one that matters most — a full dump adds the heap
+ * to the environment block, so it carries secrets a minidump would have missed.
+ */
+export function describeWerConfig(cfg: WerDumpConfig): string[] {
+  if (!cfg.configured) return [];
+  const full = cfg.dumpType === '2';
+  return [
+    '',
+    `!! Local crash dumps are ENABLED for wmux.exe on this machine (DumpType=${cfg.dumpType ?? '?'}${full ? ', full memory' : ', minidump'}).`,
+    `!! ${full
+      ? 'A full dump contains your environment block AND the process heap.'
+      : 'A minidump contains your environment block.'}`,
+    '!! Do not attach one to a public issue without reading docs/crash-reports.md first.',
+    ...(cfg.folder ? [`!! Dumps are written to: ${cfg.folder}`] : []),
+  ];
+}
+
+/**
+ * Absolute path to a Windows system binary.
+ *
+ * Never resolved through PATH: this command is the one a user runs *because*
+ * something went wrong, so it must not be the one that runs a `reg.exe` or
+ * `powershell.exe` that a writable PATH entry got in front of. The whole value
+ * of the output is that it can be trusted enough to paste into a public issue.
+ */
+function system32(...parts: string[]): string {
+  return path.join(process.env.SystemRoot || process.env.windir || 'C:\\Windows', 'System32', ...parts);
+}
+
+function readWerConfig(): WerDumpConfig {
+  if (process.platform !== 'win32') return { configured: false };
+  const key = 'HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\wmux.exe';
+  const res = spawnSync(system32('reg.exe'), ['query', key], { encoding: 'utf-8', windowsHide: true, timeout: 5000 });
+  if (res.status !== 0 || !res.stdout) return { configured: false };
+  return {
+    configured: true,
+    dumpType: res.stdout.match(/DumpType\s+REG_DWORD\s+0x([0-9a-f]+)/i)?.[1],
+    folder: res.stdout.match(/DumpFolder\s+REG_\w+\s+(.+)/i)?.[1]?.trim(),
+  };
+}
+
+/**
+ * The last N crashes of wmux.exe, from both providers.
+ *
+ * The app name is matched on the property rather than anywhere in the rendered
+ * text. Substring-matching the message attributes any crash whose *path*
+ * happens to contain the string — on the machine this was written, a sibling
+ * project at `...\newmux\smux.exe` was being reported as a wmux crash, with a
+ * fault offset identical to the one #150 is about. A crash report that
+ * confidently hands the maintainer another program's crash is worse than none.
+ */
+function readCrashEvents(limit: number): CrashEventFields[] {
+  if (process.platform !== 'win32') return [];
+  const EXE = 'wmux.exe';
+  // -Oldest is invalid for a hashtable filter, so the newest come back first.
+  // Both queries scan a fixed window and are then narrowed, because Get-WinEvent
+  // cannot filter on a property value server-side.
+  const script = [
+    `$ErrorActionPreference='SilentlyContinue'`,
+    `$n=${limit}`,
+    `Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='Application Error';Id=1000} -MaxEvents 400 |`,
+    ` Where-Object { $_.Properties[0].Value -eq '${EXE}' } | Select-Object -First $n |`,
+    ` ForEach-Object { @('AE',$_.TimeCreated.ToString('o'),$_.Properties[0].Value,$_.Properties[1].Value,`,
+    `   $_.Properties[3].Value,$_.Properties[6].Value,$_.Properties[7].Value,$_.Properties[12].Value) -join "\`t" }`,
+    `Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='Windows Error Reporting';Id=1001} -MaxEvents 400 |`,
+    ` Where-Object { $_.Properties[5].Value -eq '${EXE}' } | Select-Object -First $n |`,
+    ` ForEach-Object { @('WER',$_.TimeCreated.ToString('o'),$_.Properties[2].Value,`,
+    `   $_.Properties[13].Value,$_.Properties[19].Value) -join "\`t" }`,
+  ].join('\n');
+  const res = spawnSync(system32('WindowsPowerShell', 'v1.0', 'powershell.exe'), [
+    '-NoProfile', '-NonInteractive', '-Command', script,
+  ], { encoding: 'utf-8', windowsHide: true, timeout: 60000 });
+  return res.stdout ? parseEventRows(res.stdout) : [];
+}
+
+/** Last N lines of the diagnostics log wmux writes to its own data directory. */
+function readDiagnosticsTail(lines: number): string[] {
+  try {
+    const base = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    const suffix = process.env.WMUX_INSTANCE?.trim() ? `-${process.env.WMUX_INSTANCE.trim()}` : '';
+    const file = path.join(base, `wmux${suffix}`, 'logs', 'main.log');
+    return fs.readFileSync(file, 'utf-8').split(/\r?\n/).filter(Boolean).slice(-lines);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Assemble the report. Pure, so a test can assert on what it does and does not
+ * contain without a Windows Event Log — the promise that this output is safe to
+ * paste is the whole point of the command, and an untested promise is a wish.
+ */
+export function formatCrashReport(input: {
+  events: CrashEventFields[];
+  diagnostics: string[];
+  wer: WerDumpConfig;
+  platform: string;
+  osVersion: string;
+}): string {
+  // Every `start` line carries version=. Taking it from there rather than from
+  // a package.json lookup means it reports the wmux that actually ran, not the
+  // one whose CLI you happen to be invoking — which on a machine mid-upgrade
+  // are different answers, and the crash belongs to the first one.
+  const lastStart = [...input.diagnostics].reverse().find((l) => l.includes(' start '));
+  const version = lastStart?.match(/\bversion=(\S{1,32})/)?.[1] ?? 'unknown (no log)';
+
+  const out: string[] = [
+    '# wmux crash report',
+    '',
+    'This output is what a wmux crash report should contain: the Windows crash',
+    'fingerprint and wmux\'s own process-lifecycle log. It carries no memory —',
+    'no environment variables, no pane contents, no command lines.',
+    '',
+    'Do NOT attach a crash dump unless it is asked for by name. See',
+    'docs/crash-reports.md for what a Windows minidump actually contains.',
+    '',
+    `platform    : ${input.platform} ${input.osVersion}`,
+    `wmux version: ${version}`,
+  ];
+
+  out.push('', '## Windows Event Log — Application Error, wmux.exe', '');
+  if (input.platform !== 'win32') {
+    out.push('(not Windows — no Application Error log to read)');
+  } else if (!input.events.length) {
+    out.push('No matching entries. wmux may never have crashed on this machine, or the');
+    out.push('records have aged out of the Application log.');
+    out.push('');
+    out.push('You can also read them by hand: Event Viewer > Windows Logs > Application,');
+    out.push('filter by source "Application Error". The four fields that identify a crash');
+    out.push('are: Faulting module name, Exception code, Fault offset, Additional parameter.');
+  } else {
+    for (const e of input.events) {
+      out.push(
+        `- ${e.time}`,
+        `    wmux version        : ${e.version}`,
+        `    faulting module     : ${e.faultingModule}`,
+        `    exception code      : ${e.exceptionCode}`,
+        `    fault offset        : ${e.faultOffset}`,
+        `    additional parameter: ${e.additionalParameter}`,
+      );
+    }
+  }
+
+  out.push('', '## wmux main.log (process lifecycle only)', '');
+  out.push(...(input.diagnostics.length ? input.diagnostics : ['(no log — wmux 1.1.1+ writes one on every launch)']));
+
+  out.push(...describeWerConfig(input.wer));
+  return out.join('\n');
+}
+
+async function cmdCrashReport(args: string[]): Promise<void> {
+  const events = Math.max(1, parseInt(getFlag(args, '--events') || '5', 10) || 5);
+  const logLines = Math.max(1, parseInt(getFlag(args, '--log-lines') || '40', 10) || 40);
+  console.log(formatCrashReport({
+    events: readCrashEvents(events),
+    diagnostics: readDiagnosticsTail(logLines),
+    wer: readWerConfig(),
+    platform: process.platform,
+    osVersion: os.release(),
+  }));
+}
+
 // ─── Declared agent state (issue #128) ───────────────────────────────────────
 // The reporting side of the protocol. An agent running inside a wmux pane can
 // call these with no arguments beyond the state itself — WMUX_SURFACE_ID is
@@ -1269,6 +1536,13 @@ const COMMAND_SPECS = {
   'set-progress': { usage: 'wmux set-progress <value> [--label L]', value: ['--label'] },
   log: { usage: 'wmux log <level> <message>', passthrough: true },
   'sidebar-state': { usage: 'wmux sidebar-state' },
+  'crash-report': {
+    usage: 'wmux crash-report [--events N] [--log-lines N]\n'
+      + '  Collect the crash fingerprint from the Windows Event Log plus wmux\'s own\n'
+      + '  process-lifecycle log. Safe to paste into an issue — it contains no memory.\n'
+      + '  Needs no running wmux, which is the point: you run it after wmux died.',
+    value: ['--events', '--log-lines'],
+  },
 
   diff: { usage: 'wmux diff [--file <path>]', value: ['--file'] },
   hook: {
@@ -1509,6 +1783,7 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
   },
   log: async (args) => print(await sendV2('sidebar.log', { level: args[1], message: args.slice(2).join(' ') })),
   'sidebar-state': async () => print(await sendV2('sidebar.get_state')),
+  'crash-report': cmdCrashReport,
 
   diff: async (args) => {
     const file = args.find((a, i) => args[i - 1] === '--file') || '';
@@ -1594,6 +1869,9 @@ Diff:       diff [--file <path>]
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state
 Hook:       hook --event <type> --tool <name> [--agent <id>]
+Crash:      crash-report [--events N] [--log-lines N]
+            (Event Log fingerprint + wmux's own log. No memory, so no secrets —
+             paste this instead of a crash dump. See docs/crash-reports.md.)
 Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
             report-agent --run-start | --run-end
             answer-agent --surface <id> --choice <id>   # reply without leaving your pane

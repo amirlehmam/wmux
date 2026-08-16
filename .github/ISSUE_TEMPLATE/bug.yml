@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in wmux behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If wmux **crashed** — disappeared with no dialog, taking every pane with
+        it — use the *Crash report* template instead. It asks for the one thing
+        that identifies a crash, and tells you what not to send.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: wmux version
+      placeholder: "e.g. 1.2.0 — Settings, or the title bar"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "winver, e.g. Windows 11 Pro 26200"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: |
+        Shell, theme, DevTools console output, screenshots.
+
+        Careful with terminal screenshots and pasted output — a pane can have a
+        token or a connection string scrolled into it. Nothing wmux asks for
+        here needs one.
+    validations:
+      required: false

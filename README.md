@@ -470,6 +470,13 @@ wmux is an independent, from-scratch Windows reimplementation inspired by [cmux]
 - [GitHub Issues](https://github.com/amirlehmam/wmux/issues) — bug reports and feature requests
 - [GitHub Discussions](https://github.com/amirlehmam/wmux/discussions) — questions and ideas
 
+### Reporting a crash
+
+Run `wmux crash-report` and paste the output. **Do not send a crash dump** — a
+Windows minidump carries your process environment block in cleartext, and wmux's
+users are exactly the people who keep credentials there. See
+[docs/crash-reports.md](docs/crash-reports.md).
+
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/amirlehmam-wmux-badge.png)](https://mseep.ai/app/amirlehmam-wmux)
 
 

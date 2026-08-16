@@ -430,6 +430,16 @@ wmux log <level> <message> | sidebar-state
 
 # Hooks
 wmux hook --event <type> --tool <name> [--agent <id>]
+
+# Crash reports (issue #174) — needs no running wmux, which is the point
+wmux crash-report [--events N] [--log-lines N]
+# Event Log fingerprint (Application Error 1000 + Windows Error Reporting 1001,
+# joined on report id) plus the tail of %APPDATA%\wmux\logs\main.log. Read from
+# the events' positional Properties, never the rendered message: the message is
+# LOCALISED (a French Windows says "Nom du module défaillant") and matching the
+# exe by substring attributed a sibling project's crash to wmux. Never reads
+# properties [10]/[11] — those are full paths, and the path carries the
+# Windows username. See docs/crash-reports.md.
 ```
 
 ---

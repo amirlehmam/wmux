@@ -1,0 +1,69 @@
+name: Crash report
+description: wmux disappeared, closed itself, or died without a dialog
+labels: ["crash"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before you attach anything: do not send a crash dump
+
+        **A Windows minidump contains your process environment block** — every
+        user-scope environment variable, in cleartext. wmux's users keep
+        credentials there so the shells wmux spawns can see them, so a dump from
+        a developer machine usually carries live keys. A full dump
+        (`DumpType = 2`) adds the process heap on top of that.
+
+        We do not want one, and the box below is enough to tell a known crash
+        from a new one. If we ever do need a dump, we will ask for it by name
+        and say what is in it first.
+
+        See [docs/crash-reports.md][doc] — including why deleting the variables
+        does **not** clean a process that was already running, and why
+        hand-scrubbing a dump is worse than sending nothing.
+
+        [doc]: https://github.com/amirlehmam/wmux/blob/master/docs/crash-reports.md
+
+  - type: textarea
+    id: fingerprint
+    attributes:
+      label: Crash fingerprint
+      description: |
+        Run `wmux crash-report` and paste the output. It needs no running wmux.
+        It reads the Windows Event Log and wmux's own lifecycle log — no memory,
+        so no environment variables, no pane contents, no command lines.
+
+        No CLI? Event Viewer → Windows Logs → Application, source
+        `Application Error`. We need: faulting module name, exception code,
+        fault offset, additional parameter.
+      render: text
+      placeholder: |
+        $ wmux crash-report
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What were you doing when it died?
+      description: |
+        Anything about the moment helps: how long wmux had been up, how many
+        panes were open, whether the machine was shutting down or logging off,
+        whether a shell had just exited.
+    validations:
+      required: true
+
+  - type: input
+    id: cadence
+    attributes:
+      label: How often does it happen?
+      placeholder: "e.g. roughly every 2–4 days, or once ever"
+    validations:
+      required: false
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "winver, e.g. Windows 11 Pro 26200"
+    validations:
+      required: false
