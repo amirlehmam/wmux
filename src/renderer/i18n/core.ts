@@ -17,6 +17,7 @@ import { en, type Translation, type TranslationKey } from './locales/en';
 import { de } from './locales/de';
 import { es } from './locales/es';
 import { fr } from './locales/fr';
+import { hi } from './locales/hi';
 import { it } from './locales/it';
 import { ja } from './locales/ja';
 import { ko } from './locales/ko';
@@ -38,6 +39,7 @@ const BUILTIN = [
   { code: 'zh', label: '中文', dict: zh },
   { code: 'ja', label: '日本語', dict: ja },
   { code: 'ko', label: '한국어', dict: ko },
+  { code: 'hi', label: 'हिन्दी', dict: hi },
 ] as const;
 
 /** The codes wmux ships with. User locales may add more at runtime. */

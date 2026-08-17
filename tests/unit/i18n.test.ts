@@ -38,7 +38,7 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'zh', 'ja', 'ko']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'zh', 'ja', 'ko', 'hi']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
       'Français',
@@ -49,6 +49,7 @@ describe('i18n: translate (issue #56)', () => {
       '中文',
       '日本語',
       '한국어',
+      'हिन्दी',
     ]);
   });
 });
@@ -133,6 +134,9 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     // A Japanese-display machine collapses to the base tag.
     stubPreferred(['ja-JP']);
     expect(detectDefaultLanguage()).toBe('ja');
+    // A Hindi-display machine (India) collapses to the base tag.
+    stubPreferred(['hi-IN']);
+    expect(detectDefaultLanguage()).toBe('hi');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {
