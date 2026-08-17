@@ -14,22 +14,46 @@
 // dropping JSON into ~/.wmux/locales (issue #147) — see applyUserLocales below.
 
 import { en, type Translation, type TranslationKey } from './locales/en';
+import { cs } from './locales/cs';
+import { de } from './locales/de';
 import { es } from './locales/es';
 import { fr } from './locales/fr';
+import { hi } from './locales/hi';
 import { it } from './locales/it';
+import { ja } from './locales/ja';
 import { ko } from './locales/ko';
+import { nl } from './locales/nl';
+import { pl } from './locales/pl';
+import { pt } from './locales/pt';
+import { ru } from './locales/ru';
+import { sv } from './locales/sv';
+import { tr } from './locales/tr';
+import { uk } from './locales/uk';
 import { zh } from './locales/zh';
 
 // Adding a bundled language = one ./locales/xx.ts file + one row here.
 // `Language`, SUPPORTED_LANGUAGES, the Settings dropdown and the persistence
 // guard all derive from this table, so there is no second list to keep in sync.
+// Order follows site/i18n.js (roughly by reach), not alphabetical — the
+// dropdown mirrors the marketing site's ordering on purpose.
 const BUILTIN = [
   { code: 'en', label: 'English', dict: en as Translation },
-  { code: 'es', label: 'Español', dict: es },
   { code: 'fr', label: 'Français', dict: fr },
+  { code: 'es', label: 'Español', dict: es },
+  { code: 'de', label: 'Deutsch', dict: de },
+  { code: 'pt', label: 'Português', dict: pt },
   { code: 'it', label: 'Italiano', dict: it },
-  { code: 'ko', label: '한국어', dict: ko },
+  { code: 'nl', label: 'Nederlands', dict: nl },
+  { code: 'pl', label: 'Polski', dict: pl },
+  { code: 'tr', label: 'Türkçe', dict: tr },
+  { code: 'ru', label: 'Русский', dict: ru },
+  { code: 'uk', label: 'Українська', dict: uk },
   { code: 'zh', label: '中文', dict: zh },
+  { code: 'ja', label: '日本語', dict: ja },
+  { code: 'ko', label: '한국어', dict: ko },
+  { code: 'hi', label: 'हिन्दी', dict: hi },
+  { code: 'sv', label: 'Svenska', dict: sv },
+  { code: 'cs', label: 'Čeština', dict: cs },
 ] as const;
 
 /** The codes wmux ships with. User locales may add more at runtime. */

@@ -4,12 +4,12 @@
  * Anyone can add or correct a language without waiting for a wmux release by
  * dropping a JSON file into `~/.wmux/locales/`, next to `config.toml`:
  *
- *   ~/.wmux/locales/de.json      → adds German to the language dropdown
+ *   ~/.wmux/locales/tt.json      → adds Tatar to the language dropdown
  *   ~/.wmux/locales/ko.json      → overrides individual bundled Korean strings
  *
  * File shape (`label` optional, `strings` may be flattened to the top level):
  *
- *   { "label": "Deutsch", "strings": { "settings.title": "Einstellungen" } }
+ *   { "label": "Татарча", "strings": { "settings.title": "Көйләүләр" } }
  *
  * This module owns IO and *shape* only. It deliberately does not know the set
  * of valid translation keys — that lives in the renderer's English dictionary,
@@ -108,7 +108,7 @@ function loadOne(dir: string, entry: string): FileResult {
   const code = entry.slice(0, -'.json'.length).toLowerCase();
   if (!CODE_RE.test(code)) {
     return {
-      error: `"${code}" is not a base language tag (expected 2–3 letters, e.g. de.json)`,
+      error: `"${code}" is not a base language tag (expected 2–3 letters, e.g. tt.json)`,
     };
   }
 

@@ -95,13 +95,15 @@ Notes:
 
 ## UI translations
 
-wmux ships English, Español, Français, Italiano, 한국어 and 中文. You can add a
-language, or correct a shipped one, without waiting for a release: drop a JSON
-file into `~/.wmux/locales/`, next to `config.toml`.
+wmux ships English, Français, Español, Deutsch, Português, Italiano,
+Nederlands, Polski, Türkçe, Русский, Українська, 中文, 日本語, 한국어, हिन्दी,
+Svenska and Čeština. You can add a language, or correct a shipped one,
+without waiting for a
+release: drop a JSON file into `~/.wmux/locales/`, next to `config.toml`.
 
 ```
 ~/.wmux/locales/
-  de.json      # adds Deutsch to Settings → General → Interface language
+  tt.json      # adds Татарча to Settings → General → Interface language
   ko.json      # overrides individual bundled Korean strings
 ```
 
@@ -110,10 +112,10 @@ wrapped in `strings` with a `label` for the dropdown:
 
 ```json
 {
-  "label": "Deutsch",
+  "label": "Татарча",
   "strings": {
-    "settings.title": "Einstellungen",
-    "markdown.copy": "Kopieren"
+    "settings.title": "Көйләүләр",
+    "markdown.copy": "Күчерү"
   }
 }
 ```

@@ -19,6 +19,13 @@ describe('i18n: translate (issue #56)', () => {
     expect(translate('es', 'settings.title')).toBe('Ajustes');
     expect(translate('zh', 'settings.title')).toBe('设置');
     expect(translate('ko', 'settings.title')).toBe('설정');
+    expect(translate('ru', 'settings.title')).toBe('Настройки');
+    expect(translate('uk', 'settings.title')).toBe('Параметри');
+    expect(translate('pl', 'settings.title')).toBe('Ustawienia');
+    expect(translate('tr', 'settings.title')).toBe('Ayarlar');
+    expect(translate('sv', 'settings.title')).toBe('Inställningar');
+    expect(translate('nl', 'settings.title')).toBe('Instellingen');
+    expect(translate('cs', 'settings.title')).toBe('Nastavení');
   });
 
   it('falls back to English for an untranslated key', () => {
@@ -38,14 +45,25 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'es', 'fr', 'it', 'ko', 'zh']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'pl', 'tr', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi', 'sv', 'cs']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
-      'Español',
       'Français',
+      'Español',
+      'Deutsch',
+      'Português',
       'Italiano',
-      '한국어',
+      'Nederlands',
+      'Polski',
+      'Türkçe',
+      'Русский',
+      'Українська',
       '中文',
+      '日本語',
+      '한국어',
+      'हिन्दी',
+      'Svenska',
+      'Čeština',
     ]);
   });
 });
@@ -76,7 +94,7 @@ describe('i18n: locale registry', () => {
 
   it('isLanguage narrows only shipped codes', () => {
     expect(SUPPORTED_LANGUAGES.every(isLanguage)).toBe(true);
-    for (const bad of ['de', 'EN', 'fr-FR', '', null, undefined, 42]) {
+    for (const bad of ['tt', 'EN', 'fr-FR', '', null, undefined, 42]) {
       expect(isLanguage(bad)).toBe(false);
     }
   });
@@ -121,12 +139,47 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     // issue #147: a Korean-display machine lands on Korean without touching Settings.
     stubPreferred(['ko-KR']);
     expect(detectDefaultLanguage()).toBe('ko');
+    // A Portuguese-display machine (Brazil or Portugal) collapses to the base tag.
+    stubPreferred(['pt-BR']);
+    expect(detectDefaultLanguage()).toBe('pt');
+    // A German-display machine (Germany or Austria) collapses to the base tag.
+    stubPreferred(['de-AT']);
+    expect(detectDefaultLanguage()).toBe('de');
+    // A Japanese-display machine collapses to the base tag.
+    stubPreferred(['ja-JP']);
+    expect(detectDefaultLanguage()).toBe('ja');
+    // A Hindi-display machine (India) collapses to the base tag.
+    stubPreferred(['hi-IN']);
+    expect(detectDefaultLanguage()).toBe('hi');
+    // A Russian-display machine collapses to the base tag.
+    stubPreferred(['ru-RU']);
+    expect(detectDefaultLanguage()).toBe('ru');
+    // A Ukrainian-display machine collapses to the base tag.
+    stubPreferred(['uk-UA']);
+    expect(detectDefaultLanguage()).toBe('uk');
+    // A Polish-display machine collapses to the base tag.
+    stubPreferred(['pl-PL']);
+    expect(detectDefaultLanguage()).toBe('pl');
+    // A Turkish-display machine collapses to the base tag.
+    stubPreferred(['tr-TR']);
+    expect(detectDefaultLanguage()).toBe('tr');
+    // A Swedish-display machine collapses to the base tag.
+    stubPreferred(['sv-SE']);
+    expect(detectDefaultLanguage()).toBe('sv');
+    // A Dutch-display machine collapses to the base tag.
+    stubPreferred(['nl-NL']);
+    expect(detectDefaultLanguage()).toBe('nl');
+    // A Czech-display machine collapses to the base tag.
+    stubPreferred(['cs-CZ']);
+    expect(detectDefaultLanguage()).toBe('cs');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {
     // The OS list is authoritative: its first entry is what the user's UI
     // shows, so a supported language further down the list must NOT win.
-    stubPreferred(['de-DE', 'fr-FR']);
+    // (German used to be that "unsupported" example; now that de is bundled,
+    // Tatar stands in as a language wmux will never ship.)
+    stubPreferred(['tt-RU', 'fr-FR']);
     expect(detectDefaultLanguage()).toBe('en');
   });
 
