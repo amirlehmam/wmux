@@ -38,15 +38,16 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'es', 'fr', 'it', 'ko', 'pt', 'zh']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'zh', 'ko']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
-      'Español',
       'Français',
-      'Italiano',
-      '한국어',
+      'Español',
+      'Deutsch',
       'Português',
+      'Italiano',
       '中文',
+      '한국어',
     ]);
   });
 });
@@ -77,7 +78,7 @@ describe('i18n: locale registry', () => {
 
   it('isLanguage narrows only shipped codes', () => {
     expect(SUPPORTED_LANGUAGES.every(isLanguage)).toBe(true);
-    for (const bad of ['de', 'EN', 'fr-FR', '', null, undefined, 42]) {
+    for (const bad of ['tt', 'EN', 'fr-FR', '', null, undefined, 42]) {
       expect(isLanguage(bad)).toBe(false);
     }
   });
@@ -125,12 +126,17 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     // A Portuguese-display machine (Brazil or Portugal) collapses to the base tag.
     stubPreferred(['pt-BR']);
     expect(detectDefaultLanguage()).toBe('pt');
+    // A German-display machine (Germany or Austria) collapses to the base tag.
+    stubPreferred(['de-AT']);
+    expect(detectDefaultLanguage()).toBe('de');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {
     // The OS list is authoritative: its first entry is what the user's UI
     // shows, so a supported language further down the list must NOT win.
-    stubPreferred(['de-DE', 'fr-FR']);
+    // (German used to be that "unsupported" example; now that de is bundled,
+    // Tatar stands in as a language wmux will never ship.)
+    stubPreferred(['tt-RU', 'fr-FR']);
     expect(detectDefaultLanguage()).toBe('en');
   });
 

@@ -14,6 +14,7 @@
 // dropping JSON into ~/.wmux/locales (issue #147) — see applyUserLocales below.
 
 import { en, type Translation, type TranslationKey } from './locales/en';
+import { de } from './locales/de';
 import { es } from './locales/es';
 import { fr } from './locales/fr';
 import { it } from './locales/it';
@@ -24,14 +25,17 @@ import { zh } from './locales/zh';
 // Adding a bundled language = one ./locales/xx.ts file + one row here.
 // `Language`, SUPPORTED_LANGUAGES, the Settings dropdown and the persistence
 // guard all derive from this table, so there is no second list to keep in sync.
+// Order follows site/i18n.js (roughly by reach), not alphabetical — the
+// dropdown mirrors the marketing site's ordering on purpose.
 const BUILTIN = [
   { code: 'en', label: 'English', dict: en as Translation },
-  { code: 'es', label: 'Español', dict: es },
   { code: 'fr', label: 'Français', dict: fr },
-  { code: 'it', label: 'Italiano', dict: it },
-  { code: 'ko', label: '한국어', dict: ko },
+  { code: 'es', label: 'Español', dict: es },
+  { code: 'de', label: 'Deutsch', dict: de },
   { code: 'pt', label: 'Português', dict: pt },
+  { code: 'it', label: 'Italiano', dict: it },
   { code: 'zh', label: '中文', dict: zh },
+  { code: 'ko', label: '한국어', dict: ko },
 ] as const;
 
 /** The codes wmux ships with. User locales may add more at runtime. */

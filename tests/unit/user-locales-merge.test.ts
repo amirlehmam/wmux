@@ -22,7 +22,7 @@ import {
 // applyUserLocales rebuilds module-level singletons, so every test restores the
 // bundled-only registry afterwards.
 
-const BUILTIN_CODES = ['en', 'es', 'fr', 'it', 'ko', 'pt', 'zh'];
+const BUILTIN_CODES = ['en', 'fr', 'es', 'de', 'pt', 'it', 'zh', 'ko'];
 
 function payload(...locales: Array<Record<string, unknown>>) {
   return { locales, errors: [], dir: '/home/u/.wmux/locales' };
@@ -35,35 +35,35 @@ afterEach(() => {
 describe('applyUserLocales: adding a language (issue #147)', () => {
   it('adds an unknown code to the registry and the dropdown', () => {
     applyUserLocales(
-      payload({ code: 'de', label: 'Deutsch', strings: { 'settings.title': 'Einstellungen' } }),
+      payload({ code: 'tt', label: 'Татарча', strings: { 'settings.title': 'Көйләүләр' } }),
     );
 
-    expect(SUPPORTED_LANGUAGES).toContain('de');
-    expect(LANGUAGES.find((l) => l.code === 'de')?.label).toBe('Deutsch');
-    expect(translate('de', 'settings.title')).toBe('Einstellungen');
+    expect(SUPPORTED_LANGUAGES).toContain('tt');
+    expect(LANGUAGES.find((l) => l.code === 'tt')?.label).toBe('Татарча');
+    expect(translate('tt', 'settings.title')).toBe('Көйләүләр');
   });
 
   it('accepts the new code in isLanguage, so it survives a restart', () => {
     // This is the whole reason the merge happens synchronously before the store
     // hydrates: loadPersistedLanguage() drops any code isLanguage() rejects, so
     // a user-defined language would otherwise reset to English on every launch.
-    expect(isLanguage('de')).toBe(false);
+    expect(isLanguage('tt')).toBe(false);
 
-    applyUserLocales(payload({ code: 'de', strings: { 'settings.title': 'Einstellungen' } }));
+    applyUserLocales(payload({ code: 'tt', strings: { 'settings.title': 'Көйләүләр' } }));
 
-    expect(isLanguage('de')).toBe(true);
+    expect(isLanguage('tt')).toBe(true);
   });
 
   it('falls back to English for keys the new language does not define', () => {
-    applyUserLocales(payload({ code: 'de', strings: { 'settings.title': 'Einstellungen' } }));
+    applyUserLocales(payload({ code: 'tt', strings: { 'settings.title': 'Көйләүләр' } }));
 
-    expect(translate('de', 'settings.tab.general')).toBe('General');
+    expect(translate('tt', 'settings.tab.general')).toBe('General');
   });
 
   it('names the language after its code when no label is given', () => {
-    applyUserLocales(payload({ code: 'de', strings: { 'settings.title': 'Einstellungen' } }));
+    applyUserLocales(payload({ code: 'tt', strings: { 'settings.title': 'Көйләүләр' } }));
 
-    expect(LANGUAGES.find((l) => l.code === 'de')?.label).toBe('de');
+    expect(LANGUAGES.find((l) => l.code === 'tt')?.label).toBe('tt');
   });
 });
 
@@ -107,27 +107,27 @@ describe('applyUserLocales: rejecting bad input (issue #147)', () => {
   it('drops keys the UI does not have and reports the count', () => {
     applyUserLocales(
       payload({
-        code: 'de',
-        strings: { 'settings.title': 'Einstellungen', 'not.a.real.key': 'x', 'also.fake': 'y' },
+        code: 'tt',
+        strings: { 'settings.title': 'Көйләүләр', 'not.a.real.key': 'x', 'also.fake': 'y' },
       }),
     );
 
-    expect(DICTIONARIES.de).toEqual({ 'settings.title': 'Einstellungen' });
-    expect(getUserLocaleState().errors).toContain('de: ignored 2 unknown key(s)');
+    expect(DICTIONARIES.tt).toEqual({ 'settings.title': 'Көйләүләр' });
+    expect(getUserLocaleState().errors).toContain('tt: ignored 2 unknown key(s)');
   });
 
   it('ignores an entry whose keys are all unknown', () => {
-    applyUserLocales(payload({ code: 'de', strings: { 'not.a.real.key': 'x' } }));
+    applyUserLocales(payload({ code: 'tt', strings: { 'not.a.real.key': 'x' } }));
 
-    expect(SUPPORTED_LANGUAGES).not.toContain('de');
+    expect(SUPPORTED_LANGUAGES).not.toContain('tt');
   });
 
   it('ignores non-string values', () => {
     applyUserLocales(
-      payload({ code: 'de', strings: { 'settings.title': 'Einstellungen', 'markdown.copy': 7 } }),
+      payload({ code: 'tt', strings: { 'settings.title': 'Көйләүләр', 'markdown.copy': 7 } }),
     );
 
-    expect(DICTIONARIES.de).toEqual({ 'settings.title': 'Einstellungen' });
+    expect(DICTIONARIES.tt).toEqual({ 'settings.title': 'Көйләүләр' });
   });
 
   it.each([
@@ -137,8 +137,8 @@ describe('applyUserLocales: rejecting bad input (issue #147)', () => {
     ['an object with no locales', {}],
     ['locales that is not an array', { locales: 'nope' }],
     ['an entry with no code', { locales: [{ strings: { 'settings.title': 'x' } }] }],
-    ['an entry with no strings', { locales: [{ code: 'de' }] }],
-    ['an entry whose strings is an array', { locales: [{ code: 'de', strings: [] }] }],
+    ['an entry with no strings', { locales: [{ code: 'tt' }] }],
+    ['an entry whose strings is an array', { locales: [{ code: 'tt', strings: [] }] }],
   ])('survives %s and keeps every bundled language', (_label, bad) => {
     applyUserLocales(bad);
 
@@ -147,22 +147,22 @@ describe('applyUserLocales: rejecting bad input (issue #147)', () => {
   });
 
   it('carries loader errors through to the reported state', () => {
-    applyUserLocales({ locales: [], errors: ['de.json: broken'], dir: '/home/u/.wmux/locales' });
+    applyUserLocales({ locales: [], errors: ['tt.json: broken'], dir: '/home/u/.wmux/locales' });
 
-    expect(getUserLocaleState().errors).toEqual(['de.json: broken']);
+    expect(getUserLocaleState().errors).toEqual(['tt.json: broken']);
     expect(getUserLocaleState().dir).toBe('/home/u/.wmux/locales');
   });
 });
 
 describe('applyUserLocales: reloading (issue #147)', () => {
   it('rebuilds from scratch, so deleting a file removes its language', () => {
-    applyUserLocales(payload({ code: 'de', strings: { 'settings.title': 'Einstellungen' } }));
-    expect(SUPPORTED_LANGUAGES).toContain('de');
+    applyUserLocales(payload({ code: 'tt', strings: { 'settings.title': 'Көйләүләр' } }));
+    expect(SUPPORTED_LANGUAGES).toContain('tt');
 
     applyUserLocales(payload());
 
     expect(SUPPORTED_LANGUAGES).toEqual(BUILTIN_CODES);
-    expect(isLanguage('de')).toBe(false);
+    expect(isLanguage('tt')).toBe(false);
   });
 
   it('rebuilds from scratch, so removing an override restores the bundled string', () => {
@@ -177,17 +177,17 @@ describe('applyUserLocales: reloading (issue #147)', () => {
   it('bumps the revision so useT can repaint', () => {
     const before = getLocaleRevision();
 
-    applyUserLocales(payload({ code: 'de', strings: { 'settings.title': 'Einstellungen' } }));
+    applyUserLocales(payload({ code: 'tt', strings: { 'settings.title': 'Көйләүләр' } }));
 
     expect(getLocaleRevision()).toBeGreaterThan(before);
   });
 
   it('keeps the English → fallback → key chain intact for a user language', () => {
-    applyUserLocales(payload({ code: 'de', strings: { 'settings.title': 'Einstellungen' } }));
+    applyUserLocales(payload({ code: 'tt', strings: { 'settings.title': 'Көйләүләр' } }));
 
     const missing = 'nonexistent.key' as TranslationKey;
-    expect(translate('de', missing, 'My Fallback')).toBe('My Fallback');
-    expect(translate('de', missing)).toBe('nonexistent.key');
+    expect(translate('tt', missing, 'My Fallback')).toBe('My Fallback');
+    expect(translate('tt', missing)).toBe('nonexistent.key');
   });
 });
 
@@ -205,17 +205,17 @@ describe('user locales: loader → merge seam (issue #147)', () => {
   it('turns a file on disk into a selectable language', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-seam-'));
     fs.writeFileSync(
-      path.join(dir, 'de.json'),
-      JSON.stringify({ label: 'Deutsch', strings: { 'settings.title': 'Einstellungen' } }),
+      path.join(dir, 'tt.json'),
+      JSON.stringify({ label: 'Татарча', strings: { 'settings.title': 'Көйләүләр' } }),
       'utf-8',
     );
 
     applyUserLocales(loadUserLocales(dir));
 
-    expect(isLanguage('de')).toBe(true);
-    expect(LANGUAGES.find((l) => l.code === 'de')?.label).toBe('Deutsch');
-    expect(translate('de', 'settings.title')).toBe('Einstellungen');
-    expect(translate('de', 'settings.tab.general')).toBe('General');
+    expect(isLanguage('tt')).toBe(true);
+    expect(LANGUAGES.find((l) => l.code === 'tt')?.label).toBe('Татарча');
+    expect(translate('tt', 'settings.title')).toBe('Көйләүләр');
+    expect(translate('tt', 'settings.tab.general')).toBe('General');
   });
 
   it('applies an override to a bundled language from disk', () => {
