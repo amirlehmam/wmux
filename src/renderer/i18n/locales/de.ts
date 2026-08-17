@@ -31,7 +31,7 @@ export const de: Translation = {
   'settings.general.contextMenu': '"In wmux öffnen" zum Kontextmenü von Ordnern hinzufügen',
   'settings.general.contextMenuLabel': 'In wmux öffnen',
   'settings.general.contextMenuHint':
-    'Rechtsklick auf einen Ordner — oder in dessen leeren Bereich —, um ihn als Arbeitsbereich zu öffnen, statt den Pfad einzufügen. Unter Windows 11 erscheint der Eintrag unter „Weitere Optionen anzeigen" (Umschalt+F10); das moderne Menü erfordert ein signiertes MSIX-Paket. Schreibt nur in HKCU, keine Administratorrechte nötig.',
+    'Rechtsklick auf einen Ordner — oder in dessen leeren Bereich —, um ihn als Arbeitsbereich zu öffnen, statt den Pfad einzufügen. Unter Windows 11 erscheint der Eintrag unter „Weitere Optionen anzeigen“ (Umschalt+F10); das moderne Menü erfordert ein signiertes MSIX-Paket. Schreibt nur in HKCU, keine Administratorrechte nötig.',
   'settings.general.contextMenuFailed': 'Der Kontextmenü-Eintrag konnte nicht aktualisiert werden.',
   'settings.general.customBgSection': 'Benutzerdefinierter Hintergrund',
   'settings.general.customBgEnable': 'Benutzerdefinierten Hintergrund aktivieren',
@@ -83,8 +83,8 @@ export const de: Translation = {
   'ctx.markUnread': 'Als ungelesen markieren',
   'ctx.status': 'Statusanzeige',
   'ctx.statusAuto': 'Automatisch (erkannt)',
-  'ctx.statusRunning': 'Als „Läuft" anheften',
-  'ctx.statusIdle': 'Als „Inaktiv" anheften',
+  'ctx.statusRunning': 'Als „Läuft“ anheften',
+  'ctx.statusIdle': 'Als „Inaktiv“ anheften',
   // Markdown-Panel-Symbolleiste (Issue #116)
   'markdown.preview': 'Vorschau',
   'markdown.source': 'Quelltext',
@@ -124,8 +124,8 @@ export const de: Translation = {
   'markdown.error.notRegularFile': 'Keine reguläre Datei',
   'markdown.error.tooLarge': 'Datei ist zu groß (max. 5 MB)',
   'markdown.error.noContent': 'Kein Inhalt zum Schreiben',
-  'markdown.error.notGranted': 'Diese Datei wurde nicht in wmux geöffnet — „Speichern unter" verwenden',
-  'markdown.closeUnsaved': '„{name}" ohne Speichern schließen?',
+  'markdown.error.notGranted': 'Diese Datei wurde nicht in wmux geöffnet — „Speichern unter“ verwenden',
+  'markdown.closeUnsaved': '„{name}“ ohne Speichern schließen?',
   'markdown.closeUnsavedHint': 'Diese Notiz enthält Änderungen, die nie auf die Festplatte geschrieben wurden.',
   'markdown.keepEditing': 'Weiter bearbeiten',
   'markdown.discardAndClose': 'Verwerfen und schließen',
@@ -218,8 +218,8 @@ export const de: Translation = {
   'sessionMenu.newSessionName': 'Name der neuen Sitzung...',
   'sessionMenu.noSavedSessions': 'Keine gespeicherten Sitzungen',
   'sessionMenu.overwriteExisting': 'Oder eine vorhandene Sitzung überschreiben:',
-  'sessionMenu.overwrite': '„{name}" überschreiben',
-  'sessionMenu.load': '„{name}" laden',
+  'sessionMenu.overwrite': '„{name}“ überschreiben',
+  'sessionMenu.load': '„{name}“ laden',
   'sessionMenu.deleteSession': 'Sitzung löschen',
   // Einstellungen — Browser-Panel
   'settings.browser.searchSection': 'Suche',
@@ -417,7 +417,7 @@ export const de: Translation = {
   'cheatSheet.selectTab': 'Tab 1–9 auswählen',
   'cheatSheet.filterPlaceholder': 'Tastenkürzel filtern…',
   'cheatSheet.closeTitle': 'Schließen (Esc)',
-  'cheatSheet.noMatch': 'Kein Tastenkürzel entspricht „{query}".',
+  'cheatSheet.noMatch': 'Kein Tastenkürzel entspricht „{query}“.',
   'cheatSheet.category.workspaces': 'Arbeitsbereiche',
   'cheatSheet.category.tabs': 'Tabs',
   'cheatSheet.category.panes': 'Bereiche',
@@ -449,7 +449,7 @@ export const de: Translation = {
   'notifPanel.unknownSource': 'Unbekannt',
   'notifPanel.yesterday': 'gestern',
   // Bestätigungsdialog zum Schließen einer Sitzung
-  'confirmClose.titleOne': '„{name}" schließen?',
+  'confirmClose.titleOne': '„{name}“ schließen?',
   'confirmClose.titleMany': '{count} Sitzungen schließen?',
   'confirmClose.defaultName': 'diese Sitzung',
   'confirmClose.message':
@@ -499,14 +499,14 @@ export const de: Translation = {
   'app.claudeFinished': 'Claude Code ist fertig',
   'app.firstSessionTitle': 'Sitzung 1',
   'app.sessionTitle': 'Sitzung {n}',
-  'app.sessionSaved': 'Sitzung „{name}" gespeichert',
+  'app.sessionSaved': 'Sitzung „{name}“ gespeichert',
   'app.expandSidebar': 'Seitenleiste ausklappen (Strg+B)',
   'app.closeBrowserPanel': 'Browser-Panel schließen',
   'app.broadcastInputTooltip': 'Eingegebener Text wird an alle Terminal-Bereiche dieses Arbeitsbereichs gesendet',
   'app.broadcastInputBanner': 'Eingabe-Übertragung AKTIV — Eingaben gehen an alle Bereiche (Strg+Alt+B zum Stoppen)',
   // Arbeitsbereichs-Store — Standardtitel für einen neuen Arbeitsbereich ohne Titel
   'workspace.defaultTitle': 'Arbeitsbereich {n}',
-  // Agentenliste der Seitenleiste — Zusammenfassung „+N weitere" bei Überlauf
+  // Agentenliste der Seitenleiste — Zusammenfassung „+N weitere“ bei Überlauf
   'agentView.moreSummary': '+{n} weitere',
   // Einstellungen — Namen der Benachrichtigungstöne
   'notificationSound.default': 'Standard',
