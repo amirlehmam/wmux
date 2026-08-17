@@ -24,6 +24,7 @@ import { ko } from './locales/ko';
 import { pl } from './locales/pl';
 import { pt } from './locales/pt';
 import { ru } from './locales/ru';
+import { sv } from './locales/sv';
 import { tr } from './locales/tr';
 import { uk } from './locales/uk';
 import { zh } from './locales/zh';
@@ -48,6 +49,7 @@ const BUILTIN = [
   { code: 'ja', label: '日本語', dict: ja },
   { code: 'ko', label: '한국어', dict: ko },
   { code: 'hi', label: 'हिन्दी', dict: hi },
+  { code: 'sv', label: 'Svenska', dict: sv },
 ] as const;
 
 /** The codes wmux ships with. User locales may add more at runtime. */
