@@ -19,6 +19,8 @@ describe('i18n: translate (issue #56)', () => {
     expect(translate('es', 'settings.title')).toBe('Ajustes');
     expect(translate('zh', 'settings.title')).toBe('设置');
     expect(translate('ko', 'settings.title')).toBe('설정');
+    expect(translate('ru', 'settings.title')).toBe('Настройки');
+    expect(translate('uk', 'settings.title')).toBe('Параметри');
   });
 
   it('falls back to English for an untranslated key', () => {
@@ -38,7 +40,7 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'zh', 'ja', 'ko', 'hi']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
       'Français',
@@ -46,6 +48,8 @@ describe('i18n: translate (issue #56)', () => {
       'Deutsch',
       'Português',
       'Italiano',
+      'Русский',
+      'Українська',
       '中文',
       '日本語',
       '한국어',
@@ -137,6 +141,12 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     // A Hindi-display machine (India) collapses to the base tag.
     stubPreferred(['hi-IN']);
     expect(detectDefaultLanguage()).toBe('hi');
+    // A Russian-display machine collapses to the base tag.
+    stubPreferred(['ru-RU']);
+    expect(detectDefaultLanguage()).toBe('ru');
+    // A Ukrainian-display machine collapses to the base tag.
+    stubPreferred(['uk-UA']);
+    expect(detectDefaultLanguage()).toBe('uk');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {

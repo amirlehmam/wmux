@@ -22,6 +22,8 @@ import { it } from './locales/it';
 import { ja } from './locales/ja';
 import { ko } from './locales/ko';
 import { pt } from './locales/pt';
+import { ru } from './locales/ru';
+import { uk } from './locales/uk';
 import { zh } from './locales/zh';
 
 // Adding a bundled language = one ./locales/xx.ts file + one row here.
@@ -36,6 +38,8 @@ const BUILTIN = [
   { code: 'de', label: 'Deutsch', dict: de },
   { code: 'pt', label: 'Português', dict: pt },
   { code: 'it', label: 'Italiano', dict: it },
+  { code: 'ru', label: 'Русский', dict: ru },
+  { code: 'uk', label: 'Українська', dict: uk },
   { code: 'zh', label: '中文', dict: zh },
   { code: 'ja', label: '日本語', dict: ja },
   { code: 'ko', label: '한국어', dict: ko },
