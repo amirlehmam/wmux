@@ -22,7 +22,7 @@ import {
 // applyUserLocales rebuilds module-level singletons, so every test restores the
 // bundled-only registry afterwards.
 
-const BUILTIN_CODES = ['en', 'fr', 'es', 'de', 'pt', 'it', 'pl', 'tr', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi', 'sv'];
+const BUILTIN_CODES = ['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'pl', 'tr', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi', 'sv', 'cs'];
 
 function payload(...locales: Array<Record<string, unknown>>) {
   return { locales, errors: [], dir: '/home/u/.wmux/locales' };

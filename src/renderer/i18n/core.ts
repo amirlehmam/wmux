@@ -14,6 +14,7 @@
 // dropping JSON into ~/.wmux/locales (issue #147) — see applyUserLocales below.
 
 import { en, type Translation, type TranslationKey } from './locales/en';
+import { cs } from './locales/cs';
 import { de } from './locales/de';
 import { es } from './locales/es';
 import { fr } from './locales/fr';
@@ -21,6 +22,7 @@ import { hi } from './locales/hi';
 import { it } from './locales/it';
 import { ja } from './locales/ja';
 import { ko } from './locales/ko';
+import { nl } from './locales/nl';
 import { pl } from './locales/pl';
 import { pt } from './locales/pt';
 import { ru } from './locales/ru';
@@ -41,6 +43,7 @@ const BUILTIN = [
   { code: 'de', label: 'Deutsch', dict: de },
   { code: 'pt', label: 'Português', dict: pt },
   { code: 'it', label: 'Italiano', dict: it },
+  { code: 'nl', label: 'Nederlands', dict: nl },
   { code: 'pl', label: 'Polski', dict: pl },
   { code: 'tr', label: 'Türkçe', dict: tr },
   { code: 'ru', label: 'Русский', dict: ru },
@@ -50,6 +53,7 @@ const BUILTIN = [
   { code: 'ko', label: '한국어', dict: ko },
   { code: 'hi', label: 'हिन्दी', dict: hi },
   { code: 'sv', label: 'Svenska', dict: sv },
+  { code: 'cs', label: 'Čeština', dict: cs },
 ] as const;
 
 /** The codes wmux ships with. User locales may add more at runtime. */

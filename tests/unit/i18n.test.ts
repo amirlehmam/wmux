@@ -24,6 +24,8 @@ describe('i18n: translate (issue #56)', () => {
     expect(translate('pl', 'settings.title')).toBe('Ustawienia');
     expect(translate('tr', 'settings.title')).toBe('Ayarlar');
     expect(translate('sv', 'settings.title')).toBe('Inställningar');
+    expect(translate('nl', 'settings.title')).toBe('Instellingen');
+    expect(translate('cs', 'settings.title')).toBe('Nastavení');
   });
 
   it('falls back to English for an untranslated key', () => {
@@ -43,7 +45,7 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'pl', 'tr', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi', 'sv']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'pl', 'tr', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi', 'sv', 'cs']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
       'Français',
@@ -51,6 +53,7 @@ describe('i18n: translate (issue #56)', () => {
       'Deutsch',
       'Português',
       'Italiano',
+      'Nederlands',
       'Polski',
       'Türkçe',
       'Русский',
@@ -60,6 +63,7 @@ describe('i18n: translate (issue #56)', () => {
       '한국어',
       'हिन्दी',
       'Svenska',
+      'Čeština',
     ]);
   });
 });
@@ -162,6 +166,12 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     // A Swedish-display machine collapses to the base tag.
     stubPreferred(['sv-SE']);
     expect(detectDefaultLanguage()).toBe('sv');
+    // A Dutch-display machine collapses to the base tag.
+    stubPreferred(['nl-NL']);
+    expect(detectDefaultLanguage()).toBe('nl');
+    // A Czech-display machine collapses to the base tag.
+    stubPreferred(['cs-CZ']);
+    expect(detectDefaultLanguage()).toBe('cs');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {
