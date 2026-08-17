@@ -18,6 +18,7 @@ import { de } from './locales/de';
 import { es } from './locales/es';
 import { fr } from './locales/fr';
 import { it } from './locales/it';
+import { ja } from './locales/ja';
 import { ko } from './locales/ko';
 import { pt } from './locales/pt';
 import { zh } from './locales/zh';
@@ -35,6 +36,7 @@ const BUILTIN = [
   { code: 'pt', label: 'Português', dict: pt },
   { code: 'it', label: 'Italiano', dict: it },
   { code: 'zh', label: '中文', dict: zh },
+  { code: 'ja', label: '日本語', dict: ja },
   { code: 'ko', label: '한국어', dict: ko },
 ] as const;
 
