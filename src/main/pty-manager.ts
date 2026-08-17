@@ -101,11 +101,70 @@ function findStorePwsh(preview: boolean): string | undefined {
   return undefined;
 }
 
-/** Absolute path of a real file node-pty can spawn, or undefined. */
+/**
+ * The `where`/`which` probe, behind an object so a test can count invocations
+ * without spawning real processes — same reason `shellEnv` below exists.
+ */
+export const shellProbe = {
+  onPath: (name: string): string | undefined => firstExistingOnPath(name),
+};
+
+/**
+ * Resolutions already paid for, keyed by the spec as given (issue #176).
+ *
+ * `resolveExistingShellPath` runs on **every pane create**, and on a miss it
+ * runs twice — once here and once inside `resolveShell`'s fallback. Each miss
+ * or hit costs an `execFileSync('where', …)`, measured at ~51ms on a normal
+ * PATH, which is roughly double what `pty.spawn` itself costs. Restoring a
+ * session with 26 workspaces therefore burned 1.3–2.7 seconds re-asking the
+ * operating system the same question 26 times — synchronously, on the main
+ * process event loop, so nothing else ran either: not the other pane creates,
+ * and not the pipe server that receives the `report_shell_state` messages the
+ * sidebar's dots are waiting for.
+ *
+ * The precedent is three functions below: `shellEnv.hasWsl` is already cached
+ * "because it shells out to `where`, and this runs on every pane create". That
+ * reasoning was always true of the user's own shell too; only wsl.exe got the
+ * cache.
+ *
+ * Negative results are cached as well, deliberately. A miss is the *expensive*
+ * branch (two probes, and `where` scans the whole PATH before failing), and it
+ * is what a user with an uninstalled or mistyped shell hits on every pane. The
+ * cost is that installing a shell mid-session will not be noticed until wmux
+ * restarts — which is exactly how `cachedDefaultShell` and `cachedWsl` already
+ * behave, so this adds no new surprise.
+ *
+ * A cached *hit* is re-validated with a cheap `existsSync` before being handed
+ * back, so an exe that is uninstalled or moved while wmux runs re-probes
+ * instead of feeding a dead path to `pty.spawn` — which would surface as node-
+ * pty's opaque "File not found: ".
+ */
+const shellPathCache = new Map<string, string | undefined>();
+
+/** Drop every memoized resolution. For tests, and for a shell-config reload. */
+export function resetShellPathCache(): void {
+  shellPathCache.clear();
+}
+
+/** Absolute path of a real file node-pty can spawn, or undefined. Memoized. */
 export function resolveExistingShellPath(shell: string): string | undefined {
   if (!shell) return undefined;
+
+  if (shellPathCache.has(shell)) {
+    const cached = shellPathCache.get(shell);
+    // A negative is returned as-is; a positive only if it is still on disk.
+    if (cached === undefined || fs.existsSync(cached)) return cached;
+    shellPathCache.delete(shell);
+  }
+
+  const resolved = resolveExistingShellPathUncached(shell);
+  shellPathCache.set(shell, resolved);
+  return resolved;
+}
+
+function resolveExistingShellPathUncached(shell: string): string | undefined {
   if (path.isAbsolute(shell) && fs.existsSync(shell)) return shell;
-  const onPath = firstExistingOnPath(shell);
+  const onPath = shellProbe.onPath(shell);
   if (onPath) return onPath;
   // Bare alias with no real PATH hit. A Store-only PowerShell — stable or
   // preview — is reachable only as an App Execution Alias, so `where` finds it
@@ -208,7 +267,7 @@ let cachedWsl: boolean | null = null;
 export const shellEnv = {
   isWindows: (): boolean => process.platform === 'win32',
   hasWsl: (): boolean => {
-    if (cachedWsl === null) cachedWsl = firstExistingOnPath('wsl.exe') !== undefined;
+    if (cachedWsl === null) cachedWsl = shellProbe.onPath('wsl.exe') !== undefined;
     return cachedWsl;
   },
 };
@@ -408,6 +467,13 @@ export class PtyManager {
     const spec = parseShellSpec(options.shell);
     // A POSIX cwd forces wsl.exe — pwsh/cmd cannot open that directory at all
     // and would silently start in %USERPROFILE% instead of the project.
+    //
+    // On a miss this resolves `spec.command` twice — here, and again inside
+    // resolveShell's fallback. That used to be two `where` invocations per pane
+    // on the slowest path; resolveExistingShellPath memoizes since #176, so the
+    // second is a Map lookup. Left as-is because the duplication is what keeps
+    // `requested` (did the REQUESTED shell resolve?) separable from `shell`
+    // (what we will actually spawn), which is what shellExtraArgs depends on.
     const requested = resolveExistingShellPath(spec.command);
     const shell = resolveShellForCwd(requested ?? resolveShell(spec.command), options.cwd);
     const shellExtraArgs = requested ? spec.args : [];
