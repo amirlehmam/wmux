@@ -24,6 +24,7 @@ import { ko } from './locales/ko';
 import { pl } from './locales/pl';
 import { pt } from './locales/pt';
 import { ru } from './locales/ru';
+import { tr } from './locales/tr';
 import { uk } from './locales/uk';
 import { zh } from './locales/zh';
 
@@ -40,6 +41,7 @@ const BUILTIN = [
   { code: 'pt', label: 'Português', dict: pt },
   { code: 'it', label: 'Italiano', dict: it },
   { code: 'pl', label: 'Polski', dict: pl },
+  { code: 'tr', label: 'Türkçe', dict: tr },
   { code: 'ru', label: 'Русский', dict: ru },
   { code: 'uk', label: 'Українська', dict: uk },
   { code: 'zh', label: '中文', dict: zh },

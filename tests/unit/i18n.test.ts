@@ -22,6 +22,7 @@ describe('i18n: translate (issue #56)', () => {
     expect(translate('ru', 'settings.title')).toBe('Настройки');
     expect(translate('uk', 'settings.title')).toBe('Параметри');
     expect(translate('pl', 'settings.title')).toBe('Ustawienia');
+    expect(translate('tr', 'settings.title')).toBe('Ayarlar');
   });
 
   it('falls back to English for an untranslated key', () => {
@@ -41,7 +42,7 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'pl', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'pl', 'tr', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
       'Français',
@@ -50,6 +51,7 @@ describe('i18n: translate (issue #56)', () => {
       'Português',
       'Italiano',
       'Polski',
+      'Türkçe',
       'Русский',
       'Українська',
       '中文',
@@ -152,6 +154,9 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     // A Polish-display machine collapses to the base tag.
     stubPreferred(['pl-PL']);
     expect(detectDefaultLanguage()).toBe('pl');
+    // A Turkish-display machine collapses to the base tag.
+    stubPreferred(['tr-TR']);
+    expect(detectDefaultLanguage()).toBe('tr');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {
