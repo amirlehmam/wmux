@@ -485,8 +485,8 @@ Static site in `site/`. Deployed to Netlify (`netlify.toml` at repo root).
 npx netlify deploy --prod --dir site
 ```
 
-`site/index.html` — Landing page with i18n (English, French, Arabic, Japanese).
-`site/i18n.js` — Language switching via URL hash (`#ar`, `#fr`, `#ja`).
+`site/index.html` — Landing page with i18n (22 languages, including RTL Arabic).
+`site/i18n.js` — Language switching via URL hash (`#<code>`, e.g. `#ar`, `#fr`, `#pt`, `#ja`).
 
 ---
 

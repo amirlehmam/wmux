@@ -38,13 +38,14 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'es', 'fr', 'it', 'ko', 'zh']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'es', 'fr', 'it', 'ko', 'pt', 'zh']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
       'Español',
       'Français',
       'Italiano',
       '한국어',
+      'Português',
       '中文',
     ]);
   });
@@ -121,6 +122,9 @@ describe('i18n: detectDefaultLanguage OS display language (issue #114)', () => {
     // issue #147: a Korean-display machine lands on Korean without touching Settings.
     stubPreferred(['ko-KR']);
     expect(detectDefaultLanguage()).toBe('ko');
+    // A Portuguese-display machine (Brazil or Portugal) collapses to the base tag.
+    stubPreferred(['pt-BR']);
+    expect(detectDefaultLanguage()).toBe('pt');
   });
 
   it('falls back to English (not navigator.language) when the display language is unsupported', () => {

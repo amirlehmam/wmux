@@ -95,7 +95,7 @@ Notes:
 
 ## UI translations
 
-wmux ships English, Español, Français, Italiano, 한국어 and 中文. You can add a
+wmux ships English, Español, Français, Italiano, 한국어, Português and 中文. You can add a
 language, or correct a shipped one, without waiting for a release: drop a JSON
 file into `~/.wmux/locales/`, next to `config.toml`.
 
