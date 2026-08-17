@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShellForCwd, resolveExistingShellPath, comparePackageVersion, shellEnv } from '../../src/main/pty-manager';
+import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShellForCwd, resolveExistingShellPath, comparePackageVersion, shellEnv, shellProbe, resetShellPathCache } from '../../src/main/pty-manager';
 import type { SurfaceId } from '../../src/shared/types';
 
 const TEST_SHELL = 'cmd.exe';
@@ -264,6 +264,110 @@ describe('resolveExistingShellPath', () => {
     expect(fs.existsSync(resolved)).toBe(true);
     expect(resolved.toLowerCase()).not.toContain('\\windowsapps\\pwsh-preview');
     expect(path.basename(resolved).toLowerCase()).toBe('pwsh.exe');
+  });
+});
+
+/**
+ * Issue #176: restoring 26 workspaces took seconds before the sidebar dots went
+ * green. The reporter guessed a serial for-loop over sessions; the restore is
+ * actually a single store update, and the real queue was in the main process.
+ *
+ * resolveExistingShellPath runs on every pane create and shells out to `where`
+ * — measured at ~51ms, about double what pty.spawn itself costs — with no
+ * memoization, and twice on the miss path. 26 panes therefore paid 1.3–2.7s of
+ * *synchronous* main-thread time re-asking the OS an identical question, during
+ * which the pipe server could not service the report_shell_state messages the
+ * dots are waiting on.
+ *
+ * These tests pin the memoization by counting probes rather than timing, so
+ * they mean the same thing on a fast machine and in CI.
+ */
+describe('shell path resolution is memoized (issue #176)', () => {
+  let probes: string[];
+
+  beforeEach(() => {
+    resetShellPathCache();
+    probes = [];
+    vi.spyOn(shellProbe, 'onPath').mockImplementation((name: string) => {
+      probes.push(name);
+      return name === 'fake-shell.exe' ? FAKE_RESOLVED : undefined;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetShellPathCache();
+  });
+
+  // A real file, so the cache's existsSync re-validation sees a live hit.
+  const FAKE_RESOLVED = process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe')
+    : '/bin/sh';
+
+  it('probes the OS once for 26 identical resolutions', () => {
+    // The issue, as a number: one restore of the reporter's 26 workspaces.
+    for (let i = 0; i < 26; i++) {
+      expect(resolveExistingShellPath('fake-shell.exe')).toBe(FAKE_RESOLVED);
+    }
+    expect(probes).toEqual(['fake-shell.exe']);
+  });
+
+  it('caches misses too, which is the branch that cost double', () => {
+    // A miss runs `where` over the whole PATH before failing, and create()
+    // resolves twice on that path — so an uninstalled or mistyped shell was the
+    // worst case, not the cheapest.
+    for (let i = 0; i < 26; i++) {
+      expect(resolveExistingShellPath('not-installed.exe')).toBeUndefined();
+    }
+    expect(probes).toEqual(['not-installed.exe']);
+  });
+
+  it('keeps separate answers for separate shells', () => {
+    resolveExistingShellPath('fake-shell.exe');
+    resolveExistingShellPath('not-installed.exe');
+    resolveExistingShellPath('fake-shell.exe');
+    resolveExistingShellPath('not-installed.exe');
+    expect(probes).toEqual(['fake-shell.exe', 'not-installed.exe']);
+  });
+
+  it('still returns undefined for empty input without probing', () => {
+    expect(resolveExistingShellPath('')).toBeUndefined();
+    expect(probes).toEqual([]);
+  });
+
+  it('re-probes when a cached hit has been uninstalled', () => {
+    // A stale positive would hand a dead path to pty.spawn, which surfaces as
+    // node-pty's opaque "File not found: " and a pane that dies on open. The
+    // existsSync re-validation is what keeps the cache from causing that.
+    const tmp = path.join(os.tmpdir(), `wmux-shell-cache-${process.pid}.exe`);
+    fs.writeFileSync(tmp, '');
+    try {
+      vi.mocked(shellProbe.onPath).mockImplementation((name: string) => {
+        probes.push(name);
+        return fs.existsSync(tmp) ? tmp : undefined;
+      });
+
+      expect(resolveExistingShellPath('vanishing.exe')).toBe(tmp);
+      expect(probes).toHaveLength(1);
+
+      // Cached, no second probe.
+      expect(resolveExistingShellPath('vanishing.exe')).toBe(tmp);
+      expect(probes).toHaveLength(1);
+
+      // Uninstalled underneath us — the cache must not keep serving it.
+      fs.unlinkSync(tmp);
+      expect(resolveExistingShellPath('vanishing.exe')).toBeUndefined();
+      expect(probes).toHaveLength(2);
+    } finally {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    }
+  });
+
+  it('resetShellPathCache() forces a fresh probe', () => {
+    resolveExistingShellPath('fake-shell.exe');
+    resetShellPathCache();
+    resolveExistingShellPath('fake-shell.exe');
+    expect(probes).toEqual(['fake-shell.exe', 'fake-shell.exe']);
   });
 });
 
