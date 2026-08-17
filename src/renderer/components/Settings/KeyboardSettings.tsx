@@ -61,6 +61,7 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   togglePinWorkspace: 'Pin / unpin workspace',
   markWorkspaceRead: 'Mark workspace read',
   toggleShortcutCheatSheet: 'Shortcut cheat-sheet',
+  resetTerminal: 'Reset terminal state',
 };
 
 /** Translated label for an action, falling back to the English `ACTION_LABELS` map. */
@@ -96,7 +97,7 @@ export const CATEGORY: Partial<Record<ShortcutAction, string>> = {
   toggleZoom: 'Panes', closeSurfaceOrPane: 'Panes', broadcastInput: 'Panes',
   find: 'Terminal', findNext: 'Terminal', findPrevious: 'Terminal', copyMode: 'Terminal',
   copy: 'Terminal', paste: 'Terminal', fontSizeIncrease: 'Terminal', fontSizeDecrease: 'Terminal',
-  fontSizeReset: 'Terminal',
+  fontSizeReset: 'Terminal', resetTerminal: 'Terminal',
   toggleSidebar: 'View', showNotifications: 'View', flashFocused: 'View', openBrowser: 'View',
   browserDevTools: 'View', browserConsole: 'View', openSettings: 'View', commandPalette: 'View',
   toggleShortcutCheatSheet: 'View',

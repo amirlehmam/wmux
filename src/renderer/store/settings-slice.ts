@@ -180,7 +180,9 @@ export type ShortcutAction =
   | 'markWorkspaceRead'
   | 'toggleShortcutCheatSheet'
   // ─── issue #116 ───────────────────────────────────────────────────────────
-  | 'toggleMarkdownSource';
+  | 'toggleMarkdownSource'
+  // ─── issue #175 ───────────────────────────────────────────────────────────
+  | 'resetTerminal';
 
 // ─── Default shortcuts ────────────────────────────────────────────────────────
 
@@ -245,6 +247,13 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // through without touching SAFE_CTRL_KEYS; a no-op unless the focused pane's
   // active surface is markdown.
   toggleMarkdownSource:   { key: 'e', ctrl: true, shift: true },
+  // ─── issue #175 ─────────────────────────────────────────────────────────────
+  // Ctrl+Shift+R was unbound. Shift-modified like the #64 batch, so
+  // isSafeToIntercept forwards bare Ctrl+R (reverse-search in every shell wmux
+  // spawns) to the terminal untouched — which matters more here than usual,
+  // since the users who need this binding are the ones already fighting their
+  // shell.
+  resetTerminal:          { key: 'r', ctrl: true, shift: true },
 };
 
 // ─── Sidebar settings ─────────────────────────────────────────────────────────

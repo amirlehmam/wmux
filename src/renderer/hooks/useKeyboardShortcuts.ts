@@ -249,6 +249,19 @@ export function useKeyboardShortcuts(
       }
     };
 
+    // Force the focused terminal back into a usable state (issue #175). Same
+    // delegation shape as paste, and for the same reason: the fix belongs to
+    // the xterm instance, which only useTerminal holds a reference to.
+    const resetFocusedTerminal = () => {
+      if (!focusedPaneId || !activeWorkspaceId) return;
+      const ws = activeWs();
+      const leaf = ws ? findLeaf(ws.splitTree, focusedPaneId) : undefined;
+      const activeSurf = leaf?.surfaces[leaf.activeSurfaceIndex];
+      if (activeSurf?.type === 'terminal') {
+        document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: activeSurf.id } }));
+      }
+    };
+
     const adjustFontSize = (next: (size: number) => number) => {
       const prefs = useStore.getState().terminalPrefs;
       useStore.getState().setTerminalPrefs({ fontSize: next(prefs.fontSize) });
@@ -321,6 +334,7 @@ export function useKeyboardShortcuts(
       browserConsole: () => window.wmux?.system?.toggleDevTools?.(),
       copy: copySelection,
       paste: pasteIntoFocusedTerminal,
+      resetTerminal: resetFocusedTerminal,
       fontSizeIncrease: () => adjustFontSize((s) => Math.min(32, s + 1)),
       fontSizeDecrease: () => adjustFontSize((s) => Math.max(8, s - 1)),
       fontSizeReset: () => useStore.getState().setTerminalPrefs({ fontSize: 13 }),

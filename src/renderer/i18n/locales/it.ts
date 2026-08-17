@@ -304,6 +304,7 @@ export const it: Translation = {
   'shortcutAction.togglePinWorkspace': "Fissa/rimuovi fissaggio area di lavoro",
   'shortcutAction.markWorkspaceRead': 'Segna area di lavoro come letta',
   'shortcutAction.toggleShortcutCheatSheet': 'Foglio scorciatoie',
+  'shortcutAction.resetTerminal': 'Reimposta lo stato del terminale',
   // Impostazioni — Pannello profili quick-launch
   'settings.quickLaunch.title': 'Profili di avvio rapido',
   'settings.quickLaunch.hintPart1': 'Preset di scheda a un clic mostrati nel menu ',

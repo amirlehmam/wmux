@@ -21,6 +21,7 @@ import {
   mouseModeReplaySequence,
 } from '../utils/mouse-modes';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
+import { resetTerminalModes } from '../utils/terminal-reset';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
@@ -805,6 +806,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // Wire PTY exit → inform user; also auto-heal a stuck "Running" badge
       // (see clearStuckRunningState).
       const unsubExit = window.wmux.pty.onExit(id, (_code: number) => {
+        // Undo whatever the dead application left set BEFORE announcing the
+        // exit, so the announcement itself lands on the normal buffer in
+        // default colours rather than inside the corpse of an alt screen
+        // (issue #175). Nothing here is written to the PTY — there is no PTY.
+        resetTerminalModes(terminal);
         terminal.writeln('\r\n\x1b[2m[process exited]\x1b[0m');
         clearStuckRunningState(id);
         // An exited process can't be making progress — drop any leftover
@@ -814,6 +820,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // gone. Keeping them would replay tracking into the next terminal on
         // this surface — a plain shell that never requested it — and would also
         // let the map grow one entry per surface for the life of the process.
+        // This must stay AFTER resetTerminalModes: the replay cache and the
+        // emulator have to be cleared together or a remount re-asserts the
+        // modes we just dropped.
         surfaceMouseModes.delete(id);
       });
 
@@ -1045,6 +1054,31 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     };
     document.addEventListener('wmux:paste-terminal', handler);
     return () => document.removeEventListener('wmux:paste-terminal', handler);
+  }, [surfaceId]);
+
+  // Manual pane recovery (issue #175). The PTY-exit path above handles the case
+  // where wmux can see the application die; this handles the one where it
+  // cannot — a TUI that crashed *inside* a still-running shell. wmux has no
+  // signal for that (the PTY is alive and quiet, which is also what a healthy
+  // idle shell looks like), so the user has to say so, which is exactly the
+  // "provide a keybinding to force-reset the pane state" the issue asked for.
+  //
+  // Guarded on the PTY being present rather than on it having exited: after an
+  // exit the modes are already reset, and re-running it would be a no-op that
+  // still moved the cursor through the DECSC/DECRC sandwich.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.surfaceId !== surfaceId) return;
+      const term = xtermRef.current;
+      if (!term) return;
+      resetTerminalModes(term);
+      // Drop the replay cache too, or the next remount puts the modes straight
+      // back — same coupling as the exit path.
+      if (surfaceId) surfaceMouseModes.delete(surfaceId);
+    };
+    document.addEventListener('wmux:reset-terminal', handler);
+    return () => document.removeEventListener('wmux:reset-terminal', handler);
   }, [surfaceId]);
 
   // Apply theme + font whenever the resolved scheme or prefs change.

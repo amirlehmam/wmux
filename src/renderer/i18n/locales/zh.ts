@@ -300,6 +300,7 @@ export const zh: Translation = {
   'shortcutAction.togglePinWorkspace': '固定/取消固定工作区',
   'shortcutAction.markWorkspaceRead': '将工作区标记为已读',
   'shortcutAction.toggleShortcutCheatSheet': '快捷键速查表',
+  'shortcutAction.resetTerminal': '重置终端状态',
   // 设置 — 快速启动配置面板
   'settings.quickLaunch.title': '快速启动配置',
   'settings.quickLaunch.hintPart1': '在每个窗格旁的 ',

@@ -318,6 +318,7 @@ export const en = {
   'shortcutAction.togglePinWorkspace': 'Pin / unpin workspace',
   'shortcutAction.markWorkspaceRead': 'Mark workspace read',
   'shortcutAction.toggleShortcutCheatSheet': 'Shortcut cheat-sheet',
+  'shortcutAction.resetTerminal': 'Reset terminal state',
   // Settings — Quick-launch profiles panel
   'settings.quickLaunch.title': 'Quick-launch profiles',
   'settings.quickLaunch.hintPart1': 'One-click tab presets shown in the ',

@@ -304,6 +304,7 @@ export const fr: Translation = {
   'shortcutAction.togglePinWorkspace': "Épingler/désépingler l'espace de travail",
   'shortcutAction.markWorkspaceRead': "Marquer l'espace de travail comme lu",
   'shortcutAction.toggleShortcutCheatSheet': 'Aide-mémoire des raccourcis',
+  'shortcutAction.resetTerminal': "Réinitialiser l'état du terminal",
   // Paramètres — Panneau des profils de lancement rapide
   'settings.quickLaunch.title': 'Profils de lancement rapide',
   'settings.quickLaunch.hintPart1': "Préréglages d'onglet en un clic affichés dans le menu ",

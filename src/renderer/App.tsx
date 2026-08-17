@@ -898,10 +898,30 @@ export default function App() {
     setCommandPaletteOpen(false);
   }, []);
 
+  // The palette's Actions category has always been a stub that logs and closes
+  // — every entry is listed, none of them run. Fixing that wholesale means
+  // hoisting useKeyboardShortcuts' handler table out of its effect, which is a
+  // bigger change than #175 justifies and would put 40 untested paths into a
+  // patch release.
+  //
+  // resetTerminal is wired anyway, because it is a *recovery* command: the
+  // pane it exists for is one where the mouse is dead and the keyboard may be
+  // going somewhere unexpected, and "open the palette and pick it" is the one
+  // route that still works when the shortcut itself is what the user cannot
+  // remember. Listing it and not running it would be worse than not listing it.
   const handlePaletteAction = useCallback((action: string) => {
-    console.log(`[wmux] Command palette action: ${action}`);
+    if (action === 'resetTerminal') {
+      const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+      const leaf = ws && focusedPaneId ? findLeaf(ws.splitTree, focusedPaneId) : undefined;
+      const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+      if (surface?.type === 'terminal') {
+        document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: surface.id } }));
+      }
+    } else {
+      console.log(`[wmux] Command palette action: ${action}`);
+    }
     setCommandPaletteOpen(false);
-  }, []);
+  }, [workspaces, activeWorkspaceId, focusedPaneId]);
 
   const workspaceNames = React.useMemo(() => {
     const map = new Map<string, string>();

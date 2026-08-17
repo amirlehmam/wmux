@@ -321,6 +321,7 @@ export const ko: Translation = {
   'shortcutAction.togglePinWorkspace': '작업 공간 고정 / 해제',
   'shortcutAction.markWorkspaceRead': '작업 공간을 읽음으로 표시',
   'shortcutAction.toggleShortcutCheatSheet': '단축키 요약표',
+  'shortcutAction.resetTerminal': '터미널 상태 초기화',
   // 설정 — 빠른 실행 프로필 패널
   // hintPart1..4는 UI 요소(+ 버튼, cd, .wmux.json)를 사이에 두고 이어 붙는
   // 한 문장의 조각입니다. 한국어 어순에 맞게 조각별 내용을 재배치했습니다.

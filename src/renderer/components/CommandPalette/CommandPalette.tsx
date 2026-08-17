@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useStore } from '../../store';
 import { SurfaceId } from '../../../shared/types';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
+import { actionLabel } from '../Settings/KeyboardSettings';
 import { useT } from '../../i18n';
 import '../../styles/command-palette.css';
 
@@ -29,13 +30,11 @@ function formatBinding(binding: ShortcutBinding): string {
   return parts.join('+');
 }
 
-function actionToLabel(action: ShortcutAction): string {
-  // Convert camelCase action names to readable labels
-  return action
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (c) => c.toUpperCase())
-    .trim();
-}
+// Labels come from the same map Settings and the F1 cheat-sheet read, so the
+// three views cannot drift and the palette is translated like everything else.
+// It used to de-camelCase the action name locally, which produced English-only
+// labels ("Reset Terminal") in every locale — invisible while the action names
+// happened to read like prose, and wrong the moment one didn't.
 
 function fuzzyMatch(needle: string, haystack: string): boolean {
   if (!needle) return true;
@@ -73,7 +72,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
     for (const [action, binding] of actionEntries) {
       items.push({
         id: `action:${action}`,
-        label: actionToLabel(action),
+        label: actionLabel(action, t),
         shortcut: formatBinding(binding),
         category: t('palette.category.actions'),
         action: () => onAction(action),

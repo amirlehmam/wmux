@@ -305,6 +305,7 @@ export const es: Translation = {
   'shortcutAction.togglePinWorkspace': 'Fijar/desfijar espacio de trabajo',
   'shortcutAction.markWorkspaceRead': 'Marcar espacio de trabajo como leído',
   'shortcutAction.toggleShortcutCheatSheet': 'Chuleta de atajos',
+  'shortcutAction.resetTerminal': 'Restablecer el estado del terminal',
   // Ajustes — Panel de perfiles de inicio rápido
   'settings.quickLaunch.title': 'Perfiles de inicio rápido',
   'settings.quickLaunch.hintPart1': 'Preajustes de pestaña de un clic mostrados en el menú ',
