@@ -27,10 +27,38 @@
 # Cache headers — orchestrator subpath
 # ============================================================================
 
-# Self-hosted Geist Mono woff2 — immutable, far-future cache
+# Other assets (favicon, logo, screenshots) — cached, but REVALIDATED.
+#
+# These were immutable alongside the fonts, which was wrong: `immutable` is a
+# promise that the bytes at this URL will never change, and it is only safe when
+# the filename carries a content hash. favicon.png and wmux_logo.png keep their
+# name across brand changes, so the promise was false — a visitor who had loaded
+# the old mark once would keep it for the full year without ever revalidating,
+# no matter how many times the site was redeployed. The fonts above are a
+# genuine immutable case (a woff2 that is replaced, not edited), so they keep it.
+#
+# An hour with must-revalidate costs one conditional request per asset per hour
+# and returns 304 when nothing changed.
+[[headers]]
+  for = "/orchestrator/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, must-revalidate"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, must-revalidate"
+
+# Self-hosted Geist Mono woff2 — a genuine immutable case: a webfont is replaced
+# under a new name, never edited in place.
 # (Two patterns: /orchestrator/* matches direct hits on wmux.org/orchestrator/,
 #  /assets/* matches plugin.wmux.org requests after the host rewrite — Netlify
 #  evaluates headers against the incoming URL, not the rewritten file path.)
+#
+# Deliberately placed AFTER the broader /assets/* rules above, not before. Both
+# patterns match a font URL, and rather than depend on Netlify resolving that by
+# path specificity, the narrower rule is simply last — so it wins under either
+# reading, most-specific-wins or last-one-wins.
 [[headers]]
   for = "/orchestrator/assets/fonts/*"
   [headers.values]
@@ -42,17 +70,6 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
     Access-Control-Allow-Origin = "*"
-
-# Other assets (favicon, future OG images) — immutable
-[[headers]]
-  for = "/orchestrator/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
 
 # CSS — short cache, must revalidate
 [[headers]]

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/icons/icon.png" alt="wmux" width="120" height="120" />
+</p>
+
 <h1 align="center">wmux</h1>
 <p align="center">A visibility layer for Claude Code on Windows — see what your AI agent does in real-time</p>
 
