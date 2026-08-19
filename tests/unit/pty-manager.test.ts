@@ -254,7 +254,18 @@ describe('resolveExistingShellPath', () => {
     const resolved = resolveExistingShellPath('pwsh.exe');
     expect(resolved).toBeTruthy();
     expect(fs.existsSync(resolved!)).toBe(true);
-    expect(resolved!.includes('WindowsApps')).toBe(false);
+    // Not "the path contains WindowsApps". On a machine where PowerShell 7 is
+    // installed ONLY from the Store — the case this test exists for — the real
+    // exe *is* under that tree, at
+    //   %ProgramFiles%\WindowsApps\Microsoft.PowerShell_<ver>_<arch>__<pub>\pwsh.exe
+    // and findStorePwsh returns exactly that. Excluding the whole tree therefore
+    // failed on the only installation shape that exercises the alias path.
+    //
+    // What must be excluded is the ALIAS, and the package directory is what
+    // tells them apart: the alias is a direct child of an App Execution Alias
+    // dir (%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe), the real exe never
+    // is. Same distinction the pwsh-preview case below draws.
+    expect(path.basename(path.dirname(resolved!)).toLowerCase()).not.toBe('windowsapps');
   });
 
   it('resolves pwsh-preview to a real Store pwsh.exe, not the alias', () => {
