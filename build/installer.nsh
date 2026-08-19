@@ -69,13 +69,34 @@
 ; immediately. That split is exactly what #137 reported, and it makes the app
 ; look half-updated even though every shipped asset is correct.
 ;
-; ie4uinit is the documented way to make the shell re-read them. `-show` is the
-; Windows 10/11 spelling and `-ClearIconCache` the older one; an unrecognised
-; flag is a no-op, so running both covers every supported host without a
-; version check. nsExec runs them silently — ExecShell would flash a console.
-; Failure is ignored on purpose: a stale icon must never fail an install.
+; The ie4uinit calls this used to rely on DO NOT WORK, and 1.5.1 is the release
+; that proved it. On a machine that had just updated, the installer had run both
+; spellings at 11:57; at 12:00 every iconcache_*.db still carried its timestamp
+; from the previous day — not one had been rewritten — and the taskbar was still
+; drawing the old mark. The reason is structural rather than a wrong flag: those
+; databases are memory-mapped by the running explorer.exe, which only flushes
+; them on shutdown, so no external process can invalidate them while it lives.
+; Killing Explorer and deleting the files was the only thing that worked, and an
+; installer must not do that silently.
+;
+; SHChangeNotify(SHCNE_ASSOCCHANGED) is the actual shell-notification path: it
+; asks the shell to re-query icons rather than trying to evict a file it does not
+; own. That reaches Explorer windows, the desktop and the Start-menu entry.
+;
+; It does NOT reach a shortcut the user has pinned to the taskbar. A pinned
+; button's bitmap lives in the taskband store, keyed on the AppUserModelId
+; (com.wmux.app), and nothing short of an Explorer restart or an unpin/repin
+; refreshes it. That case is left alone deliberately: it is cosmetic, and it
+; heals by itself at the next sign-out, since Explorer rewrites the cache as it
+; exits. Chasing it from an installer would cost more than the defect.
+;
+; ie4uinit is kept below it. It is close to a no-op on current Windows, but it
+; costs two silent spawns and covers hosts where the notification alone is not
+; enough. Failure stays ignored on purpose: a stale icon must never fail an
+; install.
 
 !macro customInstall
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
   nsExec::Exec '"$SYSDIR\ie4uinit.exe" -show'
   Pop $0
   nsExec::Exec '"$SYSDIR\ie4uinit.exe" -ClearIconCache'
