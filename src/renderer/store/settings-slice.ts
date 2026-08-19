@@ -419,7 +419,27 @@ export interface AppearancePrefs {
    * and light rather than being a third theme.
    */
   uiMode: 'classic' | 'trace';
+  /**
+   * Which generation of the `uiMode` default this blob has been reconciled
+   * against — see UI_MODE_DEFAULT_REV.
+   */
+  uiModeDefaultRev: number;
 }
+
+/**
+ * Bumped whenever we change what `uiMode` a user lands on without choosing.
+ *
+ * A plain default change would not have reached anybody: `setAppearancePrefs`
+ * persists the WHOLE merged object, so every user who had ever touched a theme,
+ * a background or the opacity slider already had `uiMode: 'classic'` on disk,
+ * and `{ ...DEFAULTS, ...loadPersisted() }` lets the stored value win. This rev
+ * is what makes the change land — a blob carrying an older rev is promoted
+ * exactly once, and the promotion stamps the current rev so a user who then
+ * picks classic back keeps it forever.
+ *
+ * 1 — 1.5.0, TRACE becomes the default sidebar for everyone.
+ */
+export const UI_MODE_DEFAULT_REV = 1;
 
 export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   // Defaults to 'dark' rather than 'system' — wmux shipped dark-only up to
@@ -429,11 +449,35 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   customBackgroundEnabled: false,
   customBackground: '',
   terminalBgOpacity: 88,
-  // Persisted state is built as { ...DEFAULTS, ...loadPersisted() }, so every
-  // existing user lands on 'classic' without a migration. The "opting in never
-  // happens by accident" guarantee is structural, not a thing to remember.
-  uiMode: 'classic',
+  uiMode: 'trace',
+  uiModeDefaultRev: UI_MODE_DEFAULT_REV,
 };
+
+/**
+ * appearancePrefs needs a loader of its own because it is the one pref block
+ * whose default has been changed under existing users (issue: TRACE by default).
+ *
+ * The rev is read off the RAW stored blob, deliberately not off the merged one:
+ * the defaults carry the current rev, so merging first would make every legacy
+ * blob look already-migrated and the promotion would never fire.
+ */
+export function loadAppearancePrefs(): AppearancePrefs {
+  const stored = loadPersisted<AppearancePrefs>(STORAGE_KEYS.appearancePrefs);
+  const merged = { ...DEFAULT_APPEARANCE_PREFS, ...stored };
+  if ((stored.uiModeDefaultRev ?? 0) >= UI_MODE_DEFAULT_REV) return merged;
+
+  const promoted: AppearancePrefs = {
+    ...merged,
+    uiMode: DEFAULT_APPEARANCE_PREFS.uiMode,
+    uiModeDefaultRev: UI_MODE_DEFAULT_REV,
+  };
+  // Write it back now rather than waiting for the next settings edit: the rev
+  // has to be on disk for this to stay a ONE-time promotion. Without the write,
+  // a user who switches back to classic and never opens Settings again would be
+  // re-promoted on every launch.
+  persist(STORAGE_KEYS.appearancePrefs, promoted);
+  return promoted;
+}
 
 // ─── Slice interface ──────────────────────────────────────────────────────────
 
@@ -492,7 +536,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   terminalPrefs:     { ...DEFAULT_TERMINAL_PREFS,     ...loadPersisted<TerminalPrefs>(STORAGE_KEYS.terminalPrefs) },
   notificationPrefs: { ...DEFAULT_NOTIFICATION_PREFS, ...loadPersisted<NotificationPrefs>(STORAGE_KEYS.notificationPrefs) },
   browserPrefs:      { ...DEFAULT_BROWSER_PREFS,      ...loadPersisted<BrowserPrefs>(STORAGE_KEYS.browserPrefs) },
-  appearancePrefs:   { ...DEFAULT_APPEARANCE_PREFS,   ...loadPersisted<AppearancePrefs>(STORAGE_KEYS.appearancePrefs) },
+  appearancePrefs:   loadAppearancePrefs(),
   quickLaunchProfiles: loadPersistedArray<QuickLaunchProfile>(STORAGE_KEYS.quickLaunchProfiles),
   language:          loadPersistedLanguage(),
   localeRevision:    getLocaleRevision(),

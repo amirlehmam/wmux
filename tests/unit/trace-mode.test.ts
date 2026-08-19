@@ -1,24 +1,80 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DEFAULT_APPEARANCE_PREFS } from '../../src/renderer/store/settings-slice';
+import {
+  DEFAULT_APPEARANCE_PREFS,
+  UI_MODE_DEFAULT_REV,
+} from '../../src/renderer/store/settings-slice';
 
-// TRACE is opt-in and must stay opt-in, must never leak into the terminal, and
-// must not lose information when motion is removed.
+// TRACE is the default since 1.5.0, must never leak into the terminal, and must
+// not lose information when motion is removed.
 
 const STYLES = path.join(__dirname, '..', '..', 'src', 'renderer', 'styles');
 const trace = fs.readFileSync(path.join(STYLES, 'trace.css'), 'utf-8');
 
-describe('opt-in', () => {
-  // Persisted state is built as { ...DEFAULTS, ...loadPersisted() }, so this
-  // default is the structural guarantee that no existing user gets opted in.
-  it('defaults to classic', () => {
-    expect(DEFAULT_APPEARANCE_PREFS.uiMode).toBe('classic');
+const APPEARANCE_KEY = 'wmux-appearance-prefs';
+
+// The settings file is read ONCE at module load, so a stored blob can only be
+// injected by stubbing window before a fresh import of the slice.
+async function loadWith(stored?: Record<string, unknown>) {
+  const writes: Record<string, unknown> = {};
+  vi.resetModules();
+  vi.stubGlobal('window', {
+    wmux: {
+      settings: {
+        getAllSync: () => (stored ? { [APPEARANCE_KEY]: stored } : {}),
+        set: (key: string, value: unknown) => { writes[key] = value; },
+      },
+    },
+  });
+  const mod = await import('../../src/renderer/store/settings-slice');
+  return { prefs: mod.loadAppearancePrefs(), writes };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.resetModules();
+});
+
+describe('default mode', () => {
+  it('ships TRACE as the default', () => {
+    expect(DEFAULT_APPEARANCE_PREFS.uiMode).toBe('trace');
   });
 
   it('is a separate axis from the theme, so it composes with light and dark', () => {
     expect(DEFAULT_APPEARANCE_PREFS).toHaveProperty('uiTheme');
     expect(trace).toMatch(/\[data-ui-theme='light'\]\[data-ui-mode='trace'\]/);
+  });
+
+  it('gives a fresh install TRACE', async () => {
+    const { prefs } = await loadWith();
+    expect(prefs.uiMode).toBe('trace');
+  });
+
+  // The whole point of the rev: a plain default change reaches nobody, because
+  // setAppearancePrefs persists the entire block and the stored 'classic' wins.
+  it('promotes an existing user whose stored blob predates the rev', async () => {
+    const { prefs, writes } = await loadWith({ uiTheme: 'light', uiMode: 'classic' });
+    expect(prefs.uiMode).toBe('trace');
+    expect(prefs.uiModeDefaultRev).toBe(UI_MODE_DEFAULT_REV);
+    // Promotion must be recorded on disk immediately, or it repeats every launch.
+    expect((writes[APPEARANCE_KEY] as { uiModeDefaultRev: number }).uiModeDefaultRev)
+      .toBe(UI_MODE_DEFAULT_REV);
+  });
+
+  it('keeps every other stored preference while promoting', async () => {
+    const { prefs } = await loadWith({ uiTheme: 'light', terminalBgOpacity: 40, uiMode: 'classic' });
+    expect(prefs.uiTheme).toBe('light');
+    expect(prefs.terminalBgOpacity).toBe(40);
+  });
+
+  // The promotion is one-time, so choosing classic afterwards has to stick —
+  // otherwise wmux overrides the user on every launch, which is worse than
+  // never having changed the default at all.
+  it('leaves a post-promotion classic choice alone', async () => {
+    const { prefs, writes } = await loadWith({ uiMode: 'classic', uiModeDefaultRev: UI_MODE_DEFAULT_REV });
+    expect(prefs.uiMode).toBe('classic');
+    expect(writes[APPEARANCE_KEY]).toBeUndefined();
   });
 });
 
