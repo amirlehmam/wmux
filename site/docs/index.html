@@ -14,7 +14,10 @@
   <meta property="og:url" content="https://wmux.org/docs" />
   <meta property="og:site_name" content="wmux" />
 
-  <link rel="icon" type="image/png" href="../assets/wmux_logo.png" />
+  <!-- favicon.png, not wmux_logo.png: this slot renders at 16px and was loading
+       the 1024px master. ?v= is a one-time break out of the immutable cache
+       these were served under until 1.5.1 (see netlify.toml). -->
+  <link rel="icon" type="image/png" href="../assets/favicon.png?v=1.5.1" />
   <link rel="canonical" href="https://wmux.org/docs" />
 
   <style>
@@ -388,7 +391,7 @@
     <div class="doc-header-inner">
       <div class="doc-header-left">
         <a href="/" class="logo-link">
-          <img src="../assets/wmux_logo.png" alt="wmux" />
+          <img src="../assets/wmux_logo.png?v=1.5.1" alt="wmux" />
           <span>wmux</span>
         </a>
         <span class="crumb">/ docs</span>

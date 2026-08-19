@@ -5,8 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>wmux — Le terminal concu pour Claude Code</title>
   <meta name="description" content="Application Windows basee sur Electron. Onglets verticaux, notifications quand les agents ont besoin d'attention, panneaux divises, navigateur integre et une API pipe pour l'automatisation." />
-  <link rel="icon" type="image/png" href="assets/favicon.png" />
-  <link rel="apple-touch-icon" href="assets/favicon.png" />
+  <!-- ?v= is a one-time cache break, not decoration. These files were served
+       with `immutable, max-age=31536000` until 1.5.1, and an immutable response
+       is never revalidated — every returning visitor would have kept the old
+       mark for a year whatever we deployed. A query string is part of the
+       browser's cache key, so a new one is the only way out. netlify.toml now
+       serves them must-revalidate, so this should not need bumping again. -->
+  <link rel="icon" type="image/png" href="assets/favicon.png?v=1.5.1" />
+  <link rel="apple-touch-icon" href="assets/favicon.png?v=1.5.1" />
 
   <style>
     @font-face {
@@ -501,7 +507,7 @@
     <div class="header-inner">
       <div class="header-left">
         <a href="/" class="logo-link">
-          <img src="assets/wmux_logo.png" alt="wmux" class="logo-icon" />
+          <img src="assets/wmux_logo.png?v=1.5.1" alt="wmux" class="logo-icon" />
           <span>wmux</span>
         </a>
         <nav>
@@ -530,7 +536,7 @@
     <!-- HERO -->
     <section class="hero">
       <div class="hero-logo fade-in">
-        <img src="assets/wmux_logo.png" alt="wmux logo" />
+        <img src="assets/wmux_logo.png?v=1.5.1" alt="wmux logo" />
         <span>wmux</span>
       </div>
 
