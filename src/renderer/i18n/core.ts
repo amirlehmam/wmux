@@ -30,6 +30,7 @@ import { sv } from './locales/sv';
 import { tr } from './locales/tr';
 import { uk } from './locales/uk';
 import { zh } from './locales/zh';
+import { zhTW } from './locales/zh-TW';
 
 // Adding a bundled language = one ./locales/xx.ts file + one row here.
 // `Language`, SUPPORTED_LANGUAGES, the Settings dropdown and the persistence
@@ -49,6 +50,7 @@ const BUILTIN = [
   { code: 'ru', label: 'Русский', dict: ru },
   { code: 'uk', label: 'Українська', dict: uk },
   { code: 'zh', label: '中文', dict: zh },
+  { code: 'zh-TW', label: '繁體中文', dict: zhTW },
   { code: 'ja', label: '日本語', dict: ja },
   { code: 'ko', label: '한국어', dict: ko },
   { code: 'hi', label: 'हिन्दी', dict: hi },

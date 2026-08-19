@@ -45,7 +45,7 @@ describe('i18n: translate (issue #56)', () => {
   it('exposes the shipped languages', () => {
     // Pinned on purpose: adding a language must be a deliberate edit here, so
     // the shipped set can never grow (or shrink) unnoticed.
-    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'pl', 'tr', 'ru', 'uk', 'zh', 'ja', 'ko', 'hi', 'sv', 'cs']);
+    expect(SUPPORTED_LANGUAGES).toEqual(['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'pl', 'tr', 'ru', 'uk', 'zh', 'zh-TW', 'ja', 'ko', 'hi', 'sv', 'cs']);
     expect(LANGUAGES.map((l) => l.label)).toEqual([
       'English',
       'Français',
@@ -59,6 +59,7 @@ describe('i18n: translate (issue #56)', () => {
       'Русский',
       'Українська',
       '中文',
+      '繁體中文',
       '日本語',
       '한국어',
       'हिन्दी',
