@@ -38,7 +38,7 @@ export default function SettingsWindow({ onClose }: SettingsWindowProps) {
   return (
     <div
       className="settings-overlay"
-      onClick={(e) => {
+      onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
