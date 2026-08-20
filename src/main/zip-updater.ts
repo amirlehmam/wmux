@@ -24,6 +24,13 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 // we write a tiny cmd helper, detach it, and quit. The helper waits for
 // this PID to exit, robocopies the payload over the install root, strips
 // Mark of the Web, and relaunches.
+//
+// No extra runtime downloads (no curl, no npm unzip, no Invoke-WebRequest):
+//   download — Electron net.request (Chromium). Always present in a packaged build.
+//   extract  — %SystemRoot%\System32\tar.exe (Windows 10 1803+, which Electron 43
+//              already requires), then Windows PowerShell Expand-Archive.
+//   apply    — cmd.exe + robocopy/tasklist/timeout/findstr, all via System32.
+//   MOTW     — Unblock-File is best-effort; a missing PowerShell does not block relaunch.
 
 const UNINSTALLER_NAME = 'Uninstall wmux.exe';
 
@@ -86,6 +93,7 @@ export function buildApplyUpdateCmd(): string {
   return [
     '@echo off',
     'setlocal EnableExtensions',
+    'set "SYS=%SystemRoot%\\System32"',
     'set "PID=%~1"',
     'set "SRC=%~2"',
     'set "DST=%~3"',
@@ -93,13 +101,14 @@ export function buildApplyUpdateCmd(): string {
     'if not defined PID exit /b 1',
     'if not exist "%SRC%\\wmux.exe" exit /b 1',
     ':wait',
-    'timeout /t 1 /nobreak >nul',
-    'tasklist /FI "PID eq %PID%" 2>nul | findstr /I /C:" %PID% " >nul',
+    '"%SYS%\\timeout.exe" /t 1 /nobreak >nul',
+    '"%SYS%\\tasklist.exe" /FI "PID eq %PID%" 2>nul | "%SYS%\\findstr.exe" /I /C:" %PID% " >nul',
     'if not errorlevel 1 goto wait',
-    'timeout /t 2 /nobreak >nul',
-    'robocopy "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
+    '"%SYS%\\timeout.exe" /t 2 /nobreak >nul',
+    '"%SYS%\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
     'if %ERRORLEVEL% GEQ 8 exit /b 1',
-    'powershell.exe -NoProfile -NonInteractive -Command "Get-ChildItem -LiteralPath $env:DST -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue"',
+    // MOTW strip is best-effort: a constrained PowerShell must not block relaunch.
+    'if exist "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -Command "Get-ChildItem -LiteralPath $env:DST -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1',
     'start "" "%EXE%"',
     'rmdir /s /q "%SRC%"',
     'del "%~f0"',
@@ -143,8 +152,10 @@ export async function extractZip(zipPath: string, destDir: string): Promise<void
     }
   }
   const ps = system32('WindowsPowerShell\\v1.0\\powershell.exe');
-  const psExe = fs.existsSync(ps) ? ps : 'powershell.exe';
-  await runHidden(psExe, [
+  if (!fs.existsSync(ps)) {
+    throw new Error('could not extract update (tar.exe failed and Windows PowerShell is missing)');
+  }
+  await runHidden(ps, [
     '-NoProfile',
     '-NonInteractive',
     '-Command',

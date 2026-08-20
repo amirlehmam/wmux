@@ -105,10 +105,11 @@ describe('buildApplyUpdateCmd', () => {
   const cmd = buildApplyUpdateCmd();
 
   it('waits for the old process, copies, unblocks, and relaunches', () => {
-    expect(cmd).toContain('robocopy');
+    expect(cmd).toContain('robocopy.exe');
     expect(cmd).toContain('Unblock-File');
     expect(cmd).toMatch(/start "" "%EXE%"/);
-    expect(cmd).toContain('tasklist');
+    expect(cmd).toContain('tasklist.exe');
+    expect(cmd).toContain('%SystemRoot%\\System32');
   });
 
   it('does not embed caller paths — those arrive as arguments', () => {
