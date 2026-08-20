@@ -35,6 +35,22 @@ vi.mock('electron-updater', () => ({
   },
 }));
 
+const zipMocks = vi.hoisted(() => ({
+  resolvePortableZipTarget: vi.fn(),
+  runPortableZipUpdate: vi.fn(),
+  applyStagedPortableUpdate: vi.fn(),
+}));
+
+vi.mock('../../src/main/zip-updater', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/main/zip-updater')>();
+  return {
+    ...actual,
+    resolvePortableZipTarget: zipMocks.resolvePortableZipTarget,
+    runPortableZipUpdate: zipMocks.runPortableZipUpdate,
+    applyStagedPortableUpdate: zipMocks.applyStagedPortableUpdate,
+  };
+});
+
 import { isMissingChannelFileError, isUpdaterDisabled } from '../../src/main/updater';
 
 /**
@@ -153,6 +169,13 @@ describe('in-app update (issue #125)', () => {
     expect(u.autoUpdater.downloadUpdate).not.toHaveBeenCalled();
   });
 
+  it('does not download when electron-updater reports the current version', async () => {
+    const u = await freshUpdater();
+    u.autoUpdater.checkForUpdates.mockResolvedValue({ updateInfo: { version: fakeApp.getVersion() } });
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: false, reason: 'no_update' });
+    expect(u.autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+  });
+
   it('does not start a second download while one is in flight', async () => {
     const u = await freshUpdater();
     u.autoUpdater.checkForUpdates.mockResolvedValue({ updateInfo: { version: '9.9.9' } });
@@ -239,5 +262,63 @@ describe('install-root writability (issue #167)', () => {
     const u = await freshUpdater();
     fakeApp.isPackaged = false;
     expect(u.canSelfUpdate()).toBe(false);
+  });
+});
+
+/**
+ * Zip extracts (the README install) have wmux.exe and no NSIS uninstaller.
+ * NsisUpdater cannot replace that layout (issue #96); the badge click has to
+ * take the download-extract-swap path instead of checkForUpdates().
+ */
+describe('portable zip install', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-portable-'));
+    fs.writeFileSync(path.join(root, 'wmux.exe'), '');
+    fakeApp.exePath = path.join(root, 'wmux.exe');
+    fakeApp.isPackaged = true;
+    delete process.env.WMUX_DISABLE_UPDATER;
+    zipMocks.resolvePortableZipTarget.mockReset();
+    zipMocks.runPortableZipUpdate.mockReset().mockReturnValue(new Promise(() => {}));
+    zipMocks.applyStagedPortableUpdate.mockReset();
+  });
+
+  it('does not ask NsisUpdater to download', async () => {
+    zipMocks.resolvePortableZipTarget.mockResolvedValue({
+      version: '9.9.9',
+      asset: { name: 'wmux-9.9.9-win-x64.zip', browser_download_url: 'https://example.test/x.zip', size: 10 },
+    });
+    const u = await freshUpdater();
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    expect(u.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(zipMocks.resolvePortableZipTarget).toHaveBeenCalledTimes(1);
+    expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
+    expect(u.getUpdateState()).toMatchObject({ phase: 'downloading', version: '9.9.9' });
+  });
+
+  it('reports no_update when the zip install is already current', async () => {
+    zipMocks.resolvePortableZipTarget.mockRejectedValue(
+      Object.assign(new Error('no_update'), { code: 'NO_UPDATE' }),
+    );
+    const u = await freshUpdater();
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: false, reason: 'no_update' });
+    expect(zipMocks.runPortableZipUpdate).not.toHaveBeenCalled();
+    expect(u.getUpdateState().phase).toBe('idle');
+  });
+
+  it('falls back to the release page when the release has no win-x64 zip', async () => {
+    zipMocks.resolvePortableZipTarget.mockRejectedValue(
+      Object.assign(new Error('no zip'), { code: 'NO_ZIP_ASSET' }),
+    );
+    const u = await freshUpdater();
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: false, reason: 'no_zip_asset' });
+  });
+
+  it('skips NsisUpdater init so a zip extract never enters the #96 loop', async () => {
+    const u = await freshUpdater();
+    u.initAutoUpdater();
+    expect(u.autoUpdater.on).not.toHaveBeenCalled();
+    expect(u.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
   });
 });
