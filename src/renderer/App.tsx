@@ -9,6 +9,7 @@ import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from
 import { aggregateProgress } from './store/progress-slice';
 import { isDiffTabDismissed } from './store/surface-slice';
 import Sidebar from './components/Sidebar/Sidebar';
+import { applyPrCommand } from './pr-metadata';
 import Titlebar from './components/Titlebar/Titlebar';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import SettingsWindow from './components/Settings/SettingsWindow';
@@ -330,18 +331,15 @@ function handleSurfaceMetadata(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): voi
     case 'clear_git_branch':
       deps.updateWorkspaceMetadata(ws.id, { gitBranch: undefined, gitDirty: undefined });
       break;
-    case 'report_pr': {
-      const [num, status, ...labelParts] = cmd.args || [];
-      deps.updateWorkspaceMetadata(ws.id, {
-        prNumber: num ? parseInt(num) : undefined,
-        prStatus: status as any,
-        prLabel: labelParts.join(' '),
-      });
+    case 'report_pr':
+    case 'clear_pr': {
+      // See pr-metadata.ts: `clear_pr` is gated on the surface that reported
+      // the PR still being the one asking to clear it, so one pane's poller
+      // can't wipe another pane's PR out of a shared workspace row.
+      const patch = applyPrCommand(cmd, ws);
+      if (patch) deps.updateWorkspaceMetadata(ws.id, patch);
       break;
     }
-    case 'clear_pr':
-      deps.updateWorkspaceMetadata(ws.id, { prNumber: undefined, prStatus: undefined, prLabel: undefined });
-      break;
     case 'report_shell_state':
       applyShellState(cmd, ws, deps);
       break;
@@ -378,7 +376,7 @@ function handleAgentLifecycleEvent(event: any, addNotification: StoreAction, t: 
  * (enforced in replaceSoleTerminalSurface), and not itself an agent surface.
  * Returns true when the spawn was handled via replacement.
  */
-function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: (surfaceId: any, meta: any) => void): boolean {
+export function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: (surfaceId: any, meta: any) => void): boolean {
   if (!event.replaceTab) return false;
   const state = useStore.getState();
   const leaf = findLeaf(ws.splitTree, event.paneId);
@@ -393,6 +391,13 @@ function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: (surfac
   // Intentionally not pushed onto the reopen-closed stack — the replaced
   // surface is an idle default shell, not user work.
   window.wmux?.pty?.kill(replacedSurfaceId);
+  // This kills the PTY directly instead of routing through closeSurface, so
+  // it must run the same ownership-gated PR-badge clear closeSurface would
+  // have run — otherwise a replaced tab that happened to hold the PR badge
+  // leaves `prSurfaceId` pointing at a surface that no longer exists, and
+  // since clear_pr is only honoured from its owner (see pr-metadata.ts), the
+  // badge becomes unclearable by anything, ever.
+  state.clearPrIfSurfaceOwner(event.workspaceId, [replacedSurfaceId]);
   return true;
 }
 

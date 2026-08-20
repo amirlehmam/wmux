@@ -10,7 +10,7 @@ import { ProgressAddon } from '@xterm/addon-progress';
 import { useStore } from '../store';
 import { useT } from '../i18n';
 import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
-import { SplitNode, ThemeConfig } from '../../shared/types';
+import { SplitNode, SurfaceId, ThemeConfig } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
 import { activateTerminalLink, terminalLinkHandler } from '../utils/terminal-links';
 import {
@@ -816,6 +816,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // An exited process can't be making progress — drop any leftover
         // OSC 9;4 indicator (same stuck-badge reasoning as above).
         useStore.getState().setSurfaceProgress(id, null);
+        // Same reasoning again for the sidebar's PR badge: the shell that
+        // reported it is gone, and the tab it left behind can no longer
+        // retract its own claim. Ownership-gated inside, so this is a no-op
+        // for every pane that wasn't the one holding the badge.
+        useStore.getState().clearPrForSurface(id as SurfaceId);
         // Mouse modes belong to the application that asked for them, and it is
         // gone. Keeping them would replay tracking into the next terminal on
         // this surface — a plain shell that never requested it — and would also

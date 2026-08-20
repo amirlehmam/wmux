@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import { create } from 'zustand';
 import { createWorkspaceSlice, WorkspaceSlice } from '../../src/renderer/store/workspace-slice';
 import { createSurfaceSlice, isDiffTabDismissed, SurfaceSlice } from '../../src/renderer/store/surface-slice';
+import { getAllPaneIds, splitNode } from '../../src/renderer/store/split-utils';
 import { WorkspaceId, PaneId, SurfaceId, SplitNode } from '../../src/shared/types';
 
 type TestStore = WorkspaceSlice & SurfaceSlice;
@@ -111,6 +114,195 @@ describe('surface-slice', () => {
       const leaf = currentLeaf();
       expect(leaf.surfaces).toHaveLength(1);
       expect(leaf.activeSurfaceIndex).toBe(0);
+    });
+  });
+
+  // Issue #4 (continued): closing the pane/tab that reported a PR used to
+  // leave its badge on the sidebar row forever. A killed PTY never runs a
+  // shell-side exit trap, so `clear_pr` never arrives for a Ctrl+W or `wmux
+  // close-pane` — the store has to notice the loss itself, at the same state
+  // transition that already reaps the PTY (see pty-teardown.ts).
+  describe('PR badge teardown on close', () => {
+    function workspace() {
+      return useStore.getState().workspaces.find((w) => w.id === workspaceId)!;
+    }
+
+    function reportPr(surfaceId: SurfaceId) {
+      useStore.getState().updateWorkspaceMetadata(workspaceId, {
+        prNumber: 42,
+        prStatus: 'open',
+        prLabel: 'Fix thing',
+        prSurfaceId: surfaceId,
+      });
+    }
+
+    it('closeSurface clears the badge when the closed surface is the one that reported it', () => {
+      // Two tabs so this exercises closeSurface's own branch, not the
+      // last-tab delegation to closePane.
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const owner = currentLeaf().surfaces[0].id;
+      reportPr(owner);
+
+      useStore.getState().closeSurface(workspaceId, paneId, owner);
+
+      expect(workspace().prNumber).toBeUndefined();
+      expect(workspace().prSurfaceId).toBeUndefined();
+    });
+
+    it('closeSurface leaves the badge alone when a different surface is closed', () => {
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const owner = currentLeaf().surfaces[0].id;
+      const other = currentLeaf().surfaces[1].id;
+      reportPr(owner);
+
+      useStore.getState().closeSurface(workspaceId, paneId, other);
+
+      expect(workspace().prNumber).toBe(42);
+      expect(workspace().prSurfaceId).toBe(owner);
+    });
+
+    it('closePane clears the badge when the reporting surface lives in that pane', () => {
+      // Two panes so the workspace survives the close and can be inspected.
+      const secondPaneId = `pane-test-2` as PaneId;
+      useStore.getState().updateSplitTree(
+        workspaceId,
+        splitNode(workspace().splitTree, paneId, secondPaneId, 'terminal', 'horizontal'),
+      );
+      const owner = currentLeaf().surfaces[0].id;
+      reportPr(owner);
+
+      useStore.getState().closePane(workspaceId, paneId);
+
+      expect(getAllPaneIds(workspace().splitTree)).toEqual([secondPaneId]);
+      expect(workspace().prNumber).toBeUndefined();
+      expect(workspace().prSurfaceId).toBeUndefined();
+    });
+
+    it('closeOtherSurfaces clears the badge when the reporting surface is among the ones dropped', () => {
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const owner = currentLeaf().surfaces[0].id;
+      const keep = currentLeaf().surfaces[1].id;
+      reportPr(owner);
+
+      useStore.getState().closeOtherSurfaces(workspaceId, paneId, keep);
+
+      expect(workspace().prNumber).toBeUndefined();
+      expect(workspace().prSurfaceId).toBeUndefined();
+    });
+
+    it('closeSurfacesToRight clears the badge when the reporting surface is among the ones dropped', () => {
+      const first = currentLeaf().surfaces[0].id;
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const owner = currentLeaf().surfaces[1].id;
+      reportPr(owner);
+
+      useStore.getState().closeSurfacesToRight(workspaceId, paneId, first);
+
+      expect(workspace().prNumber).toBeUndefined();
+      expect(workspace().prSurfaceId).toBeUndefined();
+    });
+
+    it('closePane leaves the badge alone when the owner lives in a different pane', () => {
+      const secondPaneId = `pane-test-2` as PaneId;
+      useStore.getState().updateSplitTree(
+        workspaceId,
+        splitNode(workspace().splitTree, paneId, secondPaneId, 'terminal', 'horizontal'),
+      );
+      const owner = currentLeaf().surfaces[0].id;
+      reportPr(owner);
+
+      // Close the OTHER pane — the owner's pane is untouched.
+      useStore.getState().closePane(workspaceId, secondPaneId);
+
+      expect(workspace().prNumber).toBe(42);
+      expect(workspace().prSurfaceId).toBe(owner);
+    });
+
+    it('closeOtherSurfaces leaves the badge alone when the owner is the tab being kept', () => {
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const owner = currentLeaf().surfaces[0].id;
+      reportPr(owner);
+
+      useStore.getState().closeOtherSurfaces(workspaceId, paneId, owner);
+
+      expect(workspace().prNumber).toBe(42);
+      expect(workspace().prSurfaceId).toBe(owner);
+    });
+
+    it('closeSurfacesToRight leaves the badge alone when the owner is left of the cut', () => {
+      const owner = currentLeaf().surfaces[0].id;
+      reportPr(owner);
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const second = currentLeaf().surfaces[1].id;
+
+      // Cut after `second`, which is right of `owner` — owner is never dropped.
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      useStore.getState().closeSurfacesToRight(workspaceId, paneId, second);
+
+      expect(workspace().prNumber).toBe(42);
+      expect(workspace().prSurfaceId).toBe(owner);
+    });
+
+    it('moveSurface does NOT clear the badge — the surface still exists, just under a different pane', () => {
+      const secondPaneId = `pane-test-2` as PaneId;
+      useStore.getState().updateSplitTree(
+        workspaceId,
+        splitNode(workspace().splitTree, paneId, secondPaneId, 'terminal', 'horizontal'),
+      );
+      const owner = currentLeaf().surfaces[0].id;
+      reportPr(owner);
+
+      useStore.getState().moveSurface(workspaceId, paneId, owner, secondPaneId);
+
+      expect(workspace().prNumber).toBe(42);
+      expect(workspace().prSurfaceId).toBe(owner);
+    });
+
+    // The shell dying inside a still-open tab reaches none of the close
+    // transitions above, so the renderer's `pty:exit` handler answers for it
+    // through clearPrForSurface — which has only a surface id to go on.
+    it('clearPrForSurface clears the badge owned by an exited surface, wherever it lives', () => {
+      const owner = currentLeaf().surfaces[0].id;
+      reportPr(owner);
+
+      useStore.getState().clearPrForSurface(owner);
+
+      expect(workspace().prNumber).toBeUndefined();
+      expect(workspace().prSurfaceId).toBeUndefined();
+    });
+
+    it('clearPrForSurface leaves a badge belonging to another surface alone', () => {
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const owner = currentLeaf().surfaces[0].id;
+      const other = currentLeaf().surfaces[1].id;
+      reportPr(owner);
+
+      useStore.getState().clearPrForSurface(other);
+
+      expect(workspace().prNumber).toBe(42);
+      expect(workspace().prSurfaceId).toBe(owner);
+    });
+
+    it('clearPrForSurface is a no-op when no workspace owns a badge at all', () => {
+      const orphan = currentLeaf().surfaces[0].id;
+
+      expect(() => useStore.getState().clearPrForSurface(orphan)).not.toThrow();
+      expect(workspace().prNumber).toBeUndefined();
+    });
+
+    // The action above is only useful if the exit handler actually calls it,
+    // and that handler lives inside a hook that needs a real xterm instance to
+    // exercise. Reading the wiring back out of the source is the cheap half of
+    // that: it cannot prove the handler runs, but it does catch the call being
+    // dropped in a later edit, which would put the badge straight back to
+    // outliving its shell.
+    it('is wired into the pty:exit handler, alongside the other stuck-badge heals', () => {
+      const hook = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'useTerminal.ts'),
+        'utf8',
+      );
+      const exitHandler = hook.slice(hook.indexOf('window.wmux.pty.onExit('));
+      expect(exitHandler).toMatch(/clearPrForSurface\(id/);
     });
   });
 
