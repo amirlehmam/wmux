@@ -4,14 +4,15 @@ import { useStore } from './store';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
 import SplitContainer from './components/SplitPane/SplitContainer';
-import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds } from './store/split-utils';
+import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds, buildDefaultSplitTree } from './store/split-utils';
+import { resolveDefaultSplitTree } from './store/workspace-slice';
 import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
 import { aggregateProgress } from './store/progress-slice';
 import { isDiffTabDismissed } from './store/surface-slice';
 import Sidebar from './components/Sidebar/Sidebar';
 import { applyPrCommand } from './pr-metadata';
 import Titlebar from './components/Titlebar/Titlebar';
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcuts';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
@@ -401,42 +402,6 @@ export function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: 
   return true;
 }
 
-/** Build the default 3-terminal split layout for new workspaces */
-function buildDefaultSplitTree(): SplitNode {
-  return {
-    type: 'branch',
-    direction: 'vertical',
-    ratio: 0.5,
-    children: [
-      {
-        type: 'branch',
-        direction: 'horizontal',
-        ratio: 0.5,
-        children: [
-          {
-            type: 'leaf',
-            paneId: `pane-${uuid()}` as PaneId,
-            surfaces: [{ id: `surf-${uuid()}` as SurfaceId, type: 'terminal' }],
-            activeSurfaceIndex: 0,
-          },
-          {
-            type: 'leaf',
-            paneId: `pane-${uuid()}` as PaneId,
-            surfaces: [{ id: `surf-${uuid()}` as SurfaceId, type: 'terminal' }],
-            activeSurfaceIndex: 0,
-          },
-        ],
-      },
-      {
-        type: 'leaf',
-        paneId: `pane-${uuid()}` as PaneId,
-        surfaces: [{ id: `surf-${uuid()}` as SurfaceId, type: 'terminal' }],
-        activeSurfaceIndex: 0,
-      },
-    ],
-  };
-}
-
 export default function App() {
   const {
     workspaces,
@@ -498,12 +463,10 @@ export default function App() {
   // Global keyboard listener for command palette toggle (Ctrl+Shift+P)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
-      const binding = shortcuts.commandPalette;
-      const matches =
-        e.key === binding.key &&
-        !!binding.ctrl === e.ctrlKey &&
-        !!binding.shift === e.shiftKey &&
-        !!binding.alt === e.altKey;
+      // matchesBinding lowercases single-letter keys before comparing — Shift
+      // uppercases e.key (Ctrl+Shift+P fires with e.key='P'), but bindings are
+      // stored lowercase. A naive e.key === binding.key here never matched.
+      const matches = matchesBinding(e, shortcuts.commandPalette);
 
       if (matches) {
         e.preventDefault();
@@ -554,11 +517,14 @@ export default function App() {
       // 'fresh' means main deliberately wants this window empty — a named
       // session must not be cloned into it (issue #143).
       if (outcome !== 'fresh' && await restoreNamedSession(t, setSidebarWidth)) return;
-      // Nothing to restore — create the default workspace.
+      // Nothing to restore — create the default workspace. Explicitly resolves
+      // to the configured default layout if one is set, else the classic
+      // 3-pane factory layout — first-launch's own historical baseline,
+      // distinct from Ctrl+N/CLI's single-pane one (see resolveDefaultSplitTree).
       if (useStore.getState().workspaces.length === 0) {
         createWorkspace({
           title: t('app.firstSessionTitle', 'Session 1'),
-          splitTree: buildDefaultSplitTree(),
+          splitTree: resolveDefaultSplitTree(useStore.getState, buildDefaultSplitTree),
         });
       }
     })();
@@ -848,7 +814,9 @@ export default function App() {
     const wsCount = useStore.getState().workspaces.length;
     const newId = createWorkspace({
       title: t('app.sessionTitle', 'Session {n}').replace('{n}', String(wsCount + 1)),
-      splitTree: buildDefaultSplitTree(),
+      // Sidebar "+" button's own historical baseline (3-pane), distinct from
+      // Ctrl+N/CLI — see resolveDefaultSplitTree's doc comment.
+      splitTree: resolveDefaultSplitTree(useStore.getState, buildDefaultSplitTree),
     });
     selectWorkspace(newId);
   }, [createWorkspace, selectWorkspace, t]);

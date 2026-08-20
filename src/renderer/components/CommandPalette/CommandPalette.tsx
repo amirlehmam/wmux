@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { SurfaceId } from '../../../shared/types';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { actionLabel } from '../Settings/KeyboardSettings';
+import { instantiateLayout } from '../../store/split-utils';
 import { useT } from '../../i18n';
 import '../../styles/command-palette.css';
 
@@ -50,7 +51,10 @@ function fuzzyMatch(needle: string, haystack: string): boolean {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CommandPalette({ onClose, onAction }: CommandPaletteProps) {
-  const { shortcuts, workspaces, activeWorkspaceId, selectWorkspace } = useStore();
+  const {
+    shortcuts, workspaces, activeWorkspaceId, selectWorkspace,
+    savedLayouts, createWorkspace, saveCurrentLayoutAsPreset,
+  } = useStore();
   const t = useT();
 
   const [query, setQuery] = useState('');
@@ -128,6 +132,40 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
       },
     });
 
+    // Category: Layouts — saved pane arrangements
+    items.push({
+      id: 'command:save-current-layout',
+      label: t('palette.saveCurrentLayout', 'Save current layout as new preset'),
+      category: t('palette.category.layouts', 'Layouts'),
+      action: () => {
+        onClose();
+        const id = saveCurrentLayoutAsPreset(
+          t('settings.workspacePanel.newLayoutName', 'Layout {n}').replace('{n}', String(savedLayouts.length + 1)),
+        );
+        // null means no active workspace to capture — an edge case, but a
+        // silent no-op here would look identical to "worked" from the palette.
+        if (!id) {
+          (window as any).wmux?.notification?.fire({
+            surfaceId: '',
+            text: t('palette.saveCurrentLayoutFailed', 'No active workspace to save as a layout.'),
+            title: 'wmux',
+          });
+        }
+      },
+    });
+    for (const layout of savedLayouts) {
+      items.push({
+        id: `layout:${layout.id}`,
+        label: t('palette.newWorkspaceWithLayout', 'New Workspace: {name}').replace('{name}', layout.name),
+        category: t('palette.category.layouts', 'Layouts'),
+        action: () => {
+          const newId = createWorkspace({ splitTree: instantiateLayout(layout.splitTree) });
+          selectWorkspace(newId);
+          onClose();
+        },
+      });
+    }
+
     // Category: Workspaces — switch to each workspace by name
     for (const ws of workspaces) {
       const isCurrent = ws.id === activeWorkspaceId;
@@ -158,7 +196,10 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
     }
 
     return items;
-  }, [shortcuts, workspaces, activeWorkspaceId, selectWorkspace, onAction, onClose, t]);
+  }, [
+    shortcuts, workspaces, activeWorkspaceId, selectWorkspace, onAction, onClose, t,
+    savedLayouts, createWorkspace, saveCurrentLayoutAsPreset,
+  ]);
 
   // Filter based on query
   const filteredItems = useMemo(() => {

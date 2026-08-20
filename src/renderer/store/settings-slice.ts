@@ -1,5 +1,5 @@
 import { StateCreator } from 'zustand';
-import { QuickLaunchProfile } from '../../shared/types';
+import { QuickLaunchProfile, SavedLayout } from '../../shared/types';
 import {
   Language,
   applyUserLocales,
@@ -29,6 +29,7 @@ const STORAGE_KEYS = {
   browserPrefs:      'wmux-browser-prefs',
   shortcuts:         'wmux-shortcuts',
   quickLaunchProfiles: 'wmux-quick-launch-profiles',
+  savedLayouts:      'wmux-saved-layouts',
   language:          'wmux-language',
   appearancePrefs:   'wmux-appearance-prefs',
 } as const;
@@ -303,6 +304,18 @@ export interface WorkspacePrefs {
    * Programmatic closes (CLI/agents via the pipe) never prompt.
    */
   confirmWorkspaceClose: boolean;
+  /**
+   * Which `savedLayouts` entry (by id) new workspaces start with — Ctrl+N, the
+   * sidebar "+" button, CLI `wmux new-workspace`, "Open folder as workspace",
+   * and the first-launch/empty-session workspace all read this. `null` (the
+   * default) means each entry point falls back to its OWN pre-existing
+   * baseline, unchanged from before saved layouts existed: a single plain pane
+   * for Ctrl+N/CLI/"Open folder", or wmux's classic 3-pane layout for the
+   * sidebar "+" button and first launch. Dangling ids (the saved layout was
+   * deleted) are treated the same as `null` by the one place that resolves
+   * this (`resolveDefaultSplitTree` in workspace-slice.ts).
+   */
+  defaultLayoutId: string | null;
 }
 
 export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
@@ -312,6 +325,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   showWelcomeScreen: true,
   autoOpenDiffTab: true,
   confirmWorkspaceClose: false,
+  defaultLayoutId: null,
 };
 
 // ─── Terminal settings ────────────────────────────────────────────────────────
@@ -493,6 +507,7 @@ export interface SettingsSlice {
   appearancePrefs: AppearancePrefs;
   /** Global quick-launch profiles surfaced in the `+` caret dropdown (issue #32). */
   quickLaunchProfiles: QuickLaunchProfile[];
+  savedLayouts: SavedLayout[];
   /** Selected UI language (issue #56). */
   language: Language;
   /**
@@ -520,6 +535,7 @@ export interface SettingsSlice {
   setBrowserPrefs(prefs: Partial<BrowserPrefs>): void;
   setAppearancePrefs(prefs: Partial<AppearancePrefs>): void;
   setQuickLaunchProfiles(profiles: QuickLaunchProfile[]): void;
+  setSavedLayouts(layouts: SavedLayout[]): void;
   setLanguage(language: Language): void;
   /** Re-read ~/.wmux/locales into the i18n registry and repaint (issue #147). */
   reloadUserLocales(payload: unknown): void;
@@ -538,6 +554,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   browserPrefs:      { ...DEFAULT_BROWSER_PREFS,      ...loadPersisted<BrowserPrefs>(STORAGE_KEYS.browserPrefs) },
   appearancePrefs:   loadAppearancePrefs(),
   quickLaunchProfiles: loadPersistedArray<QuickLaunchProfile>(STORAGE_KEYS.quickLaunchProfiles),
+  savedLayouts:      loadPersistedArray<SavedLayout>(STORAGE_KEYS.savedLayouts),
   language:          loadPersistedLanguage(),
   localeRevision:    getLocaleRevision(),
   broadcastInputActive: false,
@@ -610,6 +627,11 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setQuickLaunchProfiles(profiles: QuickLaunchProfile[]): void {
     persist(STORAGE_KEYS.quickLaunchProfiles, profiles);
     set({ quickLaunchProfiles: profiles });
+  },
+
+  setSavedLayouts(layouts: SavedLayout[]): void {
+    persist(STORAGE_KEYS.savedLayouts, layouts);
+    set({ savedLayouts: layouts });
   },
 
   setLanguage(language: Language): void {
