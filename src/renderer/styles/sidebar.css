@@ -337,6 +337,9 @@
 
 .workspace-row__pr-status {
   opacity: 0.7;
+  /* The state is stored lowercase (the icon switches on it); the badge has
+     always read in gh's uppercase, so it keeps reading that way. */
+  text-transform: uppercase;
 }
 
 /* PR state is colour-coded (open/merged/draft) — same reasoning as __status. */

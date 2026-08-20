@@ -1,12 +1,22 @@
 import React from 'react';
+import { normalizePrStatus, PrStatus } from './pr-status';
 
 interface PrStatusIconProps {
-  status: 'open' | 'merged' | 'closed';
+  status: PrStatus;
   size?: number;
 }
 
 export default function PrStatusIcon({ status, size = 12 }: PrStatusIconProps) {
-  switch (status) {
+  // Normalized here as well as at the `report_pr` handler (pr-metadata.ts):
+  // PR fields are never persisted across a save/restore (they're absent from
+  // both the auto-save and named-save snapshots in App.tsx, and from
+  // `replaceAllWorkspaces`), so a stale-casing value can't survive a restart.
+  // The guard earns its keep anyway as a second line of defense at the render
+  // boundary — any future caller that sets `prStatus` without going through
+  // the handler (a test fixture, a future direct-store write) gets the same
+  // protection this switch already needs to have, rather than a silently
+  // missing glyph.
+  switch (normalizePrStatus(status)) {
     case 'open':
       return (
         <svg width={size} height={size} viewBox="0 0 16 16" fill="#3fb950">
@@ -25,5 +35,10 @@ export default function PrStatusIcon({ status, size = 12 }: PrStatusIconProps) {
           <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-1.22-5.03a.75.75 0 0 1 1.06 0l1.5 1.5a.75.75 0 0 1-1.06 1.06l-1.5-1.5a.75.75 0 0 1 0-1.06Zm0 3.06a.75.75 0 0 1 0-1.06l1.5-1.5a.75.75 0 1 1 1.06 1.06l-1.5 1.5a.75.75 0 0 1-1.06 0Z" />
         </svg>
       );
+    default:
+      // Deliberately nothing, rather than falling off the end of the switch —
+      // an implicit `undefined` return is legal in React 19 and draws the same
+      // blank, which is how a missing glyph went unnoticed.
+      return null;
   }
 }
