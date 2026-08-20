@@ -438,6 +438,7 @@
 .settings-button--danger:hover { background: rgba(255,80,80,0.14); border-color: rgba(255,120,120,0.4); }
 .settings-hint { color: var(--ui-text-muted); font-size: 12px; line-height: 1.5; }
 .settings-hint code { background: rgba(var(--ui-overlay-rgb),0.08); padding: 0 4px; border-radius: 3px; }
+.settings-hint--lead { margin-bottom: 14px; }
 .ql-profile {
   border: 1px solid rgba(var(--ui-overlay-rgb),0.10);
   border-radius: 8px;
@@ -451,3 +452,50 @@
 .ql-profile__fields { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .ql-profile__fields .settings-input { width: 100%; }
 .ql-profile__commands { resize: vertical; font-family: Consolas, Menlo, Monaco, monospace; }
+.ql-profile__checkbox-label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ql-profile__checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ui-accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ql-profile__toggle {
+  background: none;
+  border: none;
+  padding: 6px 0 0;
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.ql-profile__toggle:hover { color: var(--ui-text-primary); }
+.ql-profile__pane-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.ql-profile__pane-header { display: flex; align-items: center; gap: 8px; }
+.ql-profile__pane { display: flex; align-items: center; gap: 8px; }
+.ql-profile__pane-label { font-size: 11px; color: var(--ui-text-muted); flex-shrink: 0; width: 116px; }
+.ql-profile__pane .settings-input { flex: 1; width: auto; min-width: 0; }
+.ql-profile__saved { color: var(--ui-accent); font-size: 12px; flex-shrink: 0; }
+.ql-profile__line-remove {
+  background: none;
+  border: none;
+  color: rgba(var(--ui-overlay-rgb), 0.4);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.ql-profile__line-remove:hover { color: #ff6b6b; }
+.ql-profile__add-line {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.ql-profile__add-line:hover { color: var(--ui-text-primary); }

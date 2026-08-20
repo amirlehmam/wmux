@@ -54,6 +54,24 @@ export interface SurfaceRef {
 }
 
 /**
+ * A user-saved pane layout: geometry plus whatever each pane's surface was
+ * already running (shell/cwd/startupCommands) at the moment it was captured
+ * from a live workspace. Multiple can be saved; one may be marked the default
+ * applied to every new workspace (`WorkspacePrefs.defaultLayoutId`), and any
+ * of them can also be applied on demand.
+ *
+ * `splitTree`'s pane/surface ids are stale the instant this is saved — always
+ * pass it through `instantiateLayout()` before handing it to a workspace, so
+ * two workspaces never share a pane/surface id (breaks PTY re-attachment).
+ */
+export interface SavedLayout {
+  id: string;
+  name: string;
+  splitTree: SplitNode;
+  createdAt: number;
+}
+
+/**
  * Quick-launch profile (issue #32): a one-click tab preset surfaced in the `+`
  * caret dropdown. Lets a user open a terminal that auto-`cd`s and runs startup
  * commands, picks a specific shell, or opens a browser tab at a fixed URL.

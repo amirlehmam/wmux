@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { SplitNode, PaneId, SurfaceId, SurfaceType } from '../../shared/types';
+import { SplitNode, PaneId, SurfaceId, SurfaceType, SurfaceRef } from '../../shared/types';
 
 // ─── Leaf factory ────────────────────────────────────────────────────────────
 
@@ -14,6 +14,49 @@ export function createLeaf(
     paneId: resolvedPaneId,
     surfaces: [{ id: surfaceId, type: surfaceType }],
     activeSurfaceIndex: 0,
+  };
+}
+
+// ─── buildDefaultSplitTree (the sidebar "+" / first-launch factory layout) ───
+// wmux's built-in "factory" new-workspace layout: a top row split into two
+// panes, plus one pane below.
+export function buildDefaultSplitTree(): SplitNode {
+  return {
+    type: 'branch',
+    direction: 'vertical',
+    ratio: 0.5,
+    children: [
+      {
+        type: 'branch',
+        direction: 'horizontal',
+        ratio: 0.5,
+        children: [createLeaf(), createLeaf()],
+      },
+      createLeaf(),
+    ],
+  };
+}
+
+// ─── instantiateLayout (saved default/preset layouts) ────────────────────────
+// A saved layout's pane/surface ids are frozen at the moment it was captured
+// from a live workspace, so applying it twice (or to two different new
+// workspaces) would otherwise hand out duplicate ids — breaking the PTY id ===
+// surface id re-attach invariant. Re-mint fresh ids on every use, the same way
+// buildDefaultSplitTree() used to mint fresh ids on every call, while carrying
+// every other surface field (type/shell/cwd/startupCommands/colorScheme/...)
+// through unchanged.
+export function instantiateLayout(template: SplitNode): SplitNode {
+  if (template.type === 'leaf') {
+    return {
+      type: 'leaf',
+      paneId: `pane-${uuid()}` as PaneId,
+      surfaces: template.surfaces.map((s) => ({ ...s, id: `surf-${uuid()}` as SurfaceId })),
+      activeSurfaceIndex: template.activeSurfaceIndex,
+    };
+  }
+  return {
+    ...template,
+    children: [instantiateLayout(template.children[0]), instantiateLayout(template.children[1])],
   };
 }
 
@@ -208,6 +251,54 @@ export function freezeSurfaceCwds(tree: SplitNode): SplitNode {
     ...tree,
     children: [freezeSurfaceCwds(tree.children[0]), freezeSurfaceCwds(tree.children[1])],
   };
+}
+
+// ─── patchLeafPrimarySurface (saved-layout pane editing) ─────────────────────
+// This lets the Saved Layouts settings UI set `startupCommands`/ `shell` 
+// directly on a stored template's pane, same fields Quick Launch
+// profiles already use.
+export function patchLeafPrimarySurface(
+  tree: SplitNode,
+  paneId: PaneId,
+  patch: Partial<SurfaceRef>,
+): SplitNode {
+  if (tree.type === 'leaf') {
+    if (tree.paneId !== paneId || tree.surfaces.length === 0) return tree;
+    const surfaces = [...tree.surfaces];
+    surfaces[0] = { ...surfaces[0], ...patch };
+    return { ...tree, surfaces };
+  }
+  const [left, right] = tree.children;
+  const newLeft = patchLeafPrimarySurface(left, paneId, patch);
+  const newRight = patchLeafPrimarySurface(right, paneId, patch);
+  if (newLeft === left && newRight === right) return tree;
+  return { ...tree, children: [newLeft, newRight] };
+}
+
+// ─── mergeStartupCommands (Overwrite must not clobber manual pane edits) ─────
+// "Overwrite" re-captures a saved layout's `splitTree` wholesale from the
+// live workspace (freezeSurfaceCwds(active.splitTree)) — which has no idea
+// about a startupCommands the user typed directly into a saved layout's pane
+// row in Settings, since nothing live ever set that field. Without this, every
+// Overwrite silently threw those edits away. Matches old→new panes by
+// position (getAllPaneIds order) rather than requiring identical tree shape,
+// since geometry can legitimately change between saves; a live pane that
+// already has its own startupCommands (e.g. from a quick-launch profile)
+// always wins over a stale settings-panel edit.
+export function mergeStartupCommands(newTree: SplitNode, oldTree: SplitNode): SplitNode {
+  const oldCommandsByIndex = getAllPaneIds(oldTree).map(
+    (pid) => findLeaf(oldTree, pid)?.surfaces[0]?.startupCommands,
+  );
+  let result = newTree;
+  getAllPaneIds(newTree).forEach((paneId, i) => {
+    const oldCommands = oldCommandsByIndex[i];
+    if (!oldCommands || oldCommands.length === 0) return;
+    const newSurface = findLeaf(result, paneId)?.surfaces[0];
+    if (newSurface && (!newSurface.startupCommands || newSurface.startupCommands.length === 0)) {
+      result = patchLeafPrimarySurface(result, paneId, { startupCommands: oldCommands });
+    }
+  });
+  return result;
 }
 
 // ─── replaceSoleTerminalSurface (agent spawn --replace-tab) ──────────────────

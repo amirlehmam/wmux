@@ -1,14 +1,35 @@
 import { StateCreator } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { WorkspaceId, WorkspaceInfo, SplitNode } from '../../shared/types';
+import { WorkspaceId, WorkspaceInfo, SplitNode, SavedLayout } from '../../shared/types';
 import { isPosixPath } from '../../shared/paths';
-import { createLeaf } from './split-utils';
+import { createLeaf, instantiateLayout, freezeSurfaceCwds, mergeStartupCommands } from './split-utils';
 import { killTreeTerminalPtys } from './pty-teardown';
 import type { TranslationKey } from '../i18n/core';
 
 /** Defaults to returning the fallback verbatim so callers that omit `t` still see English. */
 type T = (key: TranslationKey, fallback?: string) => string;
 const identityT: T = (_key, fallback) => fallback ?? _key;
+
+// Settings live in a sibling slice; this creator is only typed for its own
+// slice (same reach-across pattern requestCloseWorkspace already uses below
+// for `workspacePrefs`), so pull both out through one cast.
+type SettingsReach = {
+  workspacePrefs?: { defaultLayoutId?: string | null };
+  savedLayouts?: SavedLayout[];
+  setSavedLayouts?: (layouts: SavedLayout[]) => void;
+};
+
+/**
+ * Resolves what a "new workspace" looks like when the caller hasn't supplied
+ * an explicit `splitTree`. If a saved layout is marked default
+ * (`workspacePrefs.defaultLayoutId`), every caller honors it identically. 
+ * Otherwise `fallback` runs.
+ */
+export function resolveDefaultSplitTree(get: () => unknown, fallback: () => SplitNode = createLeaf): SplitNode {
+  const settings = get() as SettingsReach;
+  const layout = settings.savedLayouts?.find((l) => l.id === settings.workspacePrefs?.defaultLayoutId);
+  return layout ? instantiateLayout(layout.splitTree) : fallback();
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -42,6 +63,19 @@ export interface WorkspaceSlice {
   updateWorkspaceMetadata(id: WorkspaceId, partial: Partial<WorkspaceInfo>): void;
   updateSplitTree(id: WorkspaceId, tree: SplitNode): void;
   replaceAllWorkspaces(workspaces: Array<Partial<WorkspaceInfo>>, activeIndex?: number, t?: T): void;
+  /**
+   * Snapshot the active workspace's current pane arrangement (geometry, plus
+   * whatever shell/cwd/startupCommands each pane's surface already has) as a
+   * new named entry in `savedLayouts`. Returns the new layout's id, or null
+   * if there's no active workspace.
+   */
+  saveCurrentLayoutAsPreset(name: string): string | null;
+  /**
+   * Overwrite an existing `savedLayouts` entry's geometry with the active
+   * workspace's current arrangement, keeping its id/name in place.
+   * Returns false if there's no active workspace or `id` doesn't exist.
+   */
+  updateLayoutFromCurrent(id: string): boolean;
 }
 
 // ─── Slice creator ───────────────────────────────────────────────────────────
@@ -53,7 +87,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
 
   createWorkspace(options = {}, t = identityT): WorkspaceId {
     const id: WorkspaceId = `ws-${uuid()}`;
-    const splitTree = options.splitTree ?? createLeaf();
+    const splitTree = options.splitTree ?? resolveDefaultSplitTree(get);
     const workspace: WorkspaceInfo = {
       id,
       title: options.title ?? t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(get().workspaces.length + 1)),
@@ -184,7 +218,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       title: config.title ?? t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(i + 1)),
       pinned: config.pinned ?? false,
       shell: config.shell || '',
-      splitTree: config.splitTree ?? createLeaf(),
+      splitTree: config.splitTree ?? resolveDefaultSplitTree(get),
       unreadCount: 0,
       customColor: config.customColor,
       cwd: config.cwd,
@@ -208,5 +242,40 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       workspaces: newWorkspaces,
       activeWorkspaceId: newWorkspaces.length > 0 ? newWorkspaces[clampedIndex].id : null,
     });
+  },
+
+  saveCurrentLayoutAsPreset(name: string): string | null {
+    const state = get();
+    const active = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+    if (!active) return null;
+
+    const settings = get() as unknown as SettingsReach;
+    if (!settings.setSavedLayouts) return null;
+
+    const layout: SavedLayout = {
+      id: crypto.randomUUID(),
+      name,
+      // Same live-field sanitizer named-session save uses (App.tsx's
+      // handleSaveSession) — strips nothing but the spawn `cwd`/`currentCwd`
+      // reconciliation, keeps shell/startupCommands/colorScheme as-is.
+      splitTree: freezeSurfaceCwds(active.splitTree),
+      createdAt: Date.now(),
+    };
+    settings.setSavedLayouts([...(settings.savedLayouts ?? []), layout]);
+    return layout.id;
+  },
+
+  updateLayoutFromCurrent(id: string): boolean {
+    const state = get();
+    const active = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+    if (!active) return false;
+
+    const settings = get() as unknown as SettingsReach;
+    const existing = settings.savedLayouts?.find((l) => l.id === id);
+    if (!settings.setSavedLayouts || !existing) return false;
+
+    const frozen = mergeStartupCommands(freezeSurfaceCwds(active.splitTree), existing.splitTree);
+    settings.setSavedLayouts(settings.savedLayouts!.map((l) => (l.id === id ? { ...l, splitTree: frozen } : l)));
+    return true;
   },
 });

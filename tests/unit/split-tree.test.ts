@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout, replaceSoleTerminalSurface, freezeSurfaceCwds } from '../../src/renderer/store/split-utils';
+import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout, replaceSoleTerminalSurface, freezeSurfaceCwds, instantiateLayout, buildDefaultSplitTree, patchLeafPrimarySurface, mergeStartupCommands } from '../../src/renderer/store/split-utils';
 
 describe('split-tree', () => {
   it('creates a leaf node', () => {
@@ -285,5 +285,133 @@ describe('freezeSurfaceCwds', () => {
     const tree = leafWith('pane-1', [{ id: 'surf-1', type: 'terminal', currentCwd: 'D:\wt\a' }]);
     const frozen = freezeSurfaceCwds(tree) as any;
     expect(frozen.surfaces[0].currentCwd).toBe('D:\wt\a');
+  });
+});
+
+// ─── buildDefaultSplitTree (sidebar "+" / first-launch factory layout) ───────
+// Distinct from createLeaf()'s single-pane baseline used by Ctrl+N/CLI — the
+// two are deliberately different defaults, not unified (see the doc comment
+// on resolveDefaultSplitTree in workspace-slice.ts).
+describe('buildDefaultSplitTree', () => {
+  it('builds a 3-pane layout: two panes on top, one below', () => {
+    const tree = buildDefaultSplitTree();
+    expect(tree.type).toBe('branch');
+    expect(getAllPaneIds(tree)).toHaveLength(3);
+    if (tree.type !== 'branch') return;
+    expect(tree.direction).toBe('vertical');
+    const [top, bottom] = tree.children;
+    expect(top.type).toBe('branch');
+    expect(bottom.type).toBe('leaf');
+    if (top.type === 'branch') expect(top.direction).toBe('horizontal');
+  });
+
+  it('mints fresh ids on every call', () => {
+    const a = buildDefaultSplitTree();
+    const b = buildDefaultSplitTree();
+    const aIds = getAllPaneIds(a);
+    const bIds = getAllPaneIds(b);
+    expect(aIds.some((id) => bIds.includes(id))).toBe(false);
+  });
+});
+
+// ─── patchLeafPrimarySurface (saved-layout pane editing) ─────────────────────
+describe('patchLeafPrimarySurface', () => {
+  it('patches the first surface of the target leaf, leaving others untouched', () => {
+    let tree: any = createLeaf('pane-1' as any, 'terminal');
+    tree = splitNode(tree, 'pane-1' as any, 'pane-2' as any, 'terminal', 'horizontal');
+
+    const patched = patchLeafPrimarySurface(tree, 'pane-2' as any, { startupCommands: ['claude'] });
+    const pane1 = findLeaf(patched, 'pane-1' as any)!;
+    const pane2 = findLeaf(patched, 'pane-2' as any)!;
+    expect(pane2.surfaces[0].startupCommands).toEqual(['claude']);
+    expect(pane1.surfaces[0].startupCommands).toBeUndefined();
+  });
+
+  it('is a no-op for an unknown paneId', () => {
+    const tree = createLeaf('pane-1' as any, 'terminal');
+    const result = patchLeafPrimarySurface(tree, 'pane-nope' as any, { startupCommands: ['x'] });
+    expect(result).toBe(tree);
+  });
+});
+
+// ─── mergeStartupCommands (Overwrite must not clobber manual pane edits) ─────
+describe('mergeStartupCommands', () => {
+  it('carries forward an old startupCommands the new capture lacks', () => {
+    const oldTree = patchLeafPrimarySurface(createLeaf('pane-1' as any, 'terminal'), 'pane-1' as any, {
+      startupCommands: ['claude'],
+    });
+    const newTree = createLeaf('pane-2' as any, 'terminal'); // fresh capture, no commands, new pane id
+
+    const merged = mergeStartupCommands(newTree, oldTree) as any;
+    expect(merged.surfaces[0].startupCommands).toEqual(['claude']);
+    expect(merged.paneId).toBe('pane-2'); // geometry/ids come from the NEW capture
+  });
+
+  it('lets the live capture win when it already has its own startupCommands', () => {
+    const oldTree = patchLeafPrimarySurface(createLeaf('pane-1' as any, 'terminal'), 'pane-1' as any, {
+      startupCommands: ['stale'],
+    });
+    const newTree = patchLeafPrimarySurface(createLeaf('pane-2' as any, 'terminal'), 'pane-2' as any, {
+      startupCommands: ['fresh'],
+    });
+
+    const merged = mergeStartupCommands(newTree, oldTree) as any;
+    expect(merged.surfaces[0].startupCommands).toEqual(['fresh']);
+  });
+
+  it('matches by position, not id, across a differently-shaped new capture', () => {
+    let oldTree: any = createLeaf('pane-1' as any, 'terminal');
+    oldTree = patchLeafPrimarySurface(oldTree, 'pane-1' as any, { startupCommands: ['claude'] });
+    let newTree: any = createLeaf('pane-a' as any, 'terminal');
+    newTree = splitNode(newTree, 'pane-a' as any, 'pane-b' as any, 'terminal', 'horizontal');
+
+    const merged = mergeStartupCommands(newTree, oldTree) as any;
+    // Old had exactly one pane at index 0 — only the new tree's first pane inherits it.
+    const firstLeaf = findLeaf(merged, 'pane-a' as any)!;
+    const secondLeaf = findLeaf(merged, 'pane-b' as any)!;
+    expect(firstLeaf.surfaces[0].startupCommands).toEqual(['claude']);
+    expect(secondLeaf.surfaces[0].startupCommands ?? []).toEqual([]);
+  });
+});
+
+// ─── instantiateLayout (saved default/preset layouts) ────────────────────────
+// A saved layout is applied to more than one new workspace over its lifetime,
+// so every application must mint fresh pane/surface ids — reusing them would
+// break the PTY-id === surface-id re-attach invariant the moment a second
+// workspace shared an id with the first.
+describe('instantiateLayout', () => {
+  it('mints fresh pane and surface ids while preserving structure', () => {
+    let template: any = createLeaf('pane-tpl' as any, 'terminal');
+    template = splitNode(template, 'pane-tpl' as any, 'pane-tpl-2' as any, 'terminal', 'vertical');
+
+    const result = instantiateLayout(template);
+    expect(result.type).toBe('branch');
+    if (result.type !== 'branch') return;
+    expect(result.direction).toBe('vertical');
+    expect(result.ratio).toBe(0.5);
+
+    const newIds = getAllPaneIds(result);
+    expect(newIds.length).toBe(2);
+    expect(newIds).not.toContain('pane-tpl');
+    expect(newIds).not.toContain('pane-tpl-2');
+  });
+
+  it('preserves shell/cwd/startupCommands on each surface', () => {
+    const template = createLeaf('pane-tpl' as any, 'terminal') as any;
+    template.surfaces[0] = { ...template.surfaces[0], shell: 'pwsh.exe', cwd: 'C:\\proj', startupCommands: ['npm run dev'] };
+
+    const result = instantiateLayout(template) as any;
+    expect(result.surfaces[0].id).not.toBe(template.surfaces[0].id);
+    expect(result.surfaces[0].shell).toBe('pwsh.exe');
+    expect(result.surfaces[0].cwd).toBe('C:\\proj');
+    expect(result.surfaces[0].startupCommands).toEqual(['npm run dev']);
+  });
+
+  it('produces distinct ids on repeated calls against the same template', () => {
+    const template = createLeaf('pane-tpl' as any, 'terminal');
+    const a = instantiateLayout(template) as any;
+    const b = instantiateLayout(template) as any;
+    expect(a.paneId).not.toBe(b.paneId);
+    expect(a.surfaces[0].id).not.toBe(b.surfaces[0].id);
   });
 });
