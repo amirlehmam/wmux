@@ -74,6 +74,12 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       prNumber: options.prNumber,
       prStatus: options.prStatus,
       prLabel: options.prLabel,
+      // No current caller passes PR fields into createWorkspace, so this is
+      // latent — but a workspace created WITH a PR and no recorded owner
+      // would have a badge nothing could ever clear (clear_pr is only
+      // honoured from ws.prSurfaceId; see pr-metadata.ts). Copying it keeps
+      // the PR fields internally consistent regardless.
+      prSurfaceId: options.prSurfaceId,
       ports: options.ports,
       notificationText: options.notificationText,
       shellState: options.shellState,

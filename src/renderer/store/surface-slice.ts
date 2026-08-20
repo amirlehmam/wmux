@@ -5,6 +5,51 @@ import { findLeaf, removeLeaf, splitNode, getAllPaneIds } from './split-utils';
 import { killSurfacePty } from './pty-teardown';
 import { WorkspaceSlice } from './workspace-slice';
 
+// ─── PR badge teardown (issue #4, continued) ──────────────────────────────────
+//
+// Closing the pane/tab that reported a PR used to leave its sidebar badge up
+// forever. A killed PTY never runs a shell-side exit trap, so `clear_pr`
+// never arrives for a Ctrl+W, a tab-× click, or `wmux close-pane` — the store
+// has to notice the loss itself, at the SAME state transitions that already
+// reap the PTY (closeSurface, closePane, closeOtherSurfaces,
+// closeSurfacesToRight — everywhere `killSurfacePty` is called for a real
+// close). `ws.prSurfaceId` (see pr-metadata.ts) says who owns the row, so
+// this only clears when the surface actually leaving IS that owner.
+//
+// Deliberately NOT hooked on `moveSurface` / `splitAndMoveSurface`: the
+// surface — and the PR it owns — keeps existing, it's just relocated to
+// another pane. Both take a single `workspaceId` and move a surface within
+// that workspace's tree, so the owner never leaves the workspace whose row
+// carries the badge and the claim stays answerable.
+//
+// A shell that dies inside a still-open tab (the user types `exit`, or the
+// process falls over) reaches none of those transitions — nothing calls
+// closeSurface/closePane, the tab is still there — so it is answered from the
+// `pty:exit` handler in useTerminal.ts instead, through `clearPrForSurface`
+// below. That is the same place a stuck "Running" badge and a leftover
+// progress indicator are already healed, and it is a signal the renderer gets
+// whether the shell left gracefully or not.
+//
+// Exposed as a store action (rather than kept module-private) so callers
+// outside this slice — `App.tsx`'s `--replace-tab` spawn path, which
+// destroys the reporting surface directly via `pty.kill` instead of going
+// through `closeSurface` — can run the same ownership-gated clear instead of
+// re-deriving it.
+function clearPrIfOwner(
+  get: () => SliceState,
+  workspaceId: WorkspaceId,
+  closingSurfaceIds: readonly SurfaceId[],
+): void {
+  const ws = get().workspaces.find((w) => w.id === workspaceId);
+  if (!ws?.prSurfaceId || !closingSurfaceIds.includes(ws.prSurfaceId)) return;
+  get().updateWorkspaceMetadata(workspaceId, {
+    prNumber: undefined,
+    prStatus: undefined,
+    prLabel: undefined,
+    prSurfaceId: undefined,
+  });
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface SurfaceSlice {
@@ -35,6 +80,29 @@ export interface SurfaceSlice {
 
   /** Close a surface; if it's the last one in the pane, the pane is removed */
   closeSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId) => void;
+
+  /**
+   * Drop the workspace's PR badge iff `ws.prSurfaceId` is one of
+   * `destroyedSurfaceIds` — a no-op otherwise (unowned badge, or the owner
+   * isn't in the list). Every in-slice close path (closeSurface, closePane,
+   * closeOtherSurfaces, closeSurfacesToRight) already runs this at the same
+   * transition that reaps the PTY; this is the same check exposed for a
+   * caller OUTSIDE the slice that destroys a surface a different way (see
+   * `App.tsx`'s `--replace-tab` spawn path, which calls `pty.kill` directly
+   * rather than routing through `closeSurface`) — so that path doesn't have
+   * to re-derive the ownership rule to avoid leaving an unclearable badge.
+   */
+  clearPrIfSurfaceOwner: (workspaceId: WorkspaceId, destroyedSurfaceIds: readonly SurfaceId[]) => void;
+
+  /**
+   * Drop the PR badge owned by `surfaceId`, wherever it lives — the same
+   * ownership-gated clear, for a caller that knows only the surface. Used by
+   * the `pty:exit` handler in useTerminal.ts: a shell can die with its tab
+   * still open (the user types `exit`, or the process falls over), and there
+   * is no close transition for that at all, so nothing else would notice the
+   * pane that reported the PR is no longer able to speak for it.
+   */
+  clearPrForSurface: (surfaceId: SurfaceId) => void;
 
   /**
    * The path behind every USER close gesture for a tab (the tab ×, Ctrl+W).
@@ -225,6 +293,15 @@ function pushClosedSurface(workspaceId: WorkspaceId, surface: SurfaceRef): void 
 // ─── Slice creator ───────────────────────────────────────────────────────────
 
 export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> = (set, get) => ({
+  clearPrIfSurfaceOwner(workspaceId, destroyedSurfaceIds) {
+    clearPrIfOwner(get, workspaceId, destroyedSurfaceIds);
+  },
+
+  clearPrForSurface(surfaceId) {
+    const ws = get().workspaces.find((w) => w.prSurfaceId === surfaceId);
+    if (ws) clearPrIfOwner(get, ws.id, [surfaceId]);
+  },
+
   addSurface(workspaceId, paneId, type, options) {
     const surfaceId: SurfaceId = `surf-${uuid()}` as SurfaceId;
 
@@ -332,6 +409,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     if (closing) {
       pushClosedSurface(workspaceId, closing);
       killSurfacePty(closing);
+      clearPrIfOwner(get, workspaceId, [closing.id]);
     }
 
     const newSurfaces = leaf.surfaces.filter((s) => s.id !== surfaceId);
@@ -385,6 +463,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
       if (surface.type === 'diff') diffTabDismissed.add(workspaceId);
       killSurfacePty(surface);
     }
+    clearPrIfOwner(get, workspaceId, leaf.surfaces.map((s) => s.id));
     updateSplitTree(workspaceId, newTree);
   },
 
@@ -402,11 +481,14 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
     // Reap the shells we're dropping and remember them for Ctrl+Shift+T,
     // mirroring the bookkeeping in closeSurface (issues #64, #65).
+    const dropped: SurfaceId[] = [];
     for (const s of leaf.surfaces) {
       if (s.id === keepSurfaceId) continue;
       pushClosedSurface(workspaceId, s);
       killSurfacePty(s);
+      dropped.push(s.id);
     }
+    clearPrIfOwner(get, workspaceId, dropped);
 
     const updatedTree = patchLeaf(ws.splitTree, paneId, {
       surfaces: [keep],
@@ -428,10 +510,12 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
 
     // Reap the shells to the right and remember them for Ctrl+Shift+T,
     // mirroring the bookkeeping in closeSurface (issues #64, #65).
-    for (const s of leaf.surfaces.slice(idx + 1)) {
+    const dropped = leaf.surfaces.slice(idx + 1);
+    for (const s of dropped) {
       pushClosedSurface(workspaceId, s);
       killSurfacePty(s);
     }
+    clearPrIfOwner(get, workspaceId, dropped.map((s) => s.id));
 
     const newSurfaces = leaf.surfaces.slice(0, idx + 1);
     const newActiveIndex = Math.min(leaf.activeSurfaceIndex, newSurfaces.length - 1);

@@ -101,6 +101,13 @@ export interface WorkspaceInfo {
   prNumber?: number;
   prStatus?: 'open' | 'merged' | 'closed';
   prLabel?: string;
+  // Which surface reported the currently-shown PR (issue #4 continued). Every
+  // PowerShell pane in a workspace polls its own PR independently and all of
+  // them write these same workspace-scoped fields, so without an owner a
+  // `clear_pr` from one pane can wipe a PR a DIFFERENT pane just reported.
+  // Gates `clear_pr` in `applyPrCommand` (pr-metadata.ts) and the badge's
+  // teardown-on-close in `surface-slice.ts`.
+  prSurfaceId?: SurfaceId;
   ports?: number[];
   notificationText?: string;
   shellState?: 'idle' | 'running' | 'interrupted';
@@ -216,6 +223,7 @@ export interface SidebarMetadata {
   prNumber?: number;
   prStatus?: string;
   prLabel?: string;
+  prSurfaceId?: SurfaceId;
   ports?: number[];
   notificationText?: string;
   shellState?: 'idle' | 'running' | 'interrupted';
