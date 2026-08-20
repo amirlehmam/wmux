@@ -10,7 +10,7 @@ import { aggregateProgress } from './store/progress-slice';
 import { isDiffTabDismissed } from './store/surface-slice';
 import Sidebar from './components/Sidebar/Sidebar';
 import Titlebar from './components/Titlebar/Titlebar';
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcuts';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
@@ -493,12 +493,10 @@ export default function App() {
   // Global keyboard listener for command palette toggle (Ctrl+Shift+P)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
-      const binding = shortcuts.commandPalette;
-      const matches =
-        e.key === binding.key &&
-        !!binding.ctrl === e.ctrlKey &&
-        !!binding.shift === e.shiftKey &&
-        !!binding.alt === e.altKey;
+      // matchesBinding lowercases single-letter keys before comparing — Shift
+      // uppercases e.key (Ctrl+Shift+P fires with e.key='P'), but bindings are
+      // stored lowercase. A naive e.key === binding.key here never matched.
+      const matches = matchesBinding(e, shortcuts.commandPalette);
 
       if (matches) {
         e.preventDefault();

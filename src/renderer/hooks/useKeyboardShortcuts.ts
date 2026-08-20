@@ -10,7 +10,7 @@ import { useT } from '../i18n';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function matchesBinding(e: KeyboardEvent, binding: ShortcutBinding): boolean {
+export function matchesBinding(e: KeyboardEvent, binding: ShortcutBinding): boolean {
   // Case-insensitive compare for single-letter keys: Shift uppercases e.key on Windows,
   // but bindings are stored lowercase. Without toLowerCase, Ctrl+Shift+letter combos
   // never match (e.g. Ctrl+Shift+N fires with e.key='N' vs binding.key='n').
