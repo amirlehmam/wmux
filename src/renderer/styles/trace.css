@@ -278,6 +278,67 @@
   display: none;
 }
 
+/* ─── Density ────────────────────────────────────────────────────────────────
+ * A TRACE row inherited classic's vertical rhythm, which was sized for a row
+ * that is a title plus one status line. TRACE routinely stacks four or five
+ * lines — title, status, one per session — so the same rhythm turned every
+ * workspace into a ~125px block and a handful of them filled the sidebar.
+ *
+ * The compaction is leading, not content: nothing is hidden or truncated here
+ * (that is the narrow-width block below, which is a different axis). Every
+ * line keeps its glyph, its dot and its label — they just stop being spaced
+ * like body copy. ~125px → ~88px for a three-session row.
+ *
+ * The floor is the 5px status dot plus its 1px via: at a 13px line box those
+ * still sit on the optical centre, which is why the session line does not go
+ * below 13px. Type stays at 10px/9.5px — shrinking glyphs is how a dense list
+ * becomes an unreadable one, and this mode is meant to be read at a glance.
+ */
+
+:root[data-ui-mode='trace'] .workspace-row {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+:root[data-ui-mode='trace'] .workspace-row__header {
+  margin-bottom: 1px;
+}
+
+:root[data-ui-mode='trace'] .workspace-row__title {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+/* The status line is the row's least dense element — 11px of sans set at 1.3
+   with a 2px lead, for text that is usually two words. In TRACE it becomes a
+   caption under the title rather than a second paragraph. */
+:root[data-ui-mode='trace'] .workspace-row__status {
+  font-size: 10px;
+  line-height: 1.2;
+  margin-top: 0;
+}
+
+:root[data-ui-mode='trace'] .workspace-row__agents {
+  margin-top: 1px;
+  margin-bottom: 1px;
+}
+
+:root[data-ui-mode='trace'] .workspace-row__agent {
+  line-height: 13px;
+}
+
+/* The branch/cwd footer is a single monospace line; 1.4 leading buys nothing
+   when there is no line below it to separate from. */
+:root[data-ui-mode='trace'] .workspace-row__meta-line,
+:root[data-ui-mode='trace'] .workspace-row__context {
+  line-height: 1.25;
+}
+
+/* The reveal animation's 72px ceiling is left alone on purpose: it was cut for
+   16px lines, so shorter lines fit MORE sessions under it, not fewer. Nothing
+   to fix, and a trace-scoped @keyframes animating max-height would break the
+   mode's compositor-only envelope for no gain. */
+
 /* ─── Narrow width ──────────────────────────────────────────────────────────
  * Drop order is specified rather than emergent: tokens → tool label →
  * odometer → truncate the name. The bus, the via and the name never drop —
