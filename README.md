@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/amirlehmam/wmux/releases/latest"><img src="docs/assets/windows-download.svg" alt="Download wmux for Windows" width="200" height="74" /></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/amirlehmam/wmux"><img src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows" alt="Windows" /></a>
   <a href="https://github.com/amirlehmam/wmux/releases"><img src="https://img.shields.io/github/v/release/amirlehmam/wmux?label=release&color=555" alt="Release" /></a>
   <a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-555" alt="License" /></a>
