@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 1.6.0
+**Version**: 1.7.0
 
 ---
 
@@ -75,7 +75,8 @@ docs/             Planning docs
 | `theme-loader.ts` | Theme loading |
 | `config-loader.ts` | WT/Ghostty config import |
 | `shell-detector.ts` | Available shells detection |
-| `updater.ts` | Auto-update (electron-updater) |
+| `updater.ts` | Auto-update. Routes by install layout: NSIS → `electron-updater`, portable zip → `zip-updater.ts` (#184). `initAutoUpdater()` returns before registering `NsisUpdater` on a zip extract, so a portable install can never enter the #96 "update ready" loop |
+| `zip-updater.ts` | In-place update for portable zip extracts (#184). Detection is the whole contract: `wmux.exe` present, `Uninstall wmux.exe` absent — that name is electron-builder's `Uninstall ${productFilename}.exe`, so it moves if `productName`/`executableName` ever change. Download via `net.request`, extract via System32 `tar.exe` (PowerShell `Expand-Archive` fallback), then a detached cmd helper waits on the old PID and robocopies over the install root. The helper's relaunch is **unconditional** — wmux has already quit, so bailing out on a copy failure is the one outcome the user can't recover from |
 
 ### Renderer (`src/renderer/`)
 
