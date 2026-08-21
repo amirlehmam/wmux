@@ -391,6 +391,8 @@ export const zh: Translation = {
   'settings.workspacePanel.confirmClose': '关闭会话前确认',
   'settings.workspacePanel.confirmCloseHint':
     '在点击 × 按钮、使用右键菜单或按 Ctrl+Shift+W 关闭会话前先询问 —— 这样误点击就不会终止尚未保存状态的代理。通过 CLI 或代理发起的关闭操作永远不会弹出询问。',
+  'settings.workspacePanel.restoreClaudeSessions': '恢复时继续 Claude Code 会话',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'wmux 恢复会话时，会在原目录下用 `claude --resume` 重新启动每个曾运行 Claude Code 的终端。默认关闭：这些窗格会同时各启动一个代理。Claude 已没有对应对话的窗格会被跳过，你正常退出的 Claude 也不会被恢复。',
   'settings.workspacePanel.autoOpenDiff': '代理编辑文件时自动打开差异标签页',
   'settings.workspacePanel.autoOpenDiffHint':
     '当 Claude 编辑或写入文件时，wmux 会在底部窗格弹出差异标签页。关闭此项可阻止它出现。',

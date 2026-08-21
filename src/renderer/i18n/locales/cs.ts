@@ -406,6 +406,8 @@ export const cs: Translation = {
   'settings.workspacePanel.confirmClose': 'Potvrdit před zavřením relace',
   'settings.workspacePanel.confirmCloseHint':
     'Zeptat se, než tlačítko ×, kontextová nabídka nebo Ctrl+Shift+W zavře relaci — náhodný klik tak nemůže shodit agenty, kteří ještě neuložili svůj stav. Zavření z CLI a od agentů se nikdy nepotvrzuje.',
+  'settings.workspacePanel.restoreClaudeSessions': 'Obnovit relace Claude Code při obnovení',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'Když wmux obnoví relaci, spustí znovu každý terminál, ve kterém běžel Claude Code, příkazem `claude --resume` v původním adresáři. Ve výchozím stavu vypnuto: každý takový panel hned spustí agenta. Panely, jejichž konverzaci už Claude nemá, se přeskočí, a Claude, který jste řádně ukončili, se neobnoví.',
   'settings.workspacePanel.autoOpenDiff': 'Automaticky otevřít kartu Diff při úpravách agenta',
   'settings.workspacePanel.autoOpenDiffHint':
     'Když Claude upravuje nebo zapisuje soubory, wmux otevře kartu Diff ve spodním panelu. Vypnutím této volby se přestane zobrazovat.',

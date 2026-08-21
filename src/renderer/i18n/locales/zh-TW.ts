@@ -396,6 +396,8 @@ export const zhTW: Translation = {
   'settings.workspacePanel.showWelcomeScreen': '啟動時顯示歡迎畫面',
   'settings.workspacePanel.confirmClose': '關閉工作階段前先確認',
   'settings.workspacePanel.confirmCloseHint': '按下 × 按鈕、右鍵選單或 Ctrl+Shift+W 要關閉工作階段時先詢問——手滑點一下，不會就這樣關掉還沒存檔的 agent。從 CLI 和 agent 發起的關閉一律不會詢問。',
+  'settings.workspacePanel.restoreClaudeSessions': '還原時繼續 Claude Code 工作階段',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'wmux 還原工作階段時，會在原本的目錄下用 `claude --resume` 重新啟動每個曾執行 Claude Code 的終端機。預設關閉：這些窗格會同時各啟動一個代理。Claude 已沒有對應對話的窗格會被略過，你正常結束的 Claude 也不會被還原。',
   'settings.workspacePanel.autoOpenDiff': 'agent 編輯檔案時自動開啟差異分頁',
   'settings.workspacePanel.autoOpenDiffHint': '當 Claude 編輯或寫入檔案時，wmux 會在下方窗格彈出一個差異分頁。關掉這個選項就不會再出現。',
   'settings.workspacePanel.shellSection': 'Shell',

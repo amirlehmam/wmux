@@ -406,6 +406,8 @@ export const hi: Translation = {
   'settings.workspacePanel.confirmClose': 'सत्र बंद करने से पहले पुष्टि करें',
   'settings.workspacePanel.confirmCloseHint':
     '× बटन, कॉन्टेक्स्ट मेन्यू या Ctrl+Shift+W से सत्र बंद होने से पहले पूछें — एक गलत क्लिक उन एजेंटों को नहीं गिरा सकता जिन्होंने अभी अपनी स्थिति सहेजी नहीं है। CLI और एजेंटों से बंद करने पर कभी नहीं पूछा जाता।',
+  'settings.workspacePanel.restoreClaudeSessions': 'पुनर्स्थापना पर Claude Code सत्र फिर से शुरू करें',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'जब wmux कोई सत्र पुनर्स्थापित करता है, तो Claude Code चला रहे हर टर्मिनल को उसी डायरेक्टरी में `claude --resume` के साथ फिर से चलाता है। डिफ़ॉल्ट रूप से बंद: ऐसा हर पेन एक साथ एजेंट शुरू कर देता है। जिन पेन की बातचीत Claude के पास नहीं है उन्हें छोड़ दिया जाता है, और जिस Claude को आपने ठीक से बंद किया था वह फिर से शुरू नहीं होता।',
   'settings.workspacePanel.autoOpenDiff': 'एजेंट संपादनों पर diff टैब स्वतः खोलें',
   'settings.workspacePanel.autoOpenDiffHint':
     'जब Claude फ़ाइलें संपादित या लिखता है, wmux निचले पैन में diff टैब दिखाता है। इसे बंद करने पर यह नहीं दिखेगा।',

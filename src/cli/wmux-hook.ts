@@ -95,6 +95,38 @@ const PIPE_DEADLINE_MS = transportDeadline(DEFAULT_V2_TIMEOUT_MS, {
 /** Cleared once we stop reading, so the happy path is not held open by it. */
 let stdinTimer: NodeJS.Timeout | null = null;
 
+/**
+ * Pull the fields wmux cares about out of the Claude Code hook payload.
+ *
+ * Split out of sendHook so the transport below stays the only thing that
+ * function is about — every new field extracted here used to add another branch
+ * to a function that also owns socket setup, the deadline and process exit.
+ */
+function parsePayload(raw: string): { file: string; message: string; sessionId: string; toolName: string } {
+  const out = { file: '', message: '', sessionId: '', toolName: '' };
+  if (!raw.trim()) return out;
+  let data: Record<string, any>;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return out; // stdin wasn't valid JSON — that's fine.
+  }
+  // Claude Code provides tool_input with file_path for Edit/Write.
+  out.file = data.tool_input?.file_path || data.tool_input?.path || data.input?.file_path || '';
+  // The Notification hook payload carries the prompt text in `message`.
+  out.message = data.message || '';
+  // PreToolUse is registered matcher-less (one entry for every tool rather than
+  // one entry per tracked tool), so the tool name arrives on stdin not argv.
+  if (typeof data.tool_name === 'string') out.toolName = data.tool_name;
+  // Every Claude Code hook payload carries the conversation's session_id. wmux
+  // parsed this payload for years and threw it away, which is the only reason
+  // `AgentStateRecord.sessionId` — a slot that has always existed and is
+  // documented as surviving a restart — was never populated (issue #186).
+  // Forwarding it is what makes `claude --resume` possible on restore.
+  if (typeof data.session_id === 'string') out.sessionId = data.session_id;
+  return out;
+}
+
 function sendHook(): void {
   if (sent) return;
   sent = true;
@@ -104,32 +136,15 @@ function sendHook(): void {
   // stream nobody is going to end.
   process.stdin.pause();
 
-  let file = '';
-  let message = '';
-  try {
-    if (stdinData.trim()) {
-      const data = JSON.parse(stdinData);
-      // Claude Code provides tool_input with file_path for Edit/Write.
-      file = data.tool_input?.file_path
-        || data.tool_input?.path
-        || data.input?.file_path
-        || '';
-      // The Notification hook payload carries the prompt text in `message`.
-      message = data.message || '';
-      // PreToolUse is registered matcher-less (one entry for every tool rather
-      // than one entry per tracked tool), so the tool name arrives on stdin
-      // instead of on argv.
-      if (!tool && typeof data.tool_name === 'string') tool = data.tool_name;
-    }
-  } catch {
-    // stdin wasn't valid JSON — that's fine.
-  }
+  const { file, message, sessionId, toolName } = parsePayload(stdinData);
+  if (!tool && toolName) tool = toolName;
 
   const params: Record<string, string | number> = { at: firedAt };
   if (event) params.event = event;
   if (tool) params.tool = tool;
   if (file) params.file = file;
   if (message) params.message = message;
+  if (sessionId) params.sessionId = sessionId;
   if (surfaceId) params.surfaceId = surfaceId;
 
   const client = net.connect(remote ? { host: remote.host, port: remote.port } : { path: pipePath }, () => {

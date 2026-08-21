@@ -395,6 +395,8 @@ export const sv: Translation = {
   'settings.workspacePanel.confirmClose': 'Bekräfta innan en session stängs',
   'settings.workspacePanel.confirmCloseHint':
     'Fråga innan ×-knappen, snabbmenyn eller Ctrl+Skift+W stänger en session — ett felklick kan då inte slå ut agenter som inte har sparat sitt tillstånd än. Stängningar från CLI:t och från agenter frågar aldrig.',
+  'settings.workspacePanel.restoreClaudeSessions': 'Återuppta Claude Code-sessioner vid återställning',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'När wmux återställer en session startas varje terminal som körde Claude Code om med `claude --resume`, i katalogen den stod i. Av som standard: alla sådana paneler startar en agent på en gång. Paneler vars konversation Claude inte längre har hoppas över, och en Claude du avslutat korrekt återupptas inte.',
   'settings.workspacePanel.autoOpenDiff': 'Öppna diff-flik automatiskt vid agentens ändringar',
   'settings.workspacePanel.autoOpenDiffHint':
     'När Claude redigerar eller skriver filer öppnar wmux en diff-flik i den nedre rutan. Stäng av för att den inte ska visas.',

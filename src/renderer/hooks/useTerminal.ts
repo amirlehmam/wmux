@@ -26,6 +26,7 @@ import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
 import { isConEmuSubcommand } from './osc9';
+import { withClaudeResume } from './claude-resume-command';
 import '@xterm/xterm/css/xterm.css';
 
 declare global {
@@ -50,6 +51,13 @@ interface UseTerminalOptions {
   colorScheme?: string;
   /** Quick-launch profile commands, run once after the PTY is first created (issue #32). */
   startupCommands?: string[];
+  /**
+   * Claude Code session this surface was running when the session was saved
+   * (issue #186). Only present on a restored tree, only honoured when
+   * `workspacePrefs.restoreClaudeSessions` is on, and only on the FIRST PTY
+   * this surface gets in this run — see `claude-resume-command.ts`.
+   */
+  claudeSessionId?: string;
 }
 
 interface UseTerminalResult {
@@ -363,7 +371,7 @@ async function fetchTheme(name: string): Promise<ThemeConfig> {
   }
 }
 
-export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = true, colorScheme, startupCommands }: UseTerminalOptions = {}): UseTerminalResult {
+export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = true, colorScheme, startupCommands, claudeSessionId }: UseTerminalOptions = {}): UseTerminalResult {
   const t = useT();
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -376,6 +384,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   // startup commands without listing them as a dependency.
   const startupCommandsRef = useRef<string[] | undefined>(startupCommands);
   startupCommandsRef.current = startupCommands;
+  const claudeSessionIdRef = useRef<string | undefined>(claudeSessionId);
+  claudeSessionIdRef.current = claudeSessionId;
 
   // Subscribe to relevant settings so changes apply live.
   const prefs = useStore((s) => s.terminalPrefs);
@@ -855,9 +865,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // leaking onto the prompt as `\x1b[?62;4;9;22c` and merging with an injected
     // `<cmd>\r` into a bogus line like `62;4;9;22ccls`). When `consumed` is true
     // we MUST NOT also inject, or the commands would run twice.
-    const runStartupCommands = (id: string, consumed: boolean) => {
+    const runStartupCommands = (id: string, consumed: boolean, cmds: string[] | undefined) => {
       if (consumed) return;
-      const cmds = startupCommandsRef.current;
       if (!cmds || cmds.length === 0) return;
       setTimeout(() => {
         for (const cmd of cmds) {
@@ -896,13 +905,19 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           attachToPty(surfaceId!);
         } else {
           // No existing PTY — create a new one, passing surfaceId so PTY ID = Surface ID
-          window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {}, surfaceId, startupCommands: startupCommandsRef.current, cols: initialCols, rows: initialRows })
+          const spawnCommands = withClaudeResume({
+            base: startupCommandsRef.current,
+            surfaceId,
+            claudeSessionId: claudeSessionIdRef.current,
+            enabled: useStore.getState().workspacePrefs.restoreClaudeSessions,
+          });
+          window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {}, surfaceId, startupCommands: spawnCommands, cols: initialCols, rows: initialRows })
             .then((created: { id: string; shell: string; startupCommandsConsumed?: boolean }) => {
               // PTY persists (keep-alive); a remount re-attaches via pty.has.
               if (disposed) return;
               setResolvedShellForSurface(surfaceId, created.shell);
               attachToPty(created.id);
-              runStartupCommands(created.id, !!created.startupCommandsConsumed);
+              runStartupCommands(created.id, !!created.startupCommandsConsumed, spawnCommands);
             })
             .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
         }
@@ -914,7 +929,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           if (disposed) return;
           setResolvedShellForSurface(surfaceId, created.shell);
           attachToPty(created.id);
-          runStartupCommands(created.id, !!created.startupCommandsConsumed);
+          runStartupCommands(created.id, !!created.startupCommandsConsumed, startupCommandsRef.current);
         })
         .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
     }

@@ -262,6 +262,7 @@ export default function PaneWrapper({
               cwd={surface.cwd || workspaceFallbackCwd(surface.shell || workspace?.shell, workspace)}
               colorScheme={surface.colorScheme}
               startupCommands={surface.startupCommands}
+              claudeSessionId={surface.claudeSessionId}
               focused={isFocused && isActive}
               visible={isVisible}
               showFindBar={findBarVisible && isFocused && isActive}

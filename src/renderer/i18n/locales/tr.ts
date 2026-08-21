@@ -406,6 +406,8 @@ export const tr: Translation = {
   'settings.workspacePanel.confirmClose': 'Bir oturumu kapatmadan önce onayla',
   'settings.workspacePanel.confirmCloseHint':
     'Bir oturumu kapatmadan önce × düğmesi, bağlam menüsü veya Ctrl+Shift+W için sor — yanlışlıkla bir tıklama, durumunu henüz kaydetmemiş araçları durduramaz. CLI ve araç kapatmaları hiç sormaz.',
+  'settings.workspacePanel.restoreClaudeSessions': 'Geri yüklerken Claude Code oturumlarını sürdür',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'wmux bir oturumu geri yüklediğinde, Claude Code çalıştıran her terminali bulunduğu dizinde `claude --resume` ile yeniden başlatır. Varsayılan olarak kapalıdır: bu bölmelerin hepsi aynı anda bir ajan başlatır. Claude’un konuşması artık elinde olmayan bölmeler atlanır ve düzgün kapattığınız bir Claude sürdürülmez.',
   'settings.workspacePanel.autoOpenDiff': 'Aracı düzenlemelerinde diff sekmelerini otomatik aç',
   'settings.workspacePanel.autoOpenDiffHint':
     'Claude dosyaları düzenlediğinde veya yazdığında, wmux alt panelde bir diff sekmesi açar. Görünmesini önlemek için bunu kapatın.',

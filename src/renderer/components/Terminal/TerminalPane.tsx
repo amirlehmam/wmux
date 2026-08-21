@@ -12,6 +12,8 @@ interface TerminalPaneProps {
   colorScheme?: string;
   /** Quick-launch profile startup commands (issue #32). */
   startupCommands?: string[];
+  /** Claude Code session to resume on a restored pane (issue #186). */
+  claudeSessionId?: string;
   focused?: boolean;
   visible?: boolean;
   showFindBar?: boolean;
@@ -25,13 +27,14 @@ export default function TerminalPane({
   cwd,
   colorScheme,
   startupCommands,
+  claudeSessionId,
   focused = true,
   visible = true,
   showFindBar = false,
   onFindBarClose,
   copyModeActive = false,
 }: TerminalPaneProps) {
-  const { terminalRef, searchAddonRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, colorScheme, startupCommands });
+  const { terminalRef, searchAddonRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, colorScheme, startupCommands, claudeSessionId });
 
   const [_lastQuery, setLastQuery] = useState('');
 

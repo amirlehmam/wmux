@@ -29,6 +29,7 @@
 
 import { BrowserWindow } from 'electron';
 import { IPC_CHANNELS, SurfaceId } from '../shared/types';
+import { isValidClaudeSessionId } from './claude-resume';
 
 export type AgentRunState = 'blocked' | 'working' | 'idle' | 'unknown';
 
@@ -375,9 +376,15 @@ export function reportAgentSession(
   surfaceId: SurfaceId,
   params: { seq?: number; sessionId: string | null },
 ): AgentStateRecord | null {
+  // Validated at the door, not at the point of use (issue #186). This value
+  // arrives over the named pipe — a public interface — and since #186 it can
+  // end up on a restored pane's command line. Anything that is not a bare
+  // session handle is stored as null rather than kept for a later caller to
+  // sanitise, so there is exactly one place this can be got wrong.
+  const sessionId = isValidClaudeSessionId(params.sessionId) ? params.sessionId : null;
   const record = getOrCreate(surfaceId);
   if (!acceptSeq(record, params.seq)) return null;
-  record.sessionId = params.sessionId || null;
+  record.sessionId = sessionId;
   return commit(record);
 }
 

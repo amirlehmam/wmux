@@ -11,6 +11,12 @@ import { CDPProxy } from './cdp-proxy';
 import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken } from '../shared/instance';
 import { loadSession, saveSession, handleVersionChange, SessionData } from './session-persistence';
+import { getAgentState, reportAgentSession } from './agent-state';
+import {
+  stampClaudeSessionIds,
+  pruneDeadClaudeSessions,
+  listKnownTranscriptIds,
+} from './claude-resume';
 import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
 import { WindowManager } from './window-manager';
 import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
@@ -446,11 +452,77 @@ function handleHookEvent(params: any): void {
     );
   }
 
+  // Third consumer: the resumable session handle (issue #186). Every Claude
+  // Code hook payload carries session_id, and since wmux registers those hooks
+  // this arrives with no plugin to install and no extra process — the same
+  // reason the declared-state path above works. reportAgentSession validates.
+  //
+  // Deliberately NOT gated on a resolved `hookEvent`: a per-tool PostToolUse
+  // arrives with a `tool` and no `event`, and those are the majority of hooks a
+  // working session fires. Gating on it is the mistake `hookEventName` exists to
+  // document, and would have meant only ever learning an id from a Stop.
+  //
+  // SessionEnd is the one event that must NOT record an id. It carries a
+  // session_id like every other hook, but `applyHookToAgentState` above has
+  // just called `releaseAgent()` for it — recording here would re-create the
+  // record microseconds later and hand the next restore a conversation the user
+  // deliberately quit. "Exit Claude, restart wmux, get a plain shell" is the
+  // behaviour #186 asked to keep, and this ordering is the only thing enforcing it.
+  if (params?.surfaceId && params?.sessionId && hookEvent !== 'SessionEnd') {
+    reportAgentSession(params.surfaceId as SurfaceId, { sessionId: String(params.sessionId) });
+  }
+
   // Always refresh the diff for Edit/Write, even without a file path — but only
   // once the write has happened. PreToolUse carries the same tool name and fires
   // BEFORE it, so refreshing on that would render the diff as it was (issue #151).
   const isPost = !params?.event || params.event === 'PostToolUse';
   if (isPost && (params?.tool === 'Edit' || params?.tool === 'Write')) pushDiffUpdate(params.file || '');
+}
+
+// ─── Claude session restore (issue #186) ─────────────────────────────────────
+
+type SavedWindow = SessionData['windows'][number];
+
+/**
+ * Bake each terminal's live Claude session id into the copy of the tree that is
+ * about to be written, the way `freezeSurfaceCwds` bakes cwd (issue #134).
+ *
+ * Mutates the window state in place because that state is already a
+ * renderer-supplied object on its way to `sessionWindows`; a fresh copy here
+ * would have to be threaded through both save paths for no benefit.
+ */
+function stampWindowClaudeSessions(state: SavedWindow | undefined): void {
+  if (!state?.workspaces) return;
+  for (const ws of state.workspaces) {
+    ws.splitTree = stampClaudeSessionIds(ws.splitTree, (id) => getAgentState(id)?.sessionId);
+  }
+}
+
+/**
+ * Drop ids whose transcript Claude no longer has, before restore turns them
+ * into `claude --resume` on a command line.
+ *
+ * The transcript index is read ONCE for the whole restore rather than per
+ * surface: `~/.claude/projects` is one directory per project and the scan is
+ * cheap, but doing it inside the walk would re-list every project directory for
+ * every pane, and `create()` is already on the synchronous startup path that
+ * #176 was about.
+ */
+function pruneRestoredClaudeSessions(windows: SavedWindow[]): void {
+  if (windows.length === 0) return;
+  const known = listKnownTranscriptIds();
+  if (!known) return; // Claude not installed / unreadable — keep everything.
+  let dropped = 0;
+  for (const state of windows) {
+    for (const ws of state.workspaces ?? []) {
+      const result = pruneDeadClaudeSessions(ws.splitTree, known);
+      ws.splitTree = result.tree;
+      dropped += result.dropped;
+    }
+  }
+  if (dropped > 0) {
+    console.log(`[claude-resume] dropped ${dropped} session id(s) with no transcript`);
+  }
 }
 
 app.whenReady().then(() => {
@@ -484,6 +556,8 @@ app.whenReady().then(() => {
   ipcMain.on('session:save', (event, data: SessionData) => {
     const state = data?.windows?.[0];
     if (!state) return;
+    // Before anything downstream copies this tree (issue #186).
+    stampWindowClaudeSessions(state);
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win && !win.isDestroyed()) {
       // Persist the maximized flag and the *normal* (pre-maximize) rectangle so a
@@ -537,6 +611,7 @@ app.whenReady().then(() => {
   // and PTY id is surface id, so the clone would attach to live PTYs (#143).
   const savedSession = loadSession();
   const savedWindows = (savedSession?.windows ?? []).slice(0, MAX_RESTORED_WINDOWS);
+  pruneRestoredClaudeSessions(savedWindows);
   if (savedWindows.length === 0) {
     sessionWindows.markStartup(windowManager.createWindow());
   } else {

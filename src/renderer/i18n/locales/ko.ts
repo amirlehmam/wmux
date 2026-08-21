@@ -414,6 +414,8 @@ export const ko: Translation = {
   'settings.workspacePanel.confirmClose': '세션을 닫기 전에 확인',
   'settings.workspacePanel.confirmCloseHint':
     '× 버튼, 오른쪽 클릭 메뉴, Ctrl+Shift+W로 세션을 닫기 전에 확인합니다. 실수로 클릭해도 아직 상태를 저장하지 않은 에이전트가 종료되지 않습니다. CLI와 에이전트가 닫을 때는 확인하지 않습니다.',
+  'settings.workspacePanel.restoreClaudeSessions': '복원 시 Claude Code 세션 재개',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'wmux가 세션을 복원할 때 Claude Code가 실행 중이던 각 터미널을 원래 디렉터리에서 `claude --resume`으로 다시 실행합니다. 기본값은 꺼짐입니다. 해당 창들이 한꺼번에 에이전트를 시작하기 때문입니다. Claude에 대화가 남아 있지 않은 창은 건너뛰며, 정상적으로 종료한 Claude는 재개되지 않습니다.',
   'settings.workspacePanel.autoOpenDiff': '에이전트가 파일을 편집하면 변경 사항 탭 자동 열기',
   'settings.workspacePanel.autoOpenDiffHint':
     'Claude가 파일을 편집하거나 새로 쓰면 wmux가 아래쪽 창에 변경 사항 탭을 띄웁니다. 끄면 더 이상 나타나지 않습니다.',

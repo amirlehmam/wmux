@@ -24,6 +24,15 @@ export interface SurfaceRef {
   currentCwd?: string;
   /** Commands run once after the terminal PTY spawns (quick-launch profiles — issue #32). */
   startupCommands?: string[];
+  /**
+   * Claude Code session this terminal was running when the session was saved
+   * (issue #186). Written only into the PERSISTED copy of the tree, by
+   * `stampClaudeSessionIds` in the main process — a live surface never carries
+   * one, so it cannot go stale in the store. On restore, and only when
+   * `workspacePrefs.restoreClaudeSessions` is on, the pane spawns with
+   * `claude --resume <id>` prepended to its startup commands.
+   */
+  claudeSessionId?: string;
   /** Initial URL for a browser surface created from a quick-launch profile (issue #32). */
   url?: string;
   /** Rendered markdown content for a `markdown` surface (issue #54). Persisted so

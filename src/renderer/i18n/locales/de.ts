@@ -395,6 +395,8 @@ export const de: Translation = {
   'settings.workspacePanel.confirmClose': 'Vor dem Schließen einer Sitzung bestätigen',
   'settings.workspacePanel.confirmCloseHint':
     'Fragt nach, bevor die ×-Schaltfläche, das Kontextmenü oder Strg+Umschalt+W eine Sitzung schließt — ein versehentlicher Klick kann keine Agenten beenden, die ihren Status noch nicht gespeichert haben. Schließvorgänge über CLI und Agenten fragen nie nach.',
+  'settings.workspacePanel.restoreClaudeSessions': 'Claude-Code-Sitzungen beim Wiederherstellen fortsetzen',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'Wenn wmux eine Sitzung wiederherstellt, wird jedes Terminal, in dem Claude Code lief, mit `claude --resume` im ursprünglichen Verzeichnis neu gestartet. Standardmäßig aus: jedes dieser Panes startet sofort einen Agenten. Panes, deren Konversation Claude nicht mehr hat, werden übersprungen, und ein sauber beendeter Claude wird nicht fortgesetzt.',
   'settings.workspacePanel.autoOpenDiff': 'Diff-Tab bei Agentenbearbeitungen automatisch öffnen',
   'settings.workspacePanel.autoOpenDiffHint':
     'Wenn Claude Dateien bearbeitet oder schreibt, öffnet wmux einen Diff-Tab im unteren Bereich. Deaktivieren, damit dies nicht mehr geschieht.',

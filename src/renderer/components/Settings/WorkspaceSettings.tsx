@@ -4,6 +4,89 @@ import { useT } from '../../i18n';
 import { getAllPaneIds, findLeaf, patchLeafPrimarySurface } from '../../store/split-utils';
 import type { PaneId } from '../../../shared/types';
 
+/**
+ * One editable startup-command line for a saved layout's pane.
+ *
+ * Extracted, along with PaneCommandGroup below, because the saved-layout editor
+ * is three nested lists — layouts → panes → command lines — and the handlers on
+ * the innermost input then sit five callbacks deep inside the component. Each
+ * list level becoming its own component puts every callback back within one
+ * level of something named.
+ */
+function PaneCommandRow({ value, removable, onChange, onBlur, onRemove }: {
+  value: string;
+  removable: boolean;
+  onChange: (next: string) => void;
+  onBlur: () => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="ql-profile__pane">
+      <input
+        className="settings-input ql-profile__commands"
+        value={value}
+        placeholder={t('settings.workspacePanel.paneCommandPlaceholder', 'Command to run on start (optional)')}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+      />
+      {removable && (
+        <button
+          className="ql-profile__line-remove"
+          onClick={onRemove}
+          title={t('settings.workspacePanel.removeCommandLine', 'Remove this line')}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The command lines belonging to one pane of one saved layout. */
+function PaneCommandGroup({
+  paneNumber, commands, justSaved, onSetCommandAt, onConfirmSaved, onRemoveCommandAt, onAddLine,
+}: {
+  paneNumber: number;
+  commands: string[];
+  justSaved: boolean;
+  onSetCommandAt: (index: number, value: string) => void;
+  onConfirmSaved: () => void;
+  onRemoveCommandAt: (index: number) => void;
+  onAddLine: () => void;
+}) {
+  const t = useT();
+  // Always at least one (empty) row so there's somewhere to type a first
+  // command — but never more rows than commands that actually exist, and never
+  // fewer: every row is real, editable data, not a summary of it.
+  const rows = commands.length > 0 ? commands : [''];
+  return (
+    <div className="ql-profile__pane-group">
+      <div className="ql-profile__pane-header">
+        <span className="ql-profile__pane-label">
+          {t('settings.workspacePanel.paneLabel', 'Pane {n}').replace('{n}', String(paneNumber))}
+        </span>
+        {justSaved && (
+          <span className="ql-profile__saved">{t('settings.workspacePanel.overwritten', 'Saved ✓')}</span>
+        )}
+      </div>
+      {rows.map((cmd, cmdIndex) => (
+        <PaneCommandRow
+          key={cmdIndex}
+          value={cmd}
+          removable={commands.length > 0}
+          onChange={(next) => onSetCommandAt(cmdIndex, next)}
+          onBlur={onConfirmSaved}
+          onRemove={() => onRemoveCommandAt(cmdIndex)}
+        />
+      ))}
+      <button className="ql-profile__add-line" onClick={onAddLine}>
+        + {t('settings.workspacePanel.addCommandLine', 'Add line')}
+      </button>
+    </div>
+  );
+}
+
 export default function WorkspaceSettings() {
   const t = useT();
   const {
@@ -135,6 +218,22 @@ export default function WorkspaceSettings() {
       </p>
 
       <div className="settings-row">
+        <label className="settings-label">{t('settings.workspacePanel.restoreClaudeSessions', 'Resume Claude Code sessions on restore')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={workspacePrefs.restoreClaudeSessions}
+          onChange={(e) => setWorkspacePrefs({ restoreClaudeSessions: e.target.checked })}
+        />
+      </div>
+      <p className="settings-hint">
+        {t(
+          'settings.workspacePanel.restoreClaudeSessionsHint',
+          'When wmux restores a session, re-launch each terminal that was running Claude Code with `claude --resume`, in the directory it was in. Off by default: every such pane starts an agent at once. Panes whose conversation Claude no longer has are skipped, and a Claude you exited cleanly is not resumed.',
+        )}
+      </p>
+
+      <div className="settings-row">
         <label className="settings-label">{t('settings.workspacePanel.autoOpenDiff', 'Auto-open diff tab on agent edits')}</label>
         <input
           type="checkbox"
@@ -229,49 +328,18 @@ export default function WorkspaceSettings() {
 
             {expandedIds.has(layout.id) && panes.length > 0 && (
               <div className="ql-profile__fields">
-                {panes.map(({ paneId, index, leaf }) => {
-                  const commands = leaf?.surfaces[0]?.startupCommands ?? [];
-                  // Always at least one (empty) row so there's somewhere to type
-                  // a first command — but never more rows than commands that
-                  // actually exist, and never fewer: every row is real, editable
-                  // data, not a summary of it.
-                  const rows = commands.length > 0 ? commands : [''];
-                  return (
-                    <div key={paneId} className="ql-profile__pane-group">
-                      <div className="ql-profile__pane-header">
-                        <span className="ql-profile__pane-label">
-                          {t('settings.workspacePanel.paneLabel', 'Pane {n}').replace('{n}', String(index + 1))}
-                        </span>
-                        {justSavedPaneKey === `${layout.id}:${paneId}` && (
-                          <span className="ql-profile__saved">{t('settings.workspacePanel.overwritten', 'Saved ✓')}</span>
-                        )}
-                      </div>
-                      {rows.map((cmd, cmdIndex) => (
-                        <div key={cmdIndex} className="ql-profile__pane">
-                          <input
-                            className="settings-input ql-profile__commands"
-                            value={cmd}
-                            placeholder={t('settings.workspacePanel.paneCommandPlaceholder', 'Command to run on start (optional)')}
-                            onChange={(e) => setPaneCommandAt(layout.id, paneId, cmdIndex, e.target.value)}
-                            onBlur={() => confirmPaneSaved(layout.id, paneId)}
-                          />
-                          {commands.length > 0 && (
-                            <button
-                              className="ql-profile__line-remove"
-                              onClick={() => removePaneCommandAt(layout.id, paneId, cmdIndex)}
-                              title={t('settings.workspacePanel.removeCommandLine', 'Remove this line')}
-                            >
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <button className="ql-profile__add-line" onClick={() => addPaneCommandLine(layout.id, paneId)}>
-                        + {t('settings.workspacePanel.addCommandLine', 'Add line')}
-                      </button>
-                    </div>
-                  );
-                })}
+                {panes.map(({ paneId, index, leaf }) => (
+                  <PaneCommandGroup
+                    key={paneId}
+                    paneNumber={index + 1}
+                    commands={leaf?.surfaces[0]?.startupCommands ?? []}
+                    justSaved={justSavedPaneKey === `${layout.id}:${paneId}`}
+                    onSetCommandAt={(i, value) => setPaneCommandAt(layout.id, paneId, i, value)}
+                    onConfirmSaved={() => confirmPaneSaved(layout.id, paneId)}
+                    onRemoveCommandAt={(i) => removePaneCommandAt(layout.id, paneId, i)}
+                    onAddLine={() => addPaneCommandLine(layout.id, paneId)}
+                  />
+                ))}
               </div>
             )}
           </div>

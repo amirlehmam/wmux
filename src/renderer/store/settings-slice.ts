@@ -316,6 +316,18 @@ export interface WorkspacePrefs {
    * this (`resolveDefaultSplitTree` in workspace-slice.ts).
    */
   defaultLayoutId: string | null;
+  /**
+   * Re-launch each restored terminal's Claude Code session with
+   * `claude --resume <id>` on workspace restore (issue #186).
+   *
+   * Opt-in, and the default must stay `false`: README has always promised that
+   * wmux does not restore live process state, and flipping this on for everyone
+   * would have every restored pane start an agent at once on the next launch —
+   * a startup that spends real tokens without being asked. A pane only resumes
+   * if it was running Claude when the session was saved AND the transcript is
+   * still on disk.
+   */
+  restoreClaudeSessions: boolean;
 }
 
 export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
@@ -326,6 +338,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   autoOpenDiffTab: true,
   confirmWorkspaceClose: false,
   defaultLayoutId: null,
+  restoreClaudeSessions: false,
 };
 
 // ─── Terminal settings ────────────────────────────────────────────────────────

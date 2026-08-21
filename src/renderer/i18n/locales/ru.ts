@@ -406,6 +406,8 @@ export const ru: Translation = {
   'settings.workspacePanel.confirmClose': 'Подтверждать закрытие сеанса',
   'settings.workspacePanel.confirmCloseHint':
     'Спрашивать перед тем, как кнопка ×, контекстное меню или Ctrl+Shift+W закроют сеанс — случайный клик не сможет остановить агентов, которые ещё не сохранили своё состояние. Закрытия из CLI и от агентов запрос не вызывают.',
+  'settings.workspacePanel.restoreClaudeSessions': 'Возобновлять сессии Claude Code при восстановлении',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'Когда wmux восстанавливает сессию, каждый терминал, в котором работал Claude Code, перезапускается командой `claude --resume` в исходном каталоге. По умолчанию выключено: все такие панели разом запускают агента. Панели, разговора которых у Claude больше нет, пропускаются, а корректно завершённый Claude не возобновляется.',
   'settings.workspacePanel.autoOpenDiff': 'Автооткрытие вкладки Diff при правках агента',
   'settings.workspacePanel.autoOpenDiffHint':
     'Когда Claude редактирует или записывает файлы, wmux открывает вкладку Diff в нижней панели. Выключите, чтобы она не появлялась.',

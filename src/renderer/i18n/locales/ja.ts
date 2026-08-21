@@ -406,6 +406,8 @@ export const ja: Translation = {
   'settings.workspacePanel.confirmClose': 'セッションを閉じる前に確認',
   'settings.workspacePanel.confirmCloseHint':
     '× ボタン、コンテキストメニュー、または Ctrl+Shift+W がセッションを閉じる前に確認します — 誤クリックで、まだ状態を保存していないエージェントを落としてしまうことはありません。CLI やエージェントからのクローズでは確認しません。',
+  'settings.workspacePanel.restoreClaudeSessions': '復元時に Claude Code のセッションを再開',
+  'settings.workspacePanel.restoreClaudeSessionsHint': 'wmux がセッションを復元するとき、Claude Code が動いていた各ターミナルを元のディレクトリで `claude --resume` により起動し直します。既定はオフです。対象のペインが一斉にエージェントを起動するためです。Claude に会話が残っていないペインはスキップされ、正常に終了した Claude は再開されません。',
   'settings.workspacePanel.autoOpenDiff': 'エージェントの編集時に diff タブを自動で開く',
   'settings.workspacePanel.autoOpenDiffHint':
     'Claude がファイルを編集・作成すると、wmux は下部ペインに diff タブを表示します。表示したくない場合はオフにしてください。',
