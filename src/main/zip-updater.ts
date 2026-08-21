@@ -106,9 +106,16 @@ export function buildApplyUpdateCmd(): string {
     'if not errorlevel 1 goto wait',
     '"%SYS%\\timeout.exe" /t 2 /nobreak >nul',
     '"%SYS%\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
-    'if %ERRORLEVEL% GEQ 8 exit /b 1',
+    'if %ERRORLEVEL% GEQ 8 goto relaunch',
     // MOTW strip is best-effort: a constrained PowerShell must not block relaunch.
     'if exist "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -Command "Get-ChildItem -LiteralPath $env:DST -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1',
+    // The relaunch is unconditional, including after a failed copy. wmux has
+    // already quit by the time this runs, so bailing out here is the one
+    // outcome the user cannot recover from without finding wmux.exe by hand.
+    // A robocopy failure (install root not writable, a leftover child still
+    // holding a DLL past /R:5) usually leaves the old build in place, so
+    // %EXE% still starts — on the old version, which beats not starting.
+    ':relaunch',
     'start "" "%EXE%"',
     'rmdir /s /q "%SRC%"',
     'del "%~f0"',
@@ -134,8 +141,13 @@ function runHidden(file: string, args: string[], timeoutMs: number): Promise<voi
     });
     child.on('exit', (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve();
-      else reject(new Error(`${path.basename(file)} exited ${code}${stderr ? `: ${stderr.trim()}` : ''}`));
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const detail = stderr.trim();
+      const suffix = detail ? `: ${detail}` : '';
+      reject(new Error(`${path.basename(file)} exited ${code}${suffix}`));
     });
   });
 }
@@ -163,6 +175,33 @@ export async function extractZip(zipPath: string, destDir: string): Promise<void
   ], 15 * 60 * 1000);
 }
 
+/** fs.unlink needs a callback; a partial download that will not delete is not actionable. */
+function discardPartial(dest: string): void {
+  fs.unlink(dest, () => undefined);
+}
+
+/**
+ * Integrity gate for a finished download. Returns the rejection reason, or
+ * null when the payload matches what the GitHub API advertised. Kept out of
+ * the stream callbacks so the nesting there stays readable.
+ */
+function verifyDownload(
+  downloaded: number,
+  hash: crypto.Hash,
+  opts: { expectedSize?: number; expectedSha256?: string },
+): Error | null {
+  if (opts.expectedSize && opts.expectedSize > 0 && downloaded !== opts.expectedSize) {
+    return new Error(`download size mismatch: got ${downloaded}, expected ${opts.expectedSize}`);
+  }
+  if (opts.expectedSha256) {
+    const got = hash.digest('hex');
+    if (got.toLowerCase() !== opts.expectedSha256.toLowerCase()) {
+      return new Error('download sha256 mismatch');
+    }
+  }
+  return null;
+}
+
 export async function downloadToFile(
   url: string,
   dest: string,
@@ -187,8 +226,17 @@ export async function downloadToFile(
       let lastPct = -1;
       const fail = (err: Error) => {
         out.destroy();
-        fs.unlink(dest, () => {});
+        discardPartial(dest);
         reject(err);
+      };
+      const finish = () => {
+        const err = verifyDownload(downloaded, hash, opts);
+        if (err) {
+          discardPartial(dest);
+          reject(err);
+          return;
+        }
+        resolve();
       };
       res.on('data', (chunk: Buffer) => {
         hash.update(chunk);
@@ -202,24 +250,7 @@ export async function downloadToFile(
           }
         }
       });
-      res.on('end', () => {
-        out.end(() => {
-          if (opts.expectedSize && opts.expectedSize > 0 && downloaded !== opts.expectedSize) {
-            fs.unlink(dest, () => {});
-            reject(new Error(`download size mismatch: got ${downloaded}, expected ${opts.expectedSize}`));
-            return;
-          }
-          if (opts.expectedSha256) {
-            const got = hash.digest('hex');
-            if (got.toLowerCase() !== opts.expectedSha256.toLowerCase()) {
-              fs.unlink(dest, () => {});
-              reject(new Error('download sha256 mismatch'));
-              return;
-            }
-          }
-          resolve();
-        });
-      });
+      res.on('end', () => out.end(finish));
       res.on('error', (err) => fail(err instanceof Error ? err : new Error(String(err))));
       out.on('error', (err) => fail(err));
     });

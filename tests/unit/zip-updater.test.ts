@@ -112,6 +112,17 @@ describe('buildApplyUpdateCmd', () => {
     expect(cmd).toContain('%SystemRoot%\\System32');
   });
 
+  // wmux has already quit by the time the helper runs, so a robocopy failure
+  // that exits without relaunching leaves the user with no wmux at all. The
+  // failure branch has to fall through to the same relaunch as the happy path.
+  it('still relaunches when robocopy fails', () => {
+    expect(cmd).toContain('if %ERRORLEVEL% GEQ 8 goto relaunch');
+    expect(cmd).toContain(':relaunch');
+    expect(cmd).not.toMatch(/GEQ 8 exit/);
+    // The relaunch must come after the label, not only on the success path.
+    expect(cmd.indexOf(':relaunch')).toBeLessThan(cmd.indexOf('start "" "%EXE%"'));
+  });
+
   it('does not embed caller paths — those arrive as arguments', () => {
     expect(cmd).not.toMatch(/C:\\/);
     expect(cmd).toContain('set "PID=%~1"');
