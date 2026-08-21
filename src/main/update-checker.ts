@@ -22,13 +22,30 @@ export interface UpdateAvailableInfo {
   publishedAt?: string;
 }
 
+export interface GithubReleaseAsset {
+  name: string;
+  browser_download_url: string;
+  size: number;
+  digest?: string;
+}
+
+export interface GithubRelease {
+  tag_name: string;
+  html_url: string;
+  body?: string;
+  published_at?: string;
+  draft?: boolean;
+  prerelease?: boolean;
+  assets?: GithubReleaseAsset[];
+}
+
 let latest: UpdateAvailableInfo | null = null;
 
 export function getLatestUpdate(): UpdateAvailableInfo | null {
   return latest;
 }
 
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const pa = a.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
   const pb = b.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
@@ -40,7 +57,7 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export function fetchLatestRelease(): Promise<{ tag_name: string; html_url: string; body?: string; published_at?: string; draft?: boolean; prerelease?: boolean } | null> {
+export function fetchLatestRelease(): Promise<GithubRelease | null> {
   return new Promise((resolve) => {
     const req = net.request({
       method: 'GET',

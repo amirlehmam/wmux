@@ -261,6 +261,29 @@
   color: var(--ui-text-primary);
 }
 
+.settings-btn--accent {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.settings-btn--accent:hover {
+  background: rgba(74, 222, 128, 0.2);
+  color: #86efac;
+  border-color: rgba(74, 222, 128, 0.55);
+}
+
+.settings-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.settings-help-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .settings-btn--danger {
   background: rgba(255, 80, 80, 0.15);
   color: #ff6b6b;

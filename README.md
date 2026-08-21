@@ -123,7 +123,7 @@ Interactive 7-step onboarding walks you through workspaces, splits, tabs, the br
 </tr>
 </table>
 
-- **Release update badge** — A badge in the title bar notifies you when a new GitHub release is available. Click to open the releases page. No auto-update, no background downloads.
+- **Release update badge** — A badge in the title bar notifies you when a new GitHub release is available. Click to download and install in place (works for zip extracts and NSIS installs). Settings → Help has the same action next to the version number.
 - **Clickable links** — URLs in terminal output and markdown panes open directly in the wmux browser panel. Ctrl+click or just click (configurable).
 - **Scriptable** — Named pipe server (`\\.\pipe\wmux`) with a JSON-RPC API. Create workspaces, split panes, send keystrokes, read terminal content, control the browser via CDP, and spawn sub-agent terminals programmatically.
 - **Windows native** — ConPTY for proper terminal emulation, Windows toast notifications, taskbar flash on alerts, native title bar overlay.
@@ -140,9 +140,12 @@ Download [wmux-0.7.10-win-x64.zip](https://github.com/amirlehmam/wmux/releases/l
 
 ### Updates & security
 
-wmux checks GitHub Releases for updates. Downloaded updates are held in a
-quarantine window (3 days by default) before installing, and installs always
-require an explicit confirmation click — nothing is applied silently.
+wmux checks GitHub Releases for updates. Clicking the titlebar badge or the
+**Check for updates** button in Settings → Help downloads and installs in
+place — including portable zip extracts (the recommended install). Unattended
+NSIS downloads are held in a quarantine window (3 days by default) before
+installing, and installs always require an explicit confirmation click —
+nothing is applied silently.
 
 Release artifacts are **not yet Authenticode-signed** (SignPath OSS approval is
 pending; the CI signing pipeline is wired and activates automatically once the

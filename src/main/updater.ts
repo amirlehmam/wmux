@@ -3,7 +3,14 @@ import { app, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC_CHANNELS } from '../shared/types';
-import { fetchLatestRelease } from './update-checker';
+import { fetchLatestRelease, compareVersions } from './update-checker';
+import {
+  isPortableZipInstall,
+  resolvePortableZipTarget,
+  runPortableZipUpdate,
+  applyStagedPortableUpdate,
+  type StagedZipUpdate,
+} from './zip-updater';
 
 // ── Auto-update hardening (issue #29) ────────────────────────────────────────
 // The old flow auto-downloaded AND silently auto-installed on quit, with no
@@ -55,6 +62,14 @@ async function releaseAgeMs(version: string): Promise<number | null> {
 
 let installPrompted = false;
 let missingChannelFileWarned = false;
+let stagedZip: StagedZipUpdate | null = null;
+
+function currentInstallIsPortable(): boolean {
+  if (!app.isPackaged) return false;
+  const exe = app.getPath('exe');
+  if (!exe) return false;
+  return isPortableZipInstall(path.dirname(exe));
+}
 
 // ── In-app install, driven by the badge (issue #125) ─────────────────────────
 // The titlebar badge used to be notify-only: it opened the GitHub release page
@@ -195,17 +210,25 @@ export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: s
 
   // Already downloaded — this click is the install confirmation.
   if (state.phase === 'ready') {
+    if (stagedZip) {
+      setImmediate(() => applyStagedPortableUpdate(stagedZip!));
+      return { handled: true };
+    }
     setImmediate(() => autoUpdater.quitAndInstall());
     return { handled: true };
   }
   if (state.phase === 'checking' || state.phase === 'downloading') return { handled: true };
+
+  if (currentInstallIsPortable()) {
+    return requestPortableZipUpdate();
+  }
 
   userDriven = true;
   setState({ phase: 'checking', percent: 0, message: undefined });
   try {
     const result = await autoUpdater.checkForUpdates();
     const version = result?.updateInfo?.version ?? null;
-    if (!version) {
+    if (!version || compareVersions(version, app.getVersion()) <= 0) {
       userDriven = false;
       setState({ phase: 'idle', version: null, percent: 0 });
       return { handled: false, reason: 'no_update' };
@@ -228,6 +251,78 @@ export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: s
   }
 }
 
+async function requestPortableZipUpdate(): Promise<{ handled: boolean; reason?: string }> {
+  userDriven = true;
+  stagedZip = null;
+  setState({ phase: 'checking', percent: 0, message: undefined, version: null });
+  try {
+    const target = await resolvePortableZipTarget();
+    setState({ phase: 'downloading', version: target.version, percent: 0 });
+    // Deliberately not awaited: the zip is ~100MB+ and the caller is an IPC
+    // round-trip. Progress and completion come over UPDATE_STATE.
+    runPortableZipUpdate({
+      target,
+      onProgress: (percent) => setState({ phase: 'downloading', version: target.version, percent }),
+    }).then(async (staged) => {
+      stagedZip = staged;
+      userDriven = false;
+      setState({
+        phase: 'ready',
+        version: staged.version,
+        percent: 100,
+        needsElevation: updateNeedsElevation(),
+      });
+      await promptToInstall(staged.version);
+    }).catch((err) => {
+      userDriven = false;
+      stagedZip = null;
+      console.error('[updater] portable zip download failed:', err);
+      setState({ phase: 'error', message: String((err as Error)?.message ?? err) });
+    });
+    return { handled: true };
+  } catch (err) {
+    userDriven = false;
+    stagedZip = null;
+    const code = (err as { code?: string } | undefined)?.code;
+    if (code === 'NO_UPDATE') {
+      setState({ phase: 'idle', version: null, percent: 0 });
+      return { handled: false, reason: 'no_update' };
+    }
+    if (code === 'NO_ZIP_ASSET') {
+      setState({ phase: 'idle', percent: 0 });
+      return { handled: false, reason: 'no_zip_asset' };
+    }
+    console.warn('[updater] portable zip update unavailable:', err);
+    setState({ phase: 'idle', percent: 0 });
+    return { handled: false, reason: 'error' };
+  }
+}
+
+async function promptToInstall(version: string): Promise<void> {
+  if (installPrompted) return;
+  installPrompted = true;
+  const elevationNote = updateNeedsElevation()
+    ? '\n\nThis install is under a directory wmux cannot write to, so Windows ' +
+      'will ask for administrator rights. If you cannot grant them, download ' +
+      'the installer from the releases page instead.'
+    : '';
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    buttons: ['Install and restart', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'wmux update ready',
+    message: `wmux ${version} has been downloaded.`,
+    detail: 'Review the release notes on GitHub before installing. Install now?' + elevationNote,
+  });
+  if (response === 0) {
+    if (stagedZip) applyStagedPortableUpdate(stagedZip);
+    else autoUpdater.quitAndInstall();
+  } else {
+    installPrompted = false;
+  }
+}
+
 // A release without latest.yml (manual/partial releases, transient GitHub
 // errors) is an expected condition, not a failure — the notify-only checker in
 // update-checker.ts still covers it (issue #68).
@@ -247,6 +342,13 @@ export function initAutoUpdater(): void {
   // cannot (or should not) reach GitHub (issue #68).
   if (isUpdaterDisabled()) {
     console.log('[updater] Disabled via WMUX_DISABLE_UPDATER=1');
+    return;
+  }
+
+  // Zip extracts cannot be replaced by NsisUpdater (issue #96). The GitHub
+  // poller still drives the badge; requestUpdateNow() takes the zip path.
+  if (currentInstallIsPortable()) {
+    console.log('[updater] Portable zip install — skipping NsisUpdater');
     return;
   }
 
@@ -291,32 +393,7 @@ export function initAutoUpdater(): void {
       percent: 100,
       needsElevation: updateNeedsElevation(),
     });
-
-    if (installPrompted) return;
-    installPrompted = true;
-    // Say up front when installing will need admin (#167). Discovering that at
-    // the UAC prompt is survivable; discovering it as a generic updater error,
-    // after wmux has quit, is not — and that is what a per-machine install on a
-    // non-admin account gets.
-    const elevationNote = updateNeedsElevation()
-      ? '\n\nThis install is under a directory wmux cannot write to, so Windows ' +
-        'will ask for administrator rights. If you cannot grant them, download ' +
-        'the installer from the releases page instead.'
-      : '';
-    const { response } = await dialog.showMessageBox({
-      type: 'info',
-      buttons: ['Install and restart', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'wmux update ready',
-      message: `wmux ${info.version} has been downloaded.`,
-      detail: 'Review the release notes on GitHub before installing. Install now?' + elevationNote,
-    });
-    if (response === 0) {
-      autoUpdater.quitAndInstall();
-    } else {
-      installPrompted = false; // allow re-prompting on a later cycle
-    }
+    await promptToInstall(info.version);
   });
 
   autoUpdater.on('error', (err) => {
