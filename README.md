@@ -218,6 +218,8 @@ Environment variables available in all shells:
 |----------|-------------|
 | `WMUX` | Always `1` inside wmux |
 | `WMUX_CLI` | Path to the wmux CLI script |
+| `WMUX_NODE` | A JS runtime that can run `WMUX_CLI` — resolved by wmux, since `node` is not always on PATH |
+| `WMUX_NODE_ELECTRON` | `1` when `WMUX_NODE` is wmux's own binary and needs `ELECTRON_RUN_AS_NODE=1` |
 | `WMUX_SURFACE_ID` | Current surface (tab) ID |
 | `WMUX_PIPE` | Named pipe path (`\\.\pipe\wmux`) |
 

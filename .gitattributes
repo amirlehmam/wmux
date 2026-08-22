@@ -1,3 +1,12 @@
 # The extensionless wmux CLI shim is a bash script — force LF so its shebang
 # runs under bash even on Windows with core.autocrlf=true.
 src/cli-bin/wmux text eol=lf
+
+# ...and its cmd.exe twin needs the opposite, explicitly. cmd.exe parses a .cmd
+# by byte offset assuming CRLF: fed LF-only it resumes mid-token, so `setlocal`
+# runs as `tlocal` and `REM` as `M`. It half-works — the last line still
+# executes — which is exactly why nobody notices. This has been riding on
+# core.autocrlf=true; a clone with autocrlf=false shipped a broken shim.
+src/cli-bin/wmux.cmd text eol=crlf
+resources/shell-integration/wmux-cmd-integration.cmd text eol=crlf
+src/shell-integration/wmux-cmd-integration.cmd text eol=crlf

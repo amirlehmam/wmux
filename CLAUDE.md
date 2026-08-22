@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 1.8.0
+**Version**: 1.9.0
 
 ---
 
@@ -72,6 +72,7 @@ docs/             Planning docs
 | `session-persistence.ts` | Auto-save/restore window state |
 | `port-scanner.ts` | Active port detection for running dev servers |
 | `powershell-shim.ts` | The `wmux.ps1` gate (issue #154). PowerShell resolves a .ps1 ahead of every PATHEXT entry, which is how cmd.exe's argument parser is kept out of the PowerShell path — but a .ps1 PowerShell refuses (Restricted policy, or Mark of the Web under RemoteSigned) is a hard error with NO fallback to the .cmd beside it. So the shim dir goes on PATH only after a probe script in that same dir has actually run in every installed host |
+| `node-runtime.ts` | Which binary on this machine can run a `.js` file (#187). Everything wmux hands an agent is "a script plus something to run it", and every consumer had been assuming `node` was on PATH or that the host process was itself a JS runtime — false under OpenCode, whose `process.execPath` is a compiled `opencode.exe`. Resolved once (memoised: it is read on the synchronous pane-create path, see #176) and declared as `WMUX_NODE`. The last resort is wmux's own Electron binary, which is Node under `ELECTRON_RUN_AS_NODE=1`, so the chain never dead-ends — but that flag is what makes it a runtime instead of a second wmux window, hence the separate `WMUX_NODE_ELECTRON` signal |
 | `shell-context-menu.ts` | "Open in wmux" Explorer verb — HKCU shell keys for Directory/Directory\Background/Drive, plus `directoryFromArgv` for the launch path. Win11 places it under "Show more options"; the modern menu needs a signed MSIX, which unsigned wmux cannot ship |
 | `theme-loader.ts` | Theme loading |
 | `config-loader.ts` | WT/Ghostty config import |
@@ -474,7 +475,8 @@ Scripts in `src/shell-integration/` (deployed to `resources/shell-integration/`)
 | `wmux-bash-integration.sh` | cwd, git branch/dirty, shell state, ports |
 | `wmux-cmd-integration.cmd` | Basic OSC 9 escape sequences |
 
-Env vars set by wmux in spawned shells: `WMUX=1`, `WMUX_SURFACE_ID`, `WMUX_PIPE`, `WMUX_CLI`.
+Env vars set by wmux in spawned shells: `WMUX=1`, `WMUX_SURFACE_ID`, `WMUX_PIPE`, `WMUX_CLI`,
+`WMUX_NODE` (+ `WMUX_NODE_ELECTRON` when it is wmux's own binary — issue #187).
 
 ---
 

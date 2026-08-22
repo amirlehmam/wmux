@@ -5,4 +5,17 @@
 # Node pipe client via the $WMUX_CLI path wmux injects; falls back to the copy
 # next to this shim. There is no wmux.exe in this dir, so no PATHEXT collision.
 CLI="${WMUX_CLI:-$(cd "$(dirname "$0")/../cli" && pwd)/wmux.js}"
-exec node "$CLI" "$@"
+
+# Prefer the runtime wmux resolved at launch (issue #187) — bare `node` assumes
+# node is both installed and on PATH. Gated on the binary actually being
+# executable from HERE, because $WMUX_NODE is a Win32 path and this script also
+# runs under Git Bash; a path this shell cannot use falls back to the old
+# behaviour rather than failing.
+NODE=node
+if [ -n "$WMUX_NODE" ] && [ -x "$WMUX_NODE" ]; then
+  NODE="$WMUX_NODE"
+  # wmux's own Electron binary is Node only with this set.
+  [ -n "$WMUX_NODE_ELECTRON" ] && export ELECTRON_RUN_AS_NODE=1
+fi
+
+exec "$NODE" "$CLI" "$@"

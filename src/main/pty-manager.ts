@@ -10,6 +10,7 @@ import { PtyLedger } from './pty-ledger';
 import { attachErrorSink, installPtyCrashGuard } from './pty-crash-guard';
 import { powerShellShimDir } from './powershell-shim';
 import { getCliBinPath } from './cli-paths';
+import { getNodeRuntime } from './node-runtime';
 
 // Applied once, at load, before any PTY can exist — the exit callback it guards
 // is registered by node-pty inside pty.spawn(), so a later install would leave
@@ -484,6 +485,13 @@ export class PtyManager {
     const processEnvClean = Object.fromEntries(
       Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
     );
+    // WMUX_CLI is a .js path, so anything that wants to RUN it needs a JS
+    // runtime too — and the host process is not reliably one (issue #187:
+    // OpenCode's `process.execPath` is the compiled `opencode.exe`, and node
+    // can be installed yet absent from the PATH a given agent inherited).
+    // wmux resolves it once, in the process best placed to look, and declares
+    // the answer alongside the script it applies to.
+    const nodeRuntime = getNodeRuntime();
     const env: { [key: string]: string } = {
       ...processEnvClean,
       ...options.env,
@@ -492,7 +500,13 @@ export class PtyManager {
       WMUX_PIPE: getPipePath(),
       WMUX_PIPE_TOKEN: readPipeToken(),
       WMUX_CLI: cliPath,
+      WMUX_NODE: nodeRuntime.path,
     };
+    // Only set when true. A consumer that spawns WMUX_NODE without honouring
+    // this opens a second wmux window instead of running a script, so the
+    // variable's presence — not its value — is the signal, and an absent one
+    // must never read as "yes".
+    if (nodeRuntime.electron) env.WMUX_NODE_ELECTRON = '1';
 
     // Make bare `wmux` resolvable in every spawned shell AND all its children
     // (Claude Code's Bash tool, hook scripts, the orchestrator coordinator) by
