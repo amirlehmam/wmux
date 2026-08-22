@@ -268,17 +268,6 @@ export default function GeneralSettings() {
           )}
 
           <p className="settings-hint">{t('settings.general.transparencyHint')}</p>
-
-          {/* The custom background is a layer INSIDE the window, so it sits
-              between the terminal and the now-transparent window. Every shipped
-              preset ends in an opaque colour, so leaving both on is the most
-              likely way for transparency to look broken — say so rather than
-              letting the user conclude the toggle does nothing. */}
-          {appearancePrefs.windowTransparency && appearancePrefs.customBackgroundEnabled && (
-            <p className="settings-hint" style={{ color: 'var(--ui-warning)' }}>
-              {t('settings.general.transparencyCustomBgWarning')}
-            </p>
-          )}
         </>
       )}
 
@@ -289,7 +278,7 @@ export default function GeneralSettings() {
           </label>
           <input
             type="range"
-            min={30}
+            min={0}
             max={100}
             step={1}
             value={appearancePrefs.terminalBgOpacity}

@@ -56,8 +56,6 @@ export const en = {
   'settings.general.transparencyMaterial': 'Blur style',
   'settings.general.transparencyMaterial.acrylic': 'Acrylic — strong blur',
   'settings.general.transparencyMaterial.mica': 'Mica — subtle desktop tint',
-  'settings.general.transparencyCustomBgWarning':
-    'Custom background is also on. It is drawn inside the window, over the desktop — so unless its CSS is translucent, it will hide whatever transparency would show. Turn it off, or end the CSS in a transparent color.',
   'settings.general.transparencyHint':
     'Makes the window itself translucent so your desktop shows through the terminals, blurred by Windows 11. The sidebar and title bar stay opaque so they remain readable. Terminal opacity controls how much shows through.',
   // Command palette

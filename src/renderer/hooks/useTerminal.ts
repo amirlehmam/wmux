@@ -402,8 +402,14 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   const hasBackdrop =
     (appearance.customBackgroundEnabled && !!appearance.customBackground) ||
     appearance.windowTransparency;
+  // Clamped to 0..1 only. The 30% floor this inherited from issue #89 was a
+  // guardrail for the custom-background case, where a fully transparent theme
+  // background left text sitting on an arbitrary gradient. Ghostty stops at
+  // 0.15 for the same reason on plain alpha — but a Win11 backdrop always
+  // blurs whatever is behind it, so 0 stays legible here and is a look people
+  // actually want: text over the wallpaper, no panel at all.
   const bgAlpha = hasBackdrop
-    ? Math.max(0.3, Math.min(1, (appearance.terminalBgOpacity ?? 88) / 100))
+    ? Math.max(0, Math.min(1, (appearance.terminalBgOpacity ?? 88) / 100))
     : 1;
 
   const fit = () => {
