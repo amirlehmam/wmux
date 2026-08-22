@@ -40,6 +40,16 @@
 .pane-wrapper--focused {
   border-color: rgba(var(--ui-accent-rgb), 0.3);
 }
+/* Over a translucent window the gutters between panes must render at the same
+   opacity the panes do, or a split shows as bright seams through the terminal.
+   `:not(--focused)` keeps the accent border on the focused pane, which would
+   otherwise lose to this rule on specificity. */
+html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
+  border-color: var(--wmux-pane-fill, transparent);
+}
+html.wmux-transparent .split-divider {
+  background: var(--wmux-pane-fill, transparent);
+}
 .pane-wrapper__content {
   flex: 1;
   overflow: hidden;

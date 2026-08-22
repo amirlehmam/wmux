@@ -8,6 +8,12 @@
 .terminal-pane__container {
   width: 100%;
   height: 100%;
+  /* Fills the 2px padding on .xterm below, which the theme background does not
+     reach — xterm paints it on .xterm-scrollable-element, inside that padding.
+     Set per-pane by useTerminal to the colour that pane actually took, so a
+     `--color-scheme` override matches itself. Unset until the theme resolves,
+     and identical to today's rendering for opaque themes. */
+  background: var(--wmux-term-bg, transparent);
 }
 
 .terminal-pane__container .xterm {

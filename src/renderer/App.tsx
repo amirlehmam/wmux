@@ -25,6 +25,7 @@ import { setKeyRemaps } from './key-remaps';
 import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
 import { useWindowTransparency } from './hooks/useWindowTransparency';
+import { usePaneFill } from './hooks/usePaneFill';
 import type {
   SurfaceDragCommitOptions,
   SurfaceDragPayload,
@@ -427,6 +428,7 @@ export default function App() {
   useUiTheme();
   useUiMode();
   useWindowTransparency();
+  usePaneFill();
   const t = useT();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);

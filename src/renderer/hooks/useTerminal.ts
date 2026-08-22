@@ -352,7 +352,7 @@ function scheduleDeferredRepaint(terminal: Terminal): ReturnType<typeof setTimeo
   }, 300);
 }
 
-async function fetchTheme(name: string): Promise<ThemeConfig> {
+export async function fetchTheme(name: string): Promise<ThemeConfig> {
   const cached = themeCache.get(name);
   if (cached) return cached;
   try {
@@ -1127,7 +1127,15 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     let cancelled = false;
     fetchTheme(schemeName).then((base) => {
       if (cancelled || !xtermRef.current) return;
-      xtermRef.current.options.theme = buildXtermTheme(base, userScheme, bgAlpha);
+      const theme = buildXtermTheme(base, userScheme, bgAlpha);
+      xtermRef.current.options.theme = theme;
+      // xterm paints the theme background on .xterm-scrollable-element, which
+      // sits INSIDE .xterm's 2px padding — so over a translucent window that
+      // padding was a fully see-through frame around every pane. Publishing the
+      // exact colour the terminal just took lets the container fill it, and it
+      // is per-pane on purpose: a pane with its own --color-scheme has to match
+      // itself, not the global theme.
+      terminalRef.current?.style.setProperty('--wmux-term-bg', theme.background ?? 'transparent');
     });
     // Font + cursor + scrollback can be applied synchronously.
     term.options.fontFamily = prefs.fontFamily || term.options.fontFamily;
