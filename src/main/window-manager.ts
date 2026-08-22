@@ -14,21 +14,50 @@ const OPAQUE_BG = '#1a1a1a';
  */
 const TRANSPARENT_BG = '#00000000';
 
-export type WindowMaterial = 'acrylic' | 'mica';
+/**
+ * How the desktop shows through the window.
+ *
+ * 'clear' is plain per-pixel alpha and the one that matches Windows Terminal's
+ * `opacity` with `useAcrylic` off — you can read text in the window behind.
+ * 'acrylic' and 'mica' are DWM backdrops, which BLUR what is behind by
+ * definition, so they can never produce that.
+ */
+export type WindowMaterial = 'clear' | 'acrylic' | 'mica';
+
+/**
+ * Plain alpha transparency. Any DWM-composited Windows can do it — this is not
+ * a Win11 feature, unlike the backdrop materials below.
+ */
+export function supportsTransparency(): boolean {
+  return process.platform === 'win32';
+}
 
 /**
  * Whether the DWM backdrop APIs behind `setBackgroundMaterial` actually exist.
  *
  * They landed in Windows 11 (build 22000). On Windows 10 the call is accepted
- * and silently does nothing, which would leave a user with transparency ON, a
- * transparent backgroundColor and therefore a BLACK window — worse than no
- * feature at all. So the capability is reported to the renderer and the toggle
- * is hidden where it cannot work.
+ * and silently does nothing, which would leave a user with a transparent
+ * backgroundColor and no backdrop drawn — a BLACK window. So the capability is
+ * reported to the renderer and acrylic/mica are hidden where they cannot work.
  */
 export function supportsBackdropMaterial(): boolean {
   if (process.platform !== 'win32') return false;
   const build = Number(os.release().split('.')[2]);
   return Number.isFinite(build) && build >= 22000;
+}
+
+/**
+ * Whether a mode needs the window itself created with `transparent: true`.
+ *
+ * This is the awkward part of the feature. A backdrop material composites under
+ * an ordinary opaque-backed window, so acrylic and mica can be switched on and
+ * off at runtime. Plain alpha cannot: `transparent` is fixed when the window is
+ * constructed and Electron exposes no setter, so entering or leaving 'clear'
+ * needs the window rebuilt — i.e. a restart, which the renderer is told about
+ * rather than left to wonder why nothing happened.
+ */
+export function needsTransparentWindow(enabled: boolean, material: WindowMaterial): boolean {
+  return enabled && material === 'clear';
 }
 
 /**
@@ -44,12 +73,12 @@ function storedBackdrop(): { enabled: boolean; material: WindowMaterial } {
     const prefs = loadSettings()['wmux-appearance-prefs'] as
       | { windowTransparency?: boolean; windowMaterial?: WindowMaterial }
       | undefined;
-    return {
-      enabled: prefs?.windowTransparency === true,
-      material: prefs?.windowMaterial === 'mica' ? 'mica' : 'acrylic',
-    };
+    const raw = prefs?.windowMaterial;
+    const material: WindowMaterial =
+      raw === 'mica' || raw === 'acrylic' || raw === 'clear' ? raw : 'clear';
+    return { enabled: prefs?.windowTransparency === true, material };
   } catch {
-    return { enabled: false, material: 'acrylic' };
+    return { enabled: false, material: 'clear' };
   }
 }
 
@@ -90,6 +119,12 @@ function getAppIcon(): Electron.NativeImage | undefined {
 interface WindowEntry {
   id: WindowId;
   window: BrowserWindow;
+  /**
+   * Whether this window was constructed with `transparent: true`. Fixed for the
+   * window's lifetime, so it decides which backdrop changes can be applied live
+   * and which need a restart.
+   */
+  transparent: boolean;
 }
 
 export class WindowManager {
@@ -136,7 +171,12 @@ export class WindowManager {
     }
 
     const backdrop = storedBackdrop();
-    const transparent = backdrop.enabled && supportsBackdropMaterial();
+    // 'clear' rides on plain alpha and needs no Win11; the blur materials do.
+    const modeAvailable = backdrop.material === 'clear'
+      ? supportsTransparency()
+      : supportsBackdropMaterial();
+    const translucent = backdrop.enabled && modeAvailable;
+    const transparent = needsTransparentWindow(translucent, backdrop.material);
 
     const win = new BrowserWindow({
       width: bounds?.width ?? 1400,
@@ -152,10 +192,14 @@ export class WindowManager {
         symbolColor: '#cccccc',
         height: 38,
       },
-      backgroundColor: transparent ? TRANSPARENT_BG : OPAQUE_BG,
-      // Only ever set on Win11 — passing a material on Win10 leaves the window
-      // transparent-but-unblurred, i.e. black.
-      ...(transparent ? { backgroundMaterial: backdrop.material } : {}),
+      backgroundColor: translucent ? TRANSPARENT_BG : OPAQUE_BG,
+      // Per-pixel alpha. Creation-time only — Electron has no setter for it.
+      ...(transparent ? { transparent: true } : {}),
+      // Only ever set on Win11, and never alongside 'clear': a backdrop would
+      // blur exactly what 'clear' exists to keep readable.
+      ...(translucent && backdrop.material !== 'clear'
+        ? { backgroundMaterial: backdrop.material }
+        : {}),
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         contextIsolation: true,
@@ -190,7 +234,7 @@ export class WindowManager {
       this.onWindowClosed?.(id, webContentsId);
     });
 
-    this.windows.set(id, { id, window: win });
+    this.windows.set(id, { id, window: win, transparent });
     return id;
   }
 
@@ -225,7 +269,7 @@ export class WindowManager {
     return null;
   }
 
-  getAllWindows(): Array<{ id: WindowId; window: BrowserWindow }> {
+  getAllWindows(): WindowEntry[] {
     return Array.from(this.windows.values()).filter(e => !e.window.isDestroyed());
   }
 
@@ -252,15 +296,30 @@ export class WindowManager {
    * Per-window try/catch: a window destroyed between the isDestroyed() check and
    * the call must not stop the remaining windows from updating.
    */
-  setBackdrop(enabled: boolean, material: WindowMaterial): void {
-    if (!supportsBackdropMaterial()) return;
+  setBackdrop(enabled: boolean, material: WindowMaterial): { needsRestart: boolean } {
+    const wantsTransparent = needsTransparentWindow(enabled, material);
+    let needsRestart = false;
+
     for (const entry of this.getAllWindows()) {
+      // Crossing the plain-alpha boundary in either direction means this window
+      // was built the wrong way round and no setter can fix it. Left alone
+      // rather than half-applied: setting a transparent background on a window
+      // with an opaque backing paints it black, which looks like a crash.
+      if (entry.transparent !== wantsTransparent) {
+        needsRestart = true;
+        continue;
+      }
       try {
         entry.window.setBackgroundColor(enabled ? TRANSPARENT_BG : OPAQUE_BG);
-        entry.window.setBackgroundMaterial(enabled ? material : 'none');
+        if (supportsBackdropMaterial()) {
+          entry.window.setBackgroundMaterial(
+            enabled && material !== 'clear' ? material : 'none',
+          );
+        }
       } catch {
         // Window went away mid-loop, or the platform rejected the material.
       }
     }
+    return { needsRestart };
   }
 }

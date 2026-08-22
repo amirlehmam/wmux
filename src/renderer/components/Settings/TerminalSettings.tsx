@@ -116,14 +116,17 @@ export default function TerminalSettings() {
     const pct = Math.round(Math.max(0, Math.min(1, theme.backgroundOpacity ?? 1)) * 100);
     let note = '';
     if (pct < 100) {
-      const supported = (await (window as any).wmux?.window?.supportsBackdrop?.()) === true;
+      // Plain alpha is what both source terminals mean by opacity, and it
+      // needs only DWM — so this is gated on `transparency`, not `materials`.
+      const caps = await (window as any).wmux?.window?.supportsBackdrop?.();
+      const supported = caps?.transparency === true;
       setAppearancePrefs({
         terminalBgOpacity: pct,
-        ...(supported ? { windowTransparency: true } : {}),
+        ...(supported ? { windowTransparency: true, windowMaterial: 'clear' } : {}),
       });
       note = supported
-        ? ` · ${pct}%`
-        : ` · ${pct}% (needs Windows 11)`;
+        ? ` · ${pct}% ${t('settings.terminalPanel.importRestart', '(restart to apply transparency)')}`
+        : ` · ${pct}%`;
     }
 
     setImportStatus(

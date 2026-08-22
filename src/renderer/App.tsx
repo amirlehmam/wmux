@@ -445,6 +445,9 @@ export default function App() {
   // behind the split tree; terminals show it through their alpha'd theme bg.
   const appearancePrefs = useStore((s) => s.appearancePrefs);
   const customBgActive = appearancePrefs.customBackgroundEnabled && !!appearancePrefs.customBackground.trim();
+  // Same guard as useTerminal: until the window is rebuilt there is nothing
+  // behind this layer to fade toward.
+  const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
   // With a transparent window the custom background is no longer the bottom
   // layer — the desktop is. Ghostty composites its background image onto the
   // background colour and applies `background-opacity` to the RESULT, so the
@@ -455,7 +458,7 @@ export default function App() {
   // Only when transparency is on: with an opaque window there is nothing behind
   // this layer but --ui-bg-1, and fading toward the app's own chrome colour is
   // not a look anyone asked for.
-  const customBgOpacity = appearancePrefs.windowTransparency
+  const customBgOpacity = appearancePrefs.windowTransparency && !transparencyPending
     ? Math.max(0, Math.min(1, (appearancePrefs.terminalBgOpacity ?? 88) / 100))
     : 1;
   // Browser panel auto-opens on startup unless disabled in Settings (issue #22).

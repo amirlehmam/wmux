@@ -447,13 +447,21 @@ export interface AppearancePrefs {
    * layer sits over the blurred desktop. Either one alone is enough to put
    * `terminalBgOpacity` into effect — see `bgAlpha` in useTerminal.ts.
    *
-   * Windows 11 only (build 22000+). On Windows 10 the DWM API behind
-   * `setBackgroundMaterial` does nothing, so the toggle is hidden rather than
-   * left as a switch that silently does nothing.
+   * Plain alpha ('clear') works on any DWM-composited Windows; the blur
+   * materials need Windows 11 (build 22000+), where the DWM API behind
+   * `setBackgroundMaterial` exists.
    */
   windowTransparency: boolean;
-  /** Win11 backdrop: 'acrylic' blurs the desktop heavily, 'mica' only tints from it. */
-  windowMaterial: 'acrylic' | 'mica';
+  /**
+   * How the desktop comes through.
+   *
+   * 'clear' is plain per-pixel alpha — what you can read a browser through, and
+   * what Windows Terminal's `opacity` does with `useAcrylic` off. 'acrylic' and
+   * 'mica' are Win11 backdrops, which BLUR what is behind them by definition,
+   * so neither can ever produce that. 'clear' is the default for exactly that
+   * reason: it is what people mean by a transparent terminal.
+   */
+  windowMaterial: 'clear' | 'acrylic' | 'mica';
   /**
    * Sidebar presentation mode. 'classic' is the stock list; 'trace' is the
    * opt-in live view that renders each Claude session as a tap on a copper bus,
@@ -494,7 +502,7 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   customBackground: '',
   terminalBgOpacity: 88,
   windowTransparency: false,
-  windowMaterial: 'acrylic',
+  windowMaterial: 'clear',
   uiMode: 'trace',
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
 };
@@ -557,9 +565,22 @@ export interface SettingsSlice {
    */
   broadcastInputActive: boolean;
 
+  /**
+   * Whether the transparency setting on screen is ahead of the window on
+   * screen — true after switching into or out of plain-alpha mode, which
+   * Electron fixes at window construction. Runtime-only: it describes this
+   * window's state, not a preference, and is false again once it restarts.
+   *
+   * Lives here rather than in useWindowTransparency's own state because
+   * Settings renders inside the same tree as App; a second call to the hook
+   * would apply every backdrop change twice.
+   */
+  transparencyNeedsRestart: boolean;
+
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void;
   resetShortcuts(): void;
   toggleSidebar(): void;
+  setTransparencyNeedsRestart(value: boolean): void;
   setSidebarPrefs(prefs: Partial<SidebarPrefs>): void;
   setWorkspacePrefs(prefs: Partial<WorkspacePrefs>): void;
   setTerminalPrefs(prefs: Partial<TerminalPrefs>): void;
@@ -590,6 +611,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   language:          loadPersistedLanguage(),
   localeRevision:    getLocaleRevision(),
   broadcastInputActive: false,
+  transparencyNeedsRestart: false,
 
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void {
     set((state) => {
@@ -684,5 +706,9 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
 
   toggleBroadcastInput(): void {
     set((state) => ({ broadcastInputActive: !state.broadcastInputActive }));
+  },
+
+  setTransparencyNeedsRestart(value: boolean): void {
+    set({ transparencyNeedsRestart: value });
   },
 });

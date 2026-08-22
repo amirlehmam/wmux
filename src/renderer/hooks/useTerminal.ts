@@ -399,9 +399,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   // Gated on there being a backdrop on purpose — alpha with nothing behind it
   // just reveals the opaque app chrome, which reads as a rendering bug.
   const appearance = useStore((s) => s.appearancePrefs);
+  // Not just the pref: while a restart is pending the window is still opaque,
+  // so alpha here would reveal its flat backgroundColor instead of the desktop.
+  const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
   const hasBackdrop =
     (appearance.customBackgroundEnabled && !!appearance.customBackground) ||
-    appearance.windowTransparency;
+    (appearance.windowTransparency && !transparencyPending);
   // Clamped to 0..1 only. The 30% floor this inherited from issue #89 was a
   // guardrail for the custom-background case, where a fully transparent theme
   // background left text sitting on an arbitrary gradient. Ghostty stops at

@@ -16,7 +16,7 @@ import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-load
 import { parseWindowsTerminalConfig, parseGhosttyConfig, loadProjectProfiles, importWindowsTerminalProfiles } from './config-loader';
 import { loadUserConfig, getConfigPath, resetConfigWarnings } from './user-config';
 import { loadUserLocales } from './user-locales';
-import { WindowManager, supportsBackdropMaterial, type WindowMaterial } from './window-manager';
+import { WindowManager, supportsBackdropMaterial, supportsTransparency, type WindowMaterial } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
@@ -256,11 +256,20 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Window transparency (Win11 backdrop material). Applied to every window, not
   // just the sender: the pref is global, and a second window left opaque while
   // the first turned translucent reads as a bug.
-  ipcMain.on(IPC_CHANNELS.WINDOW_SET_BACKDROP, (_e, enabled: boolean, material?: string) => {
-    const safe: WindowMaterial = material === 'mica' ? 'mica' : 'acrylic';
-    windowManager.setBackdrop(enabled === true, safe);
+  // `handle`, not `on`: entering or leaving plain-alpha mode cannot be applied
+  // to a live window, and the renderer needs that answer to tell the user.
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SET_BACKDROP, (_e, enabled: boolean, material?: string) => {
+    const safe: WindowMaterial =
+      material === 'mica' || material === 'acrylic' || material === 'clear' ? material : 'clear';
+    return windowManager.setBackdrop(enabled === true, safe);
   });
-  ipcMain.handle(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP, () => supportsBackdropMaterial());
+  // Two separate capabilities: plain alpha needs only DWM, the blur materials
+  // need Win11. Reporting one flag for both would hide transparency from every
+  // Windows 10 user for the sake of a mode they were not asking for.
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP, () => ({
+    transparency: supportsTransparency(),
+    materials: supportsBackdropMaterial(),
+  }));
   // Taskbar progress: renderer sends its OSC 9;4 aggregate for this window.
   ipcMain.on(IPC_CHANNELS.WINDOW_SET_PROGRESS, (e, value: number, mode?: string) => {
     const win = BrowserWindow.fromWebContents(e.sender);

@@ -279,9 +279,12 @@ contextBridge.exposeInMainWorld('wmux', {
     setProgress: (value: number, mode?: string) =>
       ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_PROGRESS, value, mode),
     // Window transparency (Win11 acrylic/mica backdrop).
-    setBackdrop: (enabled: boolean, material: 'acrylic' | 'mica') =>
-      ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_BACKDROP, enabled, material),
-    supportsBackdrop: (): Promise<boolean> =>
+    setBackdrop: (
+      enabled: boolean,
+      material: 'clear' | 'acrylic' | 'mica',
+    ): Promise<{ needsRestart: boolean }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SET_BACKDROP, enabled, material),
+    supportsBackdrop: (): Promise<{ transparency: boolean; materials: boolean }> =>
       ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP),
   },
 });

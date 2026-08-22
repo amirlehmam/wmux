@@ -84,17 +84,26 @@ export default function GeneralSettings() {
 
   const activePreset = BG_PRESETS.find((p) => p.css === appearancePrefs.customBackground)?.nameKey ?? '';
 
-  // Window transparency needs the Win11 DWM backdrop APIs. Asked of main rather
-  // than sniffed here: the renderer only sees a Chrome UA string, and on
-  // Windows 10 the toggle would be a switch that visibly does nothing.
-  const [backdropSupported, setBackdropSupported] = useState(false);
+  // Asked of main rather than sniffed here: the renderer only sees a Chrome UA
+  // string. Two flags, because plain alpha needs only DWM while the blur
+  // materials need Win11 — collapsing them would hide transparency from every
+  // Windows 10 user over a mode they never asked for.
+  const [caps, setCaps] = useState<{ transparency: boolean; materials: boolean }>(
+    { transparency: false, materials: false },
+  );
   useEffect(() => {
     let cancelled = false;
-    window.wmux?.window?.supportsBackdrop?.().then((ok: boolean) => {
-      if (!cancelled) setBackdropSupported(ok === true);
-    }).catch(() => { /* older preload without the API — leave it hidden */ });
+    window.wmux?.window?.supportsBackdrop?.()
+      .then((c: { transparency: boolean; materials: boolean }) => {
+        if (!cancelled && c) setCaps(c);
+      })
+      .catch(() => { /* older preload without the API — leave it hidden */ });
     return () => { cancelled = true; };
   }, []);
+
+  // Set by useWindowTransparency (called once, in App) when the setting on
+  // screen is ahead of the window on screen.
+  const needsRestart = useStore((s) => s.transparencyNeedsRestart);
 
   // One slider, two possible backdrops — mirrors `bgAlpha` in useTerminal.ts.
   const opacityApplies = appearancePrefs.customBackgroundEnabled || appearancePrefs.windowTransparency;
@@ -237,7 +246,7 @@ export default function GeneralSettings() {
 
       <p className="settings-hint">{t('settings.general.customBgHint')}</p>
 
-      {backdropSupported && (
+      {caps.transparency && (
         <>
           <h3 className="settings-section-title">{t('settings.general.transparencySection')}</h3>
 
@@ -261,13 +270,24 @@ export default function GeneralSettings() {
                   setAppearancePrefs({ windowMaterial: e.target.value as AppearancePrefs['windowMaterial'] })
                 }
               >
-                <option value="acrylic">{t('settings.general.transparencyMaterial.acrylic')}</option>
-                <option value="mica">{t('settings.general.transparencyMaterial.mica')}</option>
+                <option value="clear">{t('settings.general.transparencyMaterial.clear')}</option>
+                {/* Blur materials are Win11-only; offering them on Windows 10
+                    would just produce a black window. */}
+                {caps.materials && (
+                  <>
+                    <option value="acrylic">{t('settings.general.transparencyMaterial.acrylic')}</option>
+                    <option value="mica">{t('settings.general.transparencyMaterial.mica')}</option>
+                  </>
+                )}
               </select>
             </div>
           )}
 
           <p className="settings-hint">{t('settings.general.transparencyHint')}</p>
+
+          {needsRestart && (
+            <p className="settings-hint">{t('settings.general.transparencyRestart')}</p>
+          )}
         </>
       )}
 

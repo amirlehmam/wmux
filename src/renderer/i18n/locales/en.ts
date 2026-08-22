@@ -53,11 +53,14 @@ export const en = {
   // Settings — General panel — Window transparency (Windows 11 only)
   'settings.general.transparencySection': 'Window transparency',
   'settings.general.transparencyEnable': 'See through to the desktop',
-  'settings.general.transparencyMaterial': 'Blur style',
-  'settings.general.transparencyMaterial.acrylic': 'Acrylic — strong blur',
-  'settings.general.transparencyMaterial.mica': 'Mica — subtle desktop tint',
+  'settings.general.transparencyMaterial': 'Style',
+  'settings.general.transparencyMaterial.clear': 'Clear — no blur, read straight through',
+  'settings.general.transparencyMaterial.acrylic': 'Acrylic — strong blur (Windows 11)',
+  'settings.general.transparencyMaterial.mica': 'Mica — subtle desktop tint (Windows 11)',
   'settings.general.transparencyHint':
-    'Makes the window itself translucent so your desktop shows through the terminals, blurred by Windows 11. The sidebar and title bar stay opaque so they remain readable. Terminal opacity controls how much shows through.',
+    'Makes the window itself translucent so whatever is behind wmux shows through the terminals. Clear leaves it sharp enough to read, the way Windows Terminal does; Acrylic and Mica blur it instead. The sidebar and title bar stay opaque so they remain readable. Terminal opacity controls how much shows through.',
+  'settings.general.transparencyRestart':
+    'Restart wmux to apply — switching Clear on or off rebuilds the window.',
   // Command palette
   'palette.placeholder': 'Type a command or search...',
   'palette.empty': 'No results found',
@@ -397,6 +400,7 @@ export const en = {
   'settings.terminalPanel.importGhostty': 'From Ghostty',
   'settings.terminalPanel.importNotFound': 'No config found to import.',
   'settings.terminalPanel.imported': 'Imported',
+  'settings.terminalPanel.importRestart': '(restart to apply transparency)',
   'settings.terminalPanel.defaultScheme': 'Default scheme',
   'settings.terminalPanel.schemeHintPart1': 'Applied to new panes. Override per pane via ',
   'settings.terminalPanel.schemeHintPart2': ' or ',
