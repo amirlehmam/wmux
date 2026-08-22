@@ -1,7 +1,57 @@
 import { BrowserWindow, nativeImage, screen } from 'electron';
 import { v4 as uuid } from 'uuid';
+import os from 'os';
 import path from 'path';
 import type { WindowId } from '../shared/types';
+import { loadSettings } from './settings-store';
+
+/** The window backdrop when transparency is off — matches --ui-bg-1. */
+const OPAQUE_BG = '#1a1a1a';
+/**
+ * Fully transparent backdrop. `setBackgroundMaterial` only becomes visible when
+ * the window's own background colour has zero alpha — an opaque backgroundColor
+ * paints over the DWM material and the window just looks normal.
+ */
+const TRANSPARENT_BG = '#00000000';
+
+export type WindowMaterial = 'acrylic' | 'mica';
+
+/**
+ * Whether the DWM backdrop APIs behind `setBackgroundMaterial` actually exist.
+ *
+ * They landed in Windows 11 (build 22000). On Windows 10 the call is accepted
+ * and silently does nothing, which would leave a user with transparency ON, a
+ * transparent backgroundColor and therefore a BLACK window — worse than no
+ * feature at all. So the capability is reported to the renderer and the toggle
+ * is hidden where it cannot work.
+ */
+export function supportsBackdropMaterial(): boolean {
+  if (process.platform !== 'win32') return false;
+  const build = Number(os.release().split('.')[2]);
+  return Number.isFinite(build) && build >= 22000;
+}
+
+/**
+ * The transparency pref, read straight off %APPDATA%\wmux\settings.json.
+ *
+ * Read here rather than pushed from the renderer so the window can be CREATED
+ * with the right backdrop. Applying it after the renderer boots works, but the
+ * window paints opaque for those first frames and the transition is a visible
+ * flash on every launch.
+ */
+function storedBackdrop(): { enabled: boolean; material: WindowMaterial } {
+  try {
+    const prefs = loadSettings()['wmux-appearance-prefs'] as
+      | { windowTransparency?: boolean; windowMaterial?: WindowMaterial }
+      | undefined;
+    return {
+      enabled: prefs?.windowTransparency === true,
+      material: prefs?.windowMaterial === 'mica' ? 'mica' : 'acrylic',
+    };
+  } catch {
+    return { enabled: false, material: 'acrylic' };
+  }
+}
 
 /**
  * The window icon, preferring the multi-size .ico over the 512px .png (issue #137).
@@ -85,6 +135,9 @@ export class WindowManager {
       }
     }
 
+    const backdrop = storedBackdrop();
+    const transparent = backdrop.enabled && supportsBackdropMaterial();
+
     const win = new BrowserWindow({
       width: bounds?.width ?? 1400,
       height: bounds?.height ?? 900,
@@ -99,7 +152,10 @@ export class WindowManager {
         symbolColor: '#cccccc',
         height: 38,
       },
-      backgroundColor: '#1a1a1a',
+      backgroundColor: transparent ? TRANSPARENT_BG : OPAQUE_BG,
+      // Only ever set on Win11 — passing a material on Win10 leaves the window
+      // transparent-but-unblurred, i.e. black.
+      ...(transparent ? { backgroundMaterial: backdrop.material } : {}),
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         contextIsolation: true,
@@ -183,5 +239,28 @@ export class WindowManager {
 
   getCount(): number {
     return this.windows.size;
+  }
+
+  /**
+   * Toggle the Win11 backdrop on every open window, live.
+   *
+   * Both halves have to move together: the material is what DWM blurs, the
+   * background colour is what lets it show. Setting one without the other gives
+   * either no effect at all (opaque colour) or a black window (material 'none'
+   * over a transparent colour), so they are applied as a pair.
+   *
+   * Per-window try/catch: a window destroyed between the isDestroyed() check and
+   * the call must not stop the remaining windows from updating.
+   */
+  setBackdrop(enabled: boolean, material: WindowMaterial): void {
+    if (!supportsBackdropMaterial()) return;
+    for (const entry of this.getAllWindows()) {
+      try {
+        entry.window.setBackgroundColor(enabled ? TRANSPARENT_BG : OPAQUE_BG);
+        entry.window.setBackgroundMaterial(enabled ? material : 'none');
+      } catch {
+        // Window went away mid-loop, or the platform rejected the material.
+      }
+    }
   }
 }

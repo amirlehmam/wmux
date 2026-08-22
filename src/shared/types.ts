@@ -353,6 +353,8 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_SET_PROGRESS: 'window:setProgress',
+  WINDOW_SET_BACKDROP: 'window:setBackdrop',
+  WINDOW_SUPPORTS_BACKDROP: 'window:supportsBackdrop',
   // Config
   CONFIG_GET_THEME: 'config:getTheme',
   CONFIG_GET_THEME_LIST: 'config:getThemeList',

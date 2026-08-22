@@ -16,7 +16,7 @@ import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-load
 import { parseWindowsTerminalConfig, parseGhosttyConfig, loadProjectProfiles, importWindowsTerminalProfiles } from './config-loader';
 import { loadUserConfig, getConfigPath, resetConfigWarnings } from './user-config';
 import { loadUserLocales } from './user-locales';
-import { WindowManager } from './window-manager';
+import { WindowManager, supportsBackdropMaterial, type WindowMaterial } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
@@ -253,6 +253,14 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, (e) =>
     BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false
   );
+  // Window transparency (Win11 backdrop material). Applied to every window, not
+  // just the sender: the pref is global, and a second window left opaque while
+  // the first turned translucent reads as a bug.
+  ipcMain.on(IPC_CHANNELS.WINDOW_SET_BACKDROP, (_e, enabled: boolean, material?: string) => {
+    const safe: WindowMaterial = material === 'mica' ? 'mica' : 'acrylic';
+    windowManager.setBackdrop(enabled === true, safe);
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP, () => supportsBackdropMaterial());
   // Taskbar progress: renderer sends its OSC 9;4 aggregate for this window.
   ipcMain.on(IPC_CHANNELS.WINDOW_SET_PROGRESS, (e, value: number, mode?: string) => {
     const win = BrowserWindow.fromWebContents(e.sender);

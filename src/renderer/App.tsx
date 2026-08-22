@@ -24,6 +24,7 @@ import { initPipeBridge } from './pipe-bridge';
 import { setKeyRemaps } from './key-remaps';
 import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
+import { useWindowTransparency } from './hooks/useWindowTransparency';
 import type {
   SurfaceDragCommitOptions,
   SurfaceDragPayload,
@@ -425,6 +426,7 @@ export default function App() {
 
   useUiTheme();
   useUiMode();
+  useWindowTransparency();
   const t = useT();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);

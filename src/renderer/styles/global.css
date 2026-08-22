@@ -14,6 +14,21 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Window transparency. A Win11 backdrop material only shows through where
+   nothing paints over it, so the root layers stop painting entirely — the
+   window's own backgroundColor is already transparent by then.
+
+   Deliberately scoped to the root: the titlebar and sidebar keep their opaque
+   --ui-bg-0, so only the terminal area goes see-through. That is the Windows
+   Terminal arrangement, and it keeps chrome text readable over an arbitrary
+   desktop instead of leaving it to fight the wallpaper. The terminal's own
+   translucency is a separate knob (terminalBgOpacity → bgAlpha). */
+html.wmux-transparent,
+html.wmux-transparent body,
+html.wmux-transparent #root {
+  background: transparent;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }

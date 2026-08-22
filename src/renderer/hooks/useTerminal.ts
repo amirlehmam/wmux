@@ -391,10 +391,18 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   const prefs = useStore((s) => s.terminalPrefs);
   const schemeName = resolveSchemeName(colorScheme, prefs.theme);
   const userScheme = prefs.userColorSchemes?.[schemeName];
-  // Custom background (issue #89): when enabled, the theme background gets
-  // alpha so the background layer rendered behind the split tree shows through.
+  // The terminal background goes translucent when there is something behind it
+  // worth seeing: the in-app custom background layer (issue #89), or the actual
+  // desktop through a transparent window. Either alone is enough, and with both
+  // on the custom layer is what shows over the blurred desktop.
+  //
+  // Gated on there being a backdrop on purpose — alpha with nothing behind it
+  // just reveals the opaque app chrome, which reads as a rendering bug.
   const appearance = useStore((s) => s.appearancePrefs);
-  const bgAlpha = appearance.customBackgroundEnabled && appearance.customBackground
+  const hasBackdrop =
+    (appearance.customBackgroundEnabled && !!appearance.customBackground) ||
+    appearance.windowTransparency;
+  const bgAlpha = hasBackdrop
     ? Math.max(0.3, Math.min(1, (appearance.terminalBgOpacity ?? 88) / 100))
     : 1;
 

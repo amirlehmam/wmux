@@ -84,6 +84,21 @@ export default function GeneralSettings() {
 
   const activePreset = BG_PRESETS.find((p) => p.css === appearancePrefs.customBackground)?.nameKey ?? '';
 
+  // Window transparency needs the Win11 DWM backdrop APIs. Asked of main rather
+  // than sniffed here: the renderer only sees a Chrome UA string, and on
+  // Windows 10 the toggle would be a switch that visibly does nothing.
+  const [backdropSupported, setBackdropSupported] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    window.wmux?.window?.supportsBackdrop?.().then((ok: boolean) => {
+      if (!cancelled) setBackdropSupported(ok === true);
+    }).catch(() => { /* older preload without the API — leave it hidden */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // One slider, two possible backdrops — mirrors `bgAlpha` in useTerminal.ts.
+  const opacityApplies = appearancePrefs.customBackgroundEnabled || appearancePrefs.windowTransparency;
+
   return (
     <div className="settings-section">
       <h3 className="settings-section-title">{t('settings.general.languageSection')}</h3>
@@ -217,24 +232,71 @@ export default function GeneralSettings() {
               </div>
             </div>
           )}
-
-          <div className="settings-row">
-            <label className="settings-label">
-              {t('settings.general.customBgOpacity')} — {appearancePrefs.terminalBgOpacity}%
-            </label>
-            <input
-              type="range"
-              min={30}
-              max={100}
-              step={1}
-              value={appearancePrefs.terminalBgOpacity}
-              onChange={(e) => setAppearancePrefs({ terminalBgOpacity: Number(e.target.value) })}
-            />
-          </div>
         </>
       )}
 
       <p className="settings-hint">{t('settings.general.customBgHint')}</p>
+
+      {backdropSupported && (
+        <>
+          <h3 className="settings-section-title">{t('settings.general.transparencySection')}</h3>
+
+          <div className="settings-row">
+            <label className="settings-label">{t('settings.general.transparencyEnable')}</label>
+            <input
+              type="checkbox"
+              className="settings-toggle"
+              checked={appearancePrefs.windowTransparency}
+              onChange={(e) => setAppearancePrefs({ windowTransparency: e.target.checked })}
+            />
+          </div>
+
+          {appearancePrefs.windowTransparency && (
+            <div className="settings-row">
+              <label className="settings-label">{t('settings.general.transparencyMaterial')}</label>
+              <select
+                className="settings-select"
+                value={appearancePrefs.windowMaterial}
+                onChange={(e) =>
+                  setAppearancePrefs({ windowMaterial: e.target.value as AppearancePrefs['windowMaterial'] })
+                }
+              >
+                <option value="acrylic">{t('settings.general.transparencyMaterial.acrylic')}</option>
+                <option value="mica">{t('settings.general.transparencyMaterial.mica')}</option>
+              </select>
+            </div>
+          )}
+
+          <p className="settings-hint">{t('settings.general.transparencyHint')}</p>
+
+          {/* The custom background is a layer INSIDE the window, so it sits
+              between the terminal and the now-transparent window. Every shipped
+              preset ends in an opaque colour, so leaving both on is the most
+              likely way for transparency to look broken — say so rather than
+              letting the user conclude the toggle does nothing. */}
+          {appearancePrefs.windowTransparency && appearancePrefs.customBackgroundEnabled && (
+            <p className="settings-hint" style={{ color: 'var(--ui-warning)' }}>
+              {t('settings.general.transparencyCustomBgWarning')}
+            </p>
+          )}
+        </>
+      )}
+
+      {opacityApplies && (
+        <div className="settings-row">
+          <label className="settings-label">
+            {t('settings.general.customBgOpacity')} — {appearancePrefs.terminalBgOpacity}%
+          </label>
+          <input
+            type="range"
+            min={30}
+            max={100}
+            step={1}
+            value={appearancePrefs.terminalBgOpacity}
+            onChange={(e) => setAppearancePrefs({ terminalBgOpacity: Number(e.target.value) })}
+          />
+        </div>
+      )}
 
       <AgentIntegrationSettings />
     </div>

@@ -278,5 +278,10 @@ contextBridge.exposeInMainWorld('wmux', {
     // Windows taskbar progress (OSC 9;4 aggregate). value 0-1, or -1 to remove.
     setProgress: (value: number, mode?: string) =>
       ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_PROGRESS, value, mode),
+    // Window transparency (Win11 acrylic/mica backdrop).
+    setBackdrop: (enabled: boolean, material: 'acrylic' | 'mica') =>
+      ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_BACKDROP, enabled, material),
+    supportsBackdrop: (): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP),
   },
 });

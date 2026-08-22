@@ -126,7 +126,8 @@ claudeActivity: onUpdate
 agentState: onUpdate   # declared blocked/working/idle (issue #128)
 session:  save, load, list, delete
 cdp:      attach, detach
-window:   create, close, focus, list, minimize, maximize, isMaximized
+window:   create, close, focus, list, minimize, maximize, isMaximized,
+          setBackdrop, supportsBackdrop   # Win11 acrylic/mica window transparency
 ```
 
 ---

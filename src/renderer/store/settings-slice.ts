@@ -435,8 +435,25 @@ export interface AppearancePrefs {
    */
   customBackgroundEnabled: boolean;
   customBackground: string;
-  /** 30–100 (%). How opaque the terminal theme background stays over the custom background. */
+  /** 30–100 (%). How opaque the terminal theme background stays over whatever is behind it. */
   terminalBgOpacity: number;
+  /**
+   * Real window transparency (issue: terminal opacity). Where `customBackground`
+   * paints a layer INSIDE the window, this makes the window itself translucent
+   * so the actual desktop shows through the terminal, blurred by a Windows 11
+   * backdrop material.
+   *
+   * The two are independent and compose: with both on, the custom background
+   * layer sits over the blurred desktop. Either one alone is enough to put
+   * `terminalBgOpacity` into effect — see `bgAlpha` in useTerminal.ts.
+   *
+   * Windows 11 only (build 22000+). On Windows 10 the DWM API behind
+   * `setBackgroundMaterial` does nothing, so the toggle is hidden rather than
+   * left as a switch that silently does nothing.
+   */
+  windowTransparency: boolean;
+  /** Win11 backdrop: 'acrylic' blurs the desktop heavily, 'mica' only tints from it. */
+  windowMaterial: 'acrylic' | 'mica';
   /**
    * Sidebar presentation mode. 'classic' is the stock list; 'trace' is the
    * opt-in live view that renders each Claude session as a tap on a copper bus,
@@ -476,6 +493,8 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   customBackgroundEnabled: false,
   customBackground: '',
   terminalBgOpacity: 88,
+  windowTransparency: false,
+  windowMaterial: 'acrylic',
   uiMode: 'trace',
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
 };

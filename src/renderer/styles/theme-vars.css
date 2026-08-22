@@ -38,6 +38,11 @@
   --ui-border: #3a3a3a;
   --ui-border-strong: #555555;
 
+  /* Advisory text — a settings note the user should read before concluding a
+     toggle is broken. Amber rather than red: nothing is wrong, it just will
+     not do what they expect while another setting is on. */
+  --ui-warning: #d8a657;
+
   --ui-text-primary: #e0e0e0;
   --ui-text-secondary: #bbbbbb;
   --ui-text-muted: #888888;
@@ -63,6 +68,9 @@
 
   --ui-border: #d5d5d5;
   --ui-border-strong: #b0b0b0;
+
+  /* Darkened for contrast against the light surfaces. */
+  --ui-warning: #8a5a00;
 
   --ui-text-primary: #1c1c1c;
   --ui-text-secondary: #4a4a4a;
