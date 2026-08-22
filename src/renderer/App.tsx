@@ -445,7 +445,9 @@ export default function App() {
   // Broadcast-input mode banner (issue #64): mirror the runtime store flag.
   const broadcastInputActive = useStore((s) => s.broadcastInputActive);
   // Custom background parallel to theming (issue #89): rendered as a layer
-  // behind the split tree; terminals show it through their alpha'd theme bg.
+  // behind the split tree. Panes with a custom background drop their own theme
+  // colour to fully transparent (see `terminalBgAlpha`), so this layer IS the
+  // terminal background rather than something glimpsed through it.
   const appearancePrefs = useStore((s) => s.appearancePrefs);
   const customBgActive = appearancePrefs.customBackgroundEnabled && !!appearancePrefs.customBackground.trim();
   // Same guard as useTerminal: until the window is rebuilt there is nothing
@@ -453,10 +455,8 @@ export default function App() {
   const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
   // With a transparent window the custom background is no longer the bottom
   // layer — the desktop is. Ghostty composites its background image onto the
-  // background colour and applies `background-opacity` to the RESULT, so the
-  // image fades toward the desktop with everything else; the terminal's own
-  // background getting alpha while the image stayed opaque would just hide the
-  // desktop behind it. Same slider, so the two layers stay in step.
+  // background colour and applies `background-opacity` to the RESULT, so this
+  // layer takes the window opacity directly.
   //
   // Only when transparency is on: with an opaque window there is nothing behind
   // this layer but --ui-bg-1, and fading toward the app's own chrome colour is

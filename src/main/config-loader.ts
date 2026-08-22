@@ -68,8 +68,31 @@ interface WTColorScheme {
 
 interface WTSettings {
   defaultProfile?: string;
-  profiles?: { list?: WTProfile[] } | WTProfile[];
+  profiles?: { defaults?: WTProfile; list?: WTProfile[] } | WTProfile[];
   schemes?: WTColorScheme[];
+}
+
+/**
+ * Fold `profiles.defaults` into a profile, the way Windows Terminal itself
+ * does: every key in `defaults` is inherited by every profile in `list`, and
+ * the profile's own keys win.
+ *
+ * This is not an edge case — it is where the WT UI writes anything set under
+ * "Defaults", so a settings.json whose colour scheme, font and opacity are all
+ * global (a very ordinary one) carries NONE of them on the profile itself. Read
+ * without this merge, such a config imports as bare defaults: stock font, 100%
+ * opacity, and whichever scheme the `schemes[0]` fallback happened to land on.
+ *
+ * `font` merges one level deeper because WT inherits its sub-keys
+ * independently — a profile overriding only `font.size` keeps the global face.
+ */
+function mergeProfileDefaults(defaults: WTProfile | undefined, profile: WTProfile): WTProfile {
+  if (!defaults) return profile;
+  const merged: WTProfile = { ...defaults, ...profile };
+  if (defaults.font || profile.font) {
+    merged.font = { ...defaults.font, ...profile.font };
+  }
+  return merged;
 }
 
 /**
@@ -148,10 +171,12 @@ export function parseWindowsTerminalSettingsJson(settings: WTSettings): ThemeCon
 
     // Normalise profiles list (can be object with .list or plain array)
     let profiles: WTProfile[] = [];
+    let profileDefaults: WTProfile | undefined;
     if (Array.isArray(settings.profiles)) {
       profiles = settings.profiles;
-    } else if (settings.profiles && Array.isArray(settings.profiles.list)) {
-      profiles = settings.profiles.list;
+    } else if (settings.profiles) {
+      if (Array.isArray(settings.profiles.list)) profiles = settings.profiles.list;
+      profileDefaults = settings.profiles.defaults;
     }
 
     // Find default profile
@@ -166,19 +191,22 @@ export function parseWindowsTerminalSettingsJson(settings: WTSettings): ThemeCon
     }
     if (!defaultProfile) defaultProfile = {};
 
+    // Everything downstream reads the INHERITED profile, never the raw entry.
+    const effective = mergeProfileDefaults(profileDefaults, defaultProfile);
+
     const schemes: WTColorScheme[] = settings.schemes || [];
 
     // Find matching color scheme
     let scheme: WTColorScheme | undefined;
-    if (defaultProfile.colorScheme) {
-      scheme = schemes.find((s) => s.name === defaultProfile!.colorScheme);
+    if (effective.colorScheme) {
+      scheme = schemes.find((s) => s.name === effective.colorScheme);
     }
     if (!scheme && schemes.length > 0) {
       scheme = schemes[0];
     }
     if (!scheme) scheme = {};
 
-    return schemeToTheme(defaultProfile, scheme);
+    return schemeToTheme(effective, scheme);
   } catch {
     return null;
   }

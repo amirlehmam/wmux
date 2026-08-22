@@ -21,6 +21,18 @@
   padding: 2px;
 }
 
+/* xterm paints the theme background a SECOND time, inline, on the scrollable
+   element (`domNode.style.backgroundColor = colors.background.css`) — directly
+   over the identical rgba the container above already paints. Two identical
+   translucent layers do not composite to their own alpha, they composite to
+   1-(1-a)^2: an 80% background renders at 96%, and a 50% one at 75%. That is
+   the whole reason wmux looked stubbornly more opaque than Windows Terminal at
+   the same number. Paint it exactly once, on the container, which is also the
+   only layer that reaches the 2px padding. */
+.terminal-pane__container .xterm-scrollable-element {
+  background-color: transparent !important;
+}
+
 .terminal-pane__container .xterm-viewport {
   overflow-y: auto !important;
   /* xterm 6.0 paints the theme background on .xterm-scrollable-element and no

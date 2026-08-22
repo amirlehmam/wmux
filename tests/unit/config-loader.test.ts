@@ -303,6 +303,90 @@ describe('parseWindowsTerminalSettingsJson', () => {
     // or null — either is acceptable, but it must not throw.
     expect(() => parseWindowsTerminalSettingsJson({})).not.toThrow();
   });
+
+  // -------------------------------------------------------------------------
+  // profiles.defaults inheritance
+  //
+  // This is where the WT settings UI writes anything set under "Defaults", so
+  // it is the common shape, not an exotic one: the default profile entry itself
+  // carries no scheme, font or opacity at all.
+  // -------------------------------------------------------------------------
+
+  const inheritedSettings = {
+    defaultProfile: '{ubuntu}',
+    profiles: {
+      defaults: {
+        colorScheme: 'SynthWave 84',
+        font: { face: 'Fira Code', size: 10 },
+        opacity: 80,
+      },
+      list: [
+        { guid: '{powershell}', name: 'Windows PowerShell' },
+        { guid: '{ubuntu}', name: 'Ubuntu-20.04', source: 'Windows.Terminal.Wsl' },
+      ],
+    },
+    schemes: [
+      { name: 'Campbell', background: '#0C0C0C', foreground: '#CCCCCC' },
+      { name: 'SynthWave 84', background: '#262335', foreground: '#FFFFFF' },
+    ],
+  };
+
+  it('inherits opacity from profiles.defaults', () => {
+    expect(parseWindowsTerminalSettingsJson(inheritedSettings)!.backgroundOpacity).toBeCloseTo(0.8);
+  });
+
+  it('inherits the colour scheme from profiles.defaults', () => {
+    // Not the schemes[0] fallback — that would silently pick Campbell.
+    const theme = parseWindowsTerminalSettingsJson(inheritedSettings)!;
+    expect(theme.name).toBe('SynthWave 84');
+    expect(theme.background).toBe('#262335');
+  });
+
+  it('inherits the font from profiles.defaults', () => {
+    const theme = parseWindowsTerminalSettingsJson(inheritedSettings)!;
+    expect(theme.fontFamily).toBe('Fira Code');
+    expect(theme.fontSize).toBe(10);
+  });
+
+  it('lets the profile override what it declares and inherit the rest', () => {
+    const settings = {
+      ...inheritedSettings,
+      profiles: {
+        defaults: inheritedSettings.profiles.defaults,
+        list: [
+          { guid: '{ubuntu}', name: 'Ubuntu', colorScheme: 'Campbell', opacity: 50 },
+        ],
+      },
+    };
+    const theme = parseWindowsTerminalSettingsJson(settings)!;
+    expect(theme.name).toBe('Campbell');
+    expect(theme.backgroundOpacity).toBeCloseTo(0.5);
+    expect(theme.fontFamily).toBe('Fira Code');
+  });
+
+  it('merges font sub-keys rather than replacing the object', () => {
+    // WT inherits font.face and font.size independently; a profile setting only
+    // the size must keep the global face.
+    const settings = {
+      ...inheritedSettings,
+      profiles: {
+        defaults: inheritedSettings.profiles.defaults,
+        list: [{ guid: '{ubuntu}', name: 'Ubuntu', font: { size: 14 } }],
+      },
+    };
+    const theme = parseWindowsTerminalSettingsJson(settings)!;
+    expect(theme.fontFamily).toBe('Fira Code');
+    expect(theme.fontSize).toBe(14);
+  });
+
+  it('survives profiles.defaults being absent', () => {
+    const settings = {
+      defaultProfile: '{a}',
+      profiles: { list: [{ guid: '{a}', name: 'A', colorScheme: 'Campbell' }] },
+      schemes: [{ name: 'Campbell', background: '#0C0C0C' }],
+    };
+    expect(parseWindowsTerminalSettingsJson(settings)!.name).toBe('Campbell');
+  });
 });
 
 // ---------------------------------------------------------------------------

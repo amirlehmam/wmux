@@ -106,8 +106,11 @@ export default function GeneralSettings() {
   // screen is ahead of the window on screen.
   const needsRestart = useStore((s) => s.transparencyNeedsRestart);
 
-  // One slider, two possible backdrops — mirrors `hasBackdrop` in backdrop.ts.
-  const opacityApplies = appearancePrefs.customBackgroundEnabled || appearancePrefs.windowTransparency;
+  // The slider is window opacity, so it needs a transparent window to mean
+  // anything. A custom background alone no longer qualifies: it now replaces
+  // the terminal's colour outright rather than being faded toward, so with an
+  // opaque window there is nothing left for the slider to move.
+  const opacityApplies = appearancePrefs.windowTransparency;
   const effectiveOpacity = Math.round(opacityToAlpha(appearancePrefs.terminalBgOpacity) * 100);
 
   return (
@@ -229,10 +232,12 @@ export default function GeneralSettings() {
                   overflow: 'hidden',
                 }}
               >
+                {/* No scrim: the terminal's own background is fully transparent
+                    wherever a custom background is set, so a pane really does
+                    render as text straight onto this. */}
                 <div style={{
                   position: 'absolute',
                   inset: 0,
-                  background: `rgba(30, 30, 30, ${(appearancePrefs.terminalBgOpacity ?? 88) / 100})`,
                   color: '#9ecbff',
                   fontFamily: 'Consolas, monospace',
                   fontSize: 12,

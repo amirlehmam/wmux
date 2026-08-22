@@ -55,11 +55,41 @@ describe('terminalBgAlpha', () => {
     expect(terminalBgAlpha(prefs(), false)).toBe(1);
   });
 
-  it('applies the floored opacity once there is a backdrop', () => {
+  it('applies the floored opacity once the window is transparent', () => {
     expect(terminalBgAlpha(prefs({ windowTransparency: true, terminalBgOpacity: 0 }), false))
       .toBeCloseTo(MIN_TERMINAL_OPACITY_PCT / 100);
     expect(terminalBgAlpha(prefs({ windowTransparency: true, terminalBgOpacity: 70 }), false))
       .toBeCloseTo(0.7);
+  });
+
+  it('drops to nothing where a custom background is set, at any opacity', () => {
+    // The custom background replaces the terminal colour rather than sitting
+    // behind it. Painting the theme's flat grey over it at 100% is what made a
+    // configured background invisible.
+    const p = (opacity: number) => prefs({
+      customBackgroundEnabled: true,
+      customBackground: '#123',
+      terminalBgOpacity: opacity,
+    });
+    expect(terminalBgAlpha(p(100), false)).toBe(0);
+    expect(terminalBgAlpha(p(40), false)).toBe(0);
+  });
+
+  it('still ignores a custom background that is enabled but blank', () => {
+    expect(terminalBgAlpha(prefs({ customBackgroundEnabled: true, customBackground: '  ' }), false)).toBe(1);
+  });
+
+  it('lets the custom background win over a transparent window', () => {
+    // Both on: the layer carries the window opacity (customBgLayerAlpha), and
+    // the terminal stays out of the way so it is not applied twice.
+    const p = prefs({
+      customBackgroundEnabled: true,
+      customBackground: '#123',
+      windowTransparency: true,
+      terminalBgOpacity: 60,
+    });
+    expect(terminalBgAlpha(p, false)).toBe(0);
+    expect(customBgLayerAlpha(p, false)).toBeCloseTo(0.6);
   });
 });
 
