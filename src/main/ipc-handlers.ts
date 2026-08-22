@@ -266,6 +266,20 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Two separate capabilities: plain alpha needs only DWM, the blur materials
   // need Win11. Reporting one flag for both would hide transparency from every
   // Windows 10 user for the sake of a mode they were not asking for.
+  // Frameless (clear) windows have no native caption buttons, so the renderer
+  // draws its own and needs a way to close the window it is running in.
+  ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE_SELF, (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.close();
+  });
+  // Switching into or out of clear mode rebuilds the window, so the pref can
+  // only land on a fresh process.
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_FRAMELESS, (e) =>
+    windowManager.isFramelessFor(e.sender),
+  );
+  ipcMain.on(IPC_CHANNELS.WINDOW_RELAUNCH, () => {
+    app.relaunch();
+    app.quit();
+  });
   ipcMain.handle(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP, () => ({
     transparency: supportsTransparency(),
     materials: supportsBackdropMaterial(),

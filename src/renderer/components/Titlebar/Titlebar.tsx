@@ -10,6 +10,7 @@ import logoSrc from '../../../../resources/icons/icon.svg';
 import NotificationBell from './NotificationBell';
 import UpdateBadge from './UpdateBadge';
 import { IconHelp, IconCode, IconSettings } from './icons';
+import WindowControls, { useIsFramelessWindow } from './WindowControls';
 import { NotificationInfo, WorkspaceId, PaneId, SurfaceId } from '../../../shared/types';
 import { useT } from '../../i18n';
 import '../../styles/titlebar.css';
@@ -40,6 +41,9 @@ export default function Titlebar({
   onMarkAllNotificationsRead,
 }: TitlebarProps) {
   const t = useT();
+  // Clear-transparency windows are frameless and have no native caption
+  // buttons, so this is where they come from.
+  const frameless = useIsFramelessWindow();
   return (
     <div className="titlebar">
       <div className="titlebar__left">
@@ -76,7 +80,9 @@ export default function Titlebar({
         </button>
       </div>
       <span className="titlebar__title">{title ?? ''}</span>
-      <div className="titlebar__right" />
+      <div className="titlebar__right">
+        {frameless && <WindowControls />}
+      </div>
     </div>
   );
 }

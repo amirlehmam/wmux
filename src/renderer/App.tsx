@@ -1293,6 +1293,21 @@ export default function App() {
           {t('app.broadcastInputBanner', 'Broadcast input ON — typing goes to all panes (Ctrl+Alt+B to stop)')}
         </div>
       )}
+
+      {/* Transparency changes that need the window rebuilt. Actionable rather
+          than informational: the setting is already saved, so the only thing
+          left between the user and seeing it is the relaunch. */}
+      {transparencyPending && (
+        <div className="restart-banner" role="status">
+          <span>{t('app.transparencyRestartBanner', 'Transparency change needs a restart to take effect.')}</span>
+          <button
+            className="restart-banner__btn"
+            onClick={() => window.wmux?.window?.relaunch?.()}
+          >
+            {t('app.restartNow', 'Restart now')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

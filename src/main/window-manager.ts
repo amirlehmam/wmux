@@ -8,9 +8,13 @@ import { loadSettings } from './settings-store';
 /** The window backdrop when transparency is off — matches --ui-bg-1. */
 const OPAQUE_BG = '#1a1a1a';
 /**
- * Fully transparent backdrop. `setBackgroundMaterial` only becomes visible when
- * the window's own background colour has zero alpha — an opaque backgroundColor
- * paints over the DWM material and the window just looks normal.
+ * Fully transparent backdrop, in Electron's #AARRGGBB order — alpha leads here,
+ * unlike CSS's #RRGGBBAA. All-zero reads the same either way, but the ordering
+ * matters the moment anyone edits this to a tint.
+ *
+ * Required in both translucent modes, for different reasons: a backdrop
+ * material is only visible under a zero-alpha background, and `transparent`
+ * windows fall back to Electron's default of #FFF without one.
  */
 const TRANSPARENT_BG = '#00000000';
 
@@ -186,12 +190,27 @@ export class WindowManager {
       minWidth: 800,
       minHeight: 500,
       icon: getAppIcon(),
-      titleBarStyle: 'hidden',
-      titleBarOverlay: {
-        color: '#1a1a1a',
-        symbolColor: '#cccccc',
-        height: 38,
-      },
+      // Clear mode has to be FRAMELESS. On Windows `transparent` is ignored
+      // unless the window is frameless, and an ignored `transparent` does not
+      // fall back to the theme — Electron's default backgroundColor is #FFF, so
+      // the window comes up solid white. `titleBarStyle: 'hidden'` is not
+      // frameless: it keeps the native frame and only hides the caption text,
+      // which is exactly why it cannot be used here.
+      //
+      // The cost is the native caption buttons, since titleBarOverlay needs
+      // that frame. The renderer draws its own in clear mode — see
+      // WindowControls in the Titlebar.
+      ...(transparent
+        ? { frame: false }
+        : {
+            titleBarStyle: 'hidden' as const,
+            titleBarOverlay: {
+              color: '#1a1a1a',
+              symbolColor: '#cccccc',
+              height: 38,
+            },
+          }),
+      // #AARRGGBB — Electron reads the alpha FIRST here, not last as CSS does.
       backgroundColor: translucent ? TRANSPARENT_BG : OPAQUE_BG,
       // Per-pixel alpha. Creation-time only — Electron has no setter for it.
       ...(transparent ? { transparent: true } : {}),
@@ -286,6 +305,23 @@ export class WindowManager {
   }
 
   /**
+   * Whether the window a renderer message came from was built frameless.
+   *
+   * Fixed for the window's lifetime, and deliberately NOT derived in the
+   * renderer from the transparency pref: while a restart is pending the pref
+   * says the opposite of what the window is, and a renderer that guessed would
+   * hide the caption buttons of a window that still has no native ones.
+   */
+  isFramelessFor(sender: Electron.WebContents): boolean {
+    for (const entry of this.windows.values()) {
+      if (!entry.window.isDestroyed() && entry.window.webContents.id === sender.id) {
+        return entry.transparent;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Toggle the Win11 backdrop on every open window, live.
    *
    * Both halves have to move together: the material is what DWM blurs, the
@@ -309,6 +345,12 @@ export class WindowManager {
         needsRestart = true;
         continue;
       }
+      // A window built for clear mode is already exactly right, and touching it
+      // is how it gets broken: setBackgroundMaterial('none') resets the DWM
+      // backdrop type on a window whose transparency depends on it, and
+      // setBackgroundColor re-lands an opaque surface. Nothing to apply — the
+      // opacity itself is a renderer-side alpha, not a window property.
+      if (wantsTransparent) continue;
       try {
         entry.window.setBackgroundColor(enabled ? TRANSPARENT_BG : OPAQUE_BG);
         if (supportsBackdropMaterial()) {

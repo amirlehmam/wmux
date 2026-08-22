@@ -175,6 +175,39 @@ html.wmux-transparent #root {
   pointer-events: none;
 }
 
+/* Restart-required banner. Sits above the broadcast banner's spot and, unlike
+   it, takes pointer events — it carries the button that does the restart. */
+.restart-banner {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 6px;
+  background: var(--ui-bg-4);
+  border: 1px solid var(--ui-border-strong);
+  color: var(--ui-text-primary);
+  font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+.restart-banner__btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgb(var(--ui-accent-rgb));
+  color: var(--ui-accent-contrast);
+}
+.restart-banner__btn:hover {
+  filter: brightness(1.1);
+}
+
 /* ─── Reduced motion ─────────────────────────────────────────────────────────
    The app shipped 11 @keyframes across 6 stylesheets with no prefers-reduced-
    motion handling anywhere in src/ — the only coverage in the repo was on the

@@ -286,5 +286,9 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SET_BACKDROP, enabled, material),
     supportsBackdrop: (): Promise<{ transparency: boolean; materials: boolean }> =>
       ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP),
+    // For the renderer-drawn caption buttons a frameless window needs.
+    closeSelf: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE_SELF),
+    isFrameless: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_FRAMELESS),
+    relaunch: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_RELAUNCH),
   },
 });

@@ -59,6 +59,12 @@ export const en = {
   'settings.general.transparencyMaterial.mica': 'Mica — subtle desktop tint (Windows 11)',
   'settings.general.transparencyHint':
     'Makes the window itself translucent so whatever is behind wmux shows through the terminals. Clear leaves it sharp enough to read, the way Windows Terminal does; Acrylic and Mica blur it instead. The sidebar and title bar stay opaque so they remain readable. Terminal opacity controls how much shows through.',
+  'app.transparencyRestartBanner': 'Transparency change needs a restart to take effect.',
+  'app.restartNow': 'Restart now',
+  'titlebar.minimize': 'Minimize',
+  'titlebar.maximize': 'Maximize',
+  'titlebar.restore': 'Restore',
+  'titlebar.close': 'Close',
   'settings.general.transparencyRestart':
     'Restart wmux to apply — switching Clear on or off rebuilds the window.',
   // Command palette

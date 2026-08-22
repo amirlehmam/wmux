@@ -44,6 +44,41 @@
   flex-shrink: 0;
 }
 
+/* Caption buttons for frameless (clear-transparency) windows. The reserved
+   140px above is what titleBarOverlay occupies on framed windows, so these land
+   in the same place and nothing else in the titlebar shifts between modes. */
+.titlebar__window-controls {
+  display: flex;
+  justify-content: flex-end;
+  height: 100%;
+  /* The titlebar is a drag region; buttons inside one never receive clicks
+     unless they opt out of it. */
+  -webkit-app-region: no-drag;
+}
+.titlebar__wc {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: rgba(var(--ui-overlay-rgb), 0.65);
+  transition: background 0.1s, color 0.1s;
+}
+.titlebar__wc:hover {
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: rgba(var(--ui-overlay-rgb), 0.95);
+}
+/* Windows convention: close goes red on hover, and white regardless of theme
+   because it sits on a saturated red rather than on the titlebar. */
+.titlebar__wc--close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
 .titlebar__btn {
   width: 28px;
   height: 28px;
