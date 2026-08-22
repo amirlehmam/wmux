@@ -4,6 +4,7 @@ import { LANGUAGES, Language, useT } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
 import AgentIntegrationSettings from './AgentIntegrationSettings';
+import { MIN_TERMINAL_OPACITY_PCT, opacityToAlpha } from '../../store/backdrop';
 
 // Named background presets for issue #89 — the first is the gradient the
 // requester posted ("MyLovelyBackground"), kept verbatim as a tribute.
@@ -105,8 +106,9 @@ export default function GeneralSettings() {
   // screen is ahead of the window on screen.
   const needsRestart = useStore((s) => s.transparencyNeedsRestart);
 
-  // One slider, two possible backdrops — mirrors `bgAlpha` in useTerminal.ts.
+  // One slider, two possible backdrops — mirrors `hasBackdrop` in backdrop.ts.
   const opacityApplies = appearancePrefs.customBackgroundEnabled || appearancePrefs.windowTransparency;
+  const effectiveOpacity = Math.round(opacityToAlpha(appearancePrefs.terminalBgOpacity) * 100);
 
   return (
     <div className="settings-section">
@@ -294,14 +296,17 @@ export default function GeneralSettings() {
       {opacityApplies && (
         <div className="settings-row">
           <label className="settings-label">
-            {t('settings.general.customBgOpacity')} — {appearancePrefs.terminalBgOpacity}%
+            {/* The floored value, not the stored one. A blob saved before the
+                floor existed can hold 0, and a label reading 0% beside a
+                terminal rendering at 15% is just a lie. */}
+            {t('settings.general.customBgOpacity')} — {effectiveOpacity}%
           </label>
           <input
             type="range"
-            min={0}
+            min={MIN_TERMINAL_OPACITY_PCT}
             max={100}
             step={1}
-            value={appearancePrefs.terminalBgOpacity}
+            value={effectiveOpacity}
             onChange={(e) => setAppearancePrefs({ terminalBgOpacity: Number(e.target.value) })}
           />
         </div>

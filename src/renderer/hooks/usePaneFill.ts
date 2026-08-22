@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useStore } from '../store';
 import { fetchTheme, withBgAlpha } from './useTerminal';
+import { terminalBgAlpha } from '../store/backdrop';
 
 /**
  * Publishes `--wmux-pane-fill`: the global terminal background at the current
@@ -22,14 +23,9 @@ export function usePaneFill(): void {
   const appearance = useStore((s) => s.appearancePrefs);
   const pending = useStore((s) => s.transparencyNeedsRestart);
 
-  // Same condition as bgAlpha in useTerminal — the fill has to track the panes
-  // exactly, or closing the gaps just moves the seam.
-  const hasBackdrop =
-    (appearance.customBackgroundEnabled && !!appearance.customBackground) ||
-    (appearance.windowTransparency && !pending);
-  const alpha = hasBackdrop
-    ? Math.max(0, Math.min(1, (appearance.terminalBgOpacity ?? 88) / 100))
-    : 1;
+  // The same function the panes use — the fill has to track them exactly, or
+  // closing the gaps just moves the seam.
+  const alpha = terminalBgAlpha(appearance, pending);
 
   useEffect(() => {
     let cancelled = false;

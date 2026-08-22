@@ -26,6 +26,7 @@ import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
 import { useWindowTransparency } from './hooks/useWindowTransparency';
 import { usePaneFill } from './hooks/usePaneFill';
+import { customBgLayerAlpha } from './store/backdrop';
 import type {
   SurfaceDragCommitOptions,
   SurfaceDragPayload,
@@ -460,9 +461,7 @@ export default function App() {
   // Only when transparency is on: with an opaque window there is nothing behind
   // this layer but --ui-bg-1, and fading toward the app's own chrome colour is
   // not a look anyone asked for.
-  const customBgOpacity = appearancePrefs.windowTransparency && !transparencyPending
-    ? Math.max(0, Math.min(1, (appearancePrefs.terminalBgOpacity ?? 88) / 100))
-    : 1;
+  const customBgOpacity = customBgLayerAlpha(appearancePrefs, transparencyPending);
   // Browser panel auto-opens on startup unless disabled in Settings (issue #22).
   const [browserOpen, setBrowserOpen] = useState(() => useStore.getState().browserPrefs.openOnStartup);
   const [browserWidth, setBrowserWidth] = useState(420);

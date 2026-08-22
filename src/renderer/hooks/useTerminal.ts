@@ -12,6 +12,7 @@ import { useT } from '../i18n';
 import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
 import { SplitNode, SurfaceId, ThemeConfig } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
+import { terminalBgAlpha } from '../store/backdrop';
 import { activateTerminalLink, terminalLinkHandler } from '../utils/terminal-links';
 import {
   MouseModeState,
@@ -402,18 +403,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   // Not just the pref: while a restart is pending the window is still opaque,
   // so alpha here would reveal its flat backgroundColor instead of the desktop.
   const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
-  const hasBackdrop =
-    (appearance.customBackgroundEnabled && !!appearance.customBackground) ||
-    (appearance.windowTransparency && !transparencyPending);
-  // Clamped to 0..1 only. The 30% floor this inherited from issue #89 was a
-  // guardrail for the custom-background case, where a fully transparent theme
-  // background left text sitting on an arbitrary gradient. Ghostty stops at
-  // 0.15 for the same reason on plain alpha — but a Win11 backdrop always
-  // blurs whatever is behind it, so 0 stays legible here and is a look people
-  // actually want: text over the wallpaper, no panel at all.
-  const bgAlpha = hasBackdrop
-    ? Math.max(0, Math.min(1, (appearance.terminalBgOpacity ?? 88) / 100))
-    : 1;
+  const bgAlpha = terminalBgAlpha(appearance, transparencyPending);
 
   const fit = () => {
     if (fitAddonRef.current) {
