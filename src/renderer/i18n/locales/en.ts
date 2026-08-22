@@ -389,6 +389,14 @@ export const en = {
   'settings.terminalPanel.fontStackPlaceholder': 'e.g. Consolas, Menlo, monospace',
   'settings.terminalPanel.fontSize': 'Font size',
   'settings.terminalPanel.colorSchemeSection': 'Color scheme',
+  // Settings — Terminal panel — importing another terminal's config
+  'settings.terminalPanel.importSection': 'Import',
+  'settings.terminalPanel.importHint':
+    'Bring colors, font and background opacity across from a terminal you already have set up. Saved as a custom scheme and selected.',
+  'settings.terminalPanel.importWt': 'From Windows Terminal',
+  'settings.terminalPanel.importGhostty': 'From Ghostty',
+  'settings.terminalPanel.importNotFound': 'No config found to import.',
+  'settings.terminalPanel.imported': 'Imported',
   'settings.terminalPanel.defaultScheme': 'Default scheme',
   'settings.terminalPanel.schemeHintPart1': 'Applied to new panes. Override per pane via ',
   'settings.terminalPanel.schemeHintPart2': ' or ',

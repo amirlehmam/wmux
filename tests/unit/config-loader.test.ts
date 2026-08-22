@@ -182,6 +182,57 @@ describe('parseWindowsTerminalSettingsJson', () => {
     expect(theme!.foreground).toBe('#DCDFE4');
   });
 
+  // Background opacity — the whole reason ThemeConfig carries the field. WT
+  // spells it two ways and the modern one is not gated on acrylic, so the
+  // mapping is worth pinning rather than inferring from the shape of a profile.
+  it('reads the modern `opacity` key as a 0..1 fraction', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].opacity = 70;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.7);
+  });
+
+  it('reads `opacity` even without useAcrylic — acrylic only controls blur', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].opacity = 50;
+    settings.profiles.list[0].useAcrylic = false;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.5);
+  });
+
+  it('falls back to the pre-1.12 acrylicOpacity when useAcrylic is set', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].useAcrylic = true;
+    settings.profiles.list[0].acrylicOpacity = 0.6;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.6);
+  });
+
+  it('ignores acrylicOpacity when useAcrylic is absent, as WT does', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].acrylicOpacity = 0.3;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBe(1.0);
+  });
+
+  it('prefers `opacity` over a half-migrated acrylicOpacity', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].opacity = 90;
+    settings.profiles.list[0].useAcrylic = true;
+    settings.profiles.list[0].acrylicOpacity = 0.2;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.9);
+  });
+
+  it('defaults to fully opaque when the profile says nothing', () => {
+    expect(parseWindowsTerminalSettingsJson(mockSettings)!.backgroundOpacity).toBe(1.0);
+  });
+
+  it('clamps an out-of-range opacity rather than passing it through', () => {
+    const over = structuredClone(mockSettings) as any;
+    over.profiles.list[0].opacity = 140;
+    expect(parseWindowsTerminalSettingsJson(over)!.backgroundOpacity).toBe(1);
+
+    const under = structuredClone(mockSettings) as any;
+    under.profiles.list[0].opacity = -20;
+    expect(parseWindowsTerminalSettingsJson(under)!.backgroundOpacity).toBe(0);
+  });
+
   it('extracts font face and size from the default profile', () => {
     const theme = parseWindowsTerminalSettingsJson(mockSettings);
     expect(theme).not.toBeNull();

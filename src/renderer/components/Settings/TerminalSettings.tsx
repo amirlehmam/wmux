@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { UserColorScheme } from '../../store/settings-slice';
+import type { ThemeConfig } from '../../../shared/types';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
 function firstFamily(stack: string): string {
@@ -17,6 +18,7 @@ function cssFamily(name: string): string {
 export default function TerminalSettings() {
   const t = useT();
   const { terminalPrefs, setTerminalPrefs } = useStore();
+  const setAppearancePrefs = useStore((s) => s.setAppearancePrefs);
   const [themes, setThemes] = useState<string[]>(['Monokai']);
   const [newSchemeName, setNewSchemeName] = useState('');
   // Installed font families for the picker (issue #89) — enumerated by the
@@ -66,6 +68,67 @@ export default function TerminalSettings() {
     const next = { ...terminalPrefs.userColorSchemes };
     delete next[name];
     setTerminalPrefs({ userColorSchemes: next });
+  };
+
+  // ── Import an existing terminal's config ───────────────────────────────────
+  // Both parsers have existed in the main process since config-loader.ts was
+  // written, wired through preload and IPC, with nothing in the UI ever calling
+  // them — which is also why the `background-opacity` they parse was never
+  // applied to anything. These two buttons are the missing end of that path.
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  const runImport = async (source: 'wt' | 'ghostty') => {
+    const config = (window as any).wmux?.config;
+    const theme: ThemeConfig | null = source === 'ghostty'
+      ? await config?.importGhostty?.()
+      : await config?.importWindowsTerminal?.();
+
+    // Null is the parsers' "no config file at the expected path", not an error.
+    if (!theme) {
+      setImportStatus(t('settings.terminalPanel.importNotFound', 'No config found to import.'));
+      return;
+    }
+
+    const name = theme.name || (source === 'ghostty' ? 'Ghostty' : 'Windows Terminal');
+    setTerminalPrefs({
+      userColorSchemes: {
+        ...terminalPrefs.userColorSchemes,
+        [name]: {
+          background: theme.background,
+          foreground: theme.foreground,
+          cursor: theme.cursor,
+          cursorText: theme.cursorText,
+          selectionBackground: theme.selectionBackground,
+          selectionForeground: theme.selectionForeground,
+          palette: theme.palette,
+        },
+      },
+      theme: name,
+      ...(theme.fontFamily ? { fontFamily: cssFamily(theme.fontFamily) } : {}),
+      ...(theme.fontSize ? { fontSize: theme.fontSize } : {}),
+    });
+
+    // The imported opacity only means something if there is a backdrop behind
+    // the terminal, and the source terminals both mean "let the desktop show
+    // through" by it. So turning it on is part of honouring the import — set
+    // the number alone and it would silently do nothing, which is the exact bug
+    // this path had in the first place.
+    const pct = Math.round(Math.max(0, Math.min(1, theme.backgroundOpacity ?? 1)) * 100);
+    let note = '';
+    if (pct < 100) {
+      const supported = (await (window as any).wmux?.window?.supportsBackdrop?.()) === true;
+      setAppearancePrefs({
+        terminalBgOpacity: pct,
+        ...(supported ? { windowTransparency: true } : {}),
+      });
+      note = supported
+        ? ` · ${pct}%`
+        : ` · ${pct}% (needs Windows 11)`;
+    }
+
+    setImportStatus(
+      `${t('settings.terminalPanel.imported', 'Imported')} ${name}${note}`,
+    );
   };
 
   return (
@@ -155,6 +218,25 @@ export default function TerminalSettings() {
       <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>
         {t('settings.terminalPanel.schemeHintPart1', 'Applied to new panes. Override per pane via ')}<code>wmux split --color-scheme NAME</code>{t('settings.terminalPanel.schemeHintPart2', ' or ')}<code>wmux set-color-scheme NAME</code>{t('settings.terminalPanel.schemeHintPart3', '.')}
       </div>
+
+      <div className="settings-divider" />
+      <h3 className="settings-section-title">{t('settings.terminalPanel.importSection', 'Import')}</h3>
+      <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>
+        {t('settings.terminalPanel.importHint', 'Bring colors, font and background opacity across from a terminal you already have set up. Saved as a custom scheme and selected.')}
+      </div>
+      <div className="settings-row">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="settings-btn settings-btn--secondary" onClick={() => runImport('wt')}>
+            {t('settings.terminalPanel.importWt', 'From Windows Terminal')}
+          </button>
+          <button className="settings-btn settings-btn--secondary" onClick={() => runImport('ghostty')}>
+            {t('settings.terminalPanel.importGhostty', 'From Ghostty')}
+          </button>
+        </div>
+      </div>
+      {importStatus && (
+        <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>{importStatus}</div>
+      )}
 
       <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.terminalPanel.customSchemesSection', 'Custom schemes')}</h3>

@@ -31,6 +31,11 @@ interface WTProfile {
   fontSize?: number;
   fontFace?: string;
   colorScheme?: string;
+  /** WT 1.12+ background opacity, 0-100. */
+  opacity?: number;
+  /** Pre-1.12 acrylic transparency, 0.0-1.0. Only meaningful with useAcrylic. */
+  useAcrylic?: boolean;
+  acrylicOpacity?: number;
 }
 
 interface WTColorScheme {
@@ -65,6 +70,28 @@ interface WTSettings {
   defaultProfile?: string;
   profiles?: { list?: WTProfile[] } | WTProfile[];
   schemes?: WTColorScheme[];
+}
+
+/**
+ * A Windows Terminal profile's background opacity, as a 0..1 fraction.
+ *
+ * WT spells this two ways. `opacity` (0-100) is the modern key and applies
+ * whether or not acrylic is on — `useAcrylic` only decides whether the backdrop
+ * is blurred. `acrylicOpacity` (0.0-1.0) is the pre-1.12 key and meant nothing
+ * unless `useAcrylic` was set, which is why it is only consulted in that case.
+ * A profile carrying both is a config that predates the rename and has been
+ * half-migrated, so the modern key wins.
+ */
+function profileOpacity(profile: WTProfile): number {
+  const clamp = (n: number) => Math.max(0, Math.min(1, n));
+  if (typeof profile.opacity === 'number' && Number.isFinite(profile.opacity)) {
+    return clamp(profile.opacity / 100);
+  }
+  if (profile.useAcrylic && typeof profile.acrylicOpacity === 'number'
+      && Number.isFinite(profile.acrylicOpacity)) {
+    return clamp(profile.acrylicOpacity);
+  }
+  return 1.0;
 }
 
 function schemeToTheme(profile: WTProfile, scheme: WTColorScheme): ThemeConfig {
@@ -107,7 +134,7 @@ function schemeToTheme(profile: WTProfile, scheme: WTColorScheme): ThemeConfig {
     palette,
     fontFamily: fontFace,
     fontSize,
-    backgroundOpacity: 1.0,
+    backgroundOpacity: profileOpacity(profile),
   };
 }
 
