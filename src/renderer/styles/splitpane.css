@@ -52,17 +52,17 @@ html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
    desktop. 30% accent over an opaque window resolves against the chrome behind
    it and reads as a solid line; over a transparent one there is nothing behind
    it, so the same colour reads as a slot cut around the pane that you can see
-   the wallpaper through. Mixing the accent INTO the pane fill puts the ring
-   back on the pane's own surface, which is the relationship it has everywhere
-   else. Falls back to the plain accent rule if the fill has not resolved yet,
-   and lands on it anyway over a custom background, where the fill is fully
-   transparent because that layer is the surface. */
+   the wallpaper through.
+
+   --wmux-pane-ring is the pane fill with that 30% accent mixed in AT THE PANE'S
+   OWN ALPHA, so the ring is the same translucency as the surface it borders.
+   color-mix cannot express that: mixing in an opaque accent raises the alpha,
+   and the 6 points it gained showed up as a seam. usePaneFill does the mix.
+   The fallback is the plain accent rule, which is what a custom background
+   wants anyway — there the fill is transparent because that layer is the
+   surface. */
 html.wmux-transparent .pane-wrapper--focused {
-  border-color: color-mix(
-    in srgb,
-    rgb(var(--ui-accent-rgb)) 30%,
-    var(--wmux-pane-fill, transparent)
-  );
+  border-color: var(--wmux-pane-ring, rgba(var(--ui-accent-rgb), 0.3));
 }
 html.wmux-transparent .split-divider {
   background: var(--wmux-pane-fill, transparent);
