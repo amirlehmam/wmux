@@ -54,13 +54,16 @@ html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
    it, so the same colour reads as a slot cut around the pane that you can see
    the wallpaper through.
 
-   --wmux-pane-ring is the pane fill with that 30% accent mixed in AT THE PANE'S
-   OWN ALPHA, so the ring is the same translucency as the surface it borders.
-   color-mix cannot express that: mixing in an opaque accent raises the alpha,
-   and the 6 points it gained showed up as a seam. usePaneFill does the mix.
-   The fallback is the plain accent rule, which is what a custom background
-   wants anyway — there the fill is transparent because that layer is the
-   surface. */
+   Tracking the pane's alpha does not fix it either, because the ring's
+   neighbours disagree: the top 28px inside the pane is the surface tab bar,
+   opaque chrome, so a translucent ring runs as a see-through line between the
+   opaque titlebar above it and the opaque tab bar below. No single
+   border-color matches opaque chrome on one edge and a translucent terminal on
+   the others. --wmux-pane-ring is therefore the theme colour with 30% accent
+   mixed in at FULL opacity — the focus ring is an indicator, which is chrome,
+   and chrome here is opaque. usePaneFill does the mix. The fallback is the
+   plain accent rule, which is what a custom background wants anyway — there
+   the fill is transparent because that layer is the surface. */
 html.wmux-transparent .pane-wrapper--focused {
   border-color: var(--wmux-pane-ring, rgba(var(--ui-accent-rgb), 0.3));
 }

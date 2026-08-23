@@ -49,13 +49,20 @@ import { terminalBgAlpha } from '../store/backdrop';
  * two panes that may carry different `--color-scheme` overrides, and there is
  * no per-pane answer to which one a shared edge belongs to.
  *
- * Also publishes `--wmux-pane-ring`: the same fill with the focus accent mixed
- * in, for the focused pane's 1px border. That cannot be done in CSS. Mixing an
- * opaque accent into the fill necessarily RAISES the alpha — 30% accent into a
- * pane at 0.8 lands the ring at 0.86 — and a ring one step more opaque than the
- * surface it sits on is a seam of exactly the kind this file exists to remove.
- * Here both the accent and the alpha are known, so the colours can be mixed and
- * the result applied at the pane's own alpha.
+ * Also publishes `--wmux-pane-ring`: the focus accent mixed into that colour at
+ * FULL opacity, for the focused pane's 1px border.
+ *
+ * The ring is the one edge that cannot match its neighbours by tracking the
+ * pane, because its neighbours disagree. It surrounds the whole pane, and the
+ * top 28px of that is the surface tab bar — opaque chrome. A ring at the pane's
+ * alpha therefore runs translucent between the opaque titlebar above and the
+ * opaque tab bar below, and reads as a slot cut across the top of the pane.
+ * There is no border-color that matches opaque chrome on one edge and a
+ * translucent terminal on the others, so the ring stops trying: it is a focus
+ * indicator, which is chrome, and chrome in wmux is opaque.
+ *
+ * Mixed rather than plain accent so it stays the colour the design already
+ * uses — 30% accent, the same ratio the opaque-mode rule composites to.
  */
 export function usePaneFill(): void {
   const themeName = useStore((s) => s.terminalPrefs.theme);
@@ -76,17 +83,18 @@ export function usePaneFill(): void {
         const root = document.documentElement;
         root.style.setProperty('--wmux-pane-fill', withBgAlpha(bg, alpha));
 
-        // Left unset rather than wrong in the two cases where there is no
-        // surface to sit on: a non-hex theme colour we cannot mix, and a custom
-        // background, where the fill is fully transparent because that layer is
-        // the surface — a ring at alpha 0 would be no ring at all. The CSS falls
-        // back to the plain accent rule, which is right in both.
+        // Left unset rather than wrong in the two cases where the theme colour
+        // is not what the ring would be sitting against: one we cannot parse,
+        // and a custom background, where the fill is fully transparent because
+        // that layer is the surface — mixing into a colour that is never drawn
+        // would just pick an arbitrary one. The CSS falls back to the plain
+        // accent rule, which is right in both.
         const rgb = parseHex(bg);
         const accent = accentRgb();
         if (rgb && accent && alpha > 0) {
           const mix = rgb.map((c, i) =>
             Math.round(accent[i] * RING_ACCENT + c * (1 - RING_ACCENT)));
-          root.style.setProperty('--wmux-pane-ring', `rgba(${mix[0]}, ${mix[1]}, ${mix[2]}, ${alpha})`);
+          root.style.setProperty('--wmux-pane-ring', `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`);
         } else {
           root.style.removeProperty('--wmux-pane-ring');
         }

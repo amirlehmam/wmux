@@ -52,7 +52,7 @@ export const en = {
     'Any CSS background: a color, gradients, or url(…) images. Drawn behind the terminals, independent of the color scheme. Terminal opacity controls how much shows through.',
   // Settings — General panel — Window transparency (Windows 11 only)
   'settings.general.transparencySection': 'Window transparency',
-  'settings.general.transparencyEnable': 'See through to the desktop',
+  'settings.general.transparencyEnable': 'Enable transparency',
   'settings.general.transparencyMaterial': 'Style',
   'settings.general.transparencyMaterial.clear': 'Clear',
   'settings.general.transparencyMaterial.acrylic': 'Acrylic',
