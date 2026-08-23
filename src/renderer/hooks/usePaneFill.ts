@@ -83,15 +83,17 @@ export function usePaneFill(): void {
         const root = document.documentElement;
         root.style.setProperty('--wmux-pane-fill', withBgAlpha(bg, alpha));
 
-        // Left unset rather than wrong in the two cases where the theme colour
-        // is not what the ring would be sitting against: one we cannot parse,
-        // and a custom background, where the fill is fully transparent because
-        // that layer is the surface — mixing into a colour that is never drawn
-        // would just pick an arbitrary one. The CSS falls back to the plain
-        // accent rule, which is right in both.
+        // Set whenever the colours can be resolved, INCLUDING under a custom
+        // background. The earlier `alpha > 0` guard here meant that the one
+        // configuration where the fill collapses to nothing was also the one
+        // where the ring fell back to a translucent 30% accent — so the ring
+        // stayed see-through for exactly the users who had turned the most
+        // transparency on. The ring is chrome; it does not need the theme
+        // colour to be the visible surface, only to be a consistent one to
+        // tint, which it is whether or not a custom layer covers it.
         const rgb = parseHex(bg);
         const accent = accentRgb();
-        if (rgb && accent && alpha > 0) {
+        if (rgb && accent) {
           const mix = rgb.map((c, i) =>
             Math.round(accent[i] * RING_ACCENT + c * (1 - RING_ACCENT)));
           root.style.setProperty('--wmux-pane-ring', `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`);
