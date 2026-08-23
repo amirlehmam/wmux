@@ -83,6 +83,18 @@ export function usePaneFill(): void {
         const root = document.documentElement;
         root.style.setProperty('--wmux-pane-fill', withBgAlpha(bg, alpha));
 
+        // --wmux-pane-gutter: the same colour, except it is never nothing.
+        //
+        // With a custom background the fill collapses to alpha 0, because that
+        // layer is the surface and a pane's own colour must get out of its way.
+        // That is right for a border painted ON the layer and wrong for the 6px
+        // divider, which then paints nothing at all — a hole through the window
+        // showing the raw desktop between two panes that are showing the custom
+        // background. Left unset in that case so the CSS falls back to chrome,
+        // which is what a gutter is.
+        if (alpha > 0) root.style.setProperty('--wmux-pane-gutter', withBgAlpha(bg, alpha));
+        else root.style.removeProperty('--wmux-pane-gutter');
+
         // Set whenever the colours can be resolved, INCLUDING under a custom
         // background. The earlier `alpha > 0` guard here meant that the one
         // configuration where the fill collapses to nothing was also the one

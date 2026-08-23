@@ -52,7 +52,7 @@
    otherwise lose to this rule on specificity; the rule below is what that pane
    gets instead. */
 html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
-  border-color: var(--wmux-pane-fill, transparent);
+  border-color: var(--wmux-pane-gutter, var(--ui-bg-2));
 }
 /* Which left the focus ring as the only edge still compositing onto the
    desktop. 30% accent over an opaque window resolves against the chrome behind
@@ -74,7 +74,7 @@ html.wmux-transparent .pane-wrapper--focused {
   border-color: var(--wmux-pane-ring, rgba(var(--ui-accent-rgb), 0.3));
 }
 html.wmux-transparent .split-divider {
-  background: var(--wmux-pane-fill, transparent);
+  background: var(--wmux-pane-gutter, var(--ui-bg-2));
 }
 /* Except across the tab bars. A divider between two side-by-side panes runs the
    whole pane height, and the top 28px of a pane is its surface tab bar, which is
@@ -92,7 +92,7 @@ html.wmux-transparent .split-divider--horizontal {
     to bottom,
     var(--ui-bg-2) 0,
     var(--ui-bg-2) var(--wmux-tab-bar-h),
-    var(--wmux-pane-fill, transparent) var(--wmux-tab-bar-h)
+    var(--wmux-pane-gutter, var(--ui-bg-2)) var(--wmux-tab-bar-h)
   );
 }
 .pane-wrapper__content {
