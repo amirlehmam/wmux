@@ -63,3 +63,19 @@
   flex: 1;
   border: none;
 }
+
+/* The browser panel is not part of the split tree. It is a separate right-hand
+   panel with its own hand-rolled 4px resize handle, and that handle had no
+   background at all — invisible over an opaque window, and a 4px hole straight
+   through a transparent one, showing the desktop between the terminals and the
+   browser. It is a gutter like any other, so it gets what the split dividers
+   get: chrome across the tab bars, the pane fill below them. See the
+   .split-divider rules in splitpane.css, which this deliberately mirrors. */
+html.wmux-transparent .browser-resize-handle {
+  background: linear-gradient(
+    to bottom,
+    var(--ui-bg-2) 0,
+    var(--ui-bg-2) var(--wmux-tab-bar-h),
+    var(--wmux-pane-gutter, var(--ui-bg-2)) var(--wmux-tab-bar-h)
+  );
+}

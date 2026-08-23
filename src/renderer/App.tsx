@@ -1197,6 +1197,7 @@ export default function App() {
         {browserOpen && (
           <>
             <div
+              className="browser-resize-handle"
               style={{
                 width: 4,
                 cursor: 'col-resize',
