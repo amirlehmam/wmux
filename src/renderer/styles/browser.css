@@ -4,6 +4,11 @@
   width: 100%;
   height: 100%;
   background: var(--ui-bg-2);
+  /* A <webview> is a native compositing layer, and native layers are not
+     clipped by an ancestor's overflow the way DOM content is. Clipping here as
+     well as on .pane-wrapper__content costs nothing and removes one way for it
+     to reach past its box. */
+  overflow: hidden;
 }
 
 .browser-address-bar {
@@ -62,4 +67,17 @@
 .browser-pane__webview {
   flex: 1;
   border: none;
+  /* Chromium gives <webview> an intrinsic 300px width. In a column flex
+     container it stretches, but pinning it makes the box unambiguous rather
+     than inherited from a UA default. */
+  width: 100%;
+  min-width: 0;
+  /* And the belt: an unpainted webview backs onto WHITE, which over a
+     transparent window is the brightest thing on screen. Over a light desktop
+     that is what the 6px strip beside a browser pane was — not a hole in the
+     divider, which paints correctly between two terminals, but the webview's
+     own backing drawn over it. Backing it with chrome means that if it does
+     reach past its box it reaches with the same colour the divider and the tab
+     bar already use, and nobody can see it. */
+  background-color: var(--ui-bg-2);
 }
