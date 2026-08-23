@@ -30,18 +30,32 @@ export default function WindowControls() {
   const t = useT();
   const [maximized, setMaximized] = useState(false);
 
-  // Polled rather than event-driven: Electron emits maximize/unmaximize on the
-  // window, and wiring a forwarder for a two-icon swap costs more than a cheap
-  // check while the titlebar is on screen anyway.
+  // Driven by resize rather than by a timer. Maximising and restoring both
+  // change the content area, so every transition this icon cares about — the
+  // buttons here, the caption double-click, Win+Up, snap layouts — arrives as a
+  // resize. The previous version polled over IPC twice a second for as long as
+  // the titlebar was mounted, which in clear mode is the whole session, to
+  // catch a two-icon swap that happens a handful of times a day.
   useEffect(() => {
     let cancelled = false;
+    let queued = 0;
     const sync = async () => {
       const value = await window.wmux?.window?.isMaximized?.();
       if (!cancelled) setMaximized(value === true);
     };
+    // Coalesced: a drag-resize fires this continuously, and the answer only
+    // changes at the ends of one.
+    const onResize = () => {
+      window.clearTimeout(queued);
+      queued = window.setTimeout(sync, 100);
+    };
     sync();
-    const id = window.setInterval(sync, 500);
-    return () => { cancelled = true; window.clearInterval(id); };
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(queued);
+      window.removeEventListener('resize', onResize);
+    };
   }, []);
 
   return (

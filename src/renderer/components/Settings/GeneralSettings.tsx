@@ -105,6 +105,13 @@ export default function GeneralSettings() {
   // anything. A custom background alone no longer qualifies: it now replaces
   // the terminal's colour outright rather than being faded toward, so with an
   // opaque window there is nothing left for the slider to move.
+  //
+  // Deliberately the pref alone, NOT hasTransparentWindow's pref-and-not-
+  // pending: the other call sites are asking what to PAINT, and until the
+  // restart lands the answer there is "still opaque". This one is asking what
+  // to OFFER, and the moment after someone ticks the box is exactly when they
+  // want to set the opacity the restart will come up with. The restart hint
+  // sits directly above it.
   const opacityApplies = appearancePrefs.windowTransparency;
   const effectiveOpacity = Math.round(opacityToAlpha(appearancePrefs.terminalBgOpacity) * 100);
 
@@ -273,14 +280,19 @@ export default function GeneralSettings() {
                 }
               >
                 <option value="clear">{t('settings.general.transparencyMaterial.clear')}</option>
-                {/* Blur materials are Win11-only; offering them on Windows 10
-                    would just produce a black window. */}
-                {caps.materials && (
-                  <>
-                    <option value="acrylic">{t('settings.general.transparencyMaterial.acrylic')}</option>
-                    <option value="mica">{t('settings.general.transparencyMaterial.mica')}</option>
-                  </>
-                )}
+                {/* Blur materials are Win11-only — picking one on Windows 10
+                    would just produce a black window. Rendered and DISABLED
+                    rather than omitted: a settings.json carrying 'acrylic' does
+                    reach a Windows 10 machine (they roam), and a controlled
+                    select whose value matches no option shows blank, which
+                    reads as a broken dropdown rather than as an unavailable
+                    choice. */}
+                <option value="acrylic" disabled={!caps.materials}>
+                  {t('settings.general.transparencyMaterial.acrylic')}
+                </option>
+                <option value="mica" disabled={!caps.materials}>
+                  {t('settings.general.transparencyMaterial.mica')}
+                </option>
               </select>
             </div>
           )}

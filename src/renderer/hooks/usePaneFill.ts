@@ -1,26 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { fetchTheme, withBgAlpha } from './useTerminal';
-
-/** #rgb / #rrggbb → channels, or null for anything else. */
-function parseHex(color: string): [number, number, number] | null {
-  const hex = (color || '').trim();
-  if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
-    return [
-      parseInt(hex[1] + hex[1], 16),
-      parseInt(hex[2] + hex[2], 16),
-      parseInt(hex[3] + hex[3], 16),
-    ];
-  }
-  if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
-    return [
-      parseInt(hex.slice(1, 3), 16),
-      parseInt(hex.slice(3, 5), 16),
-      parseInt(hex.slice(5, 7), 16),
-    ];
-  }
-  return null;
-}
+import { fetchTheme, parseHexColor, withBgAlpha } from './useTerminal';
+import { terminalBgAlpha } from '../store/backdrop';
 
 /** The `r, g, b` triple behind --ui-accent-rgb, which follows the UI theme. */
 function accentRgb(): [number, number, number] | null {
@@ -33,7 +14,30 @@ function accentRgb(): [number, number, number] | null {
 
 /** How much accent the focus ring carries — matches the opaque-mode rule. */
 const RING_ACCENT = 0.3;
-import { terminalBgAlpha } from '../store/backdrop';
+
+/**
+ * A counter that bumps whenever the resolved UI theme changes.
+ *
+ * The ring is mixed in JS from --ui-accent-rgb, which is a different colour in
+ * the light palette, so it has to be recomputed when the palette flips — and
+ * neither route to that flip is visible as a normal dependency. Choosing
+ * dark/light in Settings changes a pref the effect is not keyed on, and the
+ * 'system' route never touches the store at all: useUiTheme writes
+ * data-ui-theme straight onto <html> when Windows' own theme changes. Watching
+ * the attribute catches both, and is the only thing that catches the second.
+ */
+function useUiThemeTick(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTick((n) => n + 1));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-ui-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
+  return tick;
+}
 
 /**
  * Publishes `--wmux-pane-fill`: the global terminal background at the current
@@ -73,6 +77,7 @@ export function usePaneFill(): void {
   // The same function the panes use — the fill has to track them exactly, or
   // closing the gaps just moves the seam.
   const alpha = terminalBgAlpha(appearance, pending);
+  const uiThemeTick = useUiThemeTick();
 
   useEffect(() => {
     let cancelled = false;
@@ -103,7 +108,7 @@ export function usePaneFill(): void {
         // transparency on. The ring is chrome; it does not need the theme
         // colour to be the visible surface, only to be a consistent one to
         // tint, which it is whether or not a custom layer covers it.
-        const rgb = parseHex(bg);
+        const rgb = parseHexColor(bg);
         const accent = accentRgb();
         if (rgb && accent) {
           const mix = rgb.map((c, i) =>
@@ -115,5 +120,5 @@ export function usePaneFill(): void {
       })
       .catch(() => { /* theme unavailable — the gaps stay as they were */ });
     return () => { cancelled = true; };
-  }, [themeName, schemeBg, alpha]);
+  }, [themeName, schemeBg, alpha, uiThemeTick]);
 }

@@ -44,10 +44,25 @@ export function supportsTransparency(): boolean {
  * backgroundColor and no backdrop drawn — a BLACK window. So the capability is
  * reported to the renderer and acrylic/mica are hidden where they cannot work.
  */
+let backdropMaterialSupport: boolean | null = null;
 export function supportsBackdropMaterial(): boolean {
-  if (process.platform !== 'win32') return false;
-  const build = Number(os.release().split('.')[2]);
-  return Number.isFinite(build) && build >= 22000;
+  // Memoised: this is a build number, fixed for the life of the process, and
+  // setBackdrop asks it once per open window inside its loop. The renderer's
+  // backdrop-caps.ts already caches the same answer on its side.
+  if (backdropMaterialSupport === null) {
+    if (process.platform !== 'win32') {
+      backdropMaterialSupport = false;
+    } else {
+      const build = Number(os.release().split('.')[2]);
+      backdropMaterialSupport = Number.isFinite(build) && build >= 22000;
+    }
+  }
+  return backdropMaterialSupport;
+}
+
+/** Narrow an untrusted string to a WindowMaterial, defaulting to the safe one. */
+export function toWindowMaterial(raw: unknown): WindowMaterial {
+  return raw === 'mica' || raw === 'acrylic' || raw === 'clear' ? raw : 'clear';
 }
 
 /**
@@ -77,10 +92,10 @@ function storedBackdrop(): { enabled: boolean; material: WindowMaterial } {
     const prefs = loadSettings()['wmux-appearance-prefs'] as
       | { windowTransparency?: boolean; windowMaterial?: WindowMaterial }
       | undefined;
-    const raw = prefs?.windowMaterial;
-    const material: WindowMaterial =
-      raw === 'mica' || raw === 'acrylic' || raw === 'clear' ? raw : 'clear';
-    return { enabled: prefs?.windowTransparency === true, material };
+    return {
+      enabled: prefs?.windowTransparency === true,
+      material: toWindowMaterial(prefs?.windowMaterial),
+    };
   } catch {
     return { enabled: false, material: 'clear' };
   }
@@ -287,10 +302,7 @@ export class WindowManager {
 
   /** The live window a renderer message came from, if it still exists. */
   private entryForWebContents(sender: Electron.WebContents): WindowEntry | undefined {
-    for (const entry of this.windows.values()) {
-      if (!entry.window.isDestroyed() && entry.window.webContents.id === sender.id) return entry;
-    }
-    return undefined;
+    return this.getAllWindows().find(e => e.window.webContents.id === sender.id);
   }
 
   getAllWindows(): WindowEntry[] {

@@ -39,11 +39,6 @@ export function hasTransparentWindow(a: AppearancePrefs, transparencyPending: bo
   return a.windowTransparency && !transparencyPending;
 }
 
-/** Anything behind the terminal worth showing — either backdrop. */
-export function hasBackdrop(a: AppearancePrefs, transparencyPending: boolean): boolean {
-  return hasCustomBackground(a) || hasTransparentWindow(a, transparencyPending);
-}
-
 /**
  * Alpha for the terminal background — the xterm theme colour, and the fill
  * behind pane padding and the gutters between panes.

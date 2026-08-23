@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   MIN_TERMINAL_OPACITY_PCT,
   opacityToAlpha,
-  hasBackdrop,
+  hasCustomBackground,
+  hasTransparentWindow,
   terminalBgAlpha,
   customBgLayerAlpha,
 } from '../../src/renderer/store/backdrop';
@@ -33,20 +34,27 @@ describe('opacityToAlpha', () => {
   });
 });
 
-describe('hasBackdrop', () => {
-  it('is true for a custom background, or a transparent window', () => {
-    expect(hasBackdrop(prefs({ customBackgroundEnabled: true, customBackground: '#123' }), false)).toBe(true);
-    expect(hasBackdrop(prefs({ windowTransparency: true }), false)).toBe(true);
+describe('hasCustomBackground', () => {
+  it('needs the toggle and a non-empty value', () => {
+    expect(hasCustomBackground(prefs({ customBackgroundEnabled: true, customBackground: '#123' }))).toBe(true);
+    expect(hasCustomBackground(prefs({ customBackgroundEnabled: false, customBackground: '#123' }))).toBe(false);
   });
 
   it('ignores a custom background that is enabled but blank', () => {
-    expect(hasBackdrop(prefs({ customBackgroundEnabled: true, customBackground: '   ' }), false)).toBe(false);
+    expect(hasCustomBackground(prefs({ customBackgroundEnabled: true, customBackground: '   ' }))).toBe(false);
+  });
+});
+
+describe('hasTransparentWindow', () => {
+  it('follows the pref once the window has been rebuilt', () => {
+    expect(hasTransparentWindow(prefs({ windowTransparency: true }), false)).toBe(true);
+    expect(hasTransparentWindow(prefs({ windowTransparency: false }), false)).toBe(false);
   });
 
   it('is false while a transparency restart is pending', () => {
     // The window is still opaque until it is rebuilt, so alpha would only
     // reveal its flat backgroundColor.
-    expect(hasBackdrop(prefs({ windowTransparency: true }), true)).toBe(false);
+    expect(hasTransparentWindow(prefs({ windowTransparency: true }), true)).toBe(false);
   });
 });
 

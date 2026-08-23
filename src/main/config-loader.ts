@@ -17,8 +17,13 @@ import { parseThemeFileContent, loadBundledThemes } from './theme-loader';
  */
 function parseOpacity(raw: string | undefined, fallback: number | undefined): number {
   const parsed = raw === undefined ? NaN : parseFloat(raw);
-  if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
+  if (Number.isFinite(parsed)) return clamp01(parsed);
   return typeof fallback === 'number' && Number.isFinite(fallback) ? fallback : 1;
+}
+
+/** A 0..1 opacity fraction, whatever the config file claimed. */
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n));
 }
 
 function normalizeColor(color: string): string {
@@ -120,13 +125,12 @@ function mergeProfileDefaults(defaults: WTProfile | undefined, profile: WTProfil
  * half-migrated, so the modern key wins.
  */
 function profileOpacity(profile: WTProfile): number {
-  const clamp = (n: number) => Math.max(0, Math.min(1, n));
   if (typeof profile.opacity === 'number' && Number.isFinite(profile.opacity)) {
-    return clamp(profile.opacity / 100);
+    return clamp01(profile.opacity / 100);
   }
   if (profile.useAcrylic && typeof profile.acrylicOpacity === 'number'
       && Number.isFinite(profile.acrylicOpacity)) {
-    return clamp(profile.acrylicOpacity);
+    return clamp01(profile.acrylicOpacity);
   }
   return 1.0;
 }

@@ -435,7 +435,7 @@ export interface AppearancePrefs {
    */
   customBackgroundEnabled: boolean;
   customBackground: string;
-  /** 30–100 (%). How opaque the terminal theme background stays over whatever is behind it. */
+  /** 15–100 (%), floored by MIN_TERMINAL_OPACITY_PCT on read. How opaque the terminal theme background stays over whatever is behind it. */
   terminalBgOpacity: number;
   /**
    * Real window transparency (issue: terminal opacity). Where `customBackground`

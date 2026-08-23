@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { UserColorScheme } from '../../store/settings-slice';
@@ -15,6 +15,11 @@ function firstFamily(stack: string): string {
 function cssFamily(name: string): string {
   return /^[A-Za-z][A-Za-z0-9-]*$/.test(name) ? name : `'${name}'`;
 }
+
+/**
+ * Whether an import is already running. Module scope on purpose — see runImport.
+ */
+let importInFlight = false;
 
 export default function TerminalSettings() {
   const t = useT();
@@ -90,7 +95,6 @@ export default function TerminalSettings() {
   const setImportStatus = useStore((s) => s.setImportStatus);
   const setImportUndo = useStore((s) => s.setImportUndo);
 
-  const importingRef = useRef(false);
   const [importing, setImporting] = useState(false);
 
   const undoImport = () => {
@@ -108,16 +112,20 @@ export default function TerminalSettings() {
   // Both buttons call this unawaited, and each snapshot is taken after its own
   // await resolves — so two imports in flight at once would each read prefs the
   // other had not written yet, and whichever committed last would silently drop
-  // the other's scheme. A ref rather than the state flag: two clicks in the
-  // same tick both read a state value that has not re-rendered yet.
+  // the other's scheme. Not the state flag: two clicks in the same tick both
+  // read a value that has not re-rendered yet. Not a ref either — this panel
+  // unmounts on a tab switch, taking a ref with it, so clicking Import, hopping
+  // to General and back would arm a fresh guard while the first import was
+  // still in flight. The guard has to outlive the component the same way the
+  // undo snapshot does.
   const runImport = async (source: 'wt' | 'ghostty') => {
-    if (importingRef.current) return;
-    importingRef.current = true;
+    if (importInFlight) return;
+    importInFlight = true;
     setImporting(true);
     try {
       await doImport(source);
     } finally {
-      importingRef.current = false;
+      importInFlight = false;
       setImporting(false);
     }
   };

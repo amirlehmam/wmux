@@ -136,21 +136,40 @@ function resolveSchemeName(override: string | undefined, prefsTheme: string | un
 }
 
 /**
+ * A `#rgb` / `#rrggbb` colour as channels, or null for anything else.
+ *
+ * Theme backgrounds are hex, but a user colour scheme can hold any CSS colour,
+ * so callers get null rather than a wrong number and decide what to do with it.
+ */
+export function parseHexColor(color: string): [number, number, number] | null {
+  const hex = (color || '').trim();
+  if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
+    return [
+      parseInt(hex[1] + hex[1], 16),
+      parseInt(hex[2] + hex[2], 16),
+      parseInt(hex[3] + hex[3], 16),
+    ];
+  }
+  if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  return null;
+}
+
+/**
  * Apply an alpha channel to a CSS color for the custom-background feature
  * (issue #89). Theme backgrounds are hex (#rgb/#rrggbb); anything else is
  * returned unchanged rather than risk producing a string xterm can't parse.
  */
 export function withBgAlpha(color: string, alpha: number): string {
   if (alpha >= 1 || !color) return color;
-  const hex = color.trim();
-  let r: number, g: number, b: number;
-  if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
-    r = parseInt(hex[1] + hex[1], 16); g = parseInt(hex[2] + hex[2], 16); b = parseInt(hex[3] + hex[3], 16);
-  } else if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
-    r = parseInt(hex.slice(1, 3), 16); g = parseInt(hex.slice(3, 5), 16); b = parseInt(hex.slice(5, 7), 16);
-  } else {
-    return color;
-  }
+  const rgb = parseHexColor(color);
+  if (!rgb) return color;
+  const [r, g, b] = rgb;
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 

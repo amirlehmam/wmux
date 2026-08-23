@@ -16,7 +16,7 @@ import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-load
 import { parseWindowsTerminalConfig, parseGhosttyConfig, loadProjectProfiles, importWindowsTerminalProfiles } from './config-loader';
 import { loadUserConfig, getConfigPath, resetConfigWarnings } from './user-config';
 import { loadUserLocales } from './user-locales';
-import { WindowManager, supportsBackdropMaterial, supportsTransparency, type WindowMaterial } from './window-manager';
+import { WindowManager, supportsBackdropMaterial, supportsTransparency, toWindowMaterial } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
@@ -259,8 +259,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // `handle`, not `on`: entering or leaving plain-alpha mode cannot be applied
   // to a live window, and the renderer needs that answer to tell the user.
   ipcMain.handle(IPC_CHANNELS.WINDOW_SET_BACKDROP, (e, enabled: boolean, material?: string) => {
-    const safe: WindowMaterial =
-      material === 'mica' || material === 'acrylic' || material === 'clear' ? material : 'clear';
+    const safe = toWindowMaterial(material);
     // The enum was validated; the CAPABILITY was not. A blur material on a host
     // that has none leaves a zero-alpha window with nothing drawn behind it —
     // a black window, which is precisely what supportsBackdropMaterial() exists
