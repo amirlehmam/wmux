@@ -114,6 +114,41 @@ selection-foreground = #cdd6f4
     expect(theme!.selectionForeground).toBe('#cdd6f4');
   });
 
+  // parseFloat('0') is 0, which is falsy — so `parseFloat(raw) || 1` turned the
+  // one opacity a user could only have set on purpose into its exact opposite.
+  it('keeps background-opacity = 0 instead of falling back to opaque', () => {
+    const theme = parseGhosttyConfigString('background = #1e1e2e\nbackground-opacity = 0\n');
+    expect(theme).not.toBeNull();
+    expect(theme!.backgroundOpacity).toBe(0);
+  });
+
+  it('reads a fractional background-opacity', () => {
+    const theme = parseGhosttyConfigString('background-opacity = 0.8\n');
+    expect(theme!.backgroundOpacity).toBe(0.8);
+  });
+
+  it('defaults background-opacity to 1 when the key is absent', () => {
+    const theme = parseGhosttyConfigString('background = #1e1e2e\n');
+    expect(theme!.backgroundOpacity).toBe(1);
+  });
+
+  it('falls back to 1 on an unparseable background-opacity', () => {
+    const theme = parseGhosttyConfigString('background-opacity = wat\n');
+    expect(theme!.backgroundOpacity).toBe(1);
+  });
+
+  it('clamps background-opacity to 0..1', () => {
+    expect(parseGhosttyConfigString('background-opacity = 4\n')!.backgroundOpacity).toBe(1);
+    expect(parseGhosttyConfigString('background-opacity = -2\n')!.backgroundOpacity).toBe(0);
+  });
+
+  it('inherits background-opacity from a named theme when the key is absent', () => {
+    const base = { ...getDefaultTheme(), backgroundOpacity: 0.5 };
+    const themeMap = new Map([['Dim', base]]);
+    const theme = parseGhosttyConfigString('theme = Dim\n', themeMap);
+    expect(theme!.backgroundOpacity).toBe(0.5);
+  });
+
   it('uses theme map to resolve a named theme', () => {
     const baseTheme = getDefaultTheme();
     const themeMap = new Map([['Monokai', baseTheme]]);

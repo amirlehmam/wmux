@@ -7,6 +7,20 @@ import { parseThemeFileContent, loadBundledThemes } from './theme-loader';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Ghostty's `background-opacity` as a 0..1 number.
+ *
+ * Not `parseFloat(raw) || 1`: parseFloat('0') is 0, which is falsy, so the one
+ * value a user could only have set deliberately — fully transparent — was the
+ * single value silently replaced by fully opaque. The WT path already avoids
+ * this by testing `typeof === 'number'` instead of truthiness.
+ */
+function parseOpacity(raw: string | undefined, fallback: number | undefined): number {
+  const parsed = raw === undefined ? NaN : parseFloat(raw);
+  if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
+  return typeof fallback === 'number' && Number.isFinite(fallback) ? fallback : 1;
+}
+
 function normalizeColor(color: string): string {
   if (!color) return '';
   const c = color.trim();
@@ -418,8 +432,7 @@ export function parseGhosttyConfigString(
       palette: mergedPalette,
       fontFamily: values['font-family'] || base?.fontFamily || 'Cascadia Mono',
       fontSize: parseFloat(values['font-size'] || String(base?.fontSize ?? 13)) || 13,
-      backgroundOpacity:
-        parseFloat(values['background-opacity'] || String(base?.backgroundOpacity ?? 1)) || 1.0,
+      backgroundOpacity: parseOpacity(values['background-opacity'], base?.backgroundOpacity),
     };
   } catch {
     return null;
