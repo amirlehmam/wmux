@@ -26,7 +26,7 @@ import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
 import { useWindowTransparency } from './hooks/useWindowTransparency';
 import { usePaneFill } from './hooks/usePaneFill';
-import { customBgLayerAlpha } from './store/backdrop';
+import { customBgLayerAlpha, hasCustomBackground } from './store/backdrop';
 import type {
   SurfaceDragCommitOptions,
   SurfaceDragPayload,
@@ -449,7 +449,7 @@ export default function App() {
   // colour to fully transparent (see `terminalBgAlpha`), so this layer IS the
   // terminal background rather than something glimpsed through it.
   const appearancePrefs = useStore((s) => s.appearancePrefs);
-  const customBgActive = appearancePrefs.customBackgroundEnabled && !!appearancePrefs.customBackground.trim();
+  const customBgActive = hasCustomBackground(appearancePrefs);
   // Same guard as useTerminal: until the window is rebuilt there is nothing
   // behind this layer to fade toward.
   const transparencyPending = useStore((s) => s.transparencyNeedsRestart);

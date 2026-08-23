@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { UserColorScheme } from '../../store/settings-slice';
+import { backdropCaps } from '../../utils/backdrop-caps';
 import type { ThemeConfig } from '../../../shared/types';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
@@ -89,6 +90,9 @@ export default function TerminalSettings() {
   const setImportStatus = useStore((s) => s.setImportStatus);
   const setImportUndo = useStore((s) => s.setImportUndo);
 
+  const importingRef = useRef(false);
+  const [importing, setImporting] = useState(false);
+
   const undoImport = () => {
     if (!importUndo) return;
     setTerminalPrefs(importUndo.terminal);
@@ -101,7 +105,24 @@ export default function TerminalSettings() {
     setImportStatus(t('settings.terminalPanel.importReverted', 'Import reverted.'));
   };
 
+  // Both buttons call this unawaited, and each snapshot is taken after its own
+  // await resolves — so two imports in flight at once would each read prefs the
+  // other had not written yet, and whichever committed last would silently drop
+  // the other's scheme. A ref rather than the state flag: two clicks in the
+  // same tick both read a state value that has not re-rendered yet.
   const runImport = async (source: 'wt' | 'ghostty') => {
+    if (importingRef.current) return;
+    importingRef.current = true;
+    setImporting(true);
+    try {
+      await doImport(source);
+    } finally {
+      importingRef.current = false;
+      setImporting(false);
+    }
+  };
+
+  const doImport = async (source: 'wt' | 'ghostty') => {
     const config = (window as any).wmux?.config;
     const theme: ThemeConfig | null = source === 'ghostty'
       ? await config?.importGhostty?.()
@@ -148,8 +169,7 @@ export default function TerminalSettings() {
     if (pct < 100) {
       // Plain alpha is what both source terminals mean by opacity, and it
       // needs only DWM — so this is gated on `transparency`, not `materials`.
-      const caps = await (window as any).wmux?.window?.supportsBackdrop?.();
-      const supported = caps?.transparency === true;
+      const supported = (await backdropCaps()).transparency;
       setAppearancePrefs({
         terminalBgOpacity: pct,
         ...(supported ? { windowTransparency: true, windowMaterial: 'clear' } : {}),
@@ -275,10 +295,10 @@ export default function TerminalSettings() {
       </div>
       <div className="settings-row">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="settings-btn settings-btn--secondary" onClick={() => runImport('wt')}>
+          <button className="settings-btn settings-btn--secondary" disabled={importing} onClick={() => runImport('wt')}>
             {t('settings.terminalPanel.importWt', 'From Windows Terminal')}
           </button>
-          <button className="settings-btn settings-btn--secondary" onClick={() => runImport('ghostty')}>
+          <button className="settings-btn settings-btn--secondary" disabled={importing} onClick={() => runImport('ghostty')}>
             {t('settings.terminalPanel.importGhostty', 'From Ghostty')}
           </button>
         </div>

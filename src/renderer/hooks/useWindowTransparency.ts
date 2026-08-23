@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useStore } from '../store';
+import { backdropCaps } from '../utils/backdrop-caps';
 
 /**
  * Drives window transparency: the desktop showing through the terminal.
@@ -33,15 +34,13 @@ export function useWindowTransparency(): void {
     let cancelled = false;
 
     (async () => {
-      const caps = await window.wmux?.window?.supportsBackdrop?.();
+      const caps = await backdropCaps();
       if (cancelled) return;
 
       // A blur material on Windows 10 would leave the window transparent with
       // nothing drawn behind it, i.e. black — so that combination is treated as
       // unsupported rather than applied.
-      const available = material === 'clear'
-        ? caps?.transparency === true
-        : caps?.materials === true;
+      const available = material === 'clear' ? caps.transparency : caps.materials;
       const on = available && enabled;
 
       const result = await window.wmux?.window?.setBackdrop?.(on, material);

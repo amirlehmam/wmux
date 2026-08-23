@@ -5,6 +5,7 @@ import type { TranslationKey } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
 import AgentIntegrationSettings from './AgentIntegrationSettings';
 import { MIN_TERMINAL_OPACITY_PCT, opacityToAlpha } from '../../store/backdrop';
+import { backdropCaps, NO_BACKDROP, type BackdropCaps } from '../../utils/backdrop-caps';
 
 // Named background presets for issue #89 — the first is the gradient the
 // requester posted ("MyLovelyBackground"), kept verbatim as a tribute.
@@ -89,16 +90,10 @@ export default function GeneralSettings() {
   // string. Two flags, because plain alpha needs only DWM while the blur
   // materials need Win11 — collapsing them would hide transparency from every
   // Windows 10 user over a mode they never asked for.
-  const [caps, setCaps] = useState<{ transparency: boolean; materials: boolean }>(
-    { transparency: false, materials: false },
-  );
+  const [caps, setCaps] = useState<BackdropCaps>(NO_BACKDROP);
   useEffect(() => {
     let cancelled = false;
-    window.wmux?.window?.supportsBackdrop?.()
-      .then((c: { transparency: boolean; materials: boolean }) => {
-        if (!cancelled && c) setCaps(c);
-      })
-      .catch(() => { /* older preload without the API — leave it hidden */ });
+    backdropCaps().then((c) => { if (!cancelled) setCaps(c); });
     return () => { cancelled = true; };
   }, []);
 
