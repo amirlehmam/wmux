@@ -258,10 +258,17 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // the first turned translucent reads as a bug.
   // `handle`, not `on`: entering or leaving plain-alpha mode cannot be applied
   // to a live window, and the renderer needs that answer to tell the user.
-  ipcMain.handle(IPC_CHANNELS.WINDOW_SET_BACKDROP, (_e, enabled: boolean, material?: string) => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SET_BACKDROP, (e, enabled: boolean, material?: string) => {
     const safe: WindowMaterial =
       material === 'mica' || material === 'acrylic' || material === 'clear' ? material : 'clear';
-    return windowManager.setBackdrop(enabled === true, safe);
+    // The enum was validated; the CAPABILITY was not. A blur material on a host
+    // that has none leaves a zero-alpha window with nothing drawn behind it —
+    // a black window, which is precisely what supportsBackdropMaterial() exists
+    // to prevent. Today's only caller pre-gates, but the guard belongs at the
+    // boundary rather than in the callers that happen to exist right now.
+    const available = safe === 'clear' ? supportsTransparency() : supportsBackdropMaterial();
+    // e.sender, so the restart answer describes the window that asked.
+    return windowManager.setBackdrop(enabled === true && available, safe, e.sender);
   });
   // Two separate capabilities: plain alpha needs only DWM, the blur materials
   // need Win11. Reporting one flag for both would hide transparency from every

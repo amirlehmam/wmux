@@ -282,10 +282,15 @@ export class WindowManager {
    * before it can be merged rather than overwrite everyone else's (issue #118).
    */
   idForWebContents(sender: Electron.WebContents): WindowId | null {
+    return this.entryForWebContents(sender)?.id ?? null;
+  }
+
+  /** The live window a renderer message came from, if it still exists. */
+  private entryForWebContents(sender: Electron.WebContents): WindowEntry | undefined {
     for (const entry of this.windows.values()) {
-      if (!entry.window.isDestroyed() && entry.window.webContents.id === sender.id) return entry.id;
+      if (!entry.window.isDestroyed() && entry.window.webContents.id === sender.id) return entry;
     }
-    return null;
+    return undefined;
   }
 
   getAllWindows(): WindowEntry[] {
@@ -313,12 +318,7 @@ export class WindowManager {
    * hide the caption buttons of a window that still has no native ones.
    */
   isFramelessFor(sender: Electron.WebContents): boolean {
-    for (const entry of this.windows.values()) {
-      if (!entry.window.isDestroyed() && entry.window.webContents.id === sender.id) {
-        return entry.transparent;
-      }
-    }
-    return false;
+    return this.entryForWebContents(sender)?.transparent ?? false;
   }
 
   /**
@@ -331,8 +331,21 @@ export class WindowManager {
    *
    * Per-window try/catch: a window destroyed between the isDestroyed() check and
    * the call must not stop the remaining windows from updating.
+   *
+   * Applied fleet-wide, but `needsRestart` describes the ASKING window alone.
+   * The flag makes its renderer keep treating the window as opaque, so a
+   * fleet-wide OR would tell a window that was just built correctly to go on
+   * painting over its own transparency because some OTHER window has not been
+   * rebuilt yet — the exact state the flag exists to prevent. Windows are
+   * independent here: each was built one way or the other and answers for
+   * itself. With no sender (nobody asked) the fleet answer is the only one
+   * available.
    */
-  setBackdrop(enabled: boolean, material: WindowMaterial): { needsRestart: boolean } {
+  setBackdrop(
+    enabled: boolean,
+    material: WindowMaterial,
+    sender?: Electron.WebContents,
+  ): { needsRestart: boolean } {
     const wantsTransparent = needsTransparentWindow(enabled, material);
     let needsRestart = false;
 
@@ -342,7 +355,7 @@ export class WindowManager {
       // rather than half-applied: setting a transparent background on a window
       // with an opaque backing paints it black, which looks like a crash.
       if (entry.transparent !== wantsTransparent) {
-        needsRestart = true;
+        if (!sender || entry.window.webContents.id === sender.id) needsRestart = true;
         continue;
       }
       // A window built for clear mode is already exactly right, and touching it
