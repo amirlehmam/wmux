@@ -43,9 +43,26 @@
 /* Over a translucent window the gutters between panes must render at the same
    opacity the panes do, or a split shows as bright seams through the terminal.
    `:not(--focused)` keeps the accent border on the focused pane, which would
-   otherwise lose to this rule on specificity. */
+   otherwise lose to this rule on specificity; the rule below is what that pane
+   gets instead. */
 html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
   border-color: var(--wmux-pane-fill, transparent);
+}
+/* Which left the focus ring as the only edge still compositing onto the
+   desktop. 30% accent over an opaque window resolves against the chrome behind
+   it and reads as a solid line; over a transparent one there is nothing behind
+   it, so the same colour reads as a slot cut around the pane that you can see
+   the wallpaper through. Mixing the accent INTO the pane fill puts the ring
+   back on the pane's own surface, which is the relationship it has everywhere
+   else. Falls back to the plain accent rule if the fill has not resolved yet,
+   and lands on it anyway over a custom background, where the fill is fully
+   transparent because that layer is the surface. */
+html.wmux-transparent .pane-wrapper--focused {
+  border-color: color-mix(
+    in srgb,
+    rgb(var(--ui-accent-rgb)) 30%,
+    var(--wmux-pane-fill, transparent)
+  );
 }
 html.wmux-transparent .split-divider {
   background: var(--wmux-pane-fill, transparent);
