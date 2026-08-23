@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
-import { AppearancePrefs, TerminalPrefs, UserColorScheme } from '../../store/settings-slice';
+import { UserColorScheme } from '../../store/settings-slice';
 import type { ThemeConfig } from '../../../shared/types';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
@@ -75,14 +75,19 @@ export default function TerminalSettings() {
   // written, wired through preload and IPC, with nothing in the UI ever calling
   // them — which is also why the `background-opacity` they parse was never
   // applied to anything. These two buttons are the missing end of that path.
-  const [importStatus, setImportStatus] = useState<string | null>(null);
-  // One click writes seven settings across two slices, one of which asks for
-  // a restart — a lot to land on someone who was aiming at the button beside
-  // it, and not recoverable by hand once their old font size is gone. So each
+  // One click writes seven settings across two slices, one of which asks for a
+  // restart — a lot to land on someone who was aiming at the button beside it,
+  // and not recoverable by hand once their old font size is gone. So each
   // import parks the exact keys it is about to overwrite and offers them back.
-  const [importUndo, setImportUndo] = useState<
-    { terminal: Partial<TerminalPrefs>; appearance: Partial<AppearancePrefs> } | null
-  >(null);
+  //
+  // Both live in the store, not in this component: it unmounts on a tab switch,
+  // and the tab an import sends you to is General, to see the transparency it
+  // just turned on. See ImportUndo in settings-slice for why it is not
+  // persisted beyond the session.
+  const importStatus = useStore((s) => s.importStatus);
+  const importUndo = useStore((s) => s.importUndo);
+  const setImportStatus = useStore((s) => s.setImportStatus);
+  const setImportUndo = useStore((s) => s.setImportUndo);
 
   const undoImport = () => {
     if (!importUndo) return;
@@ -104,6 +109,7 @@ export default function TerminalSettings() {
 
     // Null is the parsers' "no config file at the expected path", not an error.
     if (!theme) {
+      // Nothing was written, so an undo armed by an earlier import still holds.
       setImportStatus(t('settings.terminalPanel.importNotFound', 'No config found to import.'));
       return;
     }
@@ -114,21 +120,6 @@ export default function TerminalSettings() {
     // means this handler can outlive the render that created it.
     const prevTerminal = useStore.getState().terminalPrefs;
     const prevAppearance = useStore.getState().appearancePrefs;
-    setImportUndo({
-      // The whole userColorSchemes map, not just the imported key: the source
-      // may name a scheme the user already had, and this silently replaces it.
-      terminal: {
-        userColorSchemes: prevTerminal.userColorSchemes,
-        theme: prevTerminal.theme,
-        fontFamily: prevTerminal.fontFamily,
-        fontSize: prevTerminal.fontSize,
-      },
-      appearance: {
-        terminalBgOpacity: prevAppearance.terminalBgOpacity,
-        windowTransparency: prevAppearance.windowTransparency,
-        windowMaterial: prevAppearance.windowMaterial,
-      },
-    });
     setTerminalPrefs({
       userColorSchemes: {
         ...prevTerminal.userColorSchemes,
@@ -168,9 +159,25 @@ export default function TerminalSettings() {
         : ` · ${pct}%`;
     }
 
-    setImportStatus(
-      `${t('settings.terminalPanel.imported', 'Imported')} ${name}${note}`,
-    );
+    // Armed here rather than before the writes, because the label it carries
+    // is only complete once the opacity branch above has run.
+    setImportStatus(null);
+    setImportUndo({
+      // The whole userColorSchemes map, not just the imported key: the source
+      // may name a scheme the user already had, and this silently replaces it.
+      terminal: {
+        userColorSchemes: prevTerminal.userColorSchemes,
+        theme: prevTerminal.theme,
+        fontFamily: prevTerminal.fontFamily,
+        fontSize: prevTerminal.fontSize,
+      },
+      appearance: {
+        terminalBgOpacity: prevAppearance.terminalBgOpacity,
+        windowTransparency: prevAppearance.windowTransparency,
+        windowMaterial: prevAppearance.windowMaterial,
+      },
+      label: `${t('settings.terminalPanel.imported', 'Imported')} ${name}${note}`,
+    });
   };
 
   return (
@@ -277,13 +284,14 @@ export default function TerminalSettings() {
         </div>
       </div>
       {importStatus && (
+        <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>{importStatus}</div>
+      )}
+      {importUndo && (
         <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>{importStatus}</span>
-          {importUndo && (
-            <button className="settings-btn settings-btn--secondary" onClick={undoImport}>
-              {t('settings.terminalPanel.importUndo', 'Undo')}
-            </button>
-          )}
+          <span>{importUndo.label}</span>
+          <button className="settings-btn settings-btn--secondary" onClick={undoImport}>
+            {t('settings.terminalPanel.importUndo', 'Undo')}
+          </button>
         </div>
       )}
 

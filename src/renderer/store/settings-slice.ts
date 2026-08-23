@@ -577,10 +577,16 @@ export interface SettingsSlice {
    */
   transparencyNeedsRestart: boolean;
 
+  /** Result line for the last config import, and the undo it armed. */
+  importStatus: string | null;
+  importUndo: ImportUndo | null;
+
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void;
   resetShortcuts(): void;
   toggleSidebar(): void;
   setTransparencyNeedsRestart(value: boolean): void;
+  setImportStatus(status: string | null): void;
+  setImportUndo(undo: ImportUndo | null): void;
   setSidebarPrefs(prefs: Partial<SidebarPrefs>): void;
   setWorkspacePrefs(prefs: Partial<WorkspacePrefs>): void;
   setTerminalPrefs(prefs: Partial<TerminalPrefs>): void;
@@ -593,6 +599,29 @@ export interface SettingsSlice {
   /** Re-read ~/.wmux/locales into the i18n registry and repaint (issue #147). */
   reloadUserLocales(payload: unknown): void;
   toggleBroadcastInput(): void;
+}
+
+/**
+ * What an import overwrote, held so it can be handed back.
+ *
+ * Lives in the store rather than in TerminalSettings' own state because the
+ * panel is mounted conditionally — `{activeTab === 'Terminal' && ...}` — so
+ * component state dies the moment the user clicks over to General. Which is
+ * exactly where an import sends them: it turns window transparency on and
+ * raises the restart banner, and the natural next move is to go look at it.
+ *
+ * Deliberately NOT persisted. An undo that outlived the session would sit
+ * there offering to revert a font size or an opacity the user had since
+ * changed on purpose, and silently undoing deliberate work is worse than
+ * offering no undo at all. Windows Terminal scopes its Discard Changes the
+ * same way — only until you save — and cmux, which reads Ghostty's config in
+ * place instead of copying it, has nothing to undo in the first place.
+ */
+export interface ImportUndo {
+  terminal: Partial<TerminalPrefs>;
+  appearance: Partial<AppearancePrefs>;
+  /** What it would take back. The button on its own says nothing. */
+  label: string;
 }
 
 // ─── Slice creator ────────────────────────────────────────────────────────────
@@ -612,6 +641,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   localeRevision:    getLocaleRevision(),
   broadcastInputActive: false,
   transparencyNeedsRestart: false,
+  importStatus: null,
+  importUndo: null,
 
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void {
     set((state) => {
@@ -710,5 +741,13 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
 
   setTransparencyNeedsRestart(value: boolean): void {
     set({ transparencyNeedsRestart: value });
+  },
+
+  setImportStatus(status: string | null): void {
+    set({ importStatus: status });
+  },
+
+  setImportUndo(undo: ImportUndo | null): void {
+    set({ importUndo: undo });
   },
 });
