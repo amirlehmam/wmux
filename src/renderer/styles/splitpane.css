@@ -1,3 +1,9 @@
+/* The surface tab bar's height. Shared, because a divider runs the full height
+   of the panes it separates and has to know where their opaque chrome ends. */
+:root {
+  --wmux-tab-bar-h: 28px;
+}
+
 .split-container {
   display: flex;
   width: 100%;
@@ -70,6 +76,25 @@ html.wmux-transparent .pane-wrapper--focused {
 html.wmux-transparent .split-divider {
   background: var(--wmux-pane-fill, transparent);
 }
+/* Except across the tab bars. A divider between two side-by-side panes runs the
+   whole pane height, and the top 28px of a pane is its surface tab bar, which is
+   opaque. The pane fill is exactly right for the rest of that run — sampled at a
+   content row the divider and the pane beside it come out identical — and wrong
+   for that one band, where a translucent divider reads as a slot cut between two
+   opaque tab bars. So it is opaque for the height of the tab bars it sits
+   between, and the pane fill below them.
+
+   Vertical dividers need no equivalent: they separate one pane's content from
+   the NEXT pane's tab bar, so the fill already matches the surface immediately
+   above them, which is the side that would otherwise show a seam. */
+html.wmux-transparent .split-divider--horizontal {
+  background: linear-gradient(
+    to bottom,
+    var(--ui-bg-2) 0,
+    var(--ui-bg-2) var(--wmux-tab-bar-h),
+    var(--wmux-pane-fill, transparent) var(--wmux-tab-bar-h)
+  );
+}
 .pane-wrapper__content {
   flex: 1;
   overflow: hidden;
@@ -88,8 +113,8 @@ html.wmux-transparent .split-divider {
 .surface-tab-bar {
   display: flex;
   align-items: center;
-  height: 28px;
-  min-height: 28px;
+  height: var(--wmux-tab-bar-h);
+  min-height: var(--wmux-tab-bar-h);
   background: var(--ui-bg-2);
   overflow: visible;
   flex-shrink: 0;
