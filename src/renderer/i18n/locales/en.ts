@@ -406,6 +406,8 @@ export const en = {
   'settings.terminalPanel.importNotFound': 'No config found to import.',
   'settings.terminalPanel.imported': 'Imported',
   'settings.terminalPanel.importRestart': '(restart to apply transparency)',
+  'settings.terminalPanel.importUndo': 'Undo',
+  'settings.terminalPanel.importReverted': 'Import reverted.',
   'settings.terminalPanel.defaultScheme': 'Default scheme',
   'settings.terminalPanel.schemeHintPart1': 'Applied to new panes. Override per pane via ',
   'settings.terminalPanel.schemeHintPart2': ' or ',

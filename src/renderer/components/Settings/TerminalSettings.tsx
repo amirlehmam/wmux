@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
-import { UserColorScheme } from '../../store/settings-slice';
+import { AppearancePrefs, TerminalPrefs, UserColorScheme } from '../../store/settings-slice';
 import type { ThemeConfig } from '../../../shared/types';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
@@ -76,6 +76,25 @@ export default function TerminalSettings() {
   // them — which is also why the `background-opacity` they parse was never
   // applied to anything. These two buttons are the missing end of that path.
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  // One click writes seven settings across two slices, one of which asks for
+  // a restart — a lot to land on someone who was aiming at the button beside
+  // it, and not recoverable by hand once their old font size is gone. So each
+  // import parks the exact keys it is about to overwrite and offers them back.
+  const [importUndo, setImportUndo] = useState<
+    { terminal: Partial<TerminalPrefs>; appearance: Partial<AppearancePrefs> } | null
+  >(null);
+
+  const undoImport = () => {
+    if (!importUndo) return;
+    setTerminalPrefs(importUndo.terminal);
+    // Putting windowTransparency back re-runs useWindowTransparency, which
+    // re-derives the restart flag from the window itself — so undoing an
+    // import that turned transparency on also clears the restart banner it
+    // raised, provided the window was never rebuilt in between.
+    setAppearancePrefs(importUndo.appearance);
+    setImportUndo(null);
+    setImportStatus(t('settings.terminalPanel.importReverted', 'Import reverted.'));
+  };
 
   const runImport = async (source: 'wt' | 'ghostty') => {
     const config = (window as any).wmux?.config;
@@ -90,9 +109,29 @@ export default function TerminalSettings() {
     }
 
     const name = theme.name || (source === 'ghostty' ? 'Ghostty' : 'Windows Terminal');
+
+    // Read through the store rather than the render closure: the await above
+    // means this handler can outlive the render that created it.
+    const prevTerminal = useStore.getState().terminalPrefs;
+    const prevAppearance = useStore.getState().appearancePrefs;
+    setImportUndo({
+      // The whole userColorSchemes map, not just the imported key: the source
+      // may name a scheme the user already had, and this silently replaces it.
+      terminal: {
+        userColorSchemes: prevTerminal.userColorSchemes,
+        theme: prevTerminal.theme,
+        fontFamily: prevTerminal.fontFamily,
+        fontSize: prevTerminal.fontSize,
+      },
+      appearance: {
+        terminalBgOpacity: prevAppearance.terminalBgOpacity,
+        windowTransparency: prevAppearance.windowTransparency,
+        windowMaterial: prevAppearance.windowMaterial,
+      },
+    });
     setTerminalPrefs({
       userColorSchemes: {
-        ...terminalPrefs.userColorSchemes,
+        ...prevTerminal.userColorSchemes,
         [name]: {
           background: theme.background,
           foreground: theme.foreground,
@@ -238,7 +277,14 @@ export default function TerminalSettings() {
         </div>
       </div>
       {importStatus && (
-        <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>{importStatus}</div>
+        <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>{importStatus}</span>
+          {importUndo && (
+            <button className="settings-btn settings-btn--secondary" onClick={undoImport}>
+              {t('settings.terminalPanel.importUndo', 'Undo')}
+            </button>
+          )}
+        </div>
       )}
 
       <div className="settings-divider" />
