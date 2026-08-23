@@ -1,9 +1,10 @@
-// wmux-plugin-version: 3
+// wmux-plugin-version: 4
 // wmux OpenCode plugin — bridges OpenCode hooks/events to the wmux sidebar.
 // Auto-installed by wmux to ~/.config/opencode/plugin/wmux.js.
 // No-ops entirely outside wmux (WMUX !== '1').
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 /** Basenames that can execute a .js file we hand them. */
@@ -79,6 +80,63 @@ function firstExisting(dirs, names, exists) {
 }
 
 /**
+ * Where `WMUX_PLUGIN_DEBUG` should write, or null when debugging is off (#190).
+ *
+ * v3 logged to `console.error`, which is unreadable by design here: OpenCode is
+ * a TUI that owns the terminal, and the agent running inside it cannot read its
+ * own process's stderr. So the one flag meant for diagnosing the plugin could
+ * only be used from a second terminal — which is why #189's 17 ms race went
+ * unseen until someone hand-patched `appendFileSync` into an installed copy.
+ *
+ * `1`/`true` picks the default location; anything else is taken as a path, so a
+ * user can drop the log somewhere they are already tailing.
+ *
+ * Exported for wmux's tests; OpenCode ignores extra exports.
+ */
+export function resolveDebugLog(value, tmpdir = os.tmpdir) {
+  const v = typeof value === "string" ? value.trim() : "";
+  if (!v || v === "0" || v.toLowerCase() === "false") return null;
+  if (v === "1" || v.toLowerCase() === "true") {
+    try {
+      return path.join(tmpdir(), "wmux-plugin-debug.log");
+    } catch {
+      return null;
+    }
+  }
+  return v;
+}
+
+/** One-line, length-capped rendering of anything, including circular values. */
+export function summarize(value, max = 300) {
+  let s;
+  try {
+    s = typeof value === "string" ? value : JSON.stringify(value);
+  } catch {
+    s = null;
+  }
+  if (typeof s !== "string") s = String(value);
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+/**
+ * Appender for `file`, or a no-op when debugging is off.
+ *
+ * Synchronous on purpose: the ordering between an event and the CLI call it
+ * caused is the whole diagnostic value, and an async write reorders exactly the
+ * millisecond-scale races this exists to catch. It swallows every error — a
+ * full disk must not take OpenCode down with it.
+ */
+function makeLogger(file) {
+  if (!file) return () => {};
+  return (label, data) => {
+    try {
+      const suffix = data === undefined ? "" : ` ${summarize(data)}`;
+      appendFileSync(file, `${new Date().toISOString()} [wmux] ${label}${suffix}\n`);
+    } catch {}
+  };
+}
+
+/**
  * OpenCode event names that park the pane on a human, and those that free it.
  *
  * Matched exactly rather than by prefix: `permission.updated` fires on both
@@ -106,12 +164,23 @@ export function askReason(event) {
 }
 
 export const WmuxPlugin = async () => {
-  if (process.env.WMUX !== "1") return {};
+  // Resolved before the WMUX gate so "the plugin loaded but did nothing" is
+  // itself a visible log line — otherwise the commonest failure is silence.
+  const log = makeLogger(resolveDebugLog(process.env.WMUX_PLUGIN_DEBUG));
   const surface = process.env.WMUX_SURFACE_ID;
-  if (!surface) return {};
+  if (process.env.WMUX !== "1" || !surface) {
+    log("init: inactive", { WMUX: process.env.WMUX, surface });
+    return {};
+  }
 
   const runtime = resolveNodeRuntime();
-  const debug = process.env.WMUX_PLUGIN_DEBUG === "1";
+  log("init", {
+    surface,
+    runtime: runtime.file,
+    electron: runtime.electron,
+    cli: process.env.WMUX_CLI,
+    pid: process.pid,
+  });
 
   function wmux(args) {
     // Fire-and-forget; never block or throw into OpenCode.
@@ -129,19 +198,26 @@ export const WmuxPlugin = async () => {
       } else if (process.platform === "win32") {
         // The PATH shim is `wmux.cmd`, which execFile cannot spawn without a
         // shell. Nothing to do — WMUX_CLI is always set alongside WMUX=1.
+        log("cli: skipped (no WMUX_CLI on win32)", args);
         return;
       } else {
         file = "wmux";
         argv = args;
       }
+      log("cli", args);
       execFile(file, argv, opts, (err, _stdout, stderr) => {
         // v2 passed `() => {}` here, which is how #187 stayed silent for a
-        // whole release line. Still non-fatal, but no longer unobservable.
-        if (debug && (err || stderr)) {
-          console.error(`[wmux] ${args[0]} failed:`, (err && err.message) || String(stderr).trim());
+        // whole release line. Still non-fatal, but no longer unobservable —
+        // and since #190 it lands somewhere the agent itself can read.
+        if (err || stderr) {
+          log(`cli: ${args[0]} failed`, (err && err.message) || String(stderr).trim());
+        } else {
+          log(`cli: ${args[0]} ok`);
         }
       });
-    } catch {}
+    } catch (err) {
+      log("cli: threw", (err && err.message) || String(err));
+    }
   }
 
   // message.part.updated fires per streaming delta (many per second). Throttle
@@ -150,26 +226,35 @@ export const WmuxPlugin = async () => {
   let blocked = false;
 
   /**
-   * Any sign of the agent doing work also proves it is NOT waiting on a human.
+   * Real work by the agent also proves it is NOT waiting on a human.
    *
    * The self-heal matters because the unblock depends on OpenCode emitting a
    * matching `*.replied`. If a build renames it, or the user answers in a way
    * that fires nothing, the pane would otherwise claim "Needs you" forever —
    * the one failure mode that makes the whole indicator untrustworthy.
+   *
+   * "Real work" is deliberately narrower since #189: a running tool, a reply,
+   * an edited file, a session error. Streaming message parts are NOT in the
+   * set, because the ask itself streams one.
    */
   const clearBlocked = () => {
     if (!blocked) return;
     blocked = false;
     wmux(["report-agent", "--surface", surface, "--unblocked"]);
   };
-  const pingActive = () => {
-    clearBlocked();
+  /** Tell wmux the pane is alive. Says nothing about whether it is blocked. */
+  const ping = () => {
     const now = Date.now();
     if (now - lastActivePing < 1000) return;
     lastActivePing = now;
     wmux(["agent-activity", "--surface", surface, "--active"]);
   };
+  const pingActive = () => {
+    clearBlocked();
+    ping();
+  };
   const activeTool = (input) => {
+    log("tool", { tool: input && input.tool, blocked });
     clearBlocked();
     const tool = String((input && input.tool) || "");
     const args = ["agent-activity", "--surface", surface, "--active"];
@@ -189,6 +274,7 @@ export const WmuxPlugin = async () => {
     event: async ({ event }) => {
       if (!event || !event.type) return;
       const type = event.type;
+      log("event", { type, properties: event.properties });
       if (type === "session.idle") {
         // NOT an unblock: a pane waiting on a permission prompt is idle by
         // definition, and clearing here would erase "Needs you" the moment it
@@ -198,7 +284,18 @@ export const WmuxPlugin = async () => {
         clearBlocked();
         wmux(["agent-activity", "--surface", surface, "--done"]);
       } else if (type === "message.part.updated") {
-        pingActive();
+        // Activity ping ONLY — never an unblock (#189).
+        //
+        // This fires for tool status transitions, and the ask's own tool part
+        // goes to "running" ~17 ms after question.asked. Treating that as "the
+        // agent resumed" cleared the block within one frame, so "Needs you"
+        // flashed and vanished ten seconds before the user actually answered.
+        // The question being presented is not the question being answered.
+        //
+        // The self-heal that motivated the old clearBlocked() here still holds
+        // through tool.execute.before/after (real tool work), the *.replied
+        // events, and session.error — all of which mean the agent moved on.
+        ping();
       } else if (type === "session.created") {
         pingActive();
       } else if (ASK_EVENTS.has(type)) {

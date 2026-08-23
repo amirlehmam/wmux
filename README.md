@@ -492,6 +492,11 @@ Windows minidump carries your process environment block in cleartext, and wmux's
 users are exactly the people who keep credentials there. See
 [docs/crash-reports.md](docs/crash-reports.md).
 
+### Reporting an OpenCode sidebar problem
+
+Set `WMUX_PLUGIN_DEBUG=1`, reproduce, and attach the log it writes to your temp
+directory. See [docs/opencode-plugin.md](docs/opencode-plugin.md).
+
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/amirlehmam-wmux-badge.png)](https://mseep.ai/app/amirlehmam-wmux)
 
 

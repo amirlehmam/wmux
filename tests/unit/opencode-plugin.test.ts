@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 /**
@@ -41,7 +42,14 @@ async function pluginWith(env: Record<string, string> = {}) {
 
 beforeEach(() => {
   calls.length = 0;
-  for (const k of ['WMUX', 'WMUX_SURFACE_ID', 'WMUX_CLI', 'WMUX_NODE', 'WMUX_NODE_ELECTRON']) {
+  for (const k of [
+    'WMUX',
+    'WMUX_SURFACE_ID',
+    'WMUX_CLI',
+    'WMUX_NODE',
+    'WMUX_NODE_ELECTRON',
+    'WMUX_PLUGIN_DEBUG',
+  ]) {
     delete process.env[k];
   }
 });
@@ -50,8 +58,12 @@ describe('the plugin file itself', () => {
   const src = fs.readFileSync(PLUGIN, 'utf8');
 
   it('carries a version marker, or wmux cannot know to reinstall it', () => {
-    // pluginNeedsUpdate() compares this; an install stuck on v2 keeps the bug.
-    expect(src).toMatch(/wmux-plugin-version:\s*3/);
+    // pluginNeedsUpdate() compares this; an install stuck on v3 keeps #189.
+    expect(src).toMatch(/wmux-plugin-version:\s*4/);
+  });
+
+  it('never logs to the console, which OpenCode\'s TUI swallows (#190)', () => {
+    expect(src).not.toMatch(/console\.(error|log|warn)\s*\(/);
   });
 
   it('never spawns process.execPath as if it were a JS runtime (#187)', () => {
@@ -145,13 +157,39 @@ describe('event mapping (#188)', () => {
     expect(verbs()[0]).toEqual(['report-agent', '--surface', SURFACE, '--unblocked']);
   });
 
-  it('self-heals: streaming tokens prove the agent is not waiting on anyone', async () => {
+  it('keeps the block when the ask\'s own tool part goes to "running" (#189)', async () => {
+    // OpenCode emits message.part.updated ~17 ms after question.asked, for the
+    // question tool itself. v3 read that as "the agent resumed" and unblocked,
+    // so "Needs you" flashed for one frame and was gone before the user looked.
+    const p = await pluginWith();
+    await p.event({ event: { type: 'question.asked' } });
+    calls.length = 0;
+    await p.event({
+      event: {
+        type: 'message.part.updated',
+        properties: { part: { type: 'tool', tool: 'question', state: { status: 'running' } } },
+      },
+    });
+    expect(verbs().filter((v) => v.includes('--unblocked'))).toEqual([]);
+    // Still tells wmux the pane is alive — only the unblock is withdrawn.
+    expect(verbs()).toEqual([['agent-activity', '--surface', SURFACE, '--active']]);
+  });
+
+  it('self-heals on real tool work, which is what the unblock now rests on', async () => {
     // The unblock depends on OpenCode emitting a matching *.replied. If it ever
     // does not, a pane claiming "Needs you" forever is worse than no indicator.
     const p = await pluginWith();
     await p.event({ event: { type: 'permission.asked' } });
     calls.length = 0;
-    await p.event({ event: { type: 'message.part.updated' } });
+    await p['tool.execute.before']({ tool: 'bash' });
+    expect(verbs()[0]).toEqual(['report-agent', '--surface', SURFACE, '--unblocked']);
+  });
+
+  it('self-heals on session.error too', async () => {
+    const p = await pluginWith();
+    await p.event({ event: { type: 'permission.asked' } });
+    calls.length = 0;
+    await p.event({ event: { type: 'session.error' } });
     expect(verbs()[0]).toEqual(['report-agent', '--surface', SURFACE, '--unblocked']);
   });
 
@@ -202,6 +240,87 @@ describe('event mapping (#188)', () => {
     await p.event({ event: {} });
     await p.event({ event: null });
     expect(calls).toEqual([]);
+  });
+});
+
+describe('debug logging (#190)', () => {
+  const logPath = () => path.join(os.tmpdir(), `wmux-plugin-test-${process.pid}.log`);
+  const readLog = () => (fs.existsSync(logPath()) ? fs.readFileSync(logPath(), 'utf8') : '');
+
+  beforeEach(() => {
+    if (fs.existsSync(logPath())) fs.unlinkSync(logPath());
+  });
+
+  describe('resolveDebugLog', () => {
+    it('is off unless asked for', async () => {
+      const { resolveDebugLog } = await load();
+      for (const v of [undefined, '', '  ', '0', 'false', 'FALSE']) {
+        expect(resolveDebugLog(v)).toBeNull();
+      }
+    });
+
+    it('puts the default log somewhere both the user and the agent can read it', async () => {
+      const { resolveDebugLog } = await load();
+      const fakeTmp = path.join('scratch', 'tmpdir-stub');
+      const expected = path.join(fakeTmp, 'wmux-plugin-debug.log');
+      expect(resolveDebugLog('1', () => fakeTmp)).toBe(expected);
+      expect(resolveDebugLog('true', () => fakeTmp)).toBe(expected);
+    });
+
+    it('treats any other value as an explicit path', async () => {
+      const { resolveDebugLog } = await load();
+      expect(resolveDebugLog('/var/log/wmux.log')).toBe('/var/log/wmux.log');
+      expect(resolveDebugLog(' C:\\Users\\me\\wmux.log ')).toBe('C:\\Users\\me\\wmux.log');
+    });
+  });
+
+  describe('summarize', () => {
+    it('caps length so one event cannot flood the log', async () => {
+      const { summarize } = await load();
+      expect(summarize('x'.repeat(500))).toHaveLength(301); // 300 + ellipsis
+    });
+
+    it('survives a circular event payload rather than throwing into OpenCode', async () => {
+      const { summarize } = await load();
+      const circular: any = { a: 1 };
+      circular.self = circular;
+      expect(() => summarize(circular)).not.toThrow();
+      expect(summarize(circular)).toContain('object');
+    });
+  });
+
+  it('records init, events and CLI calls — the chain #189 was diagnosed with', async () => {
+    const p = await pluginWith({ WMUX_PLUGIN_DEBUG: logPath() });
+    await p.event({ event: { type: 'question.asked', properties: { title: 'Which one?' } } });
+    const log = readLog();
+    expect(log).toContain('init');
+    expect(log).toContain(SURFACE);
+    expect(log).toContain('event');
+    expect(log).toContain('question.asked');
+    expect(log).toContain('cli');
+    expect(log).toContain('--blocked');
+    // The ordering of event → CLI call is the diagnostic; keep the writes sync.
+    expect(log.indexOf('question.asked')).toBeLessThan(log.indexOf('--blocked'));
+  });
+
+  it('says so when it loaded but did nothing — the commonest silent failure', async () => {
+    process.env.WMUX_PLUGIN_DEBUG = logPath();
+    const { WmuxPlugin } = await load();
+    expect(await WmuxPlugin()).toEqual({});
+    expect(readLog()).toContain('init: inactive');
+  });
+
+  it('writes nothing at all when the flag is off', async () => {
+    const p = await pluginWith();
+    await p.event({ event: { type: 'question.asked' } });
+    expect(readLog()).toBe('');
+  });
+
+  it('never lets a bad log path take OpenCode down', async () => {
+    // A directory that does not exist, on purpose.
+    const p = await pluginWith({ WMUX_PLUGIN_DEBUG: path.join(os.tmpdir(), 'no', 'such', 'd.log') });
+    await expect(p.event({ event: { type: 'question.asked' } })).resolves.not.toThrow();
+    expect(verbs()[0][3]).toBe('--blocked');
   });
 });
 
