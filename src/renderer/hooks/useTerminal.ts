@@ -117,6 +117,15 @@ function snapshotSurfaceBuffer(surfaceId: string | undefined, serializeAddon: Se
   }
 }
 
+/**
+ * Record what the PTY actually spawned, for the tab caption.
+ *
+ * Writes `resolvedShell`, NOT `shell`. It used to write `shell`, which is also
+ * the surface's respawn spec: `ssh user@host` was replaced by a bare
+ * `…\ssh.exe`, persisted that way, and a restored ssh workspace then started
+ * an ssh with no destination, printed usage and exited. The label only ever
+ * needed a name to show, so it gets its own field and the spec stays intact.
+ */
 function setResolvedShellForSurface(surfaceId: string | undefined, resolvedShell: string): void {
   if (!surfaceId || !resolvedShell) return;
   const state = useStore.getState();
@@ -124,7 +133,7 @@ function setResolvedShellForSurface(surfaceId: string | undefined, resolvedShell
   if (!workspace) return;
   const location = findSurfaceLocation(workspace.splitTree, surfaceId);
   if (!location) return;
-  state.updateSurface(workspace.id, location.paneId as any, surfaceId as any, { shell: resolvedShell });
+  state.updateSurface(workspace.id, location.paneId as any, surfaceId as any, { resolvedShell });
 }
 
 /**

@@ -11,6 +11,29 @@ function surface(id: string, patch: Partial<SurfaceRef> = {}): SurfaceRef {
 }
 
 describe('surface labels', () => {
+  it('labels from resolvedShell, so a spec with arguments stays readable', () => {
+    // `shell` is the requested spec and may be a whole command line. Rendering
+    // that as a tab caption produced "Ssh Fortuna@honoured Accident"; the
+    // resolved executable is what the label wants.
+    expect(
+      getSurfaceLabel(surface('surf-1', {
+        shell: 'ssh fortuna@honoured-accident',
+        resolvedShell: 'C:\\Windows\\System32\\OpenSSH\\ssh.exe',
+      })),
+    ).toBe('Ssh');
+  });
+
+  it('labels a pane started with no spec at all', () => {
+    // The regression e5ec559 existed to prevent: with no requested spec there
+    // is nothing to name the tab after except what actually spawned.
+    expect(getSurfaceLabel(surface('surf-1', { resolvedShell: 'pwsh.exe' }))).toBe('PowerShell');
+  });
+
+  it('still falls back to the requested spec, then the workspace shell', () => {
+    expect(getSurfaceLabel(surface('surf-1', { shell: 'cmd.exe' }))).toBe('Command Prompt');
+    expect(getSurfaceLabel(surface('surf-1'), undefined, 'bash.exe')).toBe('Bash');
+  });
+
   it('prefers custom titles over agent and shell labels', () => {
     expect(
       getSurfaceLabel(
