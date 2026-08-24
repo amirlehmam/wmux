@@ -42,6 +42,16 @@
 .titlebar__right {
   width: 140px;
   flex-shrink: 0;
+  /* Stretched, not centred like its siblings. The caption buttons inside are
+     sized with height:100%, and a percentage height against a parent that has
+     none resolves to auto — so without this they collapsed onto the only thing
+     in the chain with a real size, the 10px icon, and the hover fill rendered
+     as a narrow band floating in the middle of the titlebar. */
+  align-self: stretch;
+  /* Cancels .titlebar's 8px right padding so the buttons reach the corner, the
+     way the native overlay does — the top-right corner is an infinitely large
+     mouse target only if nothing sits between it and Close. */
+  margin-right: -8px;
 }
 
 /* Caption buttons for frameless (clear-transparency) windows. The reserved
