@@ -31,6 +31,8 @@
 import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { queryWin32Processes } from './win32-process';
+import { system32 } from './system32';
 
 /** One spawned PTY root, as recorded at spawn time. */
 export interface LedgerEntry {
@@ -107,9 +109,6 @@ export function parseEntries(raw: unknown): LedgerEntry[] {
     .slice(0, MAX_ENTRIES);
 }
 
-function systemRoot(): string {
-  return process.env.SystemRoot || process.env.windir || 'C:\\Windows';
-}
 
 /**
  * Creation time + image name for the given PIDs.
@@ -124,38 +123,24 @@ function systemRoot(): string {
  */
 export const PROBE_TIMEOUT_MS = 60_000;
 
-export function queryProcesses(pids: number[]): Promise<LiveProcess[]> {
-  if (pids.length === 0) return Promise.resolve([]);
-  const filter = pids.map((pid) => `ProcessId=${pid}`).join(' or ');
-  const script =
-    `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { ` +
-    `Write-Output ('{0}|{1}|{2}' -f $_.ProcessId,$_.Name,` +
-    `[int64]($_.CreationDate.ToUniversalTime()-[datetime]'1970-01-01').TotalMilliseconds) }`;
-  const shell = path.join(systemRoot(), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-
-  return new Promise((resolve) => {
-    execFile(
-      shell,
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      // Generous, because this runs once at startup and off the critical path.
-      // The moment it matters most — the first scan after a crash-loop — is
-      // also the coldest the machine will be, and a cold PowerShell 5.1 pulling
-      // in .NET and the CIM assemblies can take well past 15s. Timing out there
-      // means reaping nothing, which is precisely the case this exists for.
-      { windowsHide: true, timeout: PROBE_TIMEOUT_MS },
-      (err, stdout, stderr) => {
-        if (err) {
-          const cause = (err as NodeJS.ErrnoException & { killed?: boolean }).killed
-            ? `timed out after ${PROBE_TIMEOUT_MS}ms`
-            : (stderr || '').trim() || err.message;
-          console.warn('[wmux] orphan scan failed, reaping nothing:', cause);
-          resolve([]);
-          return;
-        }
-        resolve(parseProcessLines(stdout));
-      },
-    );
+export async function queryProcesses(pids: number[]): Promise<LiveProcess[]> {
+  if (pids.length === 0) return [];
+  const lines = await queryWin32Processes({
+    filter: pids.map((pid) => `ProcessId=${pid}`).join(' or '),
+    fields: [
+      '$_.ProcessId',
+      '$_.Name',
+      "[int64]($_.CreationDate.ToUniversalTime()-[datetime]'1970-01-01').TotalMilliseconds",
+    ],
+    // Generous, because this runs once at startup and off the critical path.
+    // The moment it matters most — the first scan after a crash-loop — is
+    // also the coldest the machine will be, and a cold PowerShell 5.1 pulling
+    // in .NET and the CIM assemblies can take well past 15s. Timing out there
+    // means reaping nothing, which is precisely the case this exists for.
+    timeoutMs: PROBE_TIMEOUT_MS,
+    onFailure: (cause) => console.warn('[wmux] orphan scan failed, reaping nothing:', cause),
   });
+  return parseProcessLines(lines.join('\n'));
 }
 
 /** Parse the `pid|image|epochMs` lines emitted by queryProcesses. */
@@ -175,7 +160,7 @@ export function parseProcessLines(stdout: string): LiveProcess[] {
 /** Force-kill a PID and everything below it. Same invocation as PtyManager.kill(). */
 function treeKill(pid: number): void {
   try {
-    const taskkill = path.join(systemRoot(), 'System32', 'taskkill.exe');
+    const taskkill = system32('taskkill.exe');
     const killer = execFile(taskkill, ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
     killer.on('error', () => {
       /* taskkill missing, or the tree died between the scan and now */

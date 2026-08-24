@@ -21,9 +21,8 @@
  * ~550ms, so (1) and (2) are latency caches over (3).
  */
 
-import { execFile } from 'child_process';
 import { parseSshArgv, splitCommandLine, normalizedExecutableName, type DetectedSsh } from './ssh-argv';
-import { powershellPath } from './system32';
+import { queryWin32Processes } from './win32-process';
 
 export type { DetectedSsh };
 
@@ -275,29 +274,23 @@ export function attributeSshProcesses(
  * `windowsHide`, and every failure resolving to "found nothing" rather than
  * throwing.
  */
-export function listSshProcesses(): Promise<ProcessSnapshot> {
-  // Delimiter is a pipe: a raw `|` cannot appear in an unquoted Win32 image
-  // name, and the CommandLine field is last, so a `|` inside it cannot shift
-  // columns.
-  const script =
-    "$all = Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine; " +
-    "foreach ($p in $all) { " +
-    "Write-Output ('{0}|{1}|{2}|{3}' -f $p.ProcessId,$p.ParentProcessId,$p.Name,($p.CommandLine -replace '\\r?\\n',' ')) }";
-
-  return new Promise((resolve) => {
-    execFile(
-      powershellPath(),
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { windowsHide: true, timeout: SWEEP_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err) {
-          resolve({ sshProcesses: [], parents: new Map() });
-          return;
-        }
-        resolve(parseProcessTable(String(stdout)));
-      }
-    );
+export async function listSshProcesses(): Promise<ProcessSnapshot> {
+  const lines = await queryWin32Processes({
+    // Every process, not just ssh.exe: the ancestry walk has to cross the
+    // shells in between, and a second query for those would double the cost
+    // that is the whole expense of this probe.
+    fields: [
+      '$_.ProcessId',
+      '$_.ParentProcessId',
+      '$_.Name',
+      // Flattened, so one process is always one line.
+      "($_.CommandLine -replace '\\r?\\n',' ')",
+    ],
+    timeoutMs: SWEEP_TIMEOUT_MS,
+    // ~500 processes with command lines; the default 1MB is not enough.
+    maxBuffer: 8 * 1024 * 1024,
   });
+  return parseProcessTable(lines.join('\n'));
 }
 
 /**
