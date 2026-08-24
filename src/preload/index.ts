@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import * as os from 'os';
-import { IPC_CHANNELS } from '../shared/types';
+import { IPC_CHANNELS, type InsertionResult } from '../shared/types';
 
 contextBridge.exposeInMainWorld('wmux', {
   pty: {
@@ -105,8 +105,44 @@ contextBridge.exposeInMainWorld('wmux', {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT_UPDATE, handler);
     },
   },
+  remote: {
+    /**
+     * What should Ctrl+V type into this surface? Main reads its own
+     * clipboard, uploads to the remote host if the pane is inside ssh, and
+     * returns the finished text.
+     */
+    resolvePaste: (surfaceId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.REMOTE_RESOLVE_PASTE, surfaceId) as Promise<InsertionResult>,
+    /**
+     * Same, for files dropped on the pane. Resolve paths here, while the
+     * original DOM File objects are still available. Accepting path strings
+     * from the renderer would turn this into an arbitrary local-file upload
+     * capability if renderer content were ever compromised.
+     */
+    resolveDrop: (surfaceId: string, files: File[], invert: boolean) => {
+      const localPaths: string[] = [];
+      if (Array.isArray(files)) {
+        for (const file of files) {
+          try {
+            const localPath = webUtils.getPathForFile(file);
+            if (localPath) localPaths.push(localPath);
+          } catch {
+            // A forged value is not a dropped File and grants no path.
+          }
+        }
+      }
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.REMOTE_RESOLVE_DROP,
+        surfaceId,
+        localPaths,
+        Boolean(invert),
+      ) as Promise<InsertionResult>;
+    },
+  },
   clipboard: {
-    pasteImage: () => ipcRenderer.invoke('clipboard:paste-image'),
+    // No pasteImage/readFiles: reading the clipboard for a paste is main's
+    // job now (remote.resolvePaste), because only main can act on what it
+    // finds. These remain for copy and older renderer call sites.
     writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
     readText: () => ipcRenderer.invoke('clipboard:read-text') as Promise<string>,
   },

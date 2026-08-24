@@ -16,6 +16,10 @@ import { RAW_V1_VERBS, rawV1Error, rawV1Parse } from '../../src/cli/wmux';
  */
 
 const INTEGRATION = path.resolve(__dirname, '../../src/shell-integration/wmux-bash-integration.sh');
+const POWERSHELL_INTEGRATION = path.resolve(
+  __dirname,
+  '../../src/shell-integration/wmux-powershell-integration.ps1'
+);
 
 describe('raw-v1 allowlist', () => {
   it('accepts every verb the shipped bash integration emits', () => {
@@ -65,10 +69,11 @@ describe('raw-v1 allowlist', () => {
     expect(rawV1Error('report_pwd notify')).toMatch(/not a passthrough command/);
   });
 
-  it('is the six verbs and no more', () => {
+  it('is the seven verbs and no more', () => {
     expect([...RAW_V1_VERBS].sort()).toEqual([
       'clear_git_branch',
       'ports_kick',
+      'report_command',
       'report_git_branch',
       'report_pwd',
       'report_shell_state',
@@ -161,5 +166,47 @@ describe('raw-v1 argv parsing', () => {
       const { verb } = rawV1Parse(['raw-v1', `${emittedVerb} ${SURFACE} payload`]);
       expect(rawV1Error(verb), `${emittedVerb} is emitted but rejected in the one-argument shape`).toBeNull();
     }
+  });
+});
+
+describe('ssh lifecycle report ordering', () => {
+  it('gives every Bash ssh command and shell-state report a shared sequence marker', () => {
+    const script = fs.readFileSync(INTEGRATION, 'utf8');
+    const lifecycleReports = [...script.matchAll(
+      /_wmux_report "(report_(?:command|shell_state)) ([^"]+)"/g
+    )];
+
+    expect(lifecycleReports.length).toBe(4);
+    for (const [, verb, payload] of lifecycleReports) {
+      expect(payload, `${verb} must carry the ordering marker`).toContain(
+        'seq=${_wmux_ssh_event_seq}'
+      );
+    }
+    expect(script).toContain('_wmux_ssh_event_seq=$((_wmux_ssh_event_seq + 1))');
+  });
+
+  it('uses the same sequence wire shape in PowerShell', () => {
+    const script = fs.readFileSync(POWERSHELL_INTEGRATION, 'utf8');
+
+    expect(script).toContain('$script:WmuxSshEventSequence++');
+    expect(script).toContain('return "seq=$($script:WmuxSshEventSequence)"');
+    expect(script).toContain('Send-WmuxMessage "report_shell_state $surfaceId $sequence $State"');
+    expect(script).toContain('Send-WmuxMessage "report_command $surfaceId $sequence $flat"');
+  });
+
+  it('recognizes exact PowerShell ssh executable tokens in every supported path form', () => {
+    const script = fs.readFileSync(POWERSHELL_INTEGRATION, 'utf8');
+    const pattern = /\$line -notmatch '([^']+)'/.exec(script)?.[1];
+    expect(pattern).toBeTruthy();
+    const isSshCommand = (line: string) => new RegExp(pattern!, 'i').test(line);
+
+    expect(isSshCommand('ssh user@host')).toBe(true);
+    expect(isSshCommand('C:\\Windows\\System32\\OpenSSH\\ssh.exe user@host')).toBe(true);
+    expect(isSshCommand('"C:\\Program Files\\OpenSSH\\ssh.exe" user@host')).toBe(true);
+    expect(isSshCommand('& "C:\\Program Files\\OpenSSH\\ssh.exe" user@host')).toBe(true);
+    expect(isSshCommand('& "ssh" user@host')).toBe(true);
+    expect(isSshCommand('"ssh" user@host')).toBe(false);
+    expect(isSshCommand('myssh.exe user@host')).toBe(false);
+    expect(isSshCommand('Write-Output ssh user@host')).toBe(false);
   });
 });

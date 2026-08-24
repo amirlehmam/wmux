@@ -48,12 +48,48 @@ palette = [
   "#5555ff", "#ff55ff", "#55ffff", "#ffffff",
 ]
 
+[remote]
+# In a direct SSH pane, SCP local files before inserting their remote paths.
+upload-on-paste = true
+upload-on-drop  = true
+
 [keys]
 # Remap what a key sends to the terminal (see "Key remaps" below).
 "ctrl+k"       = "<C-k><Delete>"   # kill to end of line, then pull the next line up
 "ctrl+alt+r"   = "clear<CR>"
 "ctrl+shift+q" = ""                # empty value = swallow the key
 ```
+
+## Remote file upload
+
+The optional `[remote]` section controls local files pasted or dropped into a
+pane connected directly over SSH:
+
+```toml
+[remote]
+upload-on-paste = true
+upload-on-drop  = true
+```
+
+Both values default to `true`. `upload-on-paste` covers a screenshot or copied
+file inserted with either paste shortcut; ordinary clipboard text is never
+uploaded. `upload-on-drop` covers one or more files dropped onto the terminal.
+Hold Shift while dropping to bypass upload for that drop.
+
+wmux invokes the Windows OpenSSH `scp` paired with the detected `ssh` client and
+uses `BatchMode=yes`. The connection must therefore authenticate without an
+interactive password or passphrase prompt, normally with a key or `ssh-agent`.
+Each successful file is inserted as a unique path in a private remote batch
+directory, such as `/tmp/wmux-drop-<batch-id>/<file-id>.png`, and remains there
+for the receiving program to use.
+
+Detection covers `wmux ssh` and a direct `ssh` launched from an integrated
+PowerShell or Bash pane. Nested SSH (running a second `ssh` after reaching the
+first host) is not supported because that second client is outside the Windows
+process tree. wmux may still identify the outer Windows SSH process, so turn the
+relevant setting off (or hold Shift for a drop) while working on the inner host.
+
+Run `wmux reload-config` after changing either value.
 
 ## Key remaps
 

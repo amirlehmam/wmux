@@ -502,6 +502,7 @@ export const en = {
   'diffPane.noDiffAvailable': 'No diff available for {file}',
   // Terminal — copy mode, find bar, bell notification
   'terminal.bell': 'Terminal bell',
+  'terminal.uploadFailed': 'Upload to {host} failed: {reason}',
   'terminal.copyModeHint':
     'COPY MODE — Arrow keys to move, Shift+arrows to select, Enter to copy, Esc to exit',
   'terminal.findPlaceholder': 'Find...',

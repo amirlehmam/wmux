@@ -31,8 +31,11 @@ export function opensshPath(
   tool: 'ssh' | 'scp',
   exists: (candidate: string) => boolean = fs.existsSync,
 ): string {
-  const file = `${tool}.exe`;
-  const standalone = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'OpenSSH', file);
-  if (exists(standalone)) return standalone;
-  return system32('OpenSSH', file);
+  const standalone = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'OpenSSH');
+  // Select an installation, not an individual tool: mixing ssh from one build
+  // with scp from another changes config/agent behaviour on Windows.
+  if (exists(path.join(standalone, 'ssh.exe')) && exists(path.join(standalone, 'scp.exe'))) {
+    return path.join(standalone, `${tool}.exe`);
+  }
+  return system32('OpenSSH', `${tool}.exe`);
 }

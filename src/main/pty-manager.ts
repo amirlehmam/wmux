@@ -11,7 +11,7 @@ import { attachErrorSink, installPtyCrashGuard } from './pty-crash-guard';
 import { powerShellShimDir } from './powershell-shim';
 import { getCliBinPath } from './cli-paths';
 import { getNodeRuntime } from './node-runtime';
-import { opensshPath } from './system32';
+import { system32, opensshPath } from './system32';
 
 // Applied once, at load, before any PTY can exist — the exit callback it guards
 // is registered by node-pty inside pty.spawn(), so a later install would leave
@@ -164,50 +164,34 @@ export function resolveExistingShellPath(shell: string): string | undefined {
   return resolved;
 }
 
-/**
- * Windows' own `ssh`/`scp`, for a spec that named one without a path.
- *
- * A machine with Git for Windows installed usually has `C:\Program Files\Git\
- * usr\bin` ahead of `System32` on PATH, so a bare `ssh` resolves to Git's MSYS2
- * build. The two are not interchangeable: MSYS2 ssh looks for an agent on
- * `$SSH_AUTH_SOCK`, while the Windows agent — the one 1Password, KeePassXC and
- * the ssh-agent service all register with — is the named pipe
- * `\\.\pipe\openssh-ssh-agent`. On a machine whose keys live only in an agent
- * (no `~/.ssh/id_*` on disk), Git's ssh therefore sees no keys at all and the
- * pane dies on "Permission denied (publickey)" while the user's own `ssh`
- * works fine.
- *
- * Only reached for a spec wmux is spawning itself — `wmux ssh user@host`, or a
- * workspace shell set to `ssh …`. A command the user types at a prompt is
- * resolved by the shell inside the PTY and never comes through here, so panes
- * keep behaving like every other terminal. Users with on-disk keys notice
- * nothing: System32 OpenSSH reads the same `~/.ssh/config` and `~/.ssh/id_*`.
- */
-function nativeOpenSshPath(shell: string): string | undefined {
-  if (process.platform !== 'win32') return undefined;
-  const base = path.basename(shell).toLowerCase().replace(/\.exe$/, '');
-  if (base !== 'ssh' && base !== 'scp') return undefined;
-  const native = opensshPath(base);
-  return fs.existsSync(native) ? native : undefined;
-}
-
 function resolveExistingShellPathUncached(shell: string): string | undefined {
   if (path.isAbsolute(shell) && fs.existsSync(shell)) return shell;
-  // Before PATH: an absolute path the user wrote still wins (checked above),
-  // but a bare `ssh` should be the platform's, not whatever is first on PATH.
-  const native = nativeOpenSshPath(shell);
-  if (native) return native;
+
+  const win32 = process.platform === 'win32';
+  const base = win32 ? path.basename(shell).toLowerCase().replace(/\.exe$/, '') : '';
+
+  // Before PATH, and only for a bare name — an absolute path the user wrote
+  // already won above. `wmux ssh user@host` and a workspace shell set to
+  // `ssh …` must get Windows' own ssh, not whichever build happens to be
+  // first on PATH; see opensshPath for why the two are not interchangeable.
+  //
+  // Only shell SPECS reach here. A command the user types at a prompt is
+  // resolved by the shell inside the PTY, so panes keep behaving like every
+  // other terminal.
+  if (base === 'ssh') {
+    const native = opensshPath('ssh');
+    if (fs.existsSync(native)) return native;
+  }
+
   const onPath = shellProbe.onPath(shell);
   if (onPath) return onPath;
+
   // Bare alias with no real PATH hit. A Store-only PowerShell — stable or
   // preview — is reachable only as an App Execution Alias, so `where` finds it
   // and existsSync refuses it. Without this the stable case silently fell all
   // the way back to Windows PowerShell 5.1.
-  if (process.platform === 'win32') {
-    const base = path.basename(shell).toLowerCase().replace(/\.exe$/, '');
-    if (base === 'pwsh-preview') return findStorePwsh(true);
-    if (base === 'pwsh') return findStorePwsh(false);
-  }
+  if (base === 'pwsh-preview') return findStorePwsh(true);
+  if (base === 'pwsh') return findStorePwsh(false);
   return undefined;
 }
 
@@ -758,10 +742,9 @@ export class PtyManager {
     // and survives even when this runs from killAll() on app quit.
     if (process.platform === 'win32' && typeof pid === 'number' && pid > 0) {
       try {
-        // Resolve taskkill by absolute path from %SystemRoot%\System32 rather than
-        // relying on PATH — PATH could contain a writeable dir shadowing taskkill.
-        const systemRoot = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
-        const taskkillPath = path.join(systemRoot, 'System32', 'taskkill.exe');
+        // Absolute path rather than PATH — a writeable dir on PATH could
+        // otherwise shadow taskkill.
+        const taskkillPath = system32('taskkill.exe');
         const killer = spawn(taskkillPath, ['/PID', String(pid), '/T', '/F'], {
           windowsHide: true,
           detached: true,
@@ -829,5 +812,10 @@ export class PtyManager {
   getPid(id: SurfaceId): number | undefined {
     const entry = this.ptys.get(id);
     return entry?.pty.pid;
+  }
+
+  /** Every surface with a live PTY. Used by the ssh probe to map processes back to panes. */
+  liveSurfaceIds(): SurfaceId[] {
+    return Array.from(this.ptys.keys());
   }
 }

@@ -289,7 +289,7 @@ function applyShellState(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): void {
 }
 
 /** Apply a patch to one surface of `ws`, wherever in the split tree it lives. */
-function patchSurface(ws: WorkspaceInfo, surfaceId: SurfaceId, patch: Partial<SurfaceRef>): void {
+function patchSurface(ws: WorkspaceInfo, surfaceId: SurfaceId, patch: Partial<Omit<SurfaceRef, 'id' | 'type' | 'shell'>>): void {
   const { updateSurface } = useStore.getState();
   for (const paneId of getAllPaneIds(ws.splitTree)) {
     const leaf = findLeaf(ws.splitTree, paneId);

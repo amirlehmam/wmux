@@ -314,6 +314,22 @@ export interface SavedSession {
   };
 }
 
+/**
+ * What main decided a paste or drop should type into the terminal.
+ *
+ * The renderer only inserts `text` and reports `failure`; every decision —
+ * is this pane remote, is upload enabled, did scp work — was already made.
+ */
+export interface InsertionResult {
+  /** Text to type, or null when nothing should be inserted. */
+  text: string | null;
+  /**
+   * Set when an upload failed. Carried in pieces rather than as a finished
+   * sentence so the renderer can translate it.
+   */
+  failure?: { destination: string; detail: string };
+}
+
 // IPC channel names
 export const IPC_CHANNELS = {
   // PTY
@@ -324,6 +340,9 @@ export const IPC_CHANNELS = {
   PTY_HAS: 'pty:has',
   PTY_DATA: 'pty:data',
   PTY_EXIT: 'pty:exit',
+  // Remote file upload (ssh panes) — main resolves the whole paste/drop
+  REMOTE_RESOLVE_PASTE: 'remote:resolve-paste',
+  REMOTE_RESOLVE_DROP: 'remote:resolve-drop',
   // Workspace
   WORKSPACE_CREATE: 'workspace:create',
   WORKSPACE_CLOSE: 'workspace:close',

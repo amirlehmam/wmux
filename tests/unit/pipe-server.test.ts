@@ -79,6 +79,27 @@ describe('PipeServer', () => {
     expect(commands[0].args).toEqual([line]);
   });
 
+  // An ssh command line is the whole point of report_command, and every
+  // interesting one has spaces in it. Under the default V1 case
+  // `ssh -p 2222 fortuna@honoured-accident` arrives as four args and the
+  // detector sees the destination as "-p" — a pane that looks remote and
+  // uploads nowhere. So it belongs in the single-free-text-argument group.
+  it('keeps a report_command ssh line intact, spaces and all', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'test-token');
+    const commands: any[] = [];
+    server.on('v1', (cmd) => commands.push(cmd));
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const line = 'ssh -p 2222 -i C:\\keys\\id_ed25519 fortuna@honoured-accident';
+    const response = await connectAndSend(pipe, `auth test-token report_command surf-123 ${line}`);
+    expect(response).toBe('ok');
+    expect(commands[0].command).toBe('report_command');
+    expect(commands[0].surfaceId).toBe('surf-123');
+    expect(commands[0].args).toEqual([line]);
+  });
+
   it('rejects V1 state updates without a token', async () => {
     const pipe = uniquePipe();
     server = new PipeServer(pipe, 'secret');

@@ -1,12 +1,19 @@
 import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme } from 'electron';
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId } from '../shared/types';
+import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type InsertionResult } from '../shared/types';
 import { observePtyData, clearActivity } from './claude-observer';
 import { clearAgentState, noteHumanInput } from './agent-state';
 import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
+import { SshDetector } from './ssh-detect';
+import {
+  readClipboardSource,
+  regularFilePaths,
+  resolveInsertion,
+  SurfaceInsertionQueue,
+  uploadEnabled,
+  type PasteSource,
+} from './remote-insert';
 import { getAppDataDir } from '../shared/instance';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
@@ -45,6 +52,51 @@ const ptyManager = new PtyManager(ptyLedger);
 const notificationManager = new NotificationManager();
 const cdpBridge = new CDPBridge();
 const agentManager = new AgentManager(ptyManager);
+const insertionQueue = new SurfaceInsertionQueue();
+const surfaceOwners = new Map<SurfaceId, number>();
+const observedWebContents = new Set<number>();
+
+function ownSurface(surfaceId: SurfaceId, webContents: Electron.WebContents): void {
+  surfaceOwners.set(surfaceId, webContents.id);
+  if (observedWebContents.has(webContents.id)) return;
+  observedWebContents.add(webContents.id);
+  webContents.once('destroyed', () => {
+    observedWebContents.delete(webContents.id);
+    for (const [ownedSurfaceId, ownerId] of surfaceOwners) {
+      if (ownerId !== webContents.id) continue;
+      surfaceOwners.delete(ownedSurfaceId);
+      insertionQueue.cancel(ownedSurfaceId);
+    }
+  });
+}
+
+function forgetSurface(surfaceId: SurfaceId): void {
+  surfaceOwners.delete(surfaceId);
+  insertionQueue.cancel(surfaceId);
+  sshDetector.forget(surfaceId);
+}
+
+function ownsLiveSurface(surfaceId: unknown, webContents: Electron.WebContents): surfaceId is SurfaceId {
+  return typeof surfaceId === 'string'
+    && ptyManager.has(surfaceId as SurfaceId)
+    && surfaceOwners.get(surfaceId as SurfaceId) === webContents.id;
+}
+
+/**
+ * Tracks which panes are sitting inside an ssh session, so a pasted image or a
+ * dropped file can be scp'd to the host the pane is actually on instead of
+ * having a local Windows path typed into a remote shell that cannot open it.
+ *
+ * Module-scoped alongside ptyManager because the surface -> pid mapping it
+ * needs lives there. Exported the same way ptyManager and agentManager are,
+ * so index.ts can feed it the shell-integration reports directly.
+ */
+export const sshDetector = new SshDetector({
+  getPid: (surfaceId) => ptyManager.getPid(surfaceId as SurfaceId),
+  liveSurfaceIds: () => ptyManager.liveSurfaceIds(),
+});
+
+
 
 /**
  * Tree-kill the PTY subtrees a previously crashed wmux left running (issue
@@ -78,6 +130,29 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       };
       const created = ptyManager.create(resolvedOptions);
       const id = created.id;
+      const existingOwner = surfaceOwners.get(id);
+      // StrictMode may repeat create from the same renderer, and a replacement
+      // window may reclaim a surface after the old webContents was destroyed.
+      // A different live renderer must not steal an existing surface merely by
+      // invoking idempotent PTY_CREATE with its id.
+      const acceptedOwner = !created.reused
+        || existingOwner === undefined
+        || existingOwner === _event.sender.id;
+      if (acceptedOwner) {
+        ownSurface(id, _event.sender);
+        // `wmux ssh user@host` puts the whole ssh command line in the REQUESTED
+        // shell spec, which is the one detection source that is authoritative
+        // rather than inferred.
+        //
+        // Deliberately `resolvedOptions.shell` and not `created.shell`: create()
+        // returns the resolved executable with the arguments split off into
+        // `shellExtraArgs`, so `created.shell` is a bare `…\ssh.exe` with no
+        // destination left in it — which parses to nothing at all.
+        // Keep this mutation behind the ownership decision: a different window
+        // can call idempotent PTY_CREATE with a known id, but must not rewrite
+        // where the legitimate owner's next file upload will go.
+        sshDetector.setSurfaceShell(id, resolvedOptions.shell, created.shell, resolvedOptions.cwd);
+      }
       // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
       // the original create already wired data/exit forwarding. Re-wiring here
       // would forward every chunk twice and double everything in the renderer.
@@ -102,6 +177,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         // goes with it, since it describes the same dead process.
         clearAgentState(id);
         clearActivity(id);
+        // Same reasoning for the remote session: the ssh that made this pane
+        // remote has exited (dropped connection, or the user typed `exit`), so
+        // a later paste must not still be offered an upload to that host.
+        // PTY_KILL covers the pane being closed; this covers it dying on its own.
+        forgetSurface(id);
         // Clean up listeners when PTY exits
         unsubData();
         unsubExit();
@@ -130,6 +210,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
 
   ipcMain.on(IPC_CHANNELS.PTY_KILL, (_event, id: SurfaceId) => {
     ptyManager.kill(id);
+    forgetSurface(id);
   });
 
   ipcMain.handle(IPC_CHANNELS.PTY_HAS, (_event, id: SurfaceId) => {
@@ -336,16 +417,77 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // return garbled text on Windows when the source app wrote a non-UTF-8 format.
   ipcMain.handle('clipboard:read-text', () => clipboard.readText());
 
-  // Clipboard image paste: save clipboard image to temp file, return path
-  ipcMain.handle('clipboard:paste-image', async () => {
-    const img = clipboard.readImage();
-    if (img.isEmpty()) return null;
-    const tmpDir = path.join(os.tmpdir(), 'wmux');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const filePath = path.join(tmpDir, `screenshot-${Date.now()}.png`);
-    fs.writeFileSync(filePath, img.toPNG());
-    return filePath;
-  });
+  /**
+   * What should a paste or a drop type into this surface?
+   *
+   * Main owns every input to that question — the clipboard, the detector, the
+   * filesystem, scp, the config — so it answers the whole thing rather than
+   * handing the renderer several round trips worth of raw material.
+   *
+   * The session is looked up here rather than accepted from the renderer: a
+   * destination arriving over IPC is renderer-supplied data, and this path
+   * spawns a process with it. Re-detecting means the only reachable hosts are
+   * ones main already determined the pane is connected to.
+   */
+  const resolveFor = async (
+    surfaceId: SurfaceId,
+    source: PasteSource,
+    mode: 'paste' | 'drop',
+    invert = false,
+    signal?: AbortSignal,
+  ): Promise<InsertionResult> => {
+    // Only arm the ssh probe when there is something uploadable. It spawns a
+    // PowerShell enumeration of every process on the machine (~550ms) and then
+    // re-runs on a timer, and `start()` resets its idle counter — so waking it
+    // from a plain text paste would keep that sweep alive for as long as the
+    // user keeps pasting, to answer a question text can never ask.
+    if (source.kind !== 'files') return resolveInsertion(source, null, false, signal);
+    const mayUpload = !invert && uploadEnabled(loadUserConfig().remote, mode);
+    if (!mayUpload) return resolveInsertion(source, null, false, signal);
+    sshDetector.start();
+    const remoteHint = sshDetector.remoteHint(surfaceId);
+    const session = await sshDetector.refresh(surfaceId);
+    if (!session && remoteHint) {
+      return {
+        text: null,
+        failure: {
+          destination: remoteHint,
+          detail: 'wmux could not safely verify the active SSH destination',
+        },
+      };
+    }
+    return resolveInsertion(source, session, true, signal);
+  };
+
+  ipcMain.handle(
+    IPC_CHANNELS.REMOTE_RESOLVE_PASTE,
+    (event, surfaceId: SurfaceId) => {
+      if (!ownsLiveSurface(surfaceId, event.sender)) return { text: null };
+      // Snapshot before queueing: a slow earlier upload must not make this
+      // gesture read whatever happens to be on the clipboard later.
+      const source = readClipboardSource();
+      return insertionQueue.enqueue(
+        surfaceId,
+        (signal) => resolveFor(surfaceId, source, 'paste', false, signal),
+      );
+    },
+  );
+
+  /**
+   * Files dropped on a pane — the renderer already resolved those to real paths
+   * via webUtils, so they arrive here rather than being read from the clipboard.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.REMOTE_RESOLVE_DROP,
+    (event, surfaceId: SurfaceId, localPaths: unknown, invert: boolean) => {
+      if (!ownsLiveSurface(surfaceId, event.sender)) return { text: null };
+      const source: PasteSource = { kind: 'files', localPaths: regularFilePaths(localPaths) };
+      return insertionQueue.enqueue(
+        surfaceId,
+        (signal) => resolveFor(surfaceId, source, 'drop', Boolean(invert), signal),
+      );
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.SESSION_SAVE_NAMED, (_event, session: any) => {
     saveNamedSession(session);
@@ -594,6 +736,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
 }
 
 export function setupAgentPtyForwarding(surfaceId: string, window: BrowserWindow): void {
+  ownSurface(surfaceId as SurfaceId, window.webContents);
   const unsubData = ptyManager.onData(surfaceId as SurfaceId, (data) => {
     if (window && !window.isDestroyed()) {
       window.webContents.send(IPC_CHANNELS.PTY_DATA, surfaceId, data);

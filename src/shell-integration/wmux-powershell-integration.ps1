@@ -247,13 +247,55 @@ function Report-GitBranch {
     }
 }
 
+# Sequence the reports that define an SSH session's lifetime. PowerShell sends
+# them synchronously today, but using the same wire shape as Bash keeps ordering
+# explicit across every transport and lets the receiver reject late arrivals.
+$script:WmuxSshEventSequence = 0
+
+function Get-WmuxSshEventMarker {
+    $script:WmuxSshEventSequence++
+    return "seq=$($script:WmuxSshEventSequence)"
+}
+
 # Report shell state
 function Report-ShellState {
     param([string]$State)
     $surfaceId = $env:WMUX_SURFACE_ID
     if ($surfaceId) {
-        Send-WmuxMessage "report_shell_state $surfaceId $State"
+        $sequence = Get-WmuxSshEventMarker
+        Send-WmuxMessage "report_shell_state $surfaceId $sequence $State"
     }
+}
+
+# Report the command line itself, so wmux can tell that this pane just ssh'd
+# somewhere. That is what lets a pasted screenshot be uploaded to the remote
+# host instead of having a local Windows path typed into a remote shell.
+#
+# No once-per-cycle guard is needed here: unlike bash's DEBUG trap, the Enter
+# handler fires exactly once per submitted line.
+function Report-Command {
+    $surfaceId = $env:WMUX_SURFACE_ID
+    if (-not $surfaceId) { return }
+    $line = $null
+    $cursor = $null
+    try {
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    } catch {
+        return
+    }
+    if (-not $line) { return }
+    # Only ssh. Every report opens its own named-pipe connection from inside
+    # the Enter handler, before AcceptLine, so reporting every command would
+    # tax every command in every pane to learn something only ssh can tell
+    # us. Staleness is handled by the prompt, which fires report_shell_state.
+    # Accept bare ssh, quoted paths (including spaces), unquoted absolute paths,
+    # and PowerShell's call operator. Keep the executable token exact so words
+    # such as `myssh.exe` are not mistaken for the OpenSSH client.
+    if ($line -notmatch '^\s*(?:&\s*"ssh(?:\.exe)?"|(?:&\s*)?"[^"]*[\\/]ssh(?:\.exe)?"|(?:&\s*)?[^\s"]*[\\/]ssh(?:\.exe)?|(?:&\s*)?ssh(?:\.exe)?)(?:\s|$)') { return }
+    # The transport is line-based, so a multi-line command must arrive flat.
+    $flat = $line -replace '\r?\n', ' '
+    $sequence = Get-WmuxSshEventMarker
+    Send-WmuxMessage "report_command $surfaceId $sequence $flat"
 }
 
 # Report "running" when user executes a command (pre-execution hook)
@@ -261,6 +303,8 @@ if (Get-Module -Name PSReadLine -ErrorAction SilentlyContinue) {
     Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
         # Report running state before the command executes
         Report-ShellState "running"
+        # Read the buffer before AcceptLine clears it.
+        Report-Command
         # Accept the line (execute the command)
         [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
     }

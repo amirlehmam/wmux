@@ -953,6 +953,9 @@ export const RAW_V1_VERBS = [
   'report_shell_state',
   'ports_kick',
   'report_startup_command',
+  // The command line a pane just ran, so wmux can tell it has ssh'd somewhere
+  // and upload a pasted file to that host instead of typing a local path.
+  'report_command',
 ] as const;
 
 export function rawV1Error(verb: string | undefined): string | null {

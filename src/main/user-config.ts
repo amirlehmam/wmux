@@ -31,6 +31,10 @@
  *   dev-ports = [8501, 4321]   # extra dev-server ports, merged with built-in defaults
  *   auto-open = true           # auto-navigate the browser to a newly-detected dev port
  *
+ *   [remote]
+ *   upload-on-paste = true     # scp a pasted image to the host an ssh pane is on
+ *   upload-on-drop  = true     # same for a dropped file; hold Shift to invert per-drop
+ *
  *   [keys]                     # remap what a key sends to the terminal (issue #146)
  *   "ctrl+k"     = "<C-k><Delete>"
  *   "ctrl+alt+r" = "clear<CR>"
@@ -79,6 +83,15 @@ export interface UserConfig {
     autoOpen?: boolean;
   };
   /**
+   * Remote file upload — what paste and drop do when the pane is inside ssh.
+   * Both default to true; set either to false to keep the older behaviour of
+   * inserting the local Windows path.
+   */
+  remote?: {
+    uploadOnPaste?: boolean;
+    uploadOnDrop?: boolean;
+  };
+  /**
    * User key remaps (issue #146) — chord → bytes the terminal should send.
    * Already parsed here so a malformed binding is reported once, at load, with
    * the rest of the config's errors, rather than failing silently per keypress.
@@ -102,9 +115,13 @@ export function getConfigPath(): string {
  */
 const warnedConfigProblems = new Set<string>();
 
-/** Forget past complaints, so `wmux reload-config` reports the file's state afresh. */
+/** Forget past complaints AND the memo, so `wmux reload-config` re-reads. */
 export function resetConfigWarnings(): void {
   warnedConfigProblems.clear();
+  // Belt and braces alongside the mtime check: an editor that rewrites the file
+  // within the same millisecond, or a filesystem with coarse timestamps, could
+  // otherwise leave a manual reload reading the memo it was meant to bypass.
+  clearUserConfigCache();
 }
 
 // A read or parse failure discards the WHOLE file: every [terminal], [keys],
@@ -119,8 +136,35 @@ function warnConfig(filePath: string, problem: string): void {
   console.warn(`[wmux] ${filePath}: ${problem} — see \`wmux config show\``);
 }
 
+/**
+ * Last parse, keyed by path + mtime.
+ *
+ * `loadUserConfig` reads, parses and maps the whole file on every call, and
+ * it is called on paths where that cost is felt: once per WSL pane spawn (see
+ * the note above) and, since remote upload, once per paste and per drop —
+ * an interactive path, on the same thread that pumps PTY output. The file
+ * changes only when the user edits it, so an mtime check replaces the whole
+ * read+parse+map with one stat.
+ */
+let configCache: { path: string; mtimeMs: number; value: UserConfig } | null = null;
+
+/** Drop the memo, so the next load re-reads from disk regardless of mtime. */
+export function clearUserConfigCache(): void {
+  configCache = null;
+}
+
 export function loadUserConfig(filePath: string = getConfigPath()): UserConfig {
   const errors: string[] = [];
+  let mtimeMs: number | null = null;
+  try {
+    mtimeMs = fs.statSync(filePath).mtimeMs;
+  } catch {
+    // Missing or unreadable — fall through to the existsSync path below.
+  }
+  if (mtimeMs !== null && configCache && configCache.path === filePath && configCache.mtimeMs === mtimeMs) {
+    return configCache.value;
+  }
+
   if (!fs.existsSync(filePath)) {
     return { path: filePath, errors };
   }
@@ -148,7 +192,9 @@ export function loadUserConfig(filePath: string = getConfigPath()): UserConfig {
   const mapped = mapToConfig(parsed, errors);
   for (const err of errors) warnConfig(filePath, err);
 
-  return { ...mapped, path: filePath, errors };
+  const value = { ...mapped, path: filePath, errors };
+  if (mtimeMs !== null) configCache = { path: filePath, mtimeMs, value };
+  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +357,30 @@ function mapBrowserSection(root: TomlTable, errors: string[]): NonNullable<UserC
 }
 
 /**
+ * Remote upload: `[remote] upload-on-paste = bool`, `upload-on-drop = bool`.
+ *
+ * Present so the behaviour can be turned off wholesale. Application-initiated
+ * scp is the kind of thing corporate endpoint policy flags, and a user who
+ * cannot allow it still needs paste to work — falling back to the local path.
+ */
+function mapRemoteSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['remote']> | undefined {
+  const remote = asTable(root.remote);
+  if (!remote) return undefined;
+
+  const out: NonNullable<UserConfig['remote']> = {};
+  const onPasteRaw = remote['upload-on-paste'] ?? remote.uploadOnPaste;
+  const onPaste = asBool(onPasteRaw);
+  if (onPaste !== undefined) out.uploadOnPaste = onPaste;
+  else if (onPasteRaw !== undefined) errors.push('remote.upload-on-paste: expected boolean');
+  const onDropRaw = remote['upload-on-drop'] ?? remote.uploadOnDrop;
+  const onDrop = asBool(onDropRaw);
+  if (onDrop !== undefined) out.uploadOnDrop = onDrop;
+  else if (onDropRaw !== undefined) errors.push('remote.upload-on-drop: expected boolean');
+
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
  * Key remaps: `[keys] "ctrl+k" = "<C-k><Delete>"` (issue #146).
  *
  * Parsing happens here rather than in the renderer so the errors land in the
@@ -336,6 +406,9 @@ function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
 
   const browser = mapBrowserSection(root, errors);
   if (browser) out.browser = browser;
+
+  const remote = mapRemoteSection(root, errors);
+  if (remote) out.remote = remote;
 
   const keys = mapKeysSection(root, errors);
   if (keys) out.keys = keys;
