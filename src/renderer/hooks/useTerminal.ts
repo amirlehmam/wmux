@@ -28,7 +28,6 @@ import { handleShiftEnter, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
 import { isConEmuSubcommand } from './osc9';
 import { withClaudeResume } from './claude-resume-command';
-import { resolveFileInsertion } from '../utils/remote-file-insert';
 import '@xterm/xterm/css/xterm.css';
 
 declare global {
@@ -602,25 +601,31 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
      * Everything is routed through terminal.paste() so bracketed-paste mode
      * is honored, matching the handlers this replaced.
      */
-    const insertFilePaths = async (localPaths: string[], mode: 'paste' | 'drop', invert = false) => {
-      const text = await resolveFileInsertion(
-        { surfaceId: surfaceId ?? '', localPaths, mode, invert },
-        {
-          detect: (id) => window.wmux.remote.detect(id),
-          upload: (id, paths) => window.wmux.remote.uploadFiles(id, paths),
-          notify: (message) =>
-            window.wmux?.notification?.fire({
-              surfaceId: surfaceId ?? '',
-              text: message,
-              title: 'wmux',
-            }),
-        },
-      );
-      // Null means the upload failed and was reported. Inserting the local
-      // path here would look like success while handing the remote shell a
-      // path it cannot open.
-      if (!text || !ptyIdRef.current) return;
-      terminal.paste(text);
+    /**
+     * Type whatever main decided this gesture should produce.
+     *
+     * Main resolves the whole thing — reads its own clipboard, uploads to the
+     * pane's remote host when it is inside ssh, and quotes for the right
+     * shell — so there is nothing to decide here. A null text means either
+     * nothing to paste or a reported failure; inserting a local path in the
+     * failure case would read as success while handing the remote shell a
+     * path it cannot open.
+     *
+     * Routed through terminal.paste() so bracketed-paste mode is honored.
+     */
+    const applyInsertion = (result: {
+      text: string | null;
+      failure?: { destination: string; detail: string };
+    }) => {
+      if (result.failure) {
+        window.wmux?.notification?.fire({
+          surfaceId: surfaceId ?? '',
+          text: `Upload to ${result.failure.destination} failed: ${result.failure.detail}`,
+          title: 'wmux',
+        });
+      }
+      if (!result.text || !ptyIdRef.current) return;
+      terminal.paste(result.text);
       try { terminal.focus(); } catch { /* no-op */ }
     };
 
@@ -656,7 +661,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // Drop only — Ctrl+Shift+V is already the paste binding, so Shift is
       // not free as a paste modifier (cmux scopes it to drop for the same
       // reason).
-      void insertFilePaths(localPaths, 'drop', ev.shiftKey);
+      void window.wmux.remote
+        .resolveDrop(surfaceId ?? '', localPaths, ev.shiftKey)
+        .then(applyInsertion)
+        .catch(() => { /* main is the only thing that could fail here */ });
     };
     dropHost.addEventListener('dragover', onDragOver);
     dropHost.addEventListener('drop', onDrop);
@@ -815,46 +823,19 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           return false;
         }
       }
-      // Ctrl+V: paste text from clipboard (or image path if clipboard has image)
+      // Ctrl+V: main reads the clipboard and tells us what to type.
       if (event.type === 'keydown' && event.ctrlKey && event.key === 'v') {
         // Prevent the browser 'paste' event — without this, xterm's built-in
         // paste handler ALSO writes the clipboard content through onData,
         // causing the text to appear twice in the terminal.
         event.preventDefault();
-        (async () => {
-          // Check for image first
-          let handled = false;
-          if (window.wmux?.clipboard?.pasteImage) {
-            const filePath = await window.wmux.clipboard.pasteImage();
-            if (filePath) {
-              // Uploads to the remote host first when this pane is inside ssh;
-              // otherwise inserts the local path exactly as before.
-              await insertFilePaths([filePath], 'paste');
-              handled = true;
-            }
-          }
-          // No bitmap? The clipboard may still hold a copied FILE (Explorer
-          // Ctrl+C), which presents as a file reference with no image and no
-          // text — so without this branch that paste did nothing whatsoever,
-          // even though dragging the same file worked.
-          if (!handled && window.wmux?.clipboard?.readFiles) {
-            try {
-              const files = await window.wmux.clipboard.readFiles();
-              if (Array.isArray(files) && files.length > 0) {
-                await insertFilePaths(files, 'paste');
-                handled = true;
-              }
-            } catch { /* fall through to text */ }
-          }
-          // If neither, paste text via Electron's clipboard API — navigator.clipboard
-          // can return garbled bytes on Windows when the source wrote a non-UTF-8 format.
-          if (!handled && ptyIdRef.current) {
-            try {
-              const text = await window.wmux.clipboard.readText();
-              if (text) terminal.paste(text);
-            } catch {}
-          }
-        })();
+        // One round trip. An image, a copied file and plain text are all the
+        // same question — 'what should this paste type?' — and only main can
+        // answer it, because only main can upload the first two.
+        void window.wmux.remote
+          .resolvePaste(surfaceId ?? '')
+          .then(applyInsertion)
+          .catch(() => { /* nothing pasted rather than something wrong */ });
         return false; // Prevent default — we handle paste ourselves
       }
       // Shift+Enter → newline for TUI apps (Claude Code, etc). See

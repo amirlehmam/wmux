@@ -315,24 +315,29 @@ export interface SavedSession {
 }
 
 // IPC channel names
-/**
- * What main reports about a surface that is sitting inside an ssh session.
- * Only the destination crosses the boundary — the identity file and ssh
- * options stay in main, which is the only place that spawns anything.
- */
-export interface RemoteTarget {
-  destination: string;
-  uploadOnPaste: boolean;
-  uploadOnDrop: boolean;
-}
-
 /** Result of scp-ing local files to a surface's remote host. */
 export interface UploadResult {
   ok: boolean;
   /** Remote paths, in the order the local paths were given. */
   remotePaths: string[];
-  /** Present when `ok` is false — phrased for a toast, not a log. */
+  /** Present when `ok` is false — the transport's own complaint, one line. */
   error?: string;
+}
+
+/**
+ * What main decided a paste or drop should type into the terminal.
+ *
+ * The renderer only inserts `text` and reports `failure`; every decision —
+ * is this pane remote, is upload enabled, did scp work — was already made.
+ */
+export interface InsertionResult {
+  /** Text to type, or null when nothing should be inserted. */
+  text: string | null;
+  /**
+   * Set when an upload failed. Carried in pieces rather than as a finished
+   * sentence so the renderer can translate it.
+   */
+  failure?: { destination: string; detail: string };
 }
 
 export const IPC_CHANNELS = {
@@ -344,9 +349,9 @@ export const IPC_CHANNELS = {
   PTY_HAS: 'pty:has',
   PTY_DATA: 'pty:data',
   PTY_EXIT: 'pty:exit',
-  // Remote file upload (ssh panes)
-  REMOTE_DETECT: 'remote:detect',
-  REMOTE_UPLOAD: 'remote:upload',
+  // Remote file upload (ssh panes) — main resolves the whole paste/drop
+  REMOTE_RESOLVE_PASTE: 'remote:resolve-paste',
+  REMOTE_RESOLVE_DROP: 'remote:resolve-drop',
   // Workspace
   WORKSPACE_CREATE: 'workspace:create',
   WORKSPACE_CLOSE: 'workspace:close',

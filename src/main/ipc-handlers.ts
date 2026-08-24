@@ -1,14 +1,16 @@
 import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme } from 'electron';
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type RemoteTarget } from '../shared/types';
+import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type InsertionResult } from '../shared/types';
 import { observePtyData, clearActivity } from './claude-observer';
 import { clearAgentState, noteHumanInput } from './agent-state';
 import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
 import { SshDetector } from './ssh-detect';
-import { uploadFiles } from './remote-upload';
+import {
+  readClipboardSource,
+  resolveInsertion,
+  type RemoteUploadPolicy,
+} from './remote-insert';
 import { getAppDataDir } from '../shared/instance';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
@@ -62,6 +64,15 @@ export const sshDetector = new SshDetector({
   liveSurfaceIds: () => ptyManager.liveSurfaceIds(),
 });
 
+
+/** The `[remote]` config section; both halves default to on. */
+function uploadPolicy(): RemoteUploadPolicy {
+  const remote = loadUserConfig().remote ?? {};
+  return {
+    uploadOnPaste: remote.uploadOnPaste !== false,
+    uploadOnDrop: remote.uploadOnDrop !== false,
+  };
+}
 
 /**
  * Tree-kill the PTY subtrees a previously crashed wmux left running (issue
@@ -380,90 +391,57 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
    * the identity file or the ssh options, and they are exactly the sort of
    * thing that should not be sitting in a web context.
    */
-  ipcMain.handle(IPC_CHANNELS.REMOTE_DETECT, (_event, surfaceId: SurfaceId): RemoteTarget | null => {
-    sshDetector.start();
-    const session = sshDetector.detect(surfaceId);
-    if (!session) return null;
-    const remote = loadUserConfig().remote ?? {};
-    return {
-      destination: session.destination,
-      uploadOnPaste: remote.uploadOnPaste !== false,
-      uploadOnDrop: remote.uploadOnDrop !== false,
-    };
-  });
+  /**
+   * What should a paste type into this surface?
+   *
+   * Main owns every input to that question — the clipboard, the detector, the
+   * filesystem, scp, the config — so it answers the whole thing rather than
+   * handing the renderer four round trips worth of raw material. Also starts
+   * the ssh probe: a pane the user is pasting into is one worth watching.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.REMOTE_RESOLVE_PASTE,
+    async (_event, surfaceId: SurfaceId): Promise<InsertionResult> => {
+      sshDetector.start();
+      return resolveInsertion(
+        readClipboardSource(),
+        sshDetector.detect(surfaceId),
+        uploadPolicy(),
+        'paste',
+      );
+    },
+  );
 
   /**
-   * scp local files to the surface's remote host.
+   * The same, for files dropped on a pane — the renderer already resolved those
+   * to real paths via webUtils, so they come in rather than the clipboard.
    *
-   * The session is re-resolved here rather than passed in from the renderer:
-   * a destination that arrived over IPC is renderer-supplied data, and this
-   * handler spawns a process with it. Re-detecting means the only hosts
-   * reachable are ones main already determined the pane is connected to.
+   * The session is looked up here rather than accepted from the renderer: a
+   * destination arriving over IPC is renderer-supplied data, and this path
+   * spawns a process with it. Re-detecting means the only reachable hosts are
+   * ones main already determined the pane is connected to.
    */
-  ipcMain.handle(IPC_CHANNELS.REMOTE_UPLOAD, async (_event, surfaceId: SurfaceId, localPaths: string[]) => {
-    const session = sshDetector.detect(surfaceId);
-    if (!session) return { ok: false, remotePaths: [], error: "This pane is no longer connected to a remote host." };
-    if (!Array.isArray(localPaths) || localPaths.length === 0) {
-      return { ok: true, remotePaths: [] };
-    }
-    // Regular files only, mirroring cmux: a directory or a vanished path is
-    // not something scp should be handed, and the caller falls back to
-    // inserting the local path for it.
-    for (const localPath of localPaths) {
-      try {
-        if (!fs.statSync(localPath).isFile()) {
-          return { ok: false, remotePaths: [], error: "Only regular files can be uploaded." };
-        }
-      } catch {
-        return { ok: false, remotePaths: [], error: "That file could not be read." };
-      }
-    }
-    return uploadFiles(session, localPaths);
-  });
-
-  /**
-   * Local paths of files copied to the clipboard (Explorer Ctrl+C), so paste
-   * can handle a copied *file* and not just a bitmap.
-   *
-   * Copying a .png in Explorer puts a file reference on the clipboard, NOT an
-   * image: `readImage()` comes back empty and `readText()` comes back blank,
-   * so the paste path did nothing at all while dragging the same file worked.
-   * cmux covers this case too (`PasteboardFileURLReader`).
-   *
-   * Single file only. Electron does not surface CF_HDROP on Windows — it
-   * advertises `text/uri-list` but reads it back empty — and `FileNameW` is a
-   * one-path format. Multi-file paste therefore falls through to the text
-   * branch; drag-and-drop remains the route for several files at once.
-   */
-  ipcMain.handle('clipboard:read-files', async () => {
-    let raw: Buffer;
-    try {
-      raw = clipboard.readBuffer('FileNameW');
-    } catch {
-      return [];
-    }
-    if (!raw || raw.length === 0) return [];
-    const filePath = raw.toString('ucs2').replace(/\0+$/, '').trim();
-    if (!filePath) return [];
-    // A clipboard entry can outlive the file it names; falling through to the
-    // text branch is better than trying to upload something that is gone.
-    try {
-      if (!fs.statSync(filePath).isFile()) return [];
-    } catch {
-      return [];
-    }
-    return [filePath];
-  });
-
-  ipcMain.handle('clipboard:paste-image', async () => {
-    const img = clipboard.readImage();
-    if (img.isEmpty()) return null;
-    const tmpDir = path.join(os.tmpdir(), 'wmux');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const filePath = path.join(tmpDir, `screenshot-${Date.now()}.png`);
-    fs.writeFileSync(filePath, img.toPNG());
-    return filePath;
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.REMOTE_RESOLVE_DROP,
+    async (
+      _event,
+      surfaceId: SurfaceId,
+      localPaths: string[],
+      invert: boolean,
+    ): Promise<InsertionResult> => {
+      sshDetector.start();
+      const paths = Array.isArray(localPaths)
+        ? localPaths.filter((candidate) => typeof candidate === 'string')
+        : [];
+      return resolveInsertion(
+        { kind: 'files', localPaths: paths },
+        sshDetector.detect(surfaceId),
+        uploadPolicy(),
+        'drop',
+        !!invert,
+      );
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.SESSION_SAVE_NAMED, (_event, session: any) => {
     saveNamedSession(session);

@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { optionKey, type DetectedSsh } from './ssh-argv';
-import { posixShellQuote } from '../shared/shell-quote';
+import { posixShellQuote } from './shell-quote';
 import { system32 } from './system32';
 import type { UploadResult } from '../shared/types';
 

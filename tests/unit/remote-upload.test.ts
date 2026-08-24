@@ -7,7 +7,7 @@ import {
   opensshPath,
   toolForSession,
 } from '../../src/main/remote-upload';
-import { posixShellQuote } from '../../src/shared/shell-quote';
+import { posixShellQuote } from '../../src/main/shell-quote';
 import type { DetectedSsh } from '../../src/main/ssh-argv';
 
 /**

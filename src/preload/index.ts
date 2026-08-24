@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import * as os from 'os';
-import { IPC_CHANNELS, type RemoteTarget, type UploadResult } from '../shared/types';
+import { IPC_CHANNELS, type InsertionResult } from '../shared/types';
 
 contextBridge.exposeInMainWorld('wmux', {
   pty: {
@@ -107,20 +107,25 @@ contextBridge.exposeInMainWorld('wmux', {
   },
   remote: {
     /**
-     * Is this surface inside an ssh session, and may we upload to it?
-     * Synchronous-feeling by design: main answers from a cache, so the
-     * paste path never waits on a process probe.
+     * What should Ctrl+V type into this surface? Main reads its own
+     * clipboard, uploads to the remote host if the pane is inside ssh, and
+     * returns the finished text.
      */
-    detect: (surfaceId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.REMOTE_DETECT, surfaceId) as Promise<RemoteTarget | null>,
-    /** scp these local paths to the surface's remote host. */
-    uploadFiles: (surfaceId: string, localPaths: string[]) =>
-      ipcRenderer.invoke(IPC_CHANNELS.REMOTE_UPLOAD, surfaceId, localPaths) as Promise<UploadResult>,
+    resolvePaste: (surfaceId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.REMOTE_RESOLVE_PASTE, surfaceId) as Promise<InsertionResult>,
+    /** Same, for files dropped on the pane. `invert` is the Shift modifier. */
+    resolveDrop: (surfaceId: string, localPaths: string[], invert: boolean) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.REMOTE_RESOLVE_DROP,
+        surfaceId,
+        localPaths,
+        invert,
+      ) as Promise<InsertionResult>,
   },
   clipboard: {
-    pasteImage: () => ipcRenderer.invoke('clipboard:paste-image'),
-    /** Paths of files copied to the clipboard (Explorer Ctrl+C). At most one. */
-    readFiles: () => ipcRenderer.invoke('clipboard:read-files') as Promise<string[]>,
+    // No pasteImage/readFiles: reading the clipboard for a paste is main's
+    // job now (remote.resolvePaste), because only main can act on what it
+    // finds. These two remain for copy and for the Ctrl+Shift+V text path.
     writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
     readText: () => ipcRenderer.invoke('clipboard:read-text') as Promise<string>,
   },
