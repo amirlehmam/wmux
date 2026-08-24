@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 1.10.0
+**Version**: 1.11.0
 
 ---
 
@@ -64,6 +64,7 @@ docs/             Planning docs
 | `claude-context.ts` | Injects wmux instructions into `~/.claude/CLAUDE.md`, configures hooks, installs wmux-orchestrator plugin — **and the inverse of each**, since 0.40.0 |
 | `agent-integration.ts` | Consent gate for every write outside `%APPDATA%\wmux` (issue #132). Asks on first launch, stores `unset`/`granted`/`declined` in wmux's own settings.json, and reconciles `~/.claude` + `~/.config/opencode` + `~/.kiro` to match. Nothing in `claude-context.ts`, `opencode-context.ts` or `kiro-context.ts` may be called directly from startup any more — route it through here |
 | `kiro-context.ts` | Kiro CLI support (issue #148). Writes `~/.kiro/steering/wmux.md` — a dedicated global steering file, since Kiro loads every `.md` in that dir, so there is no shared file to splice into. No hooks: Kiro's are per-project (`.kiro/hooks/`), and writing into every repo the user opens is the #132 mistake. State comes from `wmux report-agent` instead |
+| `opencode-context.ts` | Installs `resources/opencode-plugin/wmux.js` into `~/.config/opencode/plugin/`, gated on the `// wmux-plugin-version:` marker (`pluginNeedsUpdate` compares it verbatim, so any change to the plugin needs a bump or it reaches nobody — every broken install already has the old file on disk). **That plugin file must export `WmuxPlugin` and nothing else** (#191): OpenCode's auto-discovery loader calls EVERY export as a plugin factory and then invokes a `config` hook on the result, so an exported helper returning a plain value crashes OpenCode at startup. Helpers hang off `WmuxPlugin.__wmuxInternals` for the tests; a source-level test pins the export count |
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
 | `claude-resume.ts` | `claude --resume` on workspace restore (#186), behind `workspacePrefs.restoreClaudeSessions` (**default off** — every such pane starts an agent at once). Stamps each terminal's live session id into the PERSISTED tree only, the way `freezeSurfaceCwds` stamps cwd; a live surface never carries one. Main-side rather than renderer-side because the id lives in `agent-state.ts`'s record map. The id reaches a command line, so `CLAUDE_SESSION_ID_RE` is a security boundary, enforced at `reportAgentSession` AND again in `claude-resume-command.ts` (session.json is user-editable). `handleHookEvent` must skip `SessionEnd`: it carries a session_id like every hook, but `releaseAgent()` has just run for it, and recording there would resume a Claude the user deliberately quit |
 | `agent-state.ts` | Declared agent run state — blocked/working/idle, run refcount, `seq` dedupe, metadata TTL (issue #128). Also the back-channel: declared `choices` + `answerAgent`. **Answering never clears `blocked`** — the agent must confirm, or a mis-declared key silently stops a stuck pane asking for help |
