@@ -411,12 +411,22 @@ export interface BrowserPrefs {
   devToolsIcon: 'default' | 'compact' | 'hidden';
   /** Open the browser panel automatically on startup (issue #22). */
   openOnStartup: boolean;
+  /**
+   * Send clicked terminal/markdown links to the system default browser instead
+   * of the wmux panel (issue #201). Ctrl/Cmd+click inverts whichever way this
+   * is set, so the other destination is always one modifier away.
+   *
+   * Default false — the panel is what wmux is for, and flipping the default
+   * would change behaviour for everyone on upgrade.
+   */
+  openLinksExternally: boolean;
 }
 
 export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
   searchEngine: 'google',
   devToolsIcon: 'default',
   openOnStartup: true,
+  openLinksExternally: false,
 };
 
 // ─── Appearance settings (issue #67) ──────────────────────────────────────────

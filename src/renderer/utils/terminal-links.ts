@@ -12,8 +12,11 @@ export function activateTerminalLink(event: MouseEvent, uri: string): void {
 
   if (protocol !== 'http:' && protocol !== 'https:') return;
 
+  // Report only whether the modifier was held. Whether that means "panel" or
+  // "system browser" depends on browserPrefs.openLinksExternally, and that
+  // rule lives in openInWmuxBrowser (issue #201).
   openInWmuxBrowser(uri, {
-    forceExternal: !!event?.ctrlKey || !!event?.metaKey,
+    invert: !!event?.ctrlKey || !!event?.metaKey,
   });
 }
 

@@ -15,18 +15,38 @@ function getAllSurfaces(node: SplitNode): SurfaceRef[] {
 }
 
 /**
- * Open a URL in the wmux browser panel.
- * - If Ctrl/Cmd is held, always opens in the system browser.
- * - Otherwise, finds or creates a browser surface in the active workspace,
- *   then navigates to the URL.
+ * Decide where a clicked link goes: the wmux panel, or the system browser.
+ *
+ * The destination is `browserPrefs.openLinksExternally`, and Ctrl/Cmd INVERTS
+ * it rather than forcing one side (issue #201). Inverting is what makes the
+ * setting worth having: whichever default someone picks, the other destination
+ * stays one modifier away, so nobody loses the behaviour they had — they only
+ * change which one costs a keypress.
+ *
+ * Kept here rather than at the call sites so the rule is stated once. The two
+ * callers (terminal OSC 8 links, markdown anchors) only report whether the
+ * modifier was held; they have no opinion about what that means.
  */
-export function openInWmuxBrowser(url: string, opts?: { forceExternal?: boolean }): void {
-  if (opts?.forceExternal) {
+export function linkOpensExternally(preferExternal: boolean, invert: boolean | undefined): boolean {
+  return invert ? !preferExternal : preferExternal;
+}
+
+/**
+ * Open a URL in the wmux browser panel, or the system browser.
+ * - Destination follows `browserPrefs.openLinksExternally`; Ctrl/Cmd inverts it.
+ * - For the panel: finds or creates a browser surface in the active workspace,
+ *   then navigates to the URL.
+ * - Anything that makes the panel impossible (no workspace, no pane) falls back
+ *   to the system browser rather than dropping the click.
+ */
+export function openInWmuxBrowser(url: string, opts?: { invert?: boolean }): void {
+  const state = useStore.getState();
+
+  if (linkOpensExternally(state.browserPrefs.openLinksExternally, opts?.invert)) {
     window.wmux?.system?.openExternal?.(url);
     return;
   }
 
-  const state = useStore.getState();
   const wsId = state.activeWorkspaceId as WorkspaceId;
   if (!wsId) {
     window.wmux?.system?.openExternal?.(url);

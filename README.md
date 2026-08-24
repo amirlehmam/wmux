@@ -128,7 +128,7 @@ Interactive 7-step onboarding walks you through workspaces, splits, tabs, the br
 </table>
 
 - **Release update badge** — A badge in the title bar notifies you when a new GitHub release is available. Click to download and install in place (works for zip extracts and NSIS installs). Settings → Help has the same action next to the version number.
-- **Clickable links** — URLs in terminal output and markdown panes open directly in the wmux browser panel. Ctrl+click or just click (configurable).
+- **Clickable links** — URLs in terminal output and markdown panes open directly in the wmux browser panel. Prefer your own browser? **Settings → Browser → Open links in the system browser** flips the default, and Ctrl+click always does the opposite of whichever way it is set.
 - **Scriptable** — Named pipe server (`\\.\pipe\wmux`) with a JSON-RPC API. Create workspaces, split panes, send keystrokes, read terminal content, control the browser via CDP, and spawn sub-agent terminals programmatically.
 - **Windows native** — ConPTY for proper terminal emulation, Windows toast notifications, taskbar flash on alerts, native title bar overlay.
 - **Windows Terminal + Ghostty compatible** — Import your themes, fonts, and colors from Windows Terminal `settings.json` or `~/.config/ghostty/config`. Ships with 450+ bundled Ghostty themes.

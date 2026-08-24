@@ -41,6 +41,28 @@ export default function BrowserSettings() {
       </div>
 
       <div className="settings-divider" />
+      <h3 className="settings-section-title">{t('settings.browser.linksSection', 'Links')}</h3>
+
+      <div className="settings-row">
+        <label className="settings-label">
+          {t('settings.browser.openLinksExternally', 'Open links in the system browser')}
+        </label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={browserPrefs.openLinksExternally}
+          onChange={(e) => setBrowserPrefs({ openLinksExternally: e.target.checked })}
+        />
+      </div>
+
+      <p className="settings-hint">
+        {t(
+          'settings.browser.openLinksExternallyHint',
+          'Clicked links in terminals and markdown go to your default browser instead of the wmux panel. Ctrl+click always does the opposite.',
+        )}
+      </p>
+
+      <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.browser.devToolsSection', 'Developer Tools')}</h3>
 
       <div className="settings-row">

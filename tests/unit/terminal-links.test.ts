@@ -26,22 +26,26 @@ describe('terminal link handling', () => {
     openInWmuxBrowser.mockReset();
   });
 
-  it('opens ordinary HTTP(S) clicks in the wmux browser', () => {
+  // This module reports only WHETHER the modifier was held. Since issue #201
+  // the meaning of that lives in openInWmuxBrowser, because it depends on
+  // browserPrefs.openLinksExternally — so an unmodified click is `invert:
+  // false`, not "open in the panel".
+  it('reports an unmodified HTTP(S) click as no inversion', () => {
     activateTerminalLink(mouseEvent(), 'https://example.com/path');
 
     expect(openInWmuxBrowser).toHaveBeenCalledWith('https://example.com/path', {
-      forceExternal: false,
+      invert: false,
     });
   });
 
   it.each([
     { ctrlKey: true },
     { metaKey: true },
-  ])('opens modified clicks externally: %o', modifiers => {
+  ])('reports a modified click as an inversion: %o', modifiers => {
     activateTerminalLink(mouseEvent(modifiers), 'https://example.com');
 
     expect(openInWmuxBrowser).toHaveBeenCalledWith('https://example.com', {
-      forceExternal: true,
+      invert: true,
     });
   });
 
