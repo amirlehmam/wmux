@@ -23,6 +23,7 @@
 
 import { parseSshArgv, splitCommandLine, normalizedExecutableName, type DetectedSsh } from './ssh-argv';
 import { queryWin32Processes } from './win32-process';
+import * as path from 'path';
 
 export type { DetectedSsh };
 
@@ -49,6 +50,7 @@ const IDLE_SWEEPS_BEFORE_PARK = 5;
 export interface SshProcess {
   pid: number;
   ppid: number;
+  executablePath?: string;
   commandLine: string;
 }
 
@@ -68,11 +70,48 @@ export interface SurfaceProcessSource {
 }
 
 /** Parse a command line into an ssh session, or null when it is not one. */
-function sshSessionFrom(commandLine: string | undefined): DetectedSsh | null {
+function trustedWindowsCwd(cwd: string | undefined): string | undefined {
+  if (!cwd) return undefined;
+  const trimmed = cwd.trim();
+  // Git Bash's `pwd` uses /c/foo. WSL's /mnt/c/foo deliberately does not match.
+  const msys = /^\/([A-Za-z])(?:\/(.*))?$/.exec(trimmed);
+  if (msys) return `${msys[1].toUpperCase()}:\\${(msys[2] ?? '').replace(/\//g, '\\')}`;
+  return /^[A-Za-z]:[\\/]|^\\\\/.test(trimmed) && path.win32.isAbsolute(trimmed)
+    ? trimmed
+    : undefined;
+}
+
+function sshSessionFrom(
+  commandLine: string | undefined,
+  context: { executable?: string; cwd?: string } = {},
+): DetectedSsh | null {
   if (!commandLine) return null;
   const argv = splitCommandLine(commandLine);
   if (argv.length === 0 || normalizedExecutableName(argv[0]) !== 'ssh') return null;
-  return parseSshArgv(argv);
+  const session = parseSshArgv(argv);
+  if (!session) return null;
+  if (context.executable && normalizedExecutableName(context.executable) === 'ssh') {
+    session.sshExecutable = context.executable;
+  }
+  session.workingDirectory = trustedWindowsCwd(context.cwd);
+  return session;
+}
+
+function mergeProcessFacts(primary: DetectedSsh, probed: DetectedSsh | undefined): DetectedSsh {
+  if (!probed || primary.destination !== probed.destination) return primary;
+  return {
+    ...primary,
+    sshExecutable: primary.sshExecutable ?? probed.sshExecutable,
+    workingDirectory: primary.workingDirectory ?? probed.workingDirectory,
+  };
+}
+
+function sequenceFrom(value: string | number | undefined): number | undefined {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  const match = /^seq=(\d+)$/.exec(value ?? '');
+  if (!match) return undefined;
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 export class SshDetector {
@@ -82,19 +121,54 @@ export class SshDetector {
   private reported = new Map<string, DetectedSsh>();
   /** Layer 3: what the last probe sweep found. */
   private probed = new Map<string, DetectedSsh>();
+  private cwd = new Map<string, string>();
+  private generations = new Map<string, number>();
+  private lastSequence = new Map<string, number>();
 
   private timer: NodeJS.Timeout | null = null;
-  private sweeping = false;
+  private sweepPromise: Promise<boolean> | null = null;
   private idleSweeps = 0;
 
-  constructor(private readonly source: SurfaceProcessSource) {}
+  constructor(
+    private readonly source: SurfaceProcessSource,
+    private readonly processList: () => Promise<ProcessSnapshot> = listSshProcesses,
+  ) {}
+
+  private bump(surfaceId: string): number {
+    const generation = (this.generations.get(surfaceId) ?? 0) + 1;
+    this.generations.set(surfaceId, generation);
+    return generation;
+  }
+
+  private acceptSequence(surfaceId: string, value: string | number | undefined): boolean {
+    const sequence = sequenceFrom(value);
+    if (sequence === undefined) return true; // Backward-compatible legacy report.
+    const previous = this.lastSequence.get(surfaceId);
+    if (previous !== undefined && sequence <= previous) return false;
+    this.lastSequence.set(surfaceId, sequence);
+    return true;
+  }
 
   /**
    * Layer 1. Called when a surface's PTY is created, with the shell spec it was
    * requested with (`wmux ssh user@host` stores the whole command there).
    */
-  setSurfaceShell(surfaceId: string, shell: string | undefined): void {
-    this.record(this.managed, surfaceId, sshSessionFrom(shell));
+  setSurfaceShell(
+    surfaceId: string,
+    shell: string | undefined,
+    executable?: string,
+    cwd?: string,
+  ): void {
+    this.lastSequence.delete(surfaceId);
+    this.bump(surfaceId);
+    this.record(this.managed, surfaceId, sshSessionFrom(shell, { executable, cwd }));
+  }
+
+  /** Latest local prompt cwd, used by child scp/ssh for relative connection files. */
+  reportCwd(surfaceId: string, cwd: string): void {
+    const trusted = trustedWindowsCwd(cwd);
+    if (trusted) this.cwd.set(surfaceId, trusted);
+    else this.cwd.delete(surfaceId);
   }
 
   /**
@@ -102,7 +176,11 @@ export class SshDetector {
    * the user just submitted.
    */
   reportCommand(surfaceId: string, commandLine: string): void {
-    this.record(this.reported, surfaceId, sshSessionFrom(commandLine));
+    const sequenced = /^(seq=\d+)\s+(.*)$/s.exec(commandLine);
+    if (sequenced && !this.acceptSequence(surfaceId, sequenced[1])) return;
+    const raw = sequenced ? sequenced[2] : commandLine;
+    this.bump(surfaceId);
+    this.record(this.reported, surfaceId, sshSessionFrom(raw, { cwd: this.cwd.get(surfaceId) }));
   }
 
   /**
@@ -110,8 +188,11 @@ export class SshDetector {
    * Clears layer 2 — but not layer 3, which re-derives itself from live
    * processes and would only have to rediscover a still-running ssh.
    */
-  clearReported(surfaceId: string): void {
+  clearReported(surfaceId: string, sequence?: string | number): void {
+    if (!this.acceptSequence(surfaceId, sequence)) return;
+    this.bump(surfaceId);
     this.reported.delete(surfaceId);
+    this.probed.delete(surfaceId);
   }
 
   /**
@@ -134,6 +215,9 @@ export class SshDetector {
     this.managed.delete(surfaceId);
     this.reported.delete(surfaceId);
     this.probed.delete(surfaceId);
+    this.cwd.delete(surfaceId);
+    this.generations.delete(surfaceId);
+    this.lastSequence.delete(surfaceId);
   }
 
   /**
@@ -143,10 +227,43 @@ export class SshDetector {
    * paths, where any await would be felt as input lag.
    */
   detect(surfaceId: string): DetectedSsh | null {
-    return this.managed.get(surfaceId)
-      ?? this.reported.get(surfaceId)
+    const probe = this.probed.get(surfaceId);
+    const managed = this.managed.get(surfaceId);
+    const reported = this.reported.get(surfaceId);
+    // A report for a different host while a managed outer ssh is active is the
+    // observable nested-ssh case. The inner client runs remotely and cannot be
+    // reproduced safely from Windows, so block instead of uploading to either.
+    if (managed && reported && managed.destination !== reported.destination) return null;
+    const primary = reported ?? managed;
+    return (primary ? mergeProcessFacts(primary, probe) : undefined)
       ?? this.probed.get(surfaceId)
       ?? null;
+  }
+
+  /** Destination evidence used to distinguish a local pane from an unsafe remote ambiguity. */
+  remoteHint(surfaceId: string): string | null {
+    return this.reported.get(surfaceId)?.destination
+      ?? this.managed.get(surfaceId)?.destination
+      ?? this.probed.get(surfaceId)?.destination
+      ?? null;
+  }
+
+  /** Await one deduplicated fresh process snapshot, then return the current answer. */
+  async refresh(surfaceId: string): Promise<DetectedSsh | null> {
+    const succeeded = await this.sweep();
+    const managed = this.managed.get(surfaceId);
+    const reported = this.reported.get(surfaceId);
+    const probe = this.probed.get(surfaceId);
+    if (!succeeded) {
+      const explicit = reported ?? managed;
+      return explicit?.sshExecutable ? explicit : null;
+    }
+    if (managed) return this.detect(surfaceId);
+    if (reported) {
+      if (probe?.destination === reported.destination) return mergeProcessFacts(reported, probe);
+      return reported.sshExecutable ? reported : null;
+    }
+    return probe ?? null;
   }
 
   /**
@@ -168,25 +285,40 @@ export class SshDetector {
   }
 
   /** One probe pass: list every ssh.exe, attribute each to a surface. */
-  private async sweep(): Promise<void> {
-    if (this.sweeping) return;
+  private sweep(): Promise<boolean> {
+    if (this.sweepPromise) return this.sweepPromise;
+    this.sweepPromise = this.runSweep().finally(() => {
+      this.sweepPromise = null;
+    });
+    return this.sweepPromise;
+  }
+
+  private async runSweep(): Promise<boolean> {
     // Nothing to attribute processes to — skip the ~550ms spawn entirely rather
     // than discover the emptiness after paying for it.
     if (this.source.liveSurfaceIds().length === 0) {
       this.park();
-      return;
+      return true;
     }
-    this.sweeping = true;
     try {
-      const { sshProcesses, parents } = await listSshProcesses();
-      this.probed = attributeSshProcesses(sshProcesses, parents, this.source);
+      const surfaceIds = this.source.liveSurfaceIds();
+      const generations = new Map(surfaceIds.map((id) => [id, this.generations.get(id) ?? 0]));
+      const { sshProcesses, parents } = await this.processList();
+      const found = attributeSshProcesses(sshProcesses, parents, this.source);
+      for (const surfaceId of surfaceIds) {
+        // A prompt/command report that arrived during CIM wins over the stale snapshot.
+        if ((this.generations.get(surfaceId) ?? 0) !== generations.get(surfaceId)) continue;
+        const session = found.get(surfaceId);
+        if (session) this.probed.set(surfaceId, session);
+        else this.probed.delete(surfaceId);
+      }
       if (this.probed.size === 0) this.park();
       else this.idleSweeps = 0;
+      return true;
     } catch {
       // A failed sweep leaves the previous result standing rather than dropping
       // a pane back to "local" on one bad query.
-    } finally {
-      this.sweeping = false;
+      return false;
     }
   }
 
@@ -255,7 +387,7 @@ export function attributeSshProcesses(
     const previousDepth = depthBySurface.get(surfaceId);
     if (previousDepth !== undefined && previousDepth >= depth) continue;
 
-    const session = parseSshArgv(splitCommandLine(proc.commandLine));
+    const session = sshSessionFrom(proc.commandLine, { executable: proc.executablePath });
     if (!session) continue;
     depthBySurface.set(surfaceId, depth);
     result.set(surfaceId, session);
@@ -283,12 +415,14 @@ export async function listSshProcesses(): Promise<ProcessSnapshot> {
       '$_.ProcessId',
       '$_.ParentProcessId',
       '$_.Name',
+      '$_.ExecutablePath',
       // Flattened, so one process is always one line.
       "($_.CommandLine -replace '\\r?\\n',' ')",
     ],
     timeoutMs: SWEEP_TIMEOUT_MS,
     // ~500 processes with command lines; the default 1MB is not enough.
     maxBuffer: 8 * 1024 * 1024,
+    rejectOnFailure: true,
   });
   return parseProcessTable(stdout);
 }
@@ -306,12 +440,13 @@ export function parseProcessTable(stdout: string): ProcessSnapshot {
   for (const rawLine of stdout.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
-    // Split on the first three delimiters only — the command line is last and
+    // Split on the first four delimiters only — the command line is last and
     // may contain pipes of its own.
     const first = line.indexOf('|');
     const second = line.indexOf('|', first + 1);
     const third = line.indexOf('|', second + 1);
-    if (first === -1 || second === -1 || third === -1) continue;
+    const fourth = line.indexOf('|', third + 1);
+    if (first === -1 || second === -1 || third === -1 || fourth === -1) continue;
 
     const pid = Number.parseInt(line.slice(0, first), 10);
     const ppid = Number.parseInt(line.slice(first + 1, second), 10);
@@ -320,9 +455,10 @@ export function parseProcessTable(stdout: string): ProcessSnapshot {
 
     const name = line.slice(second + 1, third).trim().toLowerCase();
     if (name !== 'ssh.exe') continue;
-    const commandLine = line.slice(third + 1).trim();
+    const executablePath = line.slice(third + 1, fourth).trim() || undefined;
+    const commandLine = line.slice(fourth + 1).trim();
     if (!commandLine) continue;
-    sshProcesses.push({ pid, ppid, commandLine });
+    sshProcesses.push({ pid, ppid, executablePath, commandLine });
   }
 
   return { sshProcesses, parents };

@@ -703,10 +703,18 @@ app.whenReady().then(() => {
       // to back the report up (and to notice when that ssh exits).
       sshDetector.start();
     }
+    if (cmd.command === 'report_pwd' && cmd.surfaceId) {
+      sshDetector.reportCwd(cmd.surfaceId, cmd.args[0] ?? '');
+    }
     // Back at a prompt: whatever was running has exited, so any ssh session
     // the preexec hook reported is over.
-    if (cmd.command === 'report_shell_state' && cmd.surfaceId && cmd.args[0] !== 'running') {
-      sshDetector.clearReported(cmd.surfaceId);
+    if (cmd.command === 'report_shell_state' && cmd.surfaceId) {
+      const sequenced = /^seq=\d+$/.test(cmd.args[0] ?? '');
+      const state = cmd.args[sequenced ? 1 : 0] ?? '';
+      if (state !== 'running') sshDetector.clearReported(cmd.surfaceId, sequenced ? cmd.args[0] : undefined);
+      // The renderer's metadata protocol remains [state]; sequencing is a
+      // main-process implementation detail used only by the SSH detector.
+      if (sequenced) cmd.args = [state];
     }
     // Forward metadata updates to all windows.
     //

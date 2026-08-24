@@ -35,6 +35,8 @@ export interface Win32ProcessQuery {
    * as the safe answer.
    */
   onFailure?: (cause: string) => void;
+  /** Reject instead of returning an empty snapshot when absence must be distinguished from failure. */
+  rejectOnFailure?: boolean;
 }
 
 /**
@@ -51,7 +53,7 @@ export function queryWin32Processes(query: Win32ProcessQuery): Promise<string> {
     `Get-CimInstance Win32_Process${filter} | ForEach-Object { ` +
     `Write-Output ('${format}' -f ${query.fields.join(',')}) }`;
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     execFile(
       powershellPath(),
       ['-NoProfile', '-NonInteractive', '-Command', script],
@@ -62,6 +64,10 @@ export function queryWin32Processes(query: Win32ProcessQuery): Promise<string> {
             ? `timed out after ${query.timeoutMs}ms`
             : (stderr || '').trim() || err.message;
           query.onFailure?.(cause);
+          if (query.rejectOnFailure) {
+            reject(new Error(cause));
+            return;
+          }
           resolve('');
           return;
         }

@@ -222,7 +222,11 @@ describe('resolveInsertion — remote outcomes', () => {
     const upload = stubUpload({ ok: true, remotePaths: ['/tmp/wmux-drop-abc.png'] });
     const r = await resolveInsertion(files(FILE_A), session(), true);
     expect(r.text).toBe("'/tmp/wmux-drop-abc.png'");
-    expect(upload).toHaveBeenCalledWith(expect.objectContaining({ destination: 'fortuna@honoured-accident' }), [FILE_A]);
+    expect(upload).toHaveBeenCalledWith(
+      expect.objectContaining({ destination: 'fortuna@honoured-accident' }),
+      [FILE_A],
+      undefined,
+    );
   });
 
   it('inserts every remote path for a multi-file drop', async () => {

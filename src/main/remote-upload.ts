@@ -75,8 +75,13 @@ export function toolForSession(
   if (configured) {
     const sibling = path.join(path.dirname(configured), `${tool}${path.extname(configured) || '.exe'}`);
     if (exists(sibling)) return sibling;
+    throw new Error(`matching ${tool} executable not found beside ${configured}`);
   }
   return opensshPath(tool);
+}
+
+export function remoteBatchDirectory(uuid: string = crypto.randomUUID()): string {
+  return `/tmp/wmux-drop-${uuid.toLowerCase()}`;
 }
 
 /**
@@ -90,8 +95,12 @@ export function toolForSession(
  */
 export function remoteDropPath(localPath: string, uuid: string = crypto.randomUUID()): string {
   const ext = path.extname(localPath).trim();
-  const suffix = ext ? ext.toLowerCase() : '';
+  const suffix = /^\.[A-Za-z0-9]{1,16}$/.test(ext) ? ext.toLowerCase() : '';
   return `/tmp/wmux-drop-${uuid.toLowerCase()}${suffix}`;
+}
+
+export function remotePathInBatch(directory: string, localPath: string, uuid: string = crypto.randomUUID()): string {
+  return `${directory}/${path.posix.basename(remoteDropPath(localPath, uuid)).replace('wmux-drop-', '')}`;
 }
 
 /** True when `options` already sets `key`, so we must not add our own default. */
@@ -150,14 +159,13 @@ function commonArgs(session: DetectedSsh, portFlag: '-P' | '-p'): string[] {
   if (session.configFile?.trim()) args.push('-F', session.configFile.trim());
   if (session.jumpHost?.trim()) args.push('-J', session.jumpHost.trim());
   if (session.port !== undefined) args.push(portFlag, String(session.port));
-  if (session.identityFile?.trim()) args.push('-i', session.identityFile.trim());
+  for (const identityFile of session.identityFiles ?? []) {
+    if (identityFile.trim()) args.push('-i', identityFile.trim());
+  }
   // Reuse the pane's existing multiplexed connection when it has one: no second
   // authentication, so an agent that prompts on use stays quiet.
   if (session.controlPath?.trim() && !hasOptionKey(replayable, 'ControlPath')) {
     args.push('-o', `ControlPath=${session.controlPath.trim()}`);
-  }
-  if (!hasOptionKey(replayable, 'StrictHostKeyChecking')) {
-    args.push('-o', 'StrictHostKeyChecking=accept-new');
   }
   for (const option of replayable) args.push('-o', option);
 
@@ -184,29 +192,49 @@ export function cleanupArgs(session: DetectedSsh, remotePaths: string[]): string
   ];
 }
 
+export function prepareDirectoryArgs(session: DetectedSsh, directory: string): string[] {
+  const script = `umask 077 && mkdir -m 700 -- ${posixShellQuote(directory)}`;
+  return ['-T', ...commonArgs(session, '-p'), session.destination, `sh -c ${posixShellQuote(script)}`];
+}
+
+export function cleanupDirectoryArgs(session: DetectedSsh, directory: string): string[] {
+  const script = `rm -rf -- ${posixShellQuote(directory)}`;
+  return ['-T', ...commonArgs(session, '-p'), session.destination, `sh -c ${posixShellQuote(script)}`];
+}
+
 interface RunResult {
   status: number;
   stdout: string;
   stderr: string;
 }
 
-function run(executable: string, args: string[], timeout: number): Promise<RunResult> {
+function run(
+  executable: string,
+  args: string[],
+  timeout: number,
+  cwd?: string,
+  signal?: AbortSignal,
+): Promise<RunResult> {
   return new Promise((resolve) => {
-    execFile(
-      executable,
-      args,
-      { windowsHide: true, timeout, maxBuffer: 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          const code = typeof (err as NodeJS.ErrnoException).code === 'number'
-            ? ((err as NodeJS.ErrnoException).code as unknown as number)
-            : 1;
-          resolve({ status: code || 1, stdout: String(stdout), stderr: String(stderr || err.message) });
-          return;
+    try {
+      execFile(
+        executable,
+        args,
+        { windowsHide: true, timeout, maxBuffer: 1024 * 1024, cwd, signal },
+        (err, stdout, stderr) => {
+          if (err) {
+            const code = typeof (err as NodeJS.ErrnoException).code === 'number'
+              ? ((err as NodeJS.ErrnoException).code as unknown as number)
+              : 1;
+            resolve({ status: code || 1, stdout: String(stdout), stderr: String(stderr || err.message) });
+            return;
+          }
+          resolve({ status: 0, stdout: String(stdout), stderr: String(stderr) });
         }
-        resolve({ status: 0, stdout: String(stdout), stderr: String(stderr) });
-      }
-    );
+      );
+    } catch (err) {
+      resolve({ status: 1, stdout: '', stderr: err instanceof Error ? err.message : String(err) });
+    }
   });
 }
 
@@ -271,14 +299,45 @@ async function mapWithLimit<T, R>(
  */
 export async function uploadFiles(
   session: DetectedSsh,
-  localPaths: string[]
+  localPaths: string[],
+  signal?: AbortSignal,
 ): Promise<UploadResult> {
   if (localPaths.length === 0) return { ok: true, remotePaths: [] };
+  if (signal?.aborted) return { ok: false, remotePaths: [], error: 'upload cancelled' };
 
-  const scp = toolForSession(session, 'scp');
+  let scp: string;
+  let ssh: string;
+  try {
+    scp = toolForSession(session, 'scp');
+    ssh = toolForSession(session, 'ssh');
+  } catch (err) {
+    return { ok: false, remotePaths: [], error: err instanceof Error ? err.message : String(err) };
+  }
+  const directory = remoteBatchDirectory();
+  const prepared = await run(
+    ssh,
+    prepareDirectoryArgs(session, directory),
+    CLEANUP_TIMEOUT_MS,
+    session.workingDirectory,
+    signal,
+  );
+  if (prepared.status !== 0) {
+    return {
+      ok: false,
+      remotePaths: [],
+      error: bestErrorLine(prepared.stderr, prepared.stdout) ?? `ssh exited ${prepared.status}`,
+    };
+  }
   const outcomes = await mapWithLimit(localPaths, UPLOAD_CONCURRENCY, async (localPath) => {
-    const remotePath = remoteDropPath(localPath);
-    const result = await run(scp, scpArgs(session, localPath, remotePath), UPLOAD_TIMEOUT_MS);
+    if (signal?.aborted) return { remotePath: '', ok: false, error: 'upload cancelled' };
+    const remotePath = remotePathInBatch(directory, localPath);
+    const result = await run(
+      scp,
+      scpArgs(session, localPath, remotePath),
+      UPLOAD_TIMEOUT_MS,
+      session.workingDirectory,
+      signal,
+    );
     return {
       remotePath,
       ok: result.status === 0,
@@ -290,7 +349,7 @@ export async function uploadFiles(
 
   const failure = outcomes.find((outcome) => !outcome.ok);
   if (failure) {
-    await cleanupRemotePaths(session, outcomes.filter((o) => o.ok).map((o) => o.remotePath));
+    await cleanupRemoteDirectory(session, directory);
     return { ok: false, remotePaths: [], error: failure.error ?? 'upload failed' };
   }
 
@@ -301,9 +360,29 @@ export async function uploadFiles(
 export async function cleanupRemotePaths(session: DetectedSsh, remotePaths: string[]): Promise<void> {
   if (remotePaths.length === 0) return;
   try {
-    await run(toolForSession(session, 'ssh'), cleanupArgs(session, remotePaths), CLEANUP_TIMEOUT_MS);
+    await run(
+      toolForSession(session, 'ssh'),
+      cleanupArgs(session, remotePaths),
+      CLEANUP_TIMEOUT_MS,
+      session.workingDirectory,
+    );
   } catch {
     // Rollback is a courtesy. Leaving a stray file in the remote's /tmp is a far
     // smaller problem than masking the upload error the caller is about to show.
+  }
+}
+
+
+/** Best-effort recursive removal of one private upload batch. */
+export async function cleanupRemoteDirectory(session: DetectedSsh, directory: string): Promise<void> {
+  try {
+    await run(
+      toolForSession(session, 'ssh'),
+      cleanupDirectoryArgs(session, directory),
+      CLEANUP_TIMEOUT_MS,
+      session.workingDirectory,
+    );
+  } catch {
+    // Cleanup must never mask the transfer error.
   }
 }

@@ -146,7 +146,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       // returns the resolved executable with the arguments split off into
       // `shellExtraArgs`, so `created.shell` is a bare `…\ssh.exe` with no
       // destination left in it — which parses to nothing at all.
-      sshDetector.setSurfaceShell(id, resolvedOptions.shell);
+      sshDetector.setSurfaceShell(id, resolvedOptions.shell, created.shell, resolvedOptions.cwd);
       // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
       // the original create already wired data/exit forwarding. Re-wiring here
       // would forward every chunk twice and double everything in the renderer.
@@ -434,12 +434,23 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     // PowerShell enumeration of every process on the machine (~550ms) and then
     // re-runs on a timer, and `start()` resets its idle counter — so waking it
     // from a plain text paste would keep that sweep alive for as long as the
-    // user keeps pasting, to answer a question text can never ask. The sweep is
-    // fire-and-forget and cannot affect this call anyway: detect() reads a cache.
+    // user keeps pasting, to answer a question text can never ask.
     if (source.kind !== 'files') return resolveInsertion(source, null, false, signal);
-    sshDetector.start();
     const mayUpload = !invert && uploadEnabled(loadUserConfig().remote, mode);
-    return resolveInsertion(source, sshDetector.detect(surfaceId), mayUpload, signal);
+    if (!mayUpload) return resolveInsertion(source, null, false, signal);
+    sshDetector.start();
+    const remoteHint = sshDetector.remoteHint(surfaceId);
+    const session = await sshDetector.refresh(surfaceId);
+    if (!session && remoteHint) {
+      return {
+        text: null,
+        failure: {
+          destination: remoteHint,
+          detail: 'wmux could not safely verify the active SSH destination',
+        },
+      };
+    }
+    return resolveInsertion(source, session, true, signal);
   };
 
   ipcMain.handle(

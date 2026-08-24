@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   scpArgs,
   cleanupArgs,
+  cleanupDirectoryArgs,
+  prepareDirectoryArgs,
+  remoteBatchDirectory,
+  remotePathInBatch,
   scpDestination,
   remoteDropPath,
   opensshPath,
@@ -30,11 +34,11 @@ const session = (over: Partial<DetectedSsh> = {}): DetectedSsh => ({
 });
 
 describe('opensshPath', () => {
-  it('is an absolute path into System32\\OpenSSH, not a bare name', () => {
+  it('is an absolute path into a Windows OpenSSH installation, not a bare name', () => {
     // Load-bearing: a bare `scp` would resolve to Git for Windows' MSYS2 build
     // on most dev machines, which cannot reach a Windows named-pipe ssh-agent.
     const scp = opensshPath('scp');
-    expect(scp.replace(/\\/g, '/')).toMatch(/\/System32\/OpenSSH\/scp\.exe$/i);
+    expect(scp.replace(/\\/g, '/')).toMatch(/\/(?:Program Files|System32)\/OpenSSH\/scp\.exe$/i);
     expect(scp).not.toBe('scp');
   });
 });
@@ -50,7 +54,7 @@ describe('toolForSession', () => {
 
   it('falls back to Windows OpenSSH when the session named no path', () => {
     const scp = toolForSession(session(), 'scp', allExist);
-    expect(scp.replace(/\\/g, '/')).toMatch(/\/System32\/OpenSSH\/scp\.exe$/i);
+    expect(scp.replace(/\\/g, '/')).toMatch(/\/(?:Program Files|System32)\/OpenSSH\/scp\.exe$/i);
   });
 
   it('prefers the scp sitting beside the ssh the pane actually used', () => {
@@ -71,15 +75,12 @@ describe('toolForSession', () => {
     expect(ssh).toBe('C:\\Windows\\System32\\OpenSSH\\ssh.exe');
   });
 
-  it('falls back when the sibling does not exist', () => {
-    // A vendored ssh with no scp beside it is better served by the system
-    // OpenSSH than by a path that cannot be spawned at all.
-    const scp = toolForSession(
+  it('fails closed when the matching sibling does not exist', () => {
+    expect(() => toolForSession(
       session({ sshExecutable: 'C:\\vendor\\ssh.exe' }),
       'scp',
       noneExist
-    );
-    expect(scp.replace(/\\/g, '/')).toMatch(/\/System32\/OpenSSH\/scp\.exe$/i);
+    )).toThrow(/matching scp executable/);
   });
 
   it('handles a POSIX-style ssh path with no extension', () => {
@@ -126,6 +127,18 @@ describe('remoteDropPath', () => {
     expect(a).not.toBe(b);
     expect(a).not.toContain('screenshot');
   });
+
+  it('omits unsafe or overly long extensions', () => {
+    expect(remoteDropPath('C:\\Temp\\x.bad;touch', 'abc')).toBe('/tmp/wmux-drop-abc');
+    expect(remoteDropPath(`C:\\Temp\\x.${'a'.repeat(17)}`, 'abc')).toBe('/tmp/wmux-drop-abc');
+  });
+
+  it('places files inside one private batch directory', () => {
+    const directory = remoteBatchDirectory('BATCH');
+    expect(directory).toBe('/tmp/wmux-drop-batch');
+    expect(remotePathInBatch(directory, 'C:\\Temp\\Shot.PNG', 'FILE'))
+      .toBe('/tmp/wmux-drop-batch/file.png');
+  });
 });
 
 describe('scpDestination', () => {
@@ -158,7 +171,6 @@ describe('scpArgs', () => {
       '-o', 'BatchMode=yes',
       '-o', 'ControlMaster=no',
       '-o', 'ClearAllForwardings=yes',
-      '-o', 'StrictHostKeyChecking=accept-new',
       'C:\\Temp\\a.png',
       'fortuna@honoured-accident:/tmp/wmux-drop-1.png',
     ]);
@@ -183,7 +195,7 @@ describe('scpArgs', () => {
   it('replays identity, config, jump host and address family', () => {
     const args = scpArgs(
       session({
-        identityFile: 'C:\\k\\id',
+        identityFiles: ['C:\\k\\id'],
         configFile: 'C:\\c\\cfg',
         jumpHost: 'bastion',
         addressFamily: 6,
@@ -250,6 +262,20 @@ describe('scpArgs', () => {
     const args = scpArgs(session(), 'C:\\Temp\\a.png', '/tmp/x.png');
     expect(args[args.length - 2]).toBe('C:\\Temp\\a.png');
     expect(args[args.length - 1]).toBe('fortuna@honoured-accident:/tmp/x.png');
+  });
+});
+
+describe('private batch directory argv', () => {
+  it('creates a 0700 directory under a restrictive umask', () => {
+    const command = prepareDirectoryArgs(session(), '/tmp/wmux-drop-batch').at(-1) ?? '';
+    expect(command).toContain('umask 077');
+    expect(command).toContain('mkdir -m 700 --');
+  });
+
+  it('removes the whole failed batch recursively', () => {
+    const command = cleanupDirectoryArgs(session(), '/tmp/wmux-drop-batch').at(-1) ?? '';
+    expect(command).toContain('rm -rf --');
+    expect(command).toContain('wmux-drop-batch');
   });
 });
 

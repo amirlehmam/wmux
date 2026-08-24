@@ -4,6 +4,7 @@ import {
   attributeSshProcesses,
   parseProcessTable,
   type SurfaceProcessSource,
+  type ProcessSnapshot,
 } from '../../src/main/ssh-detect';
 
 /**
@@ -25,7 +26,9 @@ const source = (pids: Record<string, number>): SurfaceProcessSource => ({
   liveSurfaceIds: () => Object.keys(pids),
 });
 
-const proc = (pid: number, ppid: number, commandLine: string) => ({ pid, ppid, commandLine });
+const proc = (pid: number, ppid: number, commandLine: string, executablePath?: string) => ({
+  pid, ppid, commandLine, executablePath,
+});
 
 
 describe('SshDetector precedence', () => {
@@ -75,13 +78,14 @@ describe('SshDetector precedence', () => {
     });
   });
 
-  it('lets a managed surface outrank a contradicting preexec report', () => {
-    // A `wmux ssh` pane knows what it launched. If the preexec hook somehow
-    // reports something else, the launch spec is the one that is certainly true.
+  it('blocks a contradicting report while a managed outer ssh is active', () => {
+    // This is the observable nested-ssh case. The inner client runs remotely,
+    // so Windows cannot safely reproduce its connection for an upload.
     const detector = new SshDetector(source({ 'surf-1': 100 }));
     detector.setSurfaceShell('surf-1', 'ssh managed@host');
     detector.reportCommand('surf-1', 'ssh reported@elsewhere');
-    expect(detector.detect('surf-1')?.destination).toBe('managed@host');
+    expect(detector.detect('surf-1')).toBeNull();
+    expect(detector.remoteHint('surf-1')).toBe('reported@elsewhere');
   });
 
   it('clears the reported session when the shell returns to its prompt', () => {
@@ -136,6 +140,62 @@ describe('SshDetector precedence', () => {
     detector.reportCommand('surf-2', 'ssh b@two');
     expect(detector.detect('surf-1')?.destination).toBe('a@one');
     expect(detector.detect('surf-2')?.destination).toBe('b@two');
+  });
+
+  it('ignores shell reports that arrive out of sequence', () => {
+    const detector = new SshDetector(source({ 'surf-1': 100 }));
+    detector.reportCommand('surf-1', 'seq=2 ssh current@host');
+    detector.clearReported('surf-1', 'seq=1');
+    expect(detector.detect('surf-1')?.destination).toBe('current@host');
+    detector.clearReported('surf-1', 'seq=3');
+    expect(detector.detect('surf-1')).toBeNull();
+  });
+
+  it('carries a trusted Git Bash cwd into a reported session', () => {
+    const detector = new SshDetector(source({ 'surf-1': 100 }));
+    detector.reportCwd('surf-1', '/c/work/project');
+    detector.reportCommand('surf-1', 'ssh -i keys/id host');
+    expect(detector.detect('surf-1')?.workingDirectory).toBe('C:\\work\\project');
+  });
+
+  it('awaits a fresh snapshot and records the exact executable', async () => {
+    const detector = new SshDetector(source({ 'surf-1': 100 }), async () => ({
+      sshProcesses: [proc(200, 100, 'ssh me@host', 'C:\\Program Files\\OpenSSH\\ssh.exe')],
+      parents: new Map([[200, 100]]),
+    }));
+    await expect(detector.refresh('surf-1')).resolves.toMatchObject({
+      destination: 'me@host',
+      sshExecutable: 'C:\\Program Files\\OpenSSH\\ssh.exe',
+    });
+  });
+
+  it('does not resurrect a session cleared while a sweep was in flight', async () => {
+    let finish!: (snapshot: ProcessSnapshot) => void;
+    const snapshot = () => ({
+      sshProcesses: [proc(200, 100, 'ssh stale@host', 'C:\\OpenSSH\\ssh.exe')],
+      parents: new Map([[200, 100]]),
+    });
+    const detector = new SshDetector(source({ 'surf-1': 100 }), () => new Promise((resolve) => { finish = resolve; }));
+    const refreshing = detector.refresh('surf-1');
+    detector.clearReported('surf-1');
+    finish(snapshot());
+    await expect(refreshing).resolves.toBeNull();
+  });
+
+  it('does not present a stale probe as fresh when CIM fails', async () => {
+    let fail = false;
+    const detector = new SshDetector(source({ 'surf-1': 100 }), async () => {
+      if (fail) throw new Error('CIM unavailable');
+      return {
+        sshProcesses: [proc(200, 100, 'ssh stale@host', 'C:\\OpenSSH\\ssh.exe')],
+        parents: new Map([[200, 100]]),
+      };
+    });
+    expect((await detector.refresh('surf-1'))?.destination).toBe('stale@host');
+    fail = true;
+    await expect(detector.refresh('surf-1')).resolves.toBeNull();
+    // Background detection retains the last observation across a transient failure.
+    expect(detector.detect('surf-1')?.destination).toBe('stale@host');
   });
 });
 
@@ -240,23 +300,26 @@ describe('attributeSshProcesses', () => {
 describe('parseProcessTable', () => {
   it('keeps only ssh.exe rows', () => {
     const { sshProcesses } = parseProcessTable(
-      ['100|4|pwsh.exe|pwsh.exe', '200|100|ssh.exe|ssh fortuna@honoured-accident'].join('\n')
+      ['100|4|pwsh.exe|C:\\pwsh.exe|pwsh.exe', '200|100|ssh.exe|C:\\OpenSSH\\ssh.exe|ssh fortuna@honoured-accident'].join('\n')
     );
-    expect(sshProcesses).toEqual([{ pid: 200, ppid: 100, commandLine: 'ssh fortuna@honoured-accident' }]);
+    expect(sshProcesses).toEqual([{
+      pid: 200, ppid: 100, executablePath: 'C:\\OpenSSH\\ssh.exe',
+      commandLine: 'ssh fortuna@honoured-accident',
+    }]);
   });
 
   it('returns parents for non-ssh rows too, so the walk can cross them', () => {
     // The ssh list holds only ssh rows, but the ancestry walk needs the shells
     // in between — a `bash -c ssh` is two hops from its pane.
     const { parents } = parseProcessTable(
-      ['100|4|pwsh.exe|pwsh.exe', '250|100|bash.exe|bash -c x'].join('\n')
+      ['100|4|pwsh.exe|C:\\pwsh.exe|pwsh.exe', '250|100|bash.exe|C:\\bash.exe|bash -c x'].join('\n')
     );
     expect(parents.get(250)).toBe(100);
     expect(parents.get(100)).toBe(4);
   });
 
   it('keeps pipes that appear inside a command line', () => {
-    const { sshProcesses } = parseProcessTable('200|100|ssh.exe|ssh me@host -o ProxyCommand=a|b');
+    const { sshProcesses } = parseProcessTable('200|100|ssh.exe|C:\\ssh.exe|ssh me@host -o ProxyCommand=a|b');
     expect(sshProcesses[0].commandLine).toBe('ssh me@host -o ProxyCommand=a|b');
   });
 
@@ -268,15 +331,15 @@ describe('parseProcessTable', () => {
   it('skips an ssh row with an empty command line', () => {
     // CommandLine is null for processes the query cannot open; there is nothing
     // to parse and guessing a destination would be the worst possible outcome.
-    expect(parseProcessTable('200|100|ssh.exe|').sshProcesses.length).toBe(0);
+    expect(parseProcessTable('200|100|ssh.exe|C:\\ssh.exe|').sshProcesses.length).toBe(0);
   });
 
   it('is case-insensitive about the image name', () => {
-    expect(parseProcessTable('200|100|SSH.EXE|ssh me@host').sshProcesses.length).toBe(1);
+    expect(parseProcessTable('200|100|SSH.EXE|C:\\ssh.exe|ssh me@host').sshProcesses.length).toBe(1);
   });
 
   it('handles CRLF output', () => {
-    const { sshProcesses } = parseProcessTable('200|100|ssh.exe|ssh me@host\r\n300|4|pwsh.exe|pwsh\r\n');
+    const { sshProcesses } = parseProcessTable('200|100|ssh.exe|C:\\ssh.exe|ssh me@host\r\n300|4|pwsh.exe|C:\\pwsh.exe|pwsh\r\n');
     expect(sshProcesses.length).toBe(1);
   });
 });

@@ -19,7 +19,8 @@ export interface DetectedSsh {
   /** `user@host` or `host` — already merged with any `-l user` / `-o User=`. */
   destination: string;
   port?: number;
-  identityFile?: string;
+  /** Identity files are repeatable in OpenSSH and are tried in source order. */
+  identityFiles?: string[];
   configFile?: string;
   jumpHost?: string;
   controlPath?: string;
@@ -45,6 +46,8 @@ export interface DetectedSsh {
    * or it authenticates differently — or not at all — against the same host.
    */
   sshExecutable?: string;
+  /** Trusted Win32 cwd used to resolve relative connection files. */
+  workingDirectory?: string;
 }
 
 // OpenSSH short flags that take no value. From ssh(1); matches cmux's table.
@@ -84,7 +87,7 @@ function optionValue(raw: string): string | null {
 interface Accumulator {
   destination?: string;
   port?: number;
-  identityFile?: string;
+  identityFiles: string[];
   configFile?: string;
   jumpHost?: string;
   controlPath?: string;
@@ -93,6 +96,16 @@ interface Accumulator {
   forwardAgent: boolean;
   compression: boolean;
   sshOptions: string[];
+}
+
+function parsePort(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535 ? parsed : null;
+}
+
+function setFirst<T>(acc: Accumulator, key: keyof Accumulator, value: T): void {
+  if (acc[key] === undefined) (acc as Record<keyof Accumulator, unknown>)[key] = value;
 }
 
 /**
@@ -128,26 +141,26 @@ function consumeSshOption(raw: string, acc: Accumulator): boolean {
   switch (key) {
     case 'port': {
       if (!value) return false;
-      const parsed = Number.parseInt(value, 10);
-      if (!Number.isInteger(parsed)) return false;
-      acc.port = parsed;
+      const parsed = parsePort(value);
+      if (parsed === null) return false;
+      setFirst(acc, 'port', parsed);
       return true;
     }
     case 'identityfile':
       if (!value) return false;
-      acc.identityFile = value;
+      acc.identityFiles.push(value);
       return true;
     case 'controlpath':
       if (!value) return false;
-      acc.controlPath = value;
+      setFirst(acc, 'controlPath', value);
       return true;
     case 'proxyjump':
       if (!value) return false;
-      acc.jumpHost = value;
+      setFirst(acc, 'jumpHost', value);
       return true;
     case 'user':
       if (!value) return false;
-      acc.loginName = value;
+      setFirst(acc, 'loginName', value);
       return true;
     default:
       acc.sshOptions.push(trimmed);
@@ -161,31 +174,53 @@ function consumeValue(value: string, option: string, acc: Accumulator): boolean 
 
   switch (option) {
     case 'p': {
-      const parsed = Number.parseInt(trimmed, 10);
-      if (!Number.isInteger(parsed)) return false;
-      acc.port = parsed;
+      const parsed = parsePort(trimmed);
+      if (parsed === null) return false;
+      setFirst(acc, 'port', parsed);
       return true;
     }
     case 'i':
-      acc.identityFile = trimmed;
+      acc.identityFiles.push(trimmed);
       return true;
     case 'F':
-      acc.configFile = trimmed;
+      setFirst(acc, 'configFile', trimmed);
       return true;
     case 'J':
-      acc.jumpHost = trimmed;
+      setFirst(acc, 'jumpHost', trimmed);
       return true;
     case 'S':
-      acc.controlPath = trimmed;
+      setFirst(acc, 'controlPath', trimmed);
       return true;
     case 'l':
-      acc.loginName = trimmed;
+      setFirst(acc, 'loginName', trimmed);
       return true;
     case 'o':
       return consumeSshOption(trimmed, acc);
     case 'W':
       // A stdio forward, not a shell.
       return false;
+    case 'O':
+    case 'Q':
+      // Multiplexing control and configuration-query modes do not open a shell.
+      return false;
+    case 'B':
+      acc.sshOptions.push(`BindInterface=${trimmed}`);
+      return true;
+    case 'b':
+      acc.sshOptions.push(`BindAddress=${trimmed}`);
+      return true;
+    case 'c':
+      acc.sshOptions.push(`Ciphers=${trimmed}`);
+      return true;
+    case 'I':
+      acc.sshOptions.push(`PKCS11Provider=${trimmed}`);
+      return true;
+    case 'm':
+      acc.sshOptions.push(`MACs=${trimmed}`);
+      return true;
+    case 'P':
+      acc.sshOptions.push(`Tag=${trimmed}`);
+      return true;
     default:
       // Any other value-taking flag (-L, -R, -D, …): consume and ignore, so the
       // loop stays aligned and the destination is still found.
@@ -220,7 +255,12 @@ export function parseSshArgv(argv: string[]): DetectedSsh | null {
   if (argv.length === 0) return null;
 
   let index = normalizedExecutableName(argv[0]) === 'ssh' ? 1 : 0;
-  const acc: Accumulator = { forwardAgent: false, compression: false, sshOptions: [] };
+  const acc: Accumulator = {
+    identityFiles: [],
+    forwardAgent: false,
+    compression: false,
+    sshOptions: [],
+  };
 
   while (index < argv.length) {
     const argument = argv[index];
@@ -256,10 +296,10 @@ export function parseSshArgv(argv: string[]): DetectedSsh | null {
     for (const flag of flags) {
       switch (flag) {
         case '4':
-          acc.addressFamily = 4;
+          setFirst(acc, 'addressFamily', 4);
           break;
         case '6':
-          acc.addressFamily = 6;
+          setFirst(acc, 'addressFamily', 6);
           break;
         case 'A':
           acc.forwardAgent = true;
@@ -290,7 +330,7 @@ export function parseSshArgv(argv: string[]): DetectedSsh | null {
     destination,
     sshExecutable: executable,
     port: acc.port,
-    identityFile: acc.identityFile,
+    identityFiles: acc.identityFiles,
     configFile: acc.configFile,
     jumpHost: acc.jumpHost,
     controlPath: acc.controlPath,

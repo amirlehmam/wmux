@@ -48,14 +48,14 @@ describe('parseSshArgv — the shapes that must work', () => {
   it('reads a separated port and identity file', () => {
     const session = parseSshArgv(['ssh', '-p', '2222', '-i', 'C:\\keys\\id_ed25519', 'me@host']);
     expect(session?.port).toBe(2222);
-    expect(session?.identityFile).toBe('C:\\keys\\id_ed25519');
+    expect(session?.identityFiles).toEqual(['C:\\keys\\id_ed25519']);
     expect(session?.destination).toBe('me@host');
   });
 
   it('reads a glued port and identity file', () => {
     const session = parseSshArgv(['ssh', '-p2222', '-iC:\\keys\\id_ed25519', 'me@host']);
     expect(session?.port).toBe(2222);
-    expect(session?.identityFile).toBe('C:\\keys\\id_ed25519');
+    expect(session?.identityFiles).toEqual(['C:\\keys\\id_ed25519']);
   });
 
   it('merges -l into the destination', () => {
@@ -72,11 +72,11 @@ describe('parseSshArgv — the shapes that must work', () => {
     expect(session).toMatchObject({ addressFamily: 4, forwardAgent: true, compression: true });
   });
 
-  it('lets a later -6 override an earlier -4', () => {
+  it('keeps the first address-family setting', () => {
     // One field rather than two booleans, so "both families forced" is not
     // a representable state for a consumer to have to handle.
     const session = parseSshArgv(['ssh', '-4', '-6', 'me@host']);
-    expect(session?.addressFamily).toBe(6);
+    expect(session?.addressFamily).toBe(4);
   });
 
   it('leaves addressFamily unset when neither -4 nor -6 is given', () => {
@@ -104,7 +104,7 @@ describe('parseSshArgv — the shapes that must work', () => {
       port: 2200,
       jumpHost: 'bastion',
       controlPath: '/tmp/cp',
-      identityFile: '/k/id',
+      identityFiles: ['/k/id'],
     });
     // Promoted, not also echoed into the passthrough list.
     expect(session?.sshOptions).toEqual([]);
@@ -224,6 +224,36 @@ describe('parseSshArgv — the shapes that must be refused', () => {
 
   it('refuses a value flag with nothing after it', () => {
     expect(parseSshArgv(['ssh', '-p'])).toBeNull();
+  });
+
+  it.each(['0', '65536', '22junk'])('refuses invalid port %s', (port) => {
+    expect(parseSshArgv(['ssh', '-p', port, 'host'])).toBeNull();
+  });
+
+  it.each(['O', 'Q'])('refuses non-shell -%s mode', (flag) => {
+    expect(parseSshArgv(['ssh', `-${flag}`, 'value', 'host'])).toBeNull();
+  });
+});
+
+describe('parseSshArgv — OpenSSH precedence and replay fidelity', () => {
+  it('keeps the first value for singleton connection settings', () => {
+    const session = parseSshArgv([
+      'ssh', '-p', '1111', '-p', '2222', '-l', 'first', '-l', 'second',
+      '-S', 'one', '-S', 'two', 'host',
+    ]);
+    expect(session).toMatchObject({ destination: 'first@host', port: 1111, controlPath: 'one' });
+  });
+
+  it('retains every identity file in source order', () => {
+    expect(parseSshArgv(['ssh', '-i', 'one', '-o', 'IdentityFile=two', 'host'])?.identityFiles)
+      .toEqual(['one', 'two']);
+  });
+
+  it('canonicalizes connection-affecting value flags for transfer replay', () => {
+    const session = parseSshArgv(['ssh', '-B', 'Ethernet', '-b', '10.0.0.2', '-c', 'aes256-ctr', 'host']);
+    expect(session?.sshOptions).toEqual([
+      'BindInterface=Ethernet', 'BindAddress=10.0.0.2', 'Ciphers=aes256-ctr',
+    ]);
   });
 });
 

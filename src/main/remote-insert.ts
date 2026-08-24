@@ -207,10 +207,7 @@ export async function resolveInsertion(
     return { text: localInsertionText(localPaths) };
   }
 
-  const outcome = await uploadFiles(session, localPaths);
-  // The transport does not accept a signal yet, but its result must not be
-  // inserted after the owning PTY/window has gone away. This interface lets
-  // the transfer layer adopt true process cancellation independently.
+  const outcome = await uploadFiles(session, localPaths, signal);
   if (signal?.aborted) return { text: null };
   if (!outcome.ok || outcome.remotePaths.length !== localPaths.length) {
     // Inserting the local path here would read as success while handing the
