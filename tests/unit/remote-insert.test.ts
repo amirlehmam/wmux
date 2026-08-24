@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   resolveInsertion,
+  regularFilePaths,
+  SurfaceInsertionQueue,
   uploadEnabled,
   localInsertionText,
   remoteInsertionText,
@@ -69,6 +71,81 @@ describe('insertion text', () => {
 
   it('always single-quotes a remote path', () => {
     expect(remoteInsertionText(['/tmp/wmux-drop-1.png'])).toBe("'/tmp/wmux-drop-1.png'");
+  });
+});
+
+describe('regularFilePaths', () => {
+  it('keeps only absolute paths to regular files', () => {
+    expect(regularFilePaths([FILE_A, os.tmpdir(), 'relative.png', 42, null])).toEqual([FILE_A]);
+    expect(regularFilePaths('not-an-array')).toEqual([]);
+  });
+});
+
+describe('SurfaceInsertionQueue', () => {
+  it('runs gestures on one surface in order', async () => {
+    const queue = new SurfaceInsertionQueue();
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const started: string[] = [];
+
+    const first = queue.enqueue('surf-1', async () => {
+      started.push('first');
+      await firstGate;
+      return { text: 'first' };
+    });
+    const second = queue.enqueue('surf-1', async () => {
+      started.push('second');
+      return { text: 'second' };
+    });
+
+    await Promise.resolve();
+    expect(started).toEqual(['first']);
+    releaseFirst();
+    await expect(first).resolves.toEqual({ text: 'first' });
+    await expect(second).resolves.toEqual({ text: 'second' });
+    expect(started).toEqual(['first', 'second']);
+  });
+
+  it('does not serialize unrelated surfaces', async () => {
+    const queue = new SurfaceInsertionQueue();
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const first = queue.enqueue('surf-1', async () => {
+      await firstGate;
+      return { text: 'first' };
+    });
+    const second = queue.enqueue('surf-2', async () => ({ text: 'second' }));
+
+    await expect(second).resolves.toEqual({ text: 'second' });
+    releaseFirst();
+    await expect(first).resolves.toEqual({ text: 'first' });
+  });
+
+  it('suppresses running and queued results after cancellation', async () => {
+    const queue = new SurfaceInsertionQueue();
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const queuedTask = vi.fn(async () => ({ text: 'second' }));
+    const first = queue.enqueue('surf-1', async () => {
+      await firstGate;
+      return { text: 'first' };
+    });
+    const second = queue.enqueue('surf-1', queuedTask);
+
+    await Promise.resolve();
+    queue.cancel('surf-1');
+    releaseFirst();
+    await expect(first).resolves.toEqual({ text: null });
+    await expect(second).resolves.toEqual({ text: null });
+    expect(queuedTask).not.toHaveBeenCalled();
+  });
+
+  it('continues after a rejected gesture', async () => {
+    const queue = new SurfaceInsertionQueue();
+    const first = queue.enqueue('surf-1', async () => { throw new Error('boom'); });
+    const second = queue.enqueue('surf-1', async () => ({ text: 'second' }));
+    await expect(first).rejects.toThrow('boom');
+    await expect(second).resolves.toEqual({ text: 'second' });
   });
 });
 

@@ -113,19 +113,36 @@ contextBridge.exposeInMainWorld('wmux', {
      */
     resolvePaste: (surfaceId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.REMOTE_RESOLVE_PASTE, surfaceId) as Promise<InsertionResult>,
-    /** Same, for files dropped on the pane. `invert` is the Shift modifier. */
-    resolveDrop: (surfaceId: string, localPaths: string[], invert: boolean) =>
-      ipcRenderer.invoke(
+    /**
+     * Same, for files dropped on the pane. Resolve paths here, while the
+     * original DOM File objects are still available. Accepting path strings
+     * from the renderer would turn this into an arbitrary local-file upload
+     * capability if renderer content were ever compromised.
+     */
+    resolveDrop: (surfaceId: string, files: File[], invert: boolean) => {
+      const localPaths: string[] = [];
+      if (Array.isArray(files)) {
+        for (const file of files) {
+          try {
+            const localPath = webUtils.getPathForFile(file);
+            if (localPath) localPaths.push(localPath);
+          } catch {
+            // A forged value is not a dropped File and grants no path.
+          }
+        }
+      }
+      return ipcRenderer.invoke(
         IPC_CHANNELS.REMOTE_RESOLVE_DROP,
         surfaceId,
         localPaths,
-        invert,
-      ) as Promise<InsertionResult>,
+        Boolean(invert),
+      ) as Promise<InsertionResult>;
+    },
   },
   clipboard: {
     // No pasteImage/readFiles: reading the clipboard for a paste is main's
     // job now (remote.resolvePaste), because only main can act on what it
-    // finds. These two remain for copy and for the Ctrl+Shift+V text path.
+    // finds. These remain for copy and older renderer call sites.
     writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
     readText: () => ipcRenderer.invoke('clipboard:read-text') as Promise<string>,
   },

@@ -8,7 +8,9 @@ import { PtyLedger, reapOrphans } from './pty-ledger';
 import { SshDetector } from './ssh-detect';
 import {
   readClipboardSource,
+  regularFilePaths,
   resolveInsertion,
+  SurfaceInsertionQueue,
   uploadEnabled,
   type PasteSource,
 } from './remote-insert';
@@ -50,6 +52,35 @@ const ptyManager = new PtyManager(ptyLedger);
 const notificationManager = new NotificationManager();
 const cdpBridge = new CDPBridge();
 const agentManager = new AgentManager(ptyManager);
+const insertionQueue = new SurfaceInsertionQueue();
+const surfaceOwners = new Map<SurfaceId, number>();
+const observedWebContents = new Set<number>();
+
+function ownSurface(surfaceId: SurfaceId, webContents: Electron.WebContents): void {
+  surfaceOwners.set(surfaceId, webContents.id);
+  if (observedWebContents.has(webContents.id)) return;
+  observedWebContents.add(webContents.id);
+  webContents.once('destroyed', () => {
+    observedWebContents.delete(webContents.id);
+    for (const [ownedSurfaceId, ownerId] of surfaceOwners) {
+      if (ownerId !== webContents.id) continue;
+      surfaceOwners.delete(ownedSurfaceId);
+      insertionQueue.cancel(ownedSurfaceId);
+    }
+  });
+}
+
+function forgetSurface(surfaceId: SurfaceId): void {
+  surfaceOwners.delete(surfaceId);
+  insertionQueue.cancel(surfaceId);
+  sshDetector.forget(surfaceId);
+}
+
+function ownsLiveSurface(surfaceId: unknown, webContents: Electron.WebContents): surfaceId is SurfaceId {
+  return typeof surfaceId === 'string'
+    && ptyManager.has(surfaceId as SurfaceId)
+    && surfaceOwners.get(surfaceId as SurfaceId) === webContents.id;
+}
 
 /**
  * Tracks which panes are sitting inside an ssh session, so a pasted image or a
@@ -99,6 +130,14 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       };
       const created = ptyManager.create(resolvedOptions);
       const id = created.id;
+      const existingOwner = surfaceOwners.get(id);
+      // StrictMode may repeat create from the same renderer, and a replacement
+      // window may reclaim a surface after the old webContents was destroyed.
+      // A different live renderer must not steal an existing surface merely by
+      // invoking idempotent PTY_CREATE with its id.
+      if (!created.reused || existingOwner === undefined || existingOwner === _event.sender.id) {
+        ownSurface(id, _event.sender);
+      }
       // `wmux ssh user@host` puts the whole ssh command line in the REQUESTED
       // shell spec, which is the one detection source that is authoritative
       // rather than inferred.
@@ -136,7 +175,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         // remote has exited (dropped connection, or the user typed `exit`), so
         // a later paste must not still be offered an upload to that host.
         // PTY_KILL covers the pane being closed; this covers it dying on its own.
-        sshDetector.forget(id);
+        forgetSurface(id);
         // Clean up listeners when PTY exits
         unsubData();
         unsubExit();
@@ -165,7 +204,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
 
   ipcMain.on(IPC_CHANNELS.PTY_KILL, (_event, id: SurfaceId) => {
     ptyManager.kill(id);
-    sshDetector.forget(id);
+    forgetSurface(id);
   });
 
   ipcMain.handle(IPC_CHANNELS.PTY_HAS, (_event, id: SurfaceId) => {
@@ -389,6 +428,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     source: PasteSource,
     mode: 'paste' | 'drop',
     invert = false,
+    signal?: AbortSignal,
   ): Promise<InsertionResult> => {
     // Only arm the ssh probe when there is something uploadable. It spawns a
     // PowerShell enumeration of every process on the machine (~550ms) and then
@@ -396,15 +436,24 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     // from a plain text paste would keep that sweep alive for as long as the
     // user keeps pasting, to answer a question text can never ask. The sweep is
     // fire-and-forget and cannot affect this call anyway: detect() reads a cache.
-    if (source.kind !== 'files') return resolveInsertion(source, null, false);
+    if (source.kind !== 'files') return resolveInsertion(source, null, false, signal);
     sshDetector.start();
     const mayUpload = !invert && uploadEnabled(loadUserConfig().remote, mode);
-    return resolveInsertion(source, sshDetector.detect(surfaceId), mayUpload);
+    return resolveInsertion(source, sshDetector.detect(surfaceId), mayUpload, signal);
   };
 
   ipcMain.handle(
     IPC_CHANNELS.REMOTE_RESOLVE_PASTE,
-    (_event, surfaceId: SurfaceId) => resolveFor(surfaceId, readClipboardSource(), 'paste'),
+    (event, surfaceId: SurfaceId) => {
+      if (!ownsLiveSurface(surfaceId, event.sender)) return { text: null };
+      // Snapshot before queueing: a slow earlier upload must not make this
+      // gesture read whatever happens to be on the clipboard later.
+      const source = readClipboardSource();
+      return insertionQueue.enqueue(
+        surfaceId,
+        (signal) => resolveFor(surfaceId, source, 'paste', false, signal),
+      );
+    },
   );
 
   /**
@@ -413,18 +462,14 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
    */
   ipcMain.handle(
     IPC_CHANNELS.REMOTE_RESOLVE_DROP,
-    (_event, surfaceId: SurfaceId, localPaths: string[], invert: boolean) =>
-      resolveFor(
+    (event, surfaceId: SurfaceId, localPaths: unknown, invert: boolean) => {
+      if (!ownsLiveSurface(surfaceId, event.sender)) return { text: null };
+      const source: PasteSource = { kind: 'files', localPaths: regularFilePaths(localPaths) };
+      return insertionQueue.enqueue(
         surfaceId,
-        {
-          kind: 'files',
-          localPaths: Array.isArray(localPaths)
-            ? localPaths.filter((candidate) => typeof candidate === 'string')
-            : [],
-        },
-        'drop',
-        invert,
-      ),
+        (signal) => resolveFor(surfaceId, source, 'drop', Boolean(invert), signal),
+      );
+    },
   );
 
   ipcMain.handle(IPC_CHANNELS.SESSION_SAVE_NAMED, (_event, session: any) => {
@@ -674,6 +719,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
 }
 
 export function setupAgentPtyForwarding(surfaceId: string, window: BrowserWindow): void {
+  ownSurface(surfaceId as SurfaceId, window.webContents);
   const unsubData = ptyManager.onData(surfaceId as SurfaceId, (data) => {
     if (window && !window.isDestroyed()) {
       window.webContents.send(IPC_CHANNELS.PTY_DATA, surfaceId, data);

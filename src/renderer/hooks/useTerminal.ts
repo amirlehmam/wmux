@@ -451,6 +451,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   const ptyIdRef = useRef<string | null>(null);
   const cleanupFnsRef = useRef<Array<() => void>>([]);
   const rendererRef = useRef<RendererHandle | null>(null);
+  // Terminal setup is intentionally mount-once, but translations can change
+  // while an upload is in flight. Completion always reads the current value.
+  const translatorRef = useRef(t);
+  translatorRef.current = t;
   // Captured in a ref so the (mount-once) terminal effect can read the latest
   // startup commands without listing them as a dependency.
   const startupCommandsRef = useRef<string[] | undefined>(startupCommands);
@@ -474,6 +478,19 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   // so alpha here would reveal its flat backgroundColor instead of the desktop.
   const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
   const bgAlpha = terminalBgAlpha(appearance, transparencyPending);
+
+  const finishInsertion = (request: Promise<InsertionResult>): void => {
+    void request
+      .then((result) => {
+        // Do not close over the terminal that began the request. A tab can
+        // remount while scp is running; use the current live instance, or drop
+        // the late result after disposal.
+        const currentTerminal = xtermRef.current;
+        if (!currentTerminal || !ptyIdRef.current) return;
+        applyInsertion(currentTerminal, surfaceId, translatorRef.current, result);
+      })
+      .catch(() => { /* nothing pasted rather than something wrong */ });
+  };
 
   const fit = () => {
     if (fitAddonRef.current) {
@@ -637,9 +654,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Windows Terminal and macOS Terminal both do this (issue #33). The browser's
     // DEFAULT drop action is to navigate the window to file:///… which would unload
     // the whole app, so we preventDefault on BOTH dragover (to mark a valid drop
-    // target) and drop. Electron 33 removed File.path, so paths come from the
-    // preload-exposed webUtils bridge (window.wmux.shell.getPathForFile). Paths
-    // are routed through terminal.paste() so bracketed-paste mode is honored,
+    // target) and drop. Electron 33 removed File.path, so genuine DOM File
+    // objects go to preload, where webUtils resolves them without exposing an
+    // arbitrary path-string upload API. Results use terminal.paste() so
+    // bracketed-paste mode is honored,
     // matching the Ctrl+V / image-paste handlers below.
     const dropHost = terminalRef.current;
     const onDragOver = (ev: DragEvent) => {
@@ -653,24 +671,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (!files || files.length === 0) return;
       ev.preventDefault();
       ev.stopPropagation();
-      const getPath = window.wmux?.shell?.getPathForFile;
-      if (!getPath) return;
-      const localPaths: string[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const p = getPath(files[i]);
-        if (p) localPaths.push(p);
-      }
-      if (localPaths.length === 0) return;
       // Shift inverts: insert the local path even when the pane is remote.
       // Drop only — Ctrl+Shift+V is already the paste binding, so Shift is
       // not free as a paste modifier (cmux scopes it to drop for the same
       // reason).
-      void window.wmux.remote
-        .resolveDrop(surfaceId ?? '', localPaths, ev.shiftKey)
-        .then((result: InsertionResult) => {
-          if (ptyIdRef.current) applyInsertion(terminal, surfaceId, t, result);
-        })
-        .catch(() => { /* main is the only thing that could fail here */ });
+      finishInsertion(
+        window.wmux.remote.resolveDrop(surfaceId ?? '', Array.from(files), ev.shiftKey),
+      );
     };
     dropHost.addEventListener('dragover', onDragOver);
     dropHost.addEventListener('drop', onDrop);
@@ -838,12 +845,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // One round trip. An image, a copied file and plain text are all the
         // same question — 'what should this paste type?' — and only main can
         // answer it, because only main can upload the first two.
-        void window.wmux.remote
-          .resolvePaste(surfaceId ?? '')
-          .then((result: InsertionResult) => {
-            if (ptyIdRef.current) applyInsertion(terminal, surfaceId, t, result);
-          })
-          .catch(() => { /* nothing pasted rather than something wrong */ });
+        finishInsertion(window.wmux.remote.resolvePaste(surfaceId ?? ''));
         return false; // Prevent default — we handle paste ourselves
       }
       // Shift+Enter → newline for TUI apps (Claude Code, etc). See
@@ -1141,16 +1143,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     const handler = async (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.surfaceId !== surfaceId) return;
-      const term = xtermRef.current;
-      if (!term || !ptyIdRef.current) return;
-      try {
-        const result = await window.wmux.remote.resolvePaste(surfaceId ?? '');
-        if (ptyIdRef.current) applyInsertion(term, surfaceId, t, result);
-      } catch { /* nothing pasted rather than something wrong */ }
+      if (!xtermRef.current || !ptyIdRef.current) return;
+      finishInsertion(window.wmux.remote.resolvePaste(surfaceId ?? ''));
     };
     document.addEventListener('wmux:paste-terminal', handler);
     return () => document.removeEventListener('wmux:paste-terminal', handler);
-  }, [surfaceId, t]);
+  }, [surfaceId]);
 
   // Manual pane recovery (issue #175). The PTY-exit path above handles the case
   // where wmux can see the application die; this handles the one where it

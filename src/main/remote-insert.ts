@@ -48,6 +48,69 @@ export type PasteSource =
   | { kind: 'none' };
 
 
+/** Keep only absolute paths that still name regular files. */
+export function regularFilePaths(candidates: unknown): string[] {
+  if (!Array.isArray(candidates)) return [];
+  return candidates.filter(
+    (candidate): candidate is string =>
+      typeof candidate === 'string' && path.isAbsolute(candidate) && isRegularFile(candidate),
+  );
+}
+
+interface QueueEntry {
+  tail: Promise<void>;
+  pending: number;
+  controller: AbortController;
+}
+
+/**
+ * Serializes insertion resolution per surface while allowing unrelated panes
+ * to proceed independently. Cancelling a surface prevents both queued and
+ * already-resolved work from producing terminal text.
+ */
+export class SurfaceInsertionQueue {
+  private readonly entries = new Map<string, QueueEntry>();
+
+  enqueue(
+    surfaceId: string,
+    task: (signal: AbortSignal) => Promise<InsertionResult>,
+  ): Promise<InsertionResult> {
+    let entry = this.entries.get(surfaceId);
+    if (!entry || entry.controller.signal.aborted) {
+      entry = { tail: Promise.resolve(), pending: 0, controller: new AbortController() };
+      this.entries.set(surfaceId, entry);
+    }
+
+    const queuedEntry = entry;
+    queuedEntry.pending += 1;
+    const result = queuedEntry.tail.then(async () => {
+      if (queuedEntry.controller.signal.aborted) return { text: null };
+      const resolved = await task(queuedEntry.controller.signal);
+      return queuedEntry.controller.signal.aborted ? { text: null } : resolved;
+    });
+    queuedEntry.tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    void queuedEntry.tail.finally(() => {
+      queuedEntry.pending -= 1;
+      if (queuedEntry.pending === 0 && this.entries.get(surfaceId) === queuedEntry) {
+        this.entries.delete(surfaceId);
+      }
+    });
+    return result;
+  }
+
+  cancel(surfaceId: string): void {
+    const entry = this.entries.get(surfaceId);
+    if (!entry) return;
+    entry.controller.abort();
+    this.entries.delete(surfaceId);
+  }
+}
+
+
 /** Text for local paths — the behaviour a non-ssh pane has always had. */
 export function localInsertionText(paths: string[]): string {
   return paths.map(windowsTerminalQuote).join(' ');
@@ -126,7 +189,9 @@ export async function resolveInsertion(
   source: PasteSource,
   session: DetectedSsh | null,
   mayUpload: boolean,
+  signal?: AbortSignal,
 ): Promise<InsertionResult> {
+  if (signal?.aborted) return { text: null };
   if (source.kind === 'none') return { text: null };
   // Text is typed as-is: there is no file to put anywhere.
   if (source.kind === 'text') return { text: source.text };
@@ -143,6 +208,10 @@ export async function resolveInsertion(
   }
 
   const outcome = await uploadFiles(session, localPaths);
+  // The transport does not accept a signal yet, but its result must not be
+  // inserted after the owning PTY/window has gone away. This interface lets
+  // the transfer layer adopt true process cancellation independently.
+  if (signal?.aborted) return { text: null };
   if (!outcome.ok || outcome.remotePaths.length !== localPaths.length) {
     // Inserting the local path here would read as success while handing the
     // remote shell a path it cannot open.
