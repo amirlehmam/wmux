@@ -620,7 +620,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (result.failure) {
         window.wmux?.notification?.fire({
           surfaceId: surfaceId ?? '',
-          text: `Upload to ${result.failure.destination} failed: ${result.failure.detail}`,
+          // Composed here rather than in main so it can be translated: main
+          // hands back the host and the transport's own complaint, and only the
+          // renderer knows the user's language.
+          text: t('terminal.uploadFailed', 'Upload to {host} failed: {reason}')
+            .replace('{host}', result.failure.destination)
+            .replace('{reason}', result.failure.detail),
           title: 'wmux',
         });
       }
