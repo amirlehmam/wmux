@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import * as os from 'os';
-import { IPC_CHANNELS } from '../shared/types';
+import { IPC_CHANNELS, type RemoteTarget, type UploadResult } from '../shared/types';
 
 contextBridge.exposeInMainWorld('wmux', {
   pty: {
@@ -105,8 +105,22 @@ contextBridge.exposeInMainWorld('wmux', {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT_UPDATE, handler);
     },
   },
+  remote: {
+    /**
+     * Is this surface inside an ssh session, and may we upload to it?
+     * Synchronous-feeling by design: main answers from a cache, so the
+     * paste path never waits on a process probe.
+     */
+    detect: (surfaceId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.REMOTE_DETECT, surfaceId) as Promise<RemoteTarget | null>,
+    /** scp these local paths to the surface's remote host. */
+    uploadFiles: (surfaceId: string, localPaths: string[]) =>
+      ipcRenderer.invoke(IPC_CHANNELS.REMOTE_UPLOAD, surfaceId, localPaths) as Promise<UploadResult>,
+  },
   clipboard: {
     pasteImage: () => ipcRenderer.invoke('clipboard:paste-image'),
+    /** Paths of files copied to the clipboard (Explorer Ctrl+C). At most one. */
+    readFiles: () => ipcRenderer.invoke('clipboard:read-files') as Promise<string[]>,
     writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
     readText: () => ipcRenderer.invoke('clipboard:read-text') as Promise<string>,
   },

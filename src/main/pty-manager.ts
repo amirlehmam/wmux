@@ -830,4 +830,9 @@ export class PtyManager {
     const entry = this.ptys.get(id);
     return entry?.pty.pid;
   }
+
+  /** Every surface with a live PTY. Used by the ssh probe to map processes back to panes. */
+  liveSurfaceIds(): SurfaceId[] {
+    return Array.from(this.ptys.keys());
+  }
 }

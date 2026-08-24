@@ -28,6 +28,7 @@ import { handleShiftEnter, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
 import { isConEmuSubcommand } from './osc9';
 import { withClaudeResume } from './claude-resume-command';
+import { resolveFileInsertion } from '../utils/remote-file-insert';
 import '@xterm/xterm/css/xterm.css';
 
 declare global {
@@ -590,6 +591,39 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       wheelHost.removeEventListener('wheel', onWheelCapture, { capture: true } as any);
     });
 
+    /**
+     * Type file paths into the terminal, uploading them to the pane's remote
+     * host first when it is inside ssh.
+     *
+     * Without this, a screenshot pasted into an ssh pane inserts a
+     * `C:\Users\…\Temp\wmux\screenshot-….png` that does not exist on the
+     * far side — the paste looks like it worked and is silently useless.
+     *
+     * Everything is routed through terminal.paste() so bracketed-paste mode
+     * is honored, matching the handlers this replaced.
+     */
+    const insertFilePaths = async (localPaths: string[], mode: 'paste' | 'drop', invert = false) => {
+      const text = await resolveFileInsertion(
+        { surfaceId: surfaceId ?? '', localPaths, mode, invert },
+        {
+          detect: (id) => window.wmux.remote.detect(id),
+          upload: (id, paths) => window.wmux.remote.uploadFiles(id, paths),
+          notify: (message) =>
+            window.wmux?.notification?.fire({
+              surfaceId: surfaceId ?? '',
+              text: message,
+              title: 'wmux',
+            }),
+        },
+      );
+      // Null means the upload failed and was reported. Inserting the local
+      // path here would look like success while handing the remote shell a
+      // path it cannot open.
+      if (!text || !ptyIdRef.current) return;
+      terminal.paste(text);
+      try { terminal.focus(); } catch { /* no-op */ }
+    };
+
     // File drag-and-drop → insert the dropped path(s) into the terminal.
     // Windows Terminal and macOS Terminal both do this (issue #33). The browser's
     // DEFAULT drop action is to navigate the window to file:///… which would unload
@@ -612,16 +646,17 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       ev.stopPropagation();
       const getPath = window.wmux?.shell?.getPathForFile;
       if (!getPath) return;
-      const parts: string[] = [];
+      const localPaths: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const p = getPath(files[i]);
-        // Quote paths containing spaces so they survive as a single shell token.
-        if (p) parts.push(/\s/.test(p) ? `"${p}"` : p);
+        if (p) localPaths.push(p);
       }
-      if (parts.length > 0 && ptyIdRef.current) {
-        terminal.paste(parts.join(' '));
-        try { terminal.focus(); } catch { /* no-op */ }
-      }
+      if (localPaths.length === 0) return;
+      // Shift inverts: insert the local path even when the pane is remote.
+      // Drop only — Ctrl+Shift+V is already the paste binding, so Shift is
+      // not free as a paste modifier (cmux scopes it to drop for the same
+      // reason).
+      void insertFilePaths(localPaths, 'drop', ev.shiftKey);
     };
     dropHost.addEventListener('dragover', onDragOver);
     dropHost.addEventListener('drop', onDrop);
@@ -791,14 +826,27 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           let handled = false;
           if (window.wmux?.clipboard?.pasteImage) {
             const filePath = await window.wmux.clipboard.pasteImage();
-            if (filePath && ptyIdRef.current) {
-              // Route through terminal.paste so bracketed-paste markers wrap
-              // the path when the app (e.g. Claude Code) has bracketed paste on.
-              terminal.paste(filePath);
+            if (filePath) {
+              // Uploads to the remote host first when this pane is inside ssh;
+              // otherwise inserts the local path exactly as before.
+              await insertFilePaths([filePath], 'paste');
               handled = true;
             }
           }
-          // If no image, paste text via Electron's clipboard API — navigator.clipboard
+          // No bitmap? The clipboard may still hold a copied FILE (Explorer
+          // Ctrl+C), which presents as a file reference with no image and no
+          // text — so without this branch that paste did nothing whatsoever,
+          // even though dragging the same file worked.
+          if (!handled && window.wmux?.clipboard?.readFiles) {
+            try {
+              const files = await window.wmux.clipboard.readFiles();
+              if (Array.isArray(files) && files.length > 0) {
+                await insertFilePaths(files, 'paste');
+                handled = true;
+              }
+            } catch { /* fall through to text */ }
+          }
+          // If neither, paste text via Electron's clipboard API — navigator.clipboard
           // can return garbled bytes on Windows when the source wrote a non-UTF-8 format.
           if (!handled && ptyIdRef.current) {
             try {

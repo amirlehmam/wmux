@@ -51,6 +51,8 @@ _wmux_report_git() {
 
 _wmux_precmd() {
     local exit_code=$?
+    # Back at a prompt: re-arm the once-per-cycle command report.
+    _wmux_command_reported=""
     _wmux_report_cwd
     _wmux_report_git
     # 130 = SIGINT (Ctrl+C), 137 = SIGKILL, 143 = SIGTERM
@@ -62,11 +64,61 @@ _wmux_precmd() {
     _wmux_report "ports_kick ${WMUX_SURFACE_ID}"
 }
 
+# Report the command line itself, so wmux can tell that this pane just ssh'd
+# somewhere. That is what lets a pasted screenshot be uploaded to the remote
+# host instead of having a local Windows path typed into a remote shell.
+#
+# Once per prompt cycle: bash drives preexec from a DEBUG trap, which fires
+# for every simple command — including the ones inside PROMPT_COMMAND — so an
+# unguarded report would put several lines on the pipe per keypress.
+# Report an ssh command line, so wmux can tell that this pane just connected
+# somewhere. That is what lets a pasted screenshot be uploaded to the remote
+# host instead of having a local Windows path typed into a remote shell.
+#
+# EVERY path out of this function must succeed. It runs from the DEBUG trap,
+# and under `shopt -s extdebug` a non-zero return there tells bash to SKIP the
+# command the user just typed — so a bare `return` after a non-matching test
+# would silently swallow commands in any pane where extdebug is on.
+_wmux_report_command() {
+    local surface_id="${WMUX_SURFACE_ID}"
+    [ -z "$surface_id" ] && return 0
+    # Once per prompt cycle: bash drives preexec from a DEBUG trap, which fires
+    # for every simple command, including the ones inside PROMPT_COMMAND.
+    [ -n "$_wmux_command_reported" ] && return 0
+    local cmdline="$1"
+    [ -z "$cmdline" ] && return 0
+
+    # Only ssh. Every report costs a forked mkdir (and a backgrounded node in
+    # the devcontainer branch) on the keypress path between Enter and the
+    # command starting, so reporting everything would tax every command in
+    # every pane to learn something only ssh can tell us. Staleness is handled
+    # by the prompt: _wmux_precmd fires report_shell_state, and that is what
+    # clears the session on the far side.
+    #
+    # Compare the basename of the first word, so an absolute path in either
+    # slash flavour — and the .exe Git Bash users type — all match, while
+    # `sshuttle` and `echo ssh` do not.
+    local first="${cmdline%% *}"
+    local base="${first##*/}"
+    base="${base##*\\}"
+    case "$base" in
+        ssh|ssh.exe) ;;
+        *) return 0 ;;
+    esac
+
+    _wmux_command_reported=1
+    # The transport is line-based, so a multi-line command must arrive flat.
+    _wmux_report "report_command $surface_id ${cmdline//$'\n'/ }"
+    return 0
+}
+
 # Report "running" before a command executes (pre-execution hook)
 _wmux_preexec() {
     local surface_id="${WMUX_SURFACE_ID}"
     [ -z "$surface_id" ] && return
     _wmux_report "report_shell_state $surface_id running"
+    _wmux_report_command "$1"
+    return 0
 }
 
 # Install hooks
@@ -78,6 +130,6 @@ if [ -n "$ZSH_VERSION" ]; then
 elif [ -n "$BASH_VERSION" ]; then
     # Bash: DEBUG trap as preexec, PROMPT_COMMAND as precmd
     _wmux_bash_preexec_active=0
-    trap '_wmux_bash_preexec_active=1; _wmux_preexec' DEBUG
+    trap '_wmux_bash_preexec_active=1; _wmux_preexec "$BASH_COMMAND"' DEBUG
     PROMPT_COMMAND="_wmux_precmd; _wmux_bash_preexec_active=0${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi

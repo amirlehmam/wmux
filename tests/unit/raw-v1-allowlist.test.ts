@@ -65,10 +65,11 @@ describe('raw-v1 allowlist', () => {
     expect(rawV1Error('report_pwd notify')).toMatch(/not a passthrough command/);
   });
 
-  it('is the six verbs and no more', () => {
+  it('is the seven verbs and no more', () => {
     expect([...RAW_V1_VERBS].sort()).toEqual([
       'clear_git_branch',
       'ports_kick',
+      'report_command',
       'report_git_branch',
       'report_pwd',
       'report_shell_state',

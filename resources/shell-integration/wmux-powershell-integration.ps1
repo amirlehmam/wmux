@@ -256,11 +256,40 @@ function Report-ShellState {
     }
 }
 
+# Report the command line itself, so wmux can tell that this pane just ssh'd
+# somewhere. That is what lets a pasted screenshot be uploaded to the remote
+# host instead of having a local Windows path typed into a remote shell.
+#
+# No once-per-cycle guard is needed here: unlike bash's DEBUG trap, the Enter
+# handler fires exactly once per submitted line.
+function Report-Command {
+    $surfaceId = $env:WMUX_SURFACE_ID
+    if (-not $surfaceId) { return }
+    $line = $null
+    $cursor = $null
+    try {
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    } catch {
+        return
+    }
+    if (-not $line) { return }
+    # Only ssh. Every report opens its own named-pipe connection from inside
+    # the Enter handler, before AcceptLine, so reporting every command would
+    # tax every command in every pane to learn something only ssh can tell
+    # us. Staleness is handled by the prompt, which fires report_shell_state.
+    if ($line -notmatch '^\s*("[^"]*[\\/])?[^\s\\/]*[\\/]?ssh(\.exe)?"?(\s|$)') { return }
+    # The transport is line-based, so a multi-line command must arrive flat.
+    $flat = $line -replace '\r?\n', ' '
+    Send-WmuxMessage "report_command $surfaceId $flat"
+}
+
 # Report "running" when user executes a command (pre-execution hook)
 if (Get-Module -Name PSReadLine -ErrorAction SilentlyContinue) {
     Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
         # Report running state before the command executes
         Report-ShellState "running"
+        # Read the buffer before AcceptLine clears it.
+        Report-Command
         # Accept the line (execute the command)
         [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
     }

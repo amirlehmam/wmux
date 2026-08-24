@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys } from './ipc-handlers';
+import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys, sshDetector } from './ipc-handlers';
 import { isPtyCrashGuardInstalled } from './pty-manager';
 import { logDiagnostic } from './crash-diagnostics';
 import { handleBrowserV2 } from './v2-browser';
@@ -694,7 +694,29 @@ app.whenReady().then(() => {
     if (cmd.command === 'ports_kick') {
       portScanner.kick();
     }
-    // Forward metadata updates to all windows
+    // The preexec hook reporting that the pane just ran an ssh command. This
+    // is what makes a hand-typed `ssh host` detectable the instant it is
+    // submitted, rather than one background process sweep later.
+    if (cmd.command === 'report_command' && cmd.surfaceId) {
+      sshDetector.reportCommand(cmd.surfaceId, cmd.args[0] ?? '');
+      // A pane may have just become remote, so make sure the probe is awake
+      // to back the report up (and to notice when that ssh exits).
+      sshDetector.start();
+    }
+    // Back at a prompt: whatever was running has exited, so any ssh session
+    // the preexec hook reported is over.
+    if (cmd.command === 'report_shell_state' && cmd.surfaceId && cmd.args[0] !== 'running') {
+      sshDetector.clearReported(cmd.surfaceId);
+    }
+    // Forward metadata updates to all windows.
+    //
+    // `report_command` is deliberately NOT forwarded: its consumer is the
+    // detector three lines above, in this process, and its payload is the
+    // full command line of everything the user types — which routinely
+    // carries secrets (`curl -H 'Authorization: …'`, a psql URL with a
+    // password). No renderer code reads it, so broadcasting it would push
+    // credentials into a web context for nothing.
+    if (cmd.command === 'report_command') return;
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) {
         win.webContents.send(IPC_CHANNELS.METADATA_UPDATE, cmd);
@@ -1219,6 +1241,7 @@ app.on('will-quit', () => {
   pipeServer.stop();
   cdpProxy.stop();
   portScanner.stop();
+  sshDetector.stop();
 });
 
 app.on('window-all-closed', () => {

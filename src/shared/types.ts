@@ -315,6 +315,26 @@ export interface SavedSession {
 }
 
 // IPC channel names
+/**
+ * What main reports about a surface that is sitting inside an ssh session.
+ * Only the destination crosses the boundary — the identity file and ssh
+ * options stay in main, which is the only place that spawns anything.
+ */
+export interface RemoteTarget {
+  destination: string;
+  uploadOnPaste: boolean;
+  uploadOnDrop: boolean;
+}
+
+/** Result of scp-ing local files to a surface's remote host. */
+export interface UploadResult {
+  ok: boolean;
+  /** Remote paths, in the order the local paths were given. */
+  remotePaths: string[];
+  /** Present when `ok` is false — phrased for a toast, not a log. */
+  error?: string;
+}
+
 export const IPC_CHANNELS = {
   // PTY
   PTY_CREATE: 'pty:create',
@@ -324,6 +344,9 @@ export const IPC_CHANNELS = {
   PTY_HAS: 'pty:has',
   PTY_DATA: 'pty:data',
   PTY_EXIT: 'pty:exit',
+  // Remote file upload (ssh panes)
+  REMOTE_DETECT: 'remote:detect',
+  REMOTE_UPLOAD: 'remote:upload',
   // Workspace
   WORKSPACE_CREATE: 'workspace:create',
   WORKSPACE_CLOSE: 'workspace:close',

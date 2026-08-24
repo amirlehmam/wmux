@@ -2,11 +2,13 @@ import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme } fr
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId } from '../shared/types';
+import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type RemoteTarget } from '../shared/types';
 import { observePtyData, clearActivity } from './claude-observer';
 import { clearAgentState, noteHumanInput } from './agent-state';
 import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
+import { SshDetector } from './ssh-detect';
+import { uploadFiles } from './remote-upload';
 import { getAppDataDir } from '../shared/instance';
 import { NotificationManager } from './notification-manager';
 import { detectShells } from './shell-detector';
@@ -47,6 +49,21 @@ const cdpBridge = new CDPBridge();
 const agentManager = new AgentManager(ptyManager);
 
 /**
+ * Tracks which panes are sitting inside an ssh session, so a pasted image or a
+ * dropped file can be scp'd to the host the pane is actually on instead of
+ * having a local Windows path typed into a remote shell that cannot open it.
+ *
+ * Module-scoped alongside ptyManager because the surface -> pid mapping it
+ * needs lives there. Exported the same way ptyManager and agentManager are,
+ * so index.ts can feed it the shell-integration reports directly.
+ */
+export const sshDetector = new SshDetector({
+  getPid: (surfaceId) => ptyManager.getPid(surfaceId as SurfaceId),
+  liveSurfaceIds: () => ptyManager.liveSurfaceIds(),
+});
+
+
+/**
  * Tree-kill the PTY subtrees a previously crashed wmux left running (issue
  * #139). Best-effort and unawaited by design — see reapOrphans().
  */
@@ -78,6 +95,24 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       };
       const created = ptyManager.create(resolvedOptions);
       const id = created.id;
+      // `wmux ssh user@host` puts the whole ssh command line in the REQUESTED
+      // shell spec, which is the one detection source that is authoritative
+      // rather than inferred.
+      //
+      // Deliberately `resolvedOptions.shell` and not `created.shell`: create()
+      // returns the resolved executable with the arguments split off into
+      // `shellExtraArgs`, so `created.shell` is a bare `…\ssh.exe` with no
+      // destination left in it — which parses to nothing at all.
+      //
+      // And only for a genuinely new PTY. On reuse (a remount, a renderer
+      // reload) the caller passes `SurfaceRef.shell`, which the renderer has by
+      // then overwritten with that same resolved executable
+      // (setResolvedShellForSurface in useTerminal.ts) — so re-recording it
+      // would downgrade a correctly detected pane to "local" while its ssh is
+      // still running. The PTY has not changed, so neither has its destination.
+      if (!created.reused) {
+        sshDetector.setSurfaceShell(id, resolvedOptions.shell);
+      }
       // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
       // the original create already wired data/exit forwarding. Re-wiring here
       // would forward every chunk twice and double everything in the renderer.
@@ -102,6 +137,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         // goes with it, since it describes the same dead process.
         clearAgentState(id);
         clearActivity(id);
+        // Same reasoning for the remote session: the ssh that made this pane
+        // remote has exited (dropped connection, or the user typed `exit`), so
+        // a later paste must not still be offered an upload to that host.
+        // PTY_KILL covers the pane being closed; this covers it dying on its own.
+        sshDetector.forget(id);
         // Clean up listeners when PTY exits
         unsubData();
         unsubExit();
@@ -130,6 +170,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
 
   ipcMain.on(IPC_CHANNELS.PTY_KILL, (_event, id: SurfaceId) => {
     ptyManager.kill(id);
+    sshDetector.forget(id);
   });
 
   ipcMain.handle(IPC_CHANNELS.PTY_HAS, (_event, id: SurfaceId) => {
@@ -337,6 +378,92 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle('clipboard:read-text', () => clipboard.readText());
 
   // Clipboard image paste: save clipboard image to temp file, return path
+  /**
+   * Is this surface inside an ssh session, and is upload enabled?
+   *
+   * Answered from a cache, so the renderer can call it on the paste path
+   * without adding input lag. The call also starts the background process
+   * probe: sessions that never touch a remote pane never pay for it.
+   *
+   * Only the destination crosses the boundary — the renderer has no use for
+   * the identity file or the ssh options, and they are exactly the sort of
+   * thing that should not be sitting in a web context.
+   */
+  ipcMain.handle(IPC_CHANNELS.REMOTE_DETECT, (_event, surfaceId: SurfaceId): RemoteTarget | null => {
+    sshDetector.start();
+    const session = sshDetector.detect(surfaceId);
+    if (!session) return null;
+    const remote = loadUserConfig().remote ?? {};
+    return {
+      destination: session.destination,
+      uploadOnPaste: remote.uploadOnPaste !== false,
+      uploadOnDrop: remote.uploadOnDrop !== false,
+    };
+  });
+
+  /**
+   * scp local files to the surface's remote host.
+   *
+   * The session is re-resolved here rather than passed in from the renderer:
+   * a destination that arrived over IPC is renderer-supplied data, and this
+   * handler spawns a process with it. Re-detecting means the only hosts
+   * reachable are ones main already determined the pane is connected to.
+   */
+  ipcMain.handle(IPC_CHANNELS.REMOTE_UPLOAD, async (_event, surfaceId: SurfaceId, localPaths: string[]) => {
+    const session = sshDetector.detect(surfaceId);
+    if (!session) return { ok: false, remotePaths: [], error: "This pane is no longer connected to a remote host." };
+    if (!Array.isArray(localPaths) || localPaths.length === 0) {
+      return { ok: true, remotePaths: [] };
+    }
+    // Regular files only, mirroring cmux: a directory or a vanished path is
+    // not something scp should be handed, and the caller falls back to
+    // inserting the local path for it.
+    for (const localPath of localPaths) {
+      try {
+        if (!fs.statSync(localPath).isFile()) {
+          return { ok: false, remotePaths: [], error: "Only regular files can be uploaded." };
+        }
+      } catch {
+        return { ok: false, remotePaths: [], error: "That file could not be read." };
+      }
+    }
+    return uploadFiles(session, localPaths);
+  });
+
+  /**
+   * Local paths of files copied to the clipboard (Explorer Ctrl+C), so paste
+   * can handle a copied *file* and not just a bitmap.
+   *
+   * Copying a .png in Explorer puts a file reference on the clipboard, NOT an
+   * image: `readImage()` comes back empty and `readText()` comes back blank,
+   * so the paste path did nothing at all while dragging the same file worked.
+   * cmux covers this case too (`PasteboardFileURLReader`).
+   *
+   * Single file only. Electron does not surface CF_HDROP on Windows — it
+   * advertises `text/uri-list` but reads it back empty — and `FileNameW` is a
+   * one-path format. Multi-file paste therefore falls through to the text
+   * branch; drag-and-drop remains the route for several files at once.
+   */
+  ipcMain.handle('clipboard:read-files', async () => {
+    let raw: Buffer;
+    try {
+      raw = clipboard.readBuffer('FileNameW');
+    } catch {
+      return [];
+    }
+    if (!raw || raw.length === 0) return [];
+    const filePath = raw.toString('ucs2').replace(/\0+$/, '').trim();
+    if (!filePath) return [];
+    // A clipboard entry can outlive the file it names; falling through to the
+    // text branch is better than trying to upload something that is gone.
+    try {
+      if (!fs.statSync(filePath).isFile()) return [];
+    } catch {
+      return [];
+    }
+    return [filePath];
+  });
+
   ipcMain.handle('clipboard:paste-image', async () => {
     const img = clipboard.readImage();
     if (img.isEmpty()) return null;
