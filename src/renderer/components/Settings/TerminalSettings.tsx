@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { UserColorScheme } from '../../store/settings-slice';
+import { backdropCaps } from '../../utils/backdrop-caps';
+import type { ThemeConfig } from '../../../shared/types';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
 function firstFamily(stack: string): string {
@@ -14,9 +16,15 @@ function cssFamily(name: string): string {
   return /^[A-Za-z][A-Za-z0-9-]*$/.test(name) ? name : `'${name}'`;
 }
 
+/**
+ * Whether an import is already running. Module scope on purpose — see runImport.
+ */
+let importInFlight = false;
+
 export default function TerminalSettings() {
   const t = useT();
   const { terminalPrefs, setTerminalPrefs } = useStore();
+  const setAppearancePrefs = useStore((s) => s.setAppearancePrefs);
   const [themes, setThemes] = useState<string[]>(['Monokai']);
   const [newSchemeName, setNewSchemeName] = useState('');
   // Installed font families for the picker (issue #89) — enumerated by the
@@ -66,6 +74,138 @@ export default function TerminalSettings() {
     const next = { ...terminalPrefs.userColorSchemes };
     delete next[name];
     setTerminalPrefs({ userColorSchemes: next });
+  };
+
+  // ── Import an existing terminal's config ───────────────────────────────────
+  // Both parsers have existed in the main process since config-loader.ts was
+  // written, wired through preload and IPC, with nothing in the UI ever calling
+  // them — which is also why the `background-opacity` they parse was never
+  // applied to anything. These two buttons are the missing end of that path.
+  // One click writes seven settings across two slices, one of which asks for a
+  // restart — a lot to land on someone who was aiming at the button beside it,
+  // and not recoverable by hand once their old font size is gone. So each
+  // import parks the exact keys it is about to overwrite and offers them back.
+  //
+  // Both live in the store, not in this component: it unmounts on a tab switch,
+  // and the tab an import sends you to is General, to see the transparency it
+  // just turned on. See ImportUndo in settings-slice for why it is not
+  // persisted beyond the session.
+  const importStatus = useStore((s) => s.importStatus);
+  const importUndo = useStore((s) => s.importUndo);
+  const setImportStatus = useStore((s) => s.setImportStatus);
+  const setImportUndo = useStore((s) => s.setImportUndo);
+
+  const [importing, setImporting] = useState(false);
+
+  const undoImport = () => {
+    if (!importUndo) return;
+    setTerminalPrefs(importUndo.terminal);
+    // Putting windowTransparency back re-runs useWindowTransparency, which
+    // re-derives the restart flag from the window itself — so undoing an
+    // import that turned transparency on also clears the restart banner it
+    // raised, provided the window was never rebuilt in between.
+    setAppearancePrefs(importUndo.appearance);
+    setImportUndo(null);
+    setImportStatus(t('settings.terminalPanel.importReverted', 'Import reverted.'));
+  };
+
+  // Both buttons call this unawaited, and each snapshot is taken after its own
+  // await resolves — so two imports in flight at once would each read prefs the
+  // other had not written yet, and whichever committed last would silently drop
+  // the other's scheme. Not the state flag: two clicks in the same tick both
+  // read a value that has not re-rendered yet. Not a ref either — this panel
+  // unmounts on a tab switch, taking a ref with it, so clicking Import, hopping
+  // to General and back would arm a fresh guard while the first import was
+  // still in flight. The guard has to outlive the component the same way the
+  // undo snapshot does.
+  const runImport = async (source: 'wt' | 'ghostty') => {
+    if (importInFlight) return;
+    importInFlight = true;
+    setImporting(true);
+    try {
+      await doImport(source);
+    } finally {
+      importInFlight = false;
+      setImporting(false);
+    }
+  };
+
+  const doImport = async (source: 'wt' | 'ghostty') => {
+    const config = (window as any).wmux?.config;
+    const theme: ThemeConfig | null = source === 'ghostty'
+      ? await config?.importGhostty?.()
+      : await config?.importWindowsTerminal?.();
+
+    // Null is the parsers' "no config file at the expected path", not an error.
+    if (!theme) {
+      // Nothing was written, so an undo armed by an earlier import still holds.
+      setImportStatus(t('settings.terminalPanel.importNotFound', 'No config found to import.'));
+      return;
+    }
+
+    const name = theme.name || (source === 'ghostty' ? 'Ghostty' : 'Windows Terminal');
+
+    // Read through the store rather than the render closure: the await above
+    // means this handler can outlive the render that created it.
+    const prevTerminal = useStore.getState().terminalPrefs;
+    const prevAppearance = useStore.getState().appearancePrefs;
+    setTerminalPrefs({
+      userColorSchemes: {
+        ...prevTerminal.userColorSchemes,
+        [name]: {
+          background: theme.background,
+          foreground: theme.foreground,
+          cursor: theme.cursor,
+          cursorText: theme.cursorText,
+          selectionBackground: theme.selectionBackground,
+          selectionForeground: theme.selectionForeground,
+          palette: theme.palette,
+        },
+      },
+      theme: name,
+      ...(theme.fontFamily ? { fontFamily: cssFamily(theme.fontFamily) } : {}),
+      ...(theme.fontSize ? { fontSize: theme.fontSize } : {}),
+    });
+
+    // The imported opacity only means something if there is a backdrop behind
+    // the terminal, and the source terminals both mean "let the desktop show
+    // through" by it. So turning it on is part of honouring the import — set
+    // the number alone and it would silently do nothing, which is the exact bug
+    // this path had in the first place.
+    const pct = Math.round(Math.max(0, Math.min(1, theme.backgroundOpacity ?? 1)) * 100);
+    let note = '';
+    if (pct < 100) {
+      // Plain alpha is what both source terminals mean by opacity, and it
+      // needs only DWM — so this is gated on `transparency`, not `materials`.
+      const supported = (await backdropCaps()).transparency;
+      setAppearancePrefs({
+        terminalBgOpacity: pct,
+        ...(supported ? { windowTransparency: true, windowMaterial: 'clear' } : {}),
+      });
+      note = supported
+        ? ` · ${pct}% ${t('settings.terminalPanel.importRestart', '(restart to apply transparency)')}`
+        : ` · ${pct}%`;
+    }
+
+    // Armed here rather than before the writes, because the label it carries
+    // is only complete once the opacity branch above has run.
+    setImportStatus(null);
+    setImportUndo({
+      // The whole userColorSchemes map, not just the imported key: the source
+      // may name a scheme the user already had, and this silently replaces it.
+      terminal: {
+        userColorSchemes: prevTerminal.userColorSchemes,
+        theme: prevTerminal.theme,
+        fontFamily: prevTerminal.fontFamily,
+        fontSize: prevTerminal.fontSize,
+      },
+      appearance: {
+        terminalBgOpacity: prevAppearance.terminalBgOpacity,
+        windowTransparency: prevAppearance.windowTransparency,
+        windowMaterial: prevAppearance.windowMaterial,
+      },
+      label: `${t('settings.terminalPanel.imported', 'Imported')} ${name}${note}`,
+    });
   };
 
   return (
@@ -155,6 +295,33 @@ export default function TerminalSettings() {
       <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>
         {t('settings.terminalPanel.schemeHintPart1', 'Applied to new panes. Override per pane via ')}<code>wmux split --color-scheme NAME</code>{t('settings.terminalPanel.schemeHintPart2', ' or ')}<code>wmux set-color-scheme NAME</code>{t('settings.terminalPanel.schemeHintPart3', '.')}
       </div>
+
+      <div className="settings-divider" />
+      <h3 className="settings-section-title">{t('settings.terminalPanel.importSection', 'Import')}</h3>
+      <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>
+        {t('settings.terminalPanel.importHint', 'Bring colors, font and background opacity across from a terminal you already have set up. Saved as a custom scheme and selected.')}
+      </div>
+      <div className="settings-row">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="settings-btn settings-btn--secondary" disabled={importing} onClick={() => runImport('wt')}>
+            {t('settings.terminalPanel.importWt', 'From Windows Terminal')}
+          </button>
+          <button className="settings-btn settings-btn--secondary" disabled={importing} onClick={() => runImport('ghostty')}>
+            {t('settings.terminalPanel.importGhostty', 'From Ghostty')}
+          </button>
+        </div>
+      </div>
+      {importStatus && (
+        <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px' }}>{importStatus}</div>
+      )}
+      {importUndo && (
+        <div className="settings-row" style={{ opacity: 0.7, fontSize: '12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>{importUndo.label}</span>
+          <button className="settings-btn settings-btn--secondary" onClick={undoImport}>
+            {t('settings.terminalPanel.importUndo', 'Undo')}
+          </button>
+        </div>
+      )}
 
       <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.terminalPanel.customSchemesSection', 'Custom schemes')}</h3>

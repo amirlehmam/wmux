@@ -14,6 +14,21 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Window transparency. A Win11 backdrop material only shows through where
+   nothing paints over it, so the root layers stop painting entirely — the
+   window's own backgroundColor is already transparent by then.
+
+   Deliberately scoped to the root: the titlebar and sidebar keep their opaque
+   --ui-bg-0, so only the terminal area goes see-through. That is the Windows
+   Terminal arrangement, and it keeps chrome text readable over an arbitrary
+   desktop instead of leaving it to fight the wallpaper. The terminal's own
+   translucency is a separate knob (terminalBgOpacity → bgAlpha). */
+html.wmux-transparent,
+html.wmux-transparent body,
+html.wmux-transparent #root {
+  background: transparent;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -158,6 +173,39 @@ html, body, #root {
   letter-spacing: 0.02em;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   pointer-events: none;
+}
+
+/* Restart-required banner. Sits above the broadcast banner's spot and, unlike
+   it, takes pointer events — it carries the button that does the restart. */
+.restart-banner {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 6px;
+  background: var(--ui-bg-4);
+  border: 1px solid var(--ui-border-strong);
+  color: var(--ui-text-primary);
+  font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+.restart-banner__btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgb(var(--ui-accent-rgb));
+  color: var(--ui-accent-contrast);
+}
+.restart-banner__btn:hover {
+  filter: brightness(1.1);
 }
 
 /* ─── Reduced motion ─────────────────────────────────────────────────────────

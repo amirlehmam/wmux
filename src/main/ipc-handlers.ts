@@ -16,7 +16,7 @@ import { getDefaultTheme, getThemeByName, loadBundledThemes } from './theme-load
 import { parseWindowsTerminalConfig, parseGhosttyConfig, loadProjectProfiles, importWindowsTerminalProfiles } from './config-loader';
 import { loadUserConfig, getConfigPath, resetConfigWarnings } from './user-config';
 import { loadUserLocales } from './user-locales';
-import { WindowManager } from './window-manager';
+import { WindowManager, supportsBackdropMaterial, supportsTransparency, toWindowMaterial } from './window-manager';
 import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
@@ -253,6 +253,43 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, (e) =>
     BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false
   );
+  // Window transparency (Win11 backdrop material). Applied to every window, not
+  // just the sender: the pref is global, and a second window left opaque while
+  // the first turned translucent reads as a bug.
+  // `handle`, not `on`: entering or leaving plain-alpha mode cannot be applied
+  // to a live window, and the renderer needs that answer to tell the user.
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SET_BACKDROP, (e, enabled: boolean, material?: string) => {
+    const safe = toWindowMaterial(material);
+    // The enum was validated; the CAPABILITY was not. A blur material on a host
+    // that has none leaves a zero-alpha window with nothing drawn behind it —
+    // a black window, which is precisely what supportsBackdropMaterial() exists
+    // to prevent. Today's only caller pre-gates, but the guard belongs at the
+    // boundary rather than in the callers that happen to exist right now.
+    const available = safe === 'clear' ? supportsTransparency() : supportsBackdropMaterial();
+    // e.sender, so the restart answer describes the window that asked.
+    return windowManager.setBackdrop(enabled === true && available, safe, e.sender);
+  });
+  // Two separate capabilities: plain alpha needs only DWM, the blur materials
+  // need Win11. Reporting one flag for both would hide transparency from every
+  // Windows 10 user for the sake of a mode they were not asking for.
+  // Frameless (clear) windows have no native caption buttons, so the renderer
+  // draws its own and needs a way to close the window it is running in.
+  ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE_SELF, (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.close();
+  });
+  // Switching into or out of clear mode rebuilds the window, so the pref can
+  // only land on a fresh process.
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_FRAMELESS, (e) =>
+    windowManager.isFramelessFor(e.sender),
+  );
+  ipcMain.on(IPC_CHANNELS.WINDOW_RELAUNCH, () => {
+    app.relaunch();
+    app.quit();
+  });
+  ipcMain.handle(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP, () => ({
+    transparency: supportsTransparency(),
+    materials: supportsBackdropMaterial(),
+  }));
   // Taskbar progress: renderer sends its OSC 9;4 aggregate for this window.
   ipcMain.on(IPC_CHANNELS.WINDOW_SET_PROGRESS, (e, value: number, mode?: string) => {
     const win = BrowserWindow.fromWebContents(e.sender);

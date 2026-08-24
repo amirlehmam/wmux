@@ -1,3 +1,10 @@
+/* The browser panel's header height, next to splitpane.css's --wmux-tab-bar-h
+   for the same reason: the resize handle beside it has to know where its
+   neighbour's opaque chrome ends. */
+:root {
+  --wmux-browser-bar-h: 34px;
+}
+
 .browser-pane {
   display: flex;
   flex-direction: column;
@@ -11,6 +18,9 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
+  /* Declared rather than left to the 26px controls plus padding, so the resize
+     handle beside it has a height to match. */
+  min-height: var(--wmux-browser-bar-h);
   background: var(--ui-bg-3);
   flex-shrink: 0;
 }
@@ -62,4 +72,27 @@
 .browser-pane__webview {
   flex: 1;
   border: none;
+}
+
+/* The browser panel is not part of the split tree. It is a separate right-hand
+   panel with its own hand-rolled 4px resize handle, and that handle had no
+   background at all — invisible over an opaque window, and a 4px hole straight
+   through a transparent one, showing the desktop between the terminals and the
+   browser. It is a gutter like any other, so it gets the shape the split
+   dividers get: opaque across the chrome at the top, the pane fill below it.
+
+   Same shape, different number, which is why this is not shared with the
+   .split-divider--horizontal rule in splitpane.css. A divider runs between two
+   surface tab bars and is opaque for their 28px; this handle runs between a tab
+   bar and the browser's own header, which is taller. It takes the taller of the
+   two, because the two sides disagree and only one of the wrong answers is
+   visible: too much chrome reads as the header extending 4px, too little reads
+   as a hole punched through the window beside it. */
+html.wmux-transparent .browser-resize-handle {
+  background: linear-gradient(
+    to bottom,
+    var(--ui-bg-2) 0,
+    var(--ui-bg-2) var(--wmux-browser-bar-h),
+    var(--wmux-pane-gutter, var(--ui-bg-2)) var(--wmux-browser-bar-h)
+  );
 }

@@ -50,6 +50,22 @@ export const en = {
   'settings.general.customBgOpacity': 'Terminal opacity',
   'settings.general.customBgHint':
     'Any CSS background: a color, gradients, or url(…) images. Drawn behind the terminals, independent of the color scheme. Terminal opacity controls how much shows through.',
+  // Settings — General panel — Window transparency (Windows 11 only)
+  'settings.general.transparencySection': 'Window transparency',
+  'settings.general.transparencyEnable': 'Enable transparency',
+  'settings.general.transparencyMaterial': 'Style',
+  'settings.general.transparencyMaterial.clear': 'Clear',
+  'settings.general.transparencyMaterial.acrylic': 'Acrylic',
+  'settings.general.transparencyMaterial.mica': 'Mica',
+  'settings.general.transparencyHint':
+    'Clear leaves the desktop sharp enough to read; Acrylic and Mica blur it.',
+  'app.transparencyRestartBanner': 'Transparency change needs a restart to take effect.',
+  'app.restartNow': 'Restart now',
+  'titlebar.minimize': 'Minimize',
+  'titlebar.maximize': 'Maximize',
+  'titlebar.restore': 'Restore',
+  'titlebar.close': 'Close',
+  'settings.general.transparencyRestart': 'Restart wmux to apply.',
   // Command palette
   'palette.placeholder': 'Type a command or search...',
   'palette.empty': 'No results found',
@@ -381,6 +397,17 @@ export const en = {
   'settings.terminalPanel.fontStackPlaceholder': 'e.g. Consolas, Menlo, monospace',
   'settings.terminalPanel.fontSize': 'Font size',
   'settings.terminalPanel.colorSchemeSection': 'Color scheme',
+  // Settings — Terminal panel — importing another terminal's config
+  'settings.terminalPanel.importSection': 'Import',
+  'settings.terminalPanel.importHint':
+    'Bring colors, font and background opacity across from a terminal you already have set up. Saved as a custom scheme and selected.',
+  'settings.terminalPanel.importWt': 'From Windows Terminal',
+  'settings.terminalPanel.importGhostty': 'From Ghostty',
+  'settings.terminalPanel.importNotFound': 'No config found to import.',
+  'settings.terminalPanel.imported': 'Imported',
+  'settings.terminalPanel.importRestart': '(restart to apply transparency)',
+  'settings.terminalPanel.importUndo': 'Undo',
+  'settings.terminalPanel.importReverted': 'Import reverted.',
   'settings.terminalPanel.defaultScheme': 'Default scheme',
   'settings.terminalPanel.schemeHintPart1': 'Applied to new panes. Override per pane via ',
   'settings.terminalPanel.schemeHintPart2': ' or ',

@@ -75,7 +75,7 @@ docs/             Planning docs
 | `node-runtime.ts` | Which binary on this machine can run a `.js` file (#187). Everything wmux hands an agent is "a script plus something to run it", and every consumer had been assuming `node` was on PATH or that the host process was itself a JS runtime — false under OpenCode, whose `process.execPath` is a compiled `opencode.exe`. Resolved once (memoised: it is read on the synchronous pane-create path, see #176) and declared as `WMUX_NODE`. The last resort is wmux's own Electron binary, which is Node under `ELECTRON_RUN_AS_NODE=1`, so the chain never dead-ends — but that flag is what makes it a runtime instead of a second wmux window, hence the separate `WMUX_NODE_ELECTRON` signal |
 | `shell-context-menu.ts` | "Open in wmux" Explorer verb — HKCU shell keys for Directory/Directory\Background/Drive, plus `directoryFromArgv` for the launch path. Win11 places it under "Show more options"; the modern menu needs a signed MSIX, which unsigned wmux cannot ship |
 | `theme-loader.ts` | Theme loading |
-| `config-loader.ts` | WT/Ghostty config import |
+| `config-loader.ts` | WT/Ghostty config import. Reachable from Settings → Terminal → Import. WT spells opacity two ways — modern `opacity` (0-100, independent of `useAcrylic`) and pre-1.12 `acrylicOpacity` (0-1, only with `useAcrylic`) |
 | `shell-detector.ts` | Available shells detection |
 | `updater.ts` | Auto-update. Routes by install layout: NSIS → `electron-updater`, portable zip → `zip-updater.ts` (#184). `initAutoUpdater()` returns before registering `NsisUpdater` on a zip extract, so a portable install can never enter the #96 "update ready" loop |
 | `zip-updater.ts` | In-place update for portable zip extracts (#184). Detection is the whole contract: `wmux.exe` present, `Uninstall wmux.exe` absent — that name is electron-builder's `Uninstall ${productFilename}.exe`, so it moves if `productName`/`executableName` ever change. Download via `net.request`, extract via System32 `tar.exe` (PowerShell `Expand-Archive` fallback), then a detached cmd helper waits on the old PID and robocopies over the install root. The helper's relaunch is **unconditional** — wmux has already quit, so bailing out on a copy failure is the one outcome the user can't recover from |
@@ -127,7 +127,10 @@ claudeActivity: onUpdate
 agentState: onUpdate   # declared blocked/working/idle (issue #128)
 session:  save, load, list, delete
 cdp:      attach, detach
-window:   create, close, focus, list, minimize, maximize, isMaximized
+window:   create, close, focus, list, minimize, maximize, isMaximized, setProgress,
+          setBackdrop, supportsBackdrop,    # window transparency (clear/acrylic/mica)
+          closeSelf, isFrameless, relaunch  # clear mode is frameless: own caption
+                                            # buttons, and the restart banner
 ```
 
 ---

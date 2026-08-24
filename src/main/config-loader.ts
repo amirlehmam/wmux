@@ -7,6 +7,25 @@ import { parseThemeFileContent, loadBundledThemes } from './theme-loader';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Ghostty's `background-opacity` as a 0..1 number.
+ *
+ * Not `parseFloat(raw) || 1`: parseFloat('0') is 0, which is falsy, so the one
+ * value a user could only have set deliberately — fully transparent — was the
+ * single value silently replaced by fully opaque. The WT path already avoids
+ * this by testing `typeof === 'number'` instead of truthiness.
+ */
+function parseOpacity(raw: string | undefined, fallback: number | undefined): number {
+  const parsed = raw === undefined ? NaN : parseFloat(raw);
+  if (Number.isFinite(parsed)) return clamp01(parsed);
+  return typeof fallback === 'number' && Number.isFinite(fallback) ? fallback : 1;
+}
+
+/** A 0..1 opacity fraction, whatever the config file claimed. */
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n));
+}
+
 function normalizeColor(color: string): string {
   if (!color) return '';
   const c = color.trim();
@@ -31,6 +50,11 @@ interface WTProfile {
   fontSize?: number;
   fontFace?: string;
   colorScheme?: string;
+  /** WT 1.12+ background opacity, 0-100. */
+  opacity?: number;
+  /** Pre-1.12 acrylic transparency, 0.0-1.0. Only meaningful with useAcrylic. */
+  useAcrylic?: boolean;
+  acrylicOpacity?: number;
 }
 
 interface WTColorScheme {
@@ -63,8 +87,52 @@ interface WTColorScheme {
 
 interface WTSettings {
   defaultProfile?: string;
-  profiles?: { list?: WTProfile[] } | WTProfile[];
+  profiles?: { defaults?: WTProfile; list?: WTProfile[] } | WTProfile[];
   schemes?: WTColorScheme[];
+}
+
+/**
+ * Fold `profiles.defaults` into a profile, the way Windows Terminal itself
+ * does: every key in `defaults` is inherited by every profile in `list`, and
+ * the profile's own keys win.
+ *
+ * This is not an edge case — it is where the WT UI writes anything set under
+ * "Defaults", so a settings.json whose colour scheme, font and opacity are all
+ * global (a very ordinary one) carries NONE of them on the profile itself. Read
+ * without this merge, such a config imports as bare defaults: stock font, 100%
+ * opacity, and whichever scheme the `schemes[0]` fallback happened to land on.
+ *
+ * `font` merges one level deeper because WT inherits its sub-keys
+ * independently — a profile overriding only `font.size` keeps the global face.
+ */
+function mergeProfileDefaults(defaults: WTProfile | undefined, profile: WTProfile): WTProfile {
+  if (!defaults) return profile;
+  const merged: WTProfile = { ...defaults, ...profile };
+  if (defaults.font || profile.font) {
+    merged.font = { ...defaults.font, ...profile.font };
+  }
+  return merged;
+}
+
+/**
+ * A Windows Terminal profile's background opacity, as a 0..1 fraction.
+ *
+ * WT spells this two ways. `opacity` (0-100) is the modern key and applies
+ * whether or not acrylic is on — `useAcrylic` only decides whether the backdrop
+ * is blurred. `acrylicOpacity` (0.0-1.0) is the pre-1.12 key and meant nothing
+ * unless `useAcrylic` was set, which is why it is only consulted in that case.
+ * A profile carrying both is a config that predates the rename and has been
+ * half-migrated, so the modern key wins.
+ */
+function profileOpacity(profile: WTProfile): number {
+  if (typeof profile.opacity === 'number' && Number.isFinite(profile.opacity)) {
+    return clamp01(profile.opacity / 100);
+  }
+  if (profile.useAcrylic && typeof profile.acrylicOpacity === 'number'
+      && Number.isFinite(profile.acrylicOpacity)) {
+    return clamp01(profile.acrylicOpacity);
+  }
+  return 1.0;
 }
 
 function schemeToTheme(profile: WTProfile, scheme: WTColorScheme): ThemeConfig {
@@ -107,7 +175,7 @@ function schemeToTheme(profile: WTProfile, scheme: WTColorScheme): ThemeConfig {
     palette,
     fontFamily: fontFace,
     fontSize,
-    backgroundOpacity: 1.0,
+    backgroundOpacity: profileOpacity(profile),
   };
 }
 
@@ -121,10 +189,12 @@ export function parseWindowsTerminalSettingsJson(settings: WTSettings): ThemeCon
 
     // Normalise profiles list (can be object with .list or plain array)
     let profiles: WTProfile[] = [];
+    let profileDefaults: WTProfile | undefined;
     if (Array.isArray(settings.profiles)) {
       profiles = settings.profiles;
-    } else if (settings.profiles && Array.isArray(settings.profiles.list)) {
-      profiles = settings.profiles.list;
+    } else if (settings.profiles) {
+      if (Array.isArray(settings.profiles.list)) profiles = settings.profiles.list;
+      profileDefaults = settings.profiles.defaults;
     }
 
     // Find default profile
@@ -139,19 +209,22 @@ export function parseWindowsTerminalSettingsJson(settings: WTSettings): ThemeCon
     }
     if (!defaultProfile) defaultProfile = {};
 
+    // Everything downstream reads the INHERITED profile, never the raw entry.
+    const effective = mergeProfileDefaults(profileDefaults, defaultProfile);
+
     const schemes: WTColorScheme[] = settings.schemes || [];
 
     // Find matching color scheme
     let scheme: WTColorScheme | undefined;
-    if (defaultProfile.colorScheme) {
-      scheme = schemes.find((s) => s.name === defaultProfile!.colorScheme);
+    if (effective.colorScheme) {
+      scheme = schemes.find((s) => s.name === effective.colorScheme);
     }
     if (!scheme && schemes.length > 0) {
       scheme = schemes[0];
     }
     if (!scheme) scheme = {};
 
-    return schemeToTheme(defaultProfile, scheme);
+    return schemeToTheme(effective, scheme);
   } catch {
     return null;
   }
@@ -363,8 +436,7 @@ export function parseGhosttyConfigString(
       palette: mergedPalette,
       fontFamily: values['font-family'] || base?.fontFamily || 'Cascadia Mono',
       fontSize: parseFloat(values['font-size'] || String(base?.fontSize ?? 13)) || 13,
-      backgroundOpacity:
-        parseFloat(values['background-opacity'] || String(base?.backgroundOpacity ?? 1)) || 1.0,
+      backgroundOpacity: parseOpacity(values['background-opacity'], base?.backgroundOpacity),
     };
   } catch {
     return null;

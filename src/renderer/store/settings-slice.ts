@@ -435,8 +435,33 @@ export interface AppearancePrefs {
    */
   customBackgroundEnabled: boolean;
   customBackground: string;
-  /** 30–100 (%). How opaque the terminal theme background stays over the custom background. */
+  /** 15–100 (%), floored by MIN_TERMINAL_OPACITY_PCT on read. How opaque the terminal theme background stays over whatever is behind it. */
   terminalBgOpacity: number;
+  /**
+   * Real window transparency (issue: terminal opacity). Where `customBackground`
+   * paints a layer INSIDE the window, this makes the window itself translucent
+   * so the actual desktop shows through the terminal, blurred by a Windows 11
+   * backdrop material.
+   *
+   * The two are independent and compose: with both on, the custom background
+   * layer sits over the blurred desktop. Either one alone is enough to put
+   * `terminalBgOpacity` into effect — see `bgAlpha` in useTerminal.ts.
+   *
+   * Plain alpha ('clear') works on any DWM-composited Windows; the blur
+   * materials need Windows 11 (build 22000+), where the DWM API behind
+   * `setBackgroundMaterial` exists.
+   */
+  windowTransparency: boolean;
+  /**
+   * How the desktop comes through.
+   *
+   * 'clear' is plain per-pixel alpha — what you can read a browser through, and
+   * what Windows Terminal's `opacity` does with `useAcrylic` off. 'acrylic' and
+   * 'mica' are Win11 backdrops, which BLUR what is behind them by definition,
+   * so neither can ever produce that. 'clear' is the default for exactly that
+   * reason: it is what people mean by a transparent terminal.
+   */
+  windowMaterial: 'clear' | 'acrylic' | 'mica';
   /**
    * Sidebar presentation mode. 'classic' is the stock list; 'trace' is the
    * opt-in live view that renders each Claude session as a tap on a copper bus,
@@ -476,6 +501,8 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   customBackgroundEnabled: false,
   customBackground: '',
   terminalBgOpacity: 88,
+  windowTransparency: false,
+  windowMaterial: 'clear',
   uiMode: 'trace',
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
 };
@@ -538,9 +565,28 @@ export interface SettingsSlice {
    */
   broadcastInputActive: boolean;
 
+  /**
+   * Whether the transparency setting on screen is ahead of the window on
+   * screen — true after switching into or out of plain-alpha mode, which
+   * Electron fixes at window construction. Runtime-only: it describes this
+   * window's state, not a preference, and is false again once it restarts.
+   *
+   * Lives here rather than in useWindowTransparency's own state because
+   * Settings renders inside the same tree as App; a second call to the hook
+   * would apply every backdrop change twice.
+   */
+  transparencyNeedsRestart: boolean;
+
+  /** Result line for the last config import, and the undo it armed. */
+  importStatus: string | null;
+  importUndo: ImportUndo | null;
+
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void;
   resetShortcuts(): void;
   toggleSidebar(): void;
+  setTransparencyNeedsRestart(value: boolean): void;
+  setImportStatus(status: string | null): void;
+  setImportUndo(undo: ImportUndo | null): void;
   setSidebarPrefs(prefs: Partial<SidebarPrefs>): void;
   setWorkspacePrefs(prefs: Partial<WorkspacePrefs>): void;
   setTerminalPrefs(prefs: Partial<TerminalPrefs>): void;
@@ -553,6 +599,29 @@ export interface SettingsSlice {
   /** Re-read ~/.wmux/locales into the i18n registry and repaint (issue #147). */
   reloadUserLocales(payload: unknown): void;
   toggleBroadcastInput(): void;
+}
+
+/**
+ * What an import overwrote, held so it can be handed back.
+ *
+ * Lives in the store rather than in TerminalSettings' own state because the
+ * panel is mounted conditionally — `{activeTab === 'Terminal' && ...}` — so
+ * component state dies the moment the user clicks over to General. Which is
+ * exactly where an import sends them: it turns window transparency on and
+ * raises the restart banner, and the natural next move is to go look at it.
+ *
+ * Deliberately NOT persisted. An undo that outlived the session would sit
+ * there offering to revert a font size or an opacity the user had since
+ * changed on purpose, and silently undoing deliberate work is worse than
+ * offering no undo at all. Windows Terminal scopes its Discard Changes the
+ * same way — only until you save — and cmux, which reads Ghostty's config in
+ * place instead of copying it, has nothing to undo in the first place.
+ */
+export interface ImportUndo {
+  terminal: Partial<TerminalPrefs>;
+  appearance: Partial<AppearancePrefs>;
+  /** What it would take back. The button on its own says nothing. */
+  label: string;
 }
 
 // ─── Slice creator ────────────────────────────────────────────────────────────
@@ -571,6 +640,9 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   language:          loadPersistedLanguage(),
   localeRevision:    getLocaleRevision(),
   broadcastInputActive: false,
+  transparencyNeedsRestart: false,
+  importStatus: null,
+  importUndo: null,
 
   setShortcut(action: ShortcutAction, binding: ShortcutBinding): void {
     set((state) => {
@@ -665,5 +737,17 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
 
   toggleBroadcastInput(): void {
     set((state) => ({ broadcastInputActive: !state.broadcastInputActive }));
+  },
+
+  setTransparencyNeedsRestart(value: boolean): void {
+    set({ transparencyNeedsRestart: value });
+  },
+
+  setImportStatus(status: string | null): void {
+    set({ importStatus: status });
+  },
+
+  setImportUndo(undo: ImportUndo | null): void {
+    set({ importUndo: undo });
   },
 });

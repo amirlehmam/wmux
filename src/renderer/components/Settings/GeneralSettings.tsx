@@ -4,6 +4,8 @@ import { LANGUAGES, Language, useT } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
 import AgentIntegrationSettings from './AgentIntegrationSettings';
+import { MIN_TERMINAL_OPACITY_PCT, opacityToAlpha } from '../../store/backdrop';
+import { backdropCaps, NO_BACKDROP, type BackdropCaps } from '../../utils/backdrop-caps';
 
 // Named background presets for issue #89 — the first is the gradient the
 // requester posted ("MyLovelyBackground"), kept verbatim as a tribute.
@@ -83,6 +85,35 @@ export default function GeneralSettings() {
   };
 
   const activePreset = BG_PRESETS.find((p) => p.css === appearancePrefs.customBackground)?.nameKey ?? '';
+
+  // Asked of main rather than sniffed here: the renderer only sees a Chrome UA
+  // string. Two flags, because plain alpha needs only DWM while the blur
+  // materials need Win11 — collapsing them would hide transparency from every
+  // Windows 10 user over a mode they never asked for.
+  const [caps, setCaps] = useState<BackdropCaps>(NO_BACKDROP);
+  useEffect(() => {
+    let cancelled = false;
+    backdropCaps().then((c) => { if (!cancelled) setCaps(c); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Set by useWindowTransparency (called once, in App) when the setting on
+  // screen is ahead of the window on screen.
+  const needsRestart = useStore((s) => s.transparencyNeedsRestart);
+
+  // The slider is window opacity, so it needs a transparent window to mean
+  // anything. A custom background alone no longer qualifies: it now replaces
+  // the terminal's colour outright rather than being faded toward, so with an
+  // opaque window there is nothing left for the slider to move.
+  //
+  // Deliberately the pref alone, NOT hasTransparentWindow's pref-and-not-
+  // pending: the other call sites are asking what to PAINT, and until the
+  // restart lands the answer there is "still opaque". This one is asking what
+  // to OFFER, and the moment after someone ticks the box is exactly when they
+  // want to set the opacity the restart will come up with. The restart hint
+  // sits directly above it.
+  const opacityApplies = appearancePrefs.windowTransparency;
+  const effectiveOpacity = Math.round(opacityToAlpha(appearancePrefs.terminalBgOpacity) * 100);
 
   return (
     <div className="settings-section">
@@ -203,10 +234,12 @@ export default function GeneralSettings() {
                   overflow: 'hidden',
                 }}
               >
+                {/* No scrim: the terminal's own background is fully transparent
+                    wherever a custom background is set, so a pane really does
+                    render as text straight onto this. */}
                 <div style={{
                   position: 'absolute',
                   inset: 0,
-                  background: `rgba(30, 30, 30, ${(appearancePrefs.terminalBgOpacity ?? 88) / 100})`,
                   color: '#9ecbff',
                   fontFamily: 'Consolas, monospace',
                   fontSize: 12,
@@ -217,24 +250,79 @@ export default function GeneralSettings() {
               </div>
             </div>
           )}
-
-          <div className="settings-row">
-            <label className="settings-label">
-              {t('settings.general.customBgOpacity')} — {appearancePrefs.terminalBgOpacity}%
-            </label>
-            <input
-              type="range"
-              min={30}
-              max={100}
-              step={1}
-              value={appearancePrefs.terminalBgOpacity}
-              onChange={(e) => setAppearancePrefs({ terminalBgOpacity: Number(e.target.value) })}
-            />
-          </div>
         </>
       )}
 
       <p className="settings-hint">{t('settings.general.customBgHint')}</p>
+
+      {caps.transparency && (
+        <>
+          <h3 className="settings-section-title">{t('settings.general.transparencySection')}</h3>
+
+          <div className="settings-row">
+            <label className="settings-label">{t('settings.general.transparencyEnable')}</label>
+            <input
+              type="checkbox"
+              className="settings-toggle"
+              checked={appearancePrefs.windowTransparency}
+              onChange={(e) => setAppearancePrefs({ windowTransparency: e.target.checked })}
+            />
+          </div>
+
+          {appearancePrefs.windowTransparency && (
+            <div className="settings-row">
+              <label className="settings-label">{t('settings.general.transparencyMaterial')}</label>
+              <select
+                className="settings-select"
+                value={appearancePrefs.windowMaterial}
+                onChange={(e) =>
+                  setAppearancePrefs({ windowMaterial: e.target.value as AppearancePrefs['windowMaterial'] })
+                }
+              >
+                <option value="clear">{t('settings.general.transparencyMaterial.clear')}</option>
+                {/* Blur materials are Win11-only — picking one on Windows 10
+                    would just produce a black window. Rendered and DISABLED
+                    rather than omitted: a settings.json carrying 'acrylic' does
+                    reach a Windows 10 machine (they roam), and a controlled
+                    select whose value matches no option shows blank, which
+                    reads as a broken dropdown rather than as an unavailable
+                    choice. */}
+                <option value="acrylic" disabled={!caps.materials}>
+                  {t('settings.general.transparencyMaterial.acrylic')}
+                </option>
+                <option value="mica" disabled={!caps.materials}>
+                  {t('settings.general.transparencyMaterial.mica')}
+                </option>
+              </select>
+            </div>
+          )}
+
+          <p className="settings-hint">{t('settings.general.transparencyHint')}</p>
+
+          {needsRestart && (
+            <p className="settings-hint">{t('settings.general.transparencyRestart')}</p>
+          )}
+        </>
+      )}
+
+      {opacityApplies && (
+        <div className="settings-row">
+          <label className="settings-label">
+            {/* The floored value, not the stored one. A blob saved before the
+                floor existed can hold 0, and a label reading 0% beside a
+                terminal rendering at 15% is just a lie. */}
+            {t('settings.general.customBgOpacity')} — {effectiveOpacity}%
+          </label>
+          <input
+            type="range"
+            min={MIN_TERMINAL_OPACITY_PCT}
+            max={100}
+            step={1}
+            value={effectiveOpacity}
+            onChange={(e) => setAppearancePrefs({ terminalBgOpacity: Number(e.target.value) })}
+          />
+        </div>
+      )}
 
       <AgentIntegrationSettings />
     </div>

@@ -12,6 +12,7 @@ import { useT } from '../i18n';
 import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
 import { SplitNode, SurfaceId, ThemeConfig } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
+import { terminalBgAlpha } from '../store/backdrop';
 import { activateTerminalLink, terminalLinkHandler } from '../utils/terminal-links';
 import {
   MouseModeState,
@@ -135,21 +136,40 @@ function resolveSchemeName(override: string | undefined, prefsTheme: string | un
 }
 
 /**
+ * A `#rgb` / `#rrggbb` colour as channels, or null for anything else.
+ *
+ * Theme backgrounds are hex, but a user colour scheme can hold any CSS colour,
+ * so callers get null rather than a wrong number and decide what to do with it.
+ */
+export function parseHexColor(color: string): [number, number, number] | null {
+  const hex = (color || '').trim();
+  if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
+    return [
+      parseInt(hex[1] + hex[1], 16),
+      parseInt(hex[2] + hex[2], 16),
+      parseInt(hex[3] + hex[3], 16),
+    ];
+  }
+  if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  return null;
+}
+
+/**
  * Apply an alpha channel to a CSS color for the custom-background feature
  * (issue #89). Theme backgrounds are hex (#rgb/#rrggbb); anything else is
  * returned unchanged rather than risk producing a string xterm can't parse.
  */
 export function withBgAlpha(color: string, alpha: number): string {
   if (alpha >= 1 || !color) return color;
-  const hex = color.trim();
-  let r: number, g: number, b: number;
-  if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
-    r = parseInt(hex[1] + hex[1], 16); g = parseInt(hex[2] + hex[2], 16); b = parseInt(hex[3] + hex[3], 16);
-  } else if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
-    r = parseInt(hex.slice(1, 3), 16); g = parseInt(hex.slice(3, 5), 16); b = parseInt(hex.slice(5, 7), 16);
-  } else {
-    return color;
-  }
+  const rgb = parseHexColor(color);
+  if (!rgb) return color;
+  const [r, g, b] = rgb;
   return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
 }
 
@@ -352,7 +372,7 @@ function scheduleDeferredRepaint(terminal: Terminal): ReturnType<typeof setTimeo
   }, 300);
 }
 
-async function fetchTheme(name: string): Promise<ThemeConfig> {
+export async function fetchTheme(name: string): Promise<ThemeConfig> {
   const cached = themeCache.get(name);
   if (cached) return cached;
   try {
@@ -391,12 +411,18 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   const prefs = useStore((s) => s.terminalPrefs);
   const schemeName = resolveSchemeName(colorScheme, prefs.theme);
   const userScheme = prefs.userColorSchemes?.[schemeName];
-  // Custom background (issue #89): when enabled, the theme background gets
-  // alpha so the background layer rendered behind the split tree shows through.
+  // The terminal background goes translucent when there is something behind it
+  // worth seeing: the in-app custom background layer (issue #89), or the actual
+  // desktop through a transparent window. Either alone is enough, and with both
+  // on the custom layer is what shows over the blurred desktop.
+  //
+  // Gated on there being a backdrop on purpose — alpha with nothing behind it
+  // just reveals the opaque app chrome, which reads as a rendering bug.
   const appearance = useStore((s) => s.appearancePrefs);
-  const bgAlpha = appearance.customBackgroundEnabled && appearance.customBackground
-    ? Math.max(0.3, Math.min(1, (appearance.terminalBgOpacity ?? 88) / 100))
-    : 1;
+  // Not just the pref: while a restart is pending the window is still opaque,
+  // so alpha here would reveal its flat backgroundColor instead of the desktop.
+  const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
+  const bgAlpha = terminalBgAlpha(appearance, transparencyPending);
 
   const fit = () => {
     if (fitAddonRef.current) {
@@ -1110,7 +1136,15 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     let cancelled = false;
     fetchTheme(schemeName).then((base) => {
       if (cancelled || !xtermRef.current) return;
-      xtermRef.current.options.theme = buildXtermTheme(base, userScheme, bgAlpha);
+      const theme = buildXtermTheme(base, userScheme, bgAlpha);
+      xtermRef.current.options.theme = theme;
+      // xterm paints the theme background on .xterm-scrollable-element, which
+      // sits INSIDE .xterm's 2px padding — so over a translucent window that
+      // padding was a fully see-through frame around every pane. Publishing the
+      // exact colour the terminal just took lets the container fill it, and it
+      // is per-pane on purpose: a pane with its own --color-scheme has to match
+      // itself, not the global theme.
+      terminalRef.current?.style.setProperty('--wmux-term-bg', theme.background ?? 'transparent');
     });
     // Font + cursor + scrollback can be applied synchronously.
     term.options.fontFamily = prefs.fontFamily || term.options.fontFamily;

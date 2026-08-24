@@ -114,6 +114,41 @@ selection-foreground = #cdd6f4
     expect(theme!.selectionForeground).toBe('#cdd6f4');
   });
 
+  // parseFloat('0') is 0, which is falsy — so `parseFloat(raw) || 1` turned the
+  // one opacity a user could only have set on purpose into its exact opposite.
+  it('keeps background-opacity = 0 instead of falling back to opaque', () => {
+    const theme = parseGhosttyConfigString('background = #1e1e2e\nbackground-opacity = 0\n');
+    expect(theme).not.toBeNull();
+    expect(theme!.backgroundOpacity).toBe(0);
+  });
+
+  it('reads a fractional background-opacity', () => {
+    const theme = parseGhosttyConfigString('background-opacity = 0.8\n');
+    expect(theme!.backgroundOpacity).toBe(0.8);
+  });
+
+  it('defaults background-opacity to 1 when the key is absent', () => {
+    const theme = parseGhosttyConfigString('background = #1e1e2e\n');
+    expect(theme!.backgroundOpacity).toBe(1);
+  });
+
+  it('falls back to 1 on an unparseable background-opacity', () => {
+    const theme = parseGhosttyConfigString('background-opacity = wat\n');
+    expect(theme!.backgroundOpacity).toBe(1);
+  });
+
+  it('clamps background-opacity to 0..1', () => {
+    expect(parseGhosttyConfigString('background-opacity = 4\n')!.backgroundOpacity).toBe(1);
+    expect(parseGhosttyConfigString('background-opacity = -2\n')!.backgroundOpacity).toBe(0);
+  });
+
+  it('inherits background-opacity from a named theme when the key is absent', () => {
+    const base = { ...getDefaultTheme(), backgroundOpacity: 0.5 };
+    const themeMap = new Map([['Dim', base]]);
+    const theme = parseGhosttyConfigString('theme = Dim\n', themeMap);
+    expect(theme!.backgroundOpacity).toBe(0.5);
+  });
+
   it('uses theme map to resolve a named theme', () => {
     const baseTheme = getDefaultTheme();
     const themeMap = new Map([['Monokai', baseTheme]]);
@@ -180,6 +215,57 @@ describe('parseWindowsTerminalSettingsJson', () => {
     expect(theme).not.toBeNull();
     expect(theme!.background).toBe('#282C34');
     expect(theme!.foreground).toBe('#DCDFE4');
+  });
+
+  // Background opacity — the whole reason ThemeConfig carries the field. WT
+  // spells it two ways and the modern one is not gated on acrylic, so the
+  // mapping is worth pinning rather than inferring from the shape of a profile.
+  it('reads the modern `opacity` key as a 0..1 fraction', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].opacity = 70;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.7);
+  });
+
+  it('reads `opacity` even without useAcrylic — acrylic only controls blur', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].opacity = 50;
+    settings.profiles.list[0].useAcrylic = false;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.5);
+  });
+
+  it('falls back to the pre-1.12 acrylicOpacity when useAcrylic is set', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].useAcrylic = true;
+    settings.profiles.list[0].acrylicOpacity = 0.6;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.6);
+  });
+
+  it('ignores acrylicOpacity when useAcrylic is absent, as WT does', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].acrylicOpacity = 0.3;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBe(1.0);
+  });
+
+  it('prefers `opacity` over a half-migrated acrylicOpacity', () => {
+    const settings = structuredClone(mockSettings) as any;
+    settings.profiles.list[0].opacity = 90;
+    settings.profiles.list[0].useAcrylic = true;
+    settings.profiles.list[0].acrylicOpacity = 0.2;
+    expect(parseWindowsTerminalSettingsJson(settings)!.backgroundOpacity).toBeCloseTo(0.9);
+  });
+
+  it('defaults to fully opaque when the profile says nothing', () => {
+    expect(parseWindowsTerminalSettingsJson(mockSettings)!.backgroundOpacity).toBe(1.0);
+  });
+
+  it('clamps an out-of-range opacity rather than passing it through', () => {
+    const over = structuredClone(mockSettings) as any;
+    over.profiles.list[0].opacity = 140;
+    expect(parseWindowsTerminalSettingsJson(over)!.backgroundOpacity).toBe(1);
+
+    const under = structuredClone(mockSettings) as any;
+    under.profiles.list[0].opacity = -20;
+    expect(parseWindowsTerminalSettingsJson(under)!.backgroundOpacity).toBe(0);
   });
 
   it('extracts font face and size from the default profile', () => {
@@ -251,6 +337,90 @@ describe('parseWindowsTerminalSettingsJson', () => {
     // Empty settings should not throw and should return a ThemeConfig (with defaults)
     // or null — either is acceptable, but it must not throw.
     expect(() => parseWindowsTerminalSettingsJson({})).not.toThrow();
+  });
+
+  // -------------------------------------------------------------------------
+  // profiles.defaults inheritance
+  //
+  // This is where the WT settings UI writes anything set under "Defaults", so
+  // it is the common shape, not an exotic one: the default profile entry itself
+  // carries no scheme, font or opacity at all.
+  // -------------------------------------------------------------------------
+
+  const inheritedSettings = {
+    defaultProfile: '{ubuntu}',
+    profiles: {
+      defaults: {
+        colorScheme: 'SynthWave 84',
+        font: { face: 'Fira Code', size: 10 },
+        opacity: 80,
+      },
+      list: [
+        { guid: '{powershell}', name: 'Windows PowerShell' },
+        { guid: '{ubuntu}', name: 'Ubuntu-20.04', source: 'Windows.Terminal.Wsl' },
+      ],
+    },
+    schemes: [
+      { name: 'Campbell', background: '#0C0C0C', foreground: '#CCCCCC' },
+      { name: 'SynthWave 84', background: '#262335', foreground: '#FFFFFF' },
+    ],
+  };
+
+  it('inherits opacity from profiles.defaults', () => {
+    expect(parseWindowsTerminalSettingsJson(inheritedSettings)!.backgroundOpacity).toBeCloseTo(0.8);
+  });
+
+  it('inherits the colour scheme from profiles.defaults', () => {
+    // Not the schemes[0] fallback — that would silently pick Campbell.
+    const theme = parseWindowsTerminalSettingsJson(inheritedSettings)!;
+    expect(theme.name).toBe('SynthWave 84');
+    expect(theme.background).toBe('#262335');
+  });
+
+  it('inherits the font from profiles.defaults', () => {
+    const theme = parseWindowsTerminalSettingsJson(inheritedSettings)!;
+    expect(theme.fontFamily).toBe('Fira Code');
+    expect(theme.fontSize).toBe(10);
+  });
+
+  it('lets the profile override what it declares and inherit the rest', () => {
+    const settings = {
+      ...inheritedSettings,
+      profiles: {
+        defaults: inheritedSettings.profiles.defaults,
+        list: [
+          { guid: '{ubuntu}', name: 'Ubuntu', colorScheme: 'Campbell', opacity: 50 },
+        ],
+      },
+    };
+    const theme = parseWindowsTerminalSettingsJson(settings)!;
+    expect(theme.name).toBe('Campbell');
+    expect(theme.backgroundOpacity).toBeCloseTo(0.5);
+    expect(theme.fontFamily).toBe('Fira Code');
+  });
+
+  it('merges font sub-keys rather than replacing the object', () => {
+    // WT inherits font.face and font.size independently; a profile setting only
+    // the size must keep the global face.
+    const settings = {
+      ...inheritedSettings,
+      profiles: {
+        defaults: inheritedSettings.profiles.defaults,
+        list: [{ guid: '{ubuntu}', name: 'Ubuntu', font: { size: 14 } }],
+      },
+    };
+    const theme = parseWindowsTerminalSettingsJson(settings)!;
+    expect(theme.fontFamily).toBe('Fira Code');
+    expect(theme.fontSize).toBe(14);
+  });
+
+  it('survives profiles.defaults being absent', () => {
+    const settings = {
+      defaultProfile: '{a}',
+      profiles: { list: [{ guid: '{a}', name: 'A', colorScheme: 'Campbell' }] },
+      schemes: [{ name: 'Campbell', background: '#0C0C0C' }],
+    };
+    expect(parseWindowsTerminalSettingsJson(settings)!.name).toBe('Campbell');
   });
 });
 

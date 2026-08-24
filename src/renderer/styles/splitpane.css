@@ -1,3 +1,9 @@
+/* The surface tab bar's height. Shared, because a divider runs the full height
+   of the panes it separates and has to know where their opaque chrome ends. */
+:root {
+  --wmux-tab-bar-h: 28px;
+}
+
 .split-container {
   display: flex;
   width: 100%;
@@ -40,6 +46,55 @@
 .pane-wrapper--focused {
   border-color: rgba(var(--ui-accent-rgb), 0.3);
 }
+/* Over a translucent window the gutters between panes must render at the same
+   opacity the panes do, or a split shows as bright seams through the terminal.
+   `:not(--focused)` keeps the accent border on the focused pane, which would
+   otherwise lose to this rule on specificity; the rule below is what that pane
+   gets instead. */
+html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
+  border-color: var(--wmux-pane-gutter, var(--ui-bg-2));
+}
+/* Which left the focus ring as the only edge still compositing onto the
+   desktop. 30% accent over an opaque window resolves against the chrome behind
+   it and reads as a solid line; over a transparent one there is nothing behind
+   it, so the same colour reads as a slot cut around the pane that you can see
+   the wallpaper through.
+
+   Tracking the pane's alpha does not fix it either, because the ring's
+   neighbours disagree: the top 28px inside the pane is the surface tab bar,
+   opaque chrome, so a translucent ring runs as a see-through line between the
+   opaque titlebar above it and the opaque tab bar below. No single
+   border-color matches opaque chrome on one edge and a translucent terminal on
+   the others. --wmux-pane-ring is therefore the theme colour with 30% accent
+   mixed in at FULL opacity — the focus ring is an indicator, which is chrome,
+   and chrome here is opaque. usePaneFill does the mix. The fallback is the
+   plain accent rule, which is what a custom background wants anyway — there
+   the fill is transparent because that layer is the surface. */
+html.wmux-transparent .pane-wrapper--focused {
+  border-color: var(--wmux-pane-ring, rgba(var(--ui-accent-rgb), 0.3));
+}
+html.wmux-transparent .split-divider {
+  background: var(--wmux-pane-gutter, var(--ui-bg-2));
+}
+/* Except across the tab bars. A divider between two side-by-side panes runs the
+   whole pane height, and the top 28px of a pane is its surface tab bar, which is
+   opaque. The pane fill is exactly right for the rest of that run — sampled at a
+   content row the divider and the pane beside it come out identical — and wrong
+   for that one band, where a translucent divider reads as a slot cut between two
+   opaque tab bars. So it is opaque for the height of the tab bars it sits
+   between, and the pane fill below them.
+
+   Vertical dividers need no equivalent: they separate one pane's content from
+   the NEXT pane's tab bar, so the fill already matches the surface immediately
+   above them, which is the side that would otherwise show a seam. */
+html.wmux-transparent .split-divider--horizontal {
+  background: linear-gradient(
+    to bottom,
+    var(--ui-bg-2) 0,
+    var(--ui-bg-2) var(--wmux-tab-bar-h),
+    var(--wmux-pane-gutter, var(--ui-bg-2)) var(--wmux-tab-bar-h)
+  );
+}
 .pane-wrapper__content {
   flex: 1;
   overflow: hidden;
@@ -58,8 +113,8 @@
 .surface-tab-bar {
   display: flex;
   align-items: center;
-  height: 28px;
-  min-height: 28px;
+  height: var(--wmux-tab-bar-h);
+  min-height: var(--wmux-tab-bar-h);
   background: var(--ui-bg-2);
   overflow: visible;
   flex-shrink: 0;

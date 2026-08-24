@@ -24,6 +24,9 @@ import { initPipeBridge } from './pipe-bridge';
 import { setKeyRemaps } from './key-remaps';
 import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
+import { useWindowTransparency } from './hooks/useWindowTransparency';
+import { usePaneFill } from './hooks/usePaneFill';
+import { customBgLayerAlpha, hasCustomBackground } from './store/backdrop';
 import type {
   SurfaceDragCommitOptions,
   SurfaceDragPayload,
@@ -425,6 +428,8 @@ export default function App() {
 
   useUiTheme();
   useUiMode();
+  useWindowTransparency();
+  usePaneFill();
   const t = useT();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
@@ -440,9 +445,23 @@ export default function App() {
   // Broadcast-input mode banner (issue #64): mirror the runtime store flag.
   const broadcastInputActive = useStore((s) => s.broadcastInputActive);
   // Custom background parallel to theming (issue #89): rendered as a layer
-  // behind the split tree; terminals show it through their alpha'd theme bg.
+  // behind the split tree. Panes with a custom background drop their own theme
+  // colour to fully transparent (see `terminalBgAlpha`), so this layer IS the
+  // terminal background rather than something glimpsed through it.
   const appearancePrefs = useStore((s) => s.appearancePrefs);
-  const customBgActive = appearancePrefs.customBackgroundEnabled && !!appearancePrefs.customBackground.trim();
+  const customBgActive = hasCustomBackground(appearancePrefs);
+  // Same guard as useTerminal: until the window is rebuilt there is nothing
+  // behind this layer to fade toward.
+  const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
+  // With a transparent window the custom background is no longer the bottom
+  // layer — the desktop is. Ghostty composites its background image onto the
+  // background colour and applies `background-opacity` to the RESULT, so this
+  // layer takes the window opacity directly.
+  //
+  // Only when transparency is on: with an opaque window there is nothing behind
+  // this layer but --ui-bg-1, and fading toward the app's own chrome colour is
+  // not a look anyone asked for.
+  const customBgOpacity = customBgLayerAlpha(appearancePrefs, transparencyPending);
   // Browser panel auto-opens on startup unless disabled in Settings (issue #22).
   const [browserOpen, setBrowserOpen] = useState(() => useStore.getState().browserPrefs.openOnStartup);
   const [browserWidth, setBrowserWidth] = useState(420);
@@ -1130,6 +1149,7 @@ export default function App() {
                 position: 'absolute',
                 inset: 0,
                 background: appearancePrefs.customBackground,
+                opacity: customBgOpacity,
                 pointerEvents: 'none',
               }}
             />
@@ -1177,6 +1197,7 @@ export default function App() {
         {browserOpen && (
           <>
             <div
+              className="browser-resize-handle"
               style={{
                 width: 4,
                 cursor: 'col-resize',
@@ -1272,6 +1293,21 @@ export default function App() {
       {broadcastInputActive && (
         <div className="broadcast-input-banner" title={t('app.broadcastInputTooltip', 'Typed input is sent to every terminal pane in this workspace')}>
           {t('app.broadcastInputBanner', 'Broadcast input ON — typing goes to all panes (Ctrl+Alt+B to stop)')}
+        </div>
+      )}
+
+      {/* Transparency changes that need the window rebuilt. Actionable rather
+          than informational: the setting is already saved, so the only thing
+          left between the user and seeing it is the relaunch. */}
+      {transparencyPending && (
+        <div className="restart-banner" role="status">
+          <span>{t('app.transparencyRestartBanner', 'Transparency change needs a restart to take effect.')}</span>
+          <button
+            className="restart-banner__btn"
+            onClick={() => window.wmux?.window?.relaunch?.()}
+          >
+            {t('app.restartNow', 'Restart now')}
+          </button>
         </div>
       )}
     </div>

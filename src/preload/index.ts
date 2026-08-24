@@ -278,5 +278,17 @@ contextBridge.exposeInMainWorld('wmux', {
     // Windows taskbar progress (OSC 9;4 aggregate). value 0-1, or -1 to remove.
     setProgress: (value: number, mode?: string) =>
       ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_PROGRESS, value, mode),
+    // Window transparency (Win11 acrylic/mica backdrop).
+    setBackdrop: (
+      enabled: boolean,
+      material: 'clear' | 'acrylic' | 'mica',
+    ): Promise<{ needsRestart: boolean }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SET_BACKDROP, enabled, material),
+    supportsBackdrop: (): Promise<{ transparency: boolean; materials: boolean }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP),
+    // For the renderer-drawn caption buttons a frameless window needs.
+    closeSelf: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE_SELF),
+    isFrameless: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_FRAMELESS),
+    relaunch: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_RELAUNCH),
   },
 });
