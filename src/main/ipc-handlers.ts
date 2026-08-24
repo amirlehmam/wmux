@@ -9,7 +9,8 @@ import { SshDetector } from './ssh-detect';
 import {
   readClipboardSource,
   resolveInsertion,
-  type RemoteUploadPolicy,
+  uploadEnabled,
+  type PasteSource,
 } from './remote-insert';
 import { getAppDataDir } from '../shared/instance';
 import { NotificationManager } from './notification-manager';
@@ -65,14 +66,6 @@ export const sshDetector = new SshDetector({
 });
 
 
-/** The `[remote]` config section; both halves default to on. */
-function uploadPolicy(): RemoteUploadPolicy {
-  const remote = loadUserConfig().remote ?? {};
-  return {
-    uploadOnPaste: remote.uploadOnPaste !== false,
-    uploadOnDrop: remote.uploadOnDrop !== false,
-  };
-}
 
 /**
  * Tree-kill the PTY subtrees a previously crashed wmux left running (issue
@@ -379,68 +372,59 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // return garbled text on Windows when the source app wrote a non-UTF-8 format.
   ipcMain.handle('clipboard:read-text', () => clipboard.readText());
 
-  // Clipboard image paste: save clipboard image to temp file, return path
   /**
-   * Is this surface inside an ssh session, and is upload enabled?
-   *
-   * Answered from a cache, so the renderer can call it on the paste path
-   * without adding input lag. The call also starts the background process
-   * probe: sessions that never touch a remote pane never pay for it.
-   *
-   * Only the destination crosses the boundary — the renderer has no use for
-   * the identity file or the ssh options, and they are exactly the sort of
-   * thing that should not be sitting in a web context.
-   */
-  /**
-   * What should a paste type into this surface?
+   * What should a paste or a drop type into this surface?
    *
    * Main owns every input to that question — the clipboard, the detector, the
    * filesystem, scp, the config — so it answers the whole thing rather than
-   * handing the renderer four round trips worth of raw material. Also starts
-   * the ssh probe: a pane the user is pasting into is one worth watching.
-   */
-  ipcMain.handle(
-    IPC_CHANNELS.REMOTE_RESOLVE_PASTE,
-    async (_event, surfaceId: SurfaceId): Promise<InsertionResult> => {
-      sshDetector.start();
-      return resolveInsertion(
-        readClipboardSource(),
-        sshDetector.detect(surfaceId),
-        uploadPolicy(),
-        'paste',
-      );
-    },
-  );
-
-  /**
-   * The same, for files dropped on a pane — the renderer already resolved those
-   * to real paths via webUtils, so they come in rather than the clipboard.
+   * handing the renderer several round trips worth of raw material.
    *
    * The session is looked up here rather than accepted from the renderer: a
    * destination arriving over IPC is renderer-supplied data, and this path
    * spawns a process with it. Re-detecting means the only reachable hosts are
    * ones main already determined the pane is connected to.
    */
+  const resolveFor = async (
+    surfaceId: SurfaceId,
+    source: PasteSource,
+    mode: 'paste' | 'drop',
+    invert = false,
+  ): Promise<InsertionResult> => {
+    // Only arm the ssh probe when there is something uploadable. It spawns a
+    // PowerShell enumeration of every process on the machine (~550ms) and then
+    // re-runs on a timer, and `start()` resets its idle counter — so waking it
+    // from a plain text paste would keep that sweep alive for as long as the
+    // user keeps pasting, to answer a question text can never ask. The sweep is
+    // fire-and-forget and cannot affect this call anyway: detect() reads a cache.
+    if (source.kind !== 'files') return resolveInsertion(source, null, false);
+    sshDetector.start();
+    const mayUpload = !invert && uploadEnabled(loadUserConfig().remote, mode);
+    return resolveInsertion(source, sshDetector.detect(surfaceId), mayUpload);
+  };
+
+  ipcMain.handle(
+    IPC_CHANNELS.REMOTE_RESOLVE_PASTE,
+    (_event, surfaceId: SurfaceId) => resolveFor(surfaceId, readClipboardSource(), 'paste'),
+  );
+
+  /**
+   * Files dropped on a pane — the renderer already resolved those to real paths
+   * via webUtils, so they arrive here rather than being read from the clipboard.
+   */
   ipcMain.handle(
     IPC_CHANNELS.REMOTE_RESOLVE_DROP,
-    async (
-      _event,
-      surfaceId: SurfaceId,
-      localPaths: string[],
-      invert: boolean,
-    ): Promise<InsertionResult> => {
-      sshDetector.start();
-      const paths = Array.isArray(localPaths)
-        ? localPaths.filter((candidate) => typeof candidate === 'string')
-        : [];
-      return resolveInsertion(
-        { kind: 'files', localPaths: paths },
-        sshDetector.detect(surfaceId),
-        uploadPolicy(),
+    (_event, surfaceId: SurfaceId, localPaths: string[], invert: boolean) =>
+      resolveFor(
+        surfaceId,
+        {
+          kind: 'files',
+          localPaths: Array.isArray(localPaths)
+            ? localPaths.filter((candidate) => typeof candidate === 'string')
+            : [],
+        },
         'drop',
-        !!invert,
-      );
-    },
+        invert,
+      ),
   );
 
   ipcMain.handle(IPC_CHANNELS.SESSION_SAVE_NAMED, (_event, session: any) => {

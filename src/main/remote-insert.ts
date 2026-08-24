@@ -18,11 +18,27 @@ import * as path from 'path';
 import { windowsTerminalQuote, posixShellQuote } from './shell-quote';
 import { uploadFiles } from './remote-upload';
 import type { DetectedSsh } from './ssh-argv';
+import type { InsertionResult } from '../shared/types';
 
-/** Whether upload is enabled, from `[remote]` in `~/.wmux/config.toml`. */
-export interface RemoteUploadPolicy {
-  uploadOnPaste: boolean;
-  uploadOnDrop: boolean;
+// Re-exported so callers and tests can name the contract from the module
+// that produces it, while `shared/types` stays its single declaration.
+export type { InsertionResult };
+
+
+/**
+ * Is upload switched on for this gesture?
+ *
+ * `[remote]` in `~/.wmux/config.toml`; both halves default to on, and the two
+ * are independent — someone who disables it for paste keeps it for drop.
+ * Takes the config section rather than reading it, so the mapping is testable
+ * without a config file.
+ */
+export function uploadEnabled(
+  remote: { uploadOnPaste?: boolean; uploadOnDrop?: boolean } | undefined,
+  mode: 'paste' | 'drop',
+): boolean {
+  const toggle = mode === 'paste' ? remote?.uploadOnPaste : remote?.uploadOnDrop;
+  return toggle !== false;
 }
 
 /** What a paste is made of, once the clipboard has been read. */
@@ -31,16 +47,6 @@ export type PasteSource =
   | { kind: 'text'; text: string }
   | { kind: 'none' };
 
-export interface InsertionResult {
-  /** The text to type, or null when nothing should be inserted. */
-  text: string | null;
-  /**
-   * Set when an upload failed. The caller reports it; the message is assembled
-   * in the renderer so it can be translated, which is why this carries the
-   * pieces rather than a finished sentence.
-   */
-  failure?: { destination: string; detail: string };
-}
 
 /** Text for local paths — the behaviour a non-ssh pane has always had. */
 export function localInsertionText(paths: string[]): string {
@@ -112,13 +118,14 @@ function isRegularFile(candidate: string): boolean {
  * `session` is null for a local pane, which is also what a failed detection
  * looks like — either way the answer is the local path, which is merely the
  * old behaviour rather than something wrong.
+ *
+ * Pure: the clipboard read and the config lookup happen in the caller, which
+ * is what lets the whole branch table be tested without an Electron window.
  */
 export async function resolveInsertion(
   source: PasteSource,
   session: DetectedSsh | null,
-  policy: RemoteUploadPolicy,
-  mode: 'paste' | 'drop',
-  invert = false,
+  mayUpload: boolean,
 ): Promise<InsertionResult> {
   if (source.kind === 'none') return { text: null };
   // Text is typed as-is: there is no file to put anywhere.
@@ -127,10 +134,11 @@ export async function resolveInsertion(
   const localPaths = source.localPaths;
   if (localPaths.length === 0) return { text: null };
 
-  // Shift is an explicit "give me the local path", so the session cannot change
-  // the answer. Anything that is not a regular file is not uploadable either.
-  const enabled = mode === 'paste' ? policy.uploadOnPaste : policy.uploadOnDrop;
-  if (invert || !session || !enabled || !localPaths.every(isRegularFile)) {
+  // `mayUpload` already folds in the config toggle for this gesture and the
+  // Shift modifier: both mean "give me the local path", and nothing here can
+  // tell them apart or needs to. Anything that is not a regular file is not
+  // uploadable either.
+  if (!mayUpload || !session || !localPaths.every(isRegularFile)) {
     return { text: localInsertionText(localPaths) };
   }
 

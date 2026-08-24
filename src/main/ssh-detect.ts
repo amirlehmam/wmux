@@ -275,7 +275,7 @@ export function attributeSshProcesses(
  * throwing.
  */
 export async function listSshProcesses(): Promise<ProcessSnapshot> {
-  const lines = await queryWin32Processes({
+  const stdout = await queryWin32Processes({
     // Every process, not just ssh.exe: the ancestry walk has to cross the
     // shells in between, and a second query for those would double the cost
     // that is the whole expense of this probe.
@@ -290,7 +290,7 @@ export async function listSshProcesses(): Promise<ProcessSnapshot> {
     // ~500 processes with command lines; the default 1MB is not enough.
     maxBuffer: 8 * 1024 * 1024,
   });
-  return parseProcessTable(lines.join('\n'));
+  return parseProcessTable(stdout);
 }
 
 /**

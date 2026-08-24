@@ -10,7 +10,7 @@ import { ProgressAddon } from '@xterm/addon-progress';
 import { useStore } from '../store';
 import { useT } from '../i18n';
 import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
-import { SplitNode, SurfaceId, ThemeConfig } from '../../shared/types';
+import { SplitNode, SurfaceId, ThemeConfig, type InsertionResult } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
 import { terminalBgAlpha } from '../store/backdrop';
 import { activateTerminalLink, terminalLinkHandler } from '../utils/terminal-links';
@@ -591,17 +591,6 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     });
 
     /**
-     * Type file paths into the terminal, uploading them to the pane's remote
-     * host first when it is inside ssh.
-     *
-     * Without this, a screenshot pasted into an ssh pane inserts a
-     * `C:\Users\…\Temp\wmux\screenshot-….png` that does not exist on the
-     * far side — the paste looks like it worked and is silently useless.
-     *
-     * Everything is routed through terminal.paste() so bracketed-paste mode
-     * is honored, matching the handlers this replaced.
-     */
-    /**
      * Type whatever main decided this gesture should produce.
      *
      * Main resolves the whole thing — reads its own clipboard, uploads to the
@@ -613,10 +602,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
      *
      * Routed through terminal.paste() so bracketed-paste mode is honored.
      */
-    const applyInsertion = (result: {
-      text: string | null;
-      failure?: { destination: string; detail: string };
-    }) => {
+    const applyInsertion = (result: InsertionResult) => {
       if (result.failure) {
         window.wmux?.notification?.fire({
           surfaceId: surfaceId ?? '',

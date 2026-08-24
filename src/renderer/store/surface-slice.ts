@@ -176,7 +176,16 @@ export interface SurfaceSlice {
   renameSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId, customTitle: string) => void;
 
   /** Update a surface without moving it */
-  updateSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId, patch: Partial<SurfaceRef>) => void;
+  /**
+   * Patch one surface in place.
+   *
+   * `shell` is deliberately not patchable: it is the spec the surface respawns
+   * from, and writing a resolved executable into it is what broke restore for
+   * every `ssh user@host` pane. Display values belong in `resolvedShell`.
+   * (Saved-layout templates edit `shell` through patchLeafPrimarySurface, which
+   * rebuilds the node rather than going through here.)
+   */
+  updateSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId, patch: Partial<Omit<SurfaceRef, 'id' | 'type' | 'shell'>>) => void;
 
   /**
    * Set rendered markdown content on a surface, found by id across all

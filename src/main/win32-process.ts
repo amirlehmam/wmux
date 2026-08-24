@@ -37,8 +37,14 @@ export interface Win32ProcessQuery {
   onFailure?: (cause: string) => void;
 }
 
-/** Non-empty stdout lines, each `field1|field2|…`. Empty on any failure. */
-export function queryWin32Processes(query: Win32ProcessQuery): Promise<string[]> {
+/**
+ * Raw stdout, one `field1|field2|…` row per line. Empty string on any failure.
+ *
+ * Deliberately not pre-split: both callers already own a line parser that
+ * splits and trims, so returning an array only bought a join and a second
+ * split — three passes over a ~250KB payload where one will do.
+ */
+export function queryWin32Processes(query: Win32ProcessQuery): Promise<string> {
   const format = query.fields.map((_, i) => `{${i}}`).join('|');
   const filter = query.filter ? ` -Filter '${query.filter}'` : '';
   const script =
@@ -56,10 +62,10 @@ export function queryWin32Processes(query: Win32ProcessQuery): Promise<string[]>
             ? `timed out after ${query.timeoutMs}ms`
             : (stderr || '').trim() || err.message;
           query.onFailure?.(cause);
-          resolve([]);
+          resolve('');
           return;
         }
-        resolve(String(stdout).split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+        resolve(String(stdout));
       },
     );
   });

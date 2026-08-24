@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   resolveInsertion,
+  uploadEnabled,
   localInsertionText,
   remoteInsertionText,
   type PasteSource,
-  type RemoteUploadPolicy,
 } from '../../src/main/remote-insert';
 import * as remoteUpload from '../../src/main/remote-upload';
 import type { DetectedSsh } from '../../src/main/ssh-argv';
@@ -28,12 +28,6 @@ const session = (over: Partial<DetectedSsh> = {}): DetectedSsh => ({
   forwardAgent: false,
   compression: false,
   sshOptions: [],
-  ...over,
-});
-
-const policy = (over: Partial<RemoteUploadPolicy> = {}): RemoteUploadPolicy => ({
-  uploadOnPaste: true,
-  uploadOnDrop: true,
   ...over,
 });
 
@@ -81,74 +75,88 @@ describe('insertion text', () => {
 describe('resolveInsertion — local outcomes', () => {
   it('inserts the local path when the pane is not remote', async () => {
     const upload = stubUpload({ ok: true, remotePaths: [] });
-    const r = await resolveInsertion(files(FILE_A), null, policy(), 'paste');
+    const r = await resolveInsertion(files(FILE_A), null, true);
     expect(r.text).toBe(localInsertionText([FILE_A]));
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it('inserts the local path when paste upload is disabled', async () => {
+  it('inserts the local path when upload is not permitted', async () => {
+    // One boolean covers three reasons — the config toggle is off, or Shift
+    // inverted the drop. The caller folds them together because nothing here
+    // can tell them apart or needs to; see uploadEnabled for the config half.
     const upload = stubUpload({ ok: true, remotePaths: [] });
-    const r = await resolveInsertion(files(FILE_A), session(), policy({ uploadOnPaste: false }), 'paste');
+    const r = await resolveInsertion(files(FILE_A), session(), false);
     expect(r.text).toBe(localInsertionText([FILE_A]));
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it('still uploads on drop when only paste upload is disabled', async () => {
-    // The two toggles are independent; disabling one must not disable the other.
-    stubUpload({ ok: true, remotePaths: ['/tmp/wmux-drop-1.png'] });
-    const r = await resolveInsertion(files(FILE_A), session(), policy({ uploadOnPaste: false }), 'drop');
-    expect(r.text).toBe("'/tmp/wmux-drop-1.png'");
-  });
-
-  it('inserts the local path when the user holds Shift', async () => {
-    const upload = stubUpload({ ok: true, remotePaths: [] });
-    const r = await resolveInsertion(files(FILE_A), session(), policy(), 'drop', true);
-    expect(r.text).toBe(localInsertionText([FILE_A]));
-    expect(upload).not.toHaveBeenCalled();
-  });
 
   it('inserts the local path for something that is not a regular file', async () => {
     // A directory, or a clipboard entry that outlived its file. Uploading is not
     // possible; the old behaviour still is.
     const upload = stubUpload({ ok: true, remotePaths: [] });
-    const r = await resolveInsertion(files(os.tmpdir()), session(), policy(), 'paste');
+    const r = await resolveInsertion(files(os.tmpdir()), session(), true);
     expect(r.text).toBe(localInsertionText([os.tmpdir()]));
     expect(upload).not.toHaveBeenCalled();
   });
 
   it('types clipboard text as-is, with no upload', async () => {
     const upload = stubUpload({ ok: true, remotePaths: [] });
-    const r = await resolveInsertion({ kind: 'text', text: 'hello world' }, session(), policy(), 'paste');
+    const r = await resolveInsertion({ kind: 'text', text: 'hello world' }, session(), true);
     expect(r.text).toBe('hello world');
     expect(upload).not.toHaveBeenCalled();
   });
 
   it('inserts nothing for an empty clipboard', async () => {
-    expect((await resolveInsertion({ kind: 'none' }, session(), policy(), 'paste')).text).toBeNull();
+    expect((await resolveInsertion({ kind: 'none' }, session(), true)).text).toBeNull();
   });
 
   it('inserts nothing when there are no paths', async () => {
-    expect((await resolveInsertion(files(), session(), policy(), 'drop')).text).toBeNull();
+    expect((await resolveInsertion(files(), session(), true)).text).toBeNull();
+  });
+});
+
+describe('uploadEnabled', () => {
+  it('defaults to on for both gestures when the section is absent', () => {
+    expect(uploadEnabled(undefined, 'paste')).toBe(true);
+    expect(uploadEnabled(undefined, 'drop')).toBe(true);
+    expect(uploadEnabled({}, 'paste')).toBe(true);
+  });
+
+  it('keeps the two toggles independent', () => {
+    // Disabling paste must not disable drop. This is the property the old
+    // policy object carried; it lives here now.
+    expect(uploadEnabled({ uploadOnPaste: false }, 'paste')).toBe(false);
+    expect(uploadEnabled({ uploadOnPaste: false }, 'drop')).toBe(true);
+    expect(uploadEnabled({ uploadOnDrop: false }, 'drop')).toBe(false);
+    expect(uploadEnabled({ uploadOnDrop: false }, 'paste')).toBe(true);
+  });
+
+  it('only `false` disables it, so a malformed value stays on', () => {
+    // The config mapper drops non-booleans, so an undefined here means the
+    // user wrote something wrong — falling back to the documented default is
+    // friendlier than silently turning the feature off.
+    expect(uploadEnabled({ uploadOnPaste: undefined }, 'paste')).toBe(true);
   });
 });
 
 describe('resolveInsertion — remote outcomes', () => {
   it('uploads and inserts the remote path', async () => {
     const upload = stubUpload({ ok: true, remotePaths: ['/tmp/wmux-drop-abc.png'] });
-    const r = await resolveInsertion(files(FILE_A), session(), policy(), 'paste');
+    const r = await resolveInsertion(files(FILE_A), session(), true);
     expect(r.text).toBe("'/tmp/wmux-drop-abc.png'");
     expect(upload).toHaveBeenCalledWith(expect.objectContaining({ destination: 'fortuna@honoured-accident' }), [FILE_A]);
   });
 
   it('inserts every remote path for a multi-file drop', async () => {
     stubUpload({ ok: true, remotePaths: ['/tmp/a.png', '/tmp/b.png'] });
-    const r = await resolveInsertion(files(FILE_A, FILE_B), session(), policy(), 'drop');
+    const r = await resolveInsertion(files(FILE_A, FILE_B), session(), true);
     expect(r.text).toBe("'/tmp/a.png' '/tmp/b.png'");
   });
 
   it('inserts nothing and reports the host when the upload fails', async () => {
     stubUpload({ ok: false, remotePaths: [], error: 'Permission denied (publickey).' });
-    const r = await resolveInsertion(files(FILE_A), session(), policy(), 'paste');
+    const r = await resolveInsertion(files(FILE_A), session(), true);
     expect(r.text).toBeNull();
     expect(r.failure).toEqual({
       destination: 'fortuna@honoured-accident',
@@ -160,7 +168,7 @@ describe('resolveInsertion — remote outcomes', () => {
     // Two files in, one path back. Inserting the one that worked would silently
     // drop the other, and the user has no way to see which.
     stubUpload({ ok: true, remotePaths: ['/tmp/a.png'] });
-    const r = await resolveInsertion(files(FILE_A, FILE_B), session(), policy(), 'drop');
+    const r = await resolveInsertion(files(FILE_A, FILE_B), session(), true);
     expect(r.text).toBeNull();
     expect(r.failure?.destination).toBe('fortuna@honoured-accident');
   });

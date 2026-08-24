@@ -1,10 +1,10 @@
 /**
  * shell-quote.ts — quoting for paths that get typed into a terminal.
  *
- * Shared because the same path can go to either side of an ssh connection and
- * the two need different quoting: a local pane is a Windows shell, a remote one
- * is sh/bash. Getting it backwards produces a path that looks right on screen
- * and fails the moment it is used.
+ * The same path can go to either side of an ssh connection and the two need
+ * different quoting: a local pane is a Windows shell, a remote one is sh/bash.
+ * Getting it backwards produces a path that looks right on screen and fails
+ * the moment it is used.
  */
 
 /**

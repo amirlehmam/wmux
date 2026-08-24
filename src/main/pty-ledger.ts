@@ -125,7 +125,7 @@ export const PROBE_TIMEOUT_MS = 60_000;
 
 export async function queryProcesses(pids: number[]): Promise<LiveProcess[]> {
   if (pids.length === 0) return [];
-  const lines = await queryWin32Processes({
+  const stdout = await queryWin32Processes({
     filter: pids.map((pid) => `ProcessId=${pid}`).join(' or '),
     fields: [
       '$_.ProcessId',
@@ -140,7 +140,7 @@ export async function queryProcesses(pids: number[]): Promise<LiveProcess[]> {
     timeoutMs: PROBE_TIMEOUT_MS,
     onFailure: (cause) => console.warn('[wmux] orphan scan failed, reaping nothing:', cause),
   });
-  return parseProcessLines(lines.join('\n'));
+  return parseProcessLines(stdout);
 }
 
 /** Parse the `pid|image|epochMs` lines emitted by queryProcesses. */

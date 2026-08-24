@@ -314,16 +314,6 @@ export interface SavedSession {
   };
 }
 
-// IPC channel names
-/** Result of scp-ing local files to a surface's remote host. */
-export interface UploadResult {
-  ok: boolean;
-  /** Remote paths, in the order the local paths were given. */
-  remotePaths: string[];
-  /** Present when `ok` is false — the transport's own complaint, one line. */
-  error?: string;
-}
-
 /**
  * What main decided a paste or drop should type into the terminal.
  *
@@ -340,6 +330,7 @@ export interface InsertionResult {
   failure?: { destination: string; detail: string };
 }
 
+// IPC channel names
 export const IPC_CHANNELS = {
   // PTY
   PTY_CREATE: 'pty:create',

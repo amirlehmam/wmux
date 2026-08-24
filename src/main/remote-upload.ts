@@ -13,8 +13,8 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { optionKey, type DetectedSsh } from './ssh-argv';
 import { posixShellQuote } from './shell-quote';
-import { system32 } from './system32';
-import type { UploadResult } from '../shared/types';
+import { opensshPath } from './system32';
+
 
 /** Per-file transfer budget, matching cmux. */
 const UPLOAD_TIMEOUT_MS = 45_000;
@@ -52,18 +52,10 @@ const UNSAFE_FOR_TRANSFER = new Set([
   'stdioforward',
 ]);
 
-/**
- * Windows' bundled OpenSSH — the fallback when the session did not tell us
- * which ssh it used. Deliberately not a bare `scp`: on a machine with Git for
- * Windows installed, PATH usually resolves `scp` to Git's MSYS2 build, which
- * cannot open a Windows named-pipe ssh-agent. Keys held in 1Password,
- * KeePassXC or the Windows ssh-agent service are invisible to it, so it fails
- * with "Permission denied (publickey)" while the user's interactive ssh works
- * — a failure that reads as a wmux bug and is hard to place.
- */
-export function opensshPath(tool: 'ssh' | 'scp'): string {
-  return system32('OpenSSH', `${tool}.exe`);
-}
+// Re-exported so the scp/rollback tests can reach it from the module whose
+// argv they are pinning. The rule itself lives in system32.ts, because the
+// pane wmux spawns has to reach the same host as the scp it uploads with.
+export { opensshPath };
 
 /**
  * The ssh/scp binary to reach this session's host with.
@@ -241,7 +233,14 @@ function bestErrorLine(stderr: string, stdout: string): string | null {
   return null;
 }
 
-export type { UploadResult };
+/** Result of scp-ing local files to a surface's remote host. */
+export interface UploadResult {
+  ok: boolean;
+  /** Remote paths, in the order the local paths were given. */
+  remotePaths: string[];
+  /** Present when `ok` is false — the transport's own complaint, one line. */
+  error?: string;
+}
 
 /** Run `task` over `items` with at most `limit` in flight, preserving order. */
 async function mapWithLimit<T, R>(
