@@ -158,15 +158,30 @@ describe('SshDetector precedence', () => {
     expect(detector.detect('surf-1')?.workingDirectory).toBe('C:\\work\\project');
   });
 
-  it('awaits a fresh snapshot and records the exact executable', async () => {
+  it('uses a fresh snapshot to enrich an authoritative report with the exact executable', async () => {
     const detector = new SshDetector(source({ 'surf-1': 100 }), async () => ({
       sshProcesses: [proc(200, 100, 'ssh me@host', 'C:\\Program Files\\OpenSSH\\ssh.exe')],
       parents: new Map([[200, 100]]),
     }));
+    detector.reportCommand('surf-1', 'ssh me@host');
     await expect(detector.refresh('surf-1')).resolves.toMatchObject({
       destination: 'me@host',
       sshExecutable: 'C:\\Program Files\\OpenSSH\\ssh.exe',
     });
+  });
+
+  it('never treats a probe-only descendant as the foreground ssh session', async () => {
+    // On Windows this may be `ssh background@host` launched with Start-Process
+    // or `ssh background@host &`: ancestry survives after the local prompt
+    // returns, but there is no tpgid equivalent to prove foreground ownership.
+    const detector = new SshDetector(source({ 'surf-1': 100 }), async () => ({
+      sshProcesses: [proc(200, 100, 'ssh background@host', 'C:\\OpenSSH\\ssh.exe')],
+      parents: new Map([[200, 100]]),
+    }));
+
+    await expect(detector.refresh('surf-1')).resolves.toBeNull();
+    expect(detector.detect('surf-1')).toBeNull();
+    expect(detector.remoteHint('surf-1')).toBeNull();
   });
 
   it('does not resurrect a session cleared while a sweep was in flight', async () => {
@@ -191,10 +206,12 @@ describe('SshDetector precedence', () => {
         parents: new Map([[200, 100]]),
       };
     });
+    detector.reportCommand('surf-1', 'ssh stale@host');
     expect((await detector.refresh('surf-1'))?.destination).toBe('stale@host');
     fail = true;
     await expect(detector.refresh('surf-1')).resolves.toBeNull();
-    // Background detection retains the last observation across a transient failure.
+    // Synchronous state still exposes the authoritative report, while refresh
+    // correctly refuses it because the exact client could not be corroborated.
     expect(detector.detect('surf-1')?.destination).toBe('stale@host');
   });
 });

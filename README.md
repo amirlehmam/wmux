@@ -368,8 +368,9 @@ remote host:
 - Uploads use Windows OpenSSH `scp` with `BatchMode=yes`, so authentication must
   already work non-interactively through a key or `ssh-agent`; wmux never opens
   a password or passphrase prompt in the background.
-- Files are given unique paths such as `/tmp/wmux-drop-<id>.png`. They remain on
-  the remote host after a successful upload for the receiving program to use.
+- Files are given unique names inside a private batch directory such as
+  `/tmp/wmux-drop-<batch-id>/<file-id>.png`. They remain on the remote host
+  after a successful upload for the receiving program to use.
 
 This applies to a **direct SSH connection from Windows**. A second `ssh` started
 inside the remote shell is a nested connection that wmux cannot observe through

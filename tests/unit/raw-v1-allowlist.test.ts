@@ -193,4 +193,20 @@ describe('ssh lifecycle report ordering', () => {
     expect(script).toContain('Send-WmuxMessage "report_shell_state $surfaceId $sequence $State"');
     expect(script).toContain('Send-WmuxMessage "report_command $surfaceId $sequence $flat"');
   });
+
+  it('recognizes exact PowerShell ssh executable tokens in every supported path form', () => {
+    const script = fs.readFileSync(POWERSHELL_INTEGRATION, 'utf8');
+    const pattern = /\$line -notmatch '([^']+)'/.exec(script)?.[1];
+    expect(pattern).toBeTruthy();
+    const isSshCommand = (line: string) => new RegExp(pattern!, 'i').test(line);
+
+    expect(isSshCommand('ssh user@host')).toBe(true);
+    expect(isSshCommand('C:\\Windows\\System32\\OpenSSH\\ssh.exe user@host')).toBe(true);
+    expect(isSshCommand('"C:\\Program Files\\OpenSSH\\ssh.exe" user@host')).toBe(true);
+    expect(isSshCommand('& "C:\\Program Files\\OpenSSH\\ssh.exe" user@host')).toBe(true);
+    expect(isSshCommand('& "ssh" user@host')).toBe(true);
+    expect(isSshCommand('"ssh" user@host')).toBe(false);
+    expect(isSshCommand('myssh.exe user@host')).toBe(false);
+    expect(isSshCommand('Write-Output ssh user@host')).toBe(false);
+  });
 });

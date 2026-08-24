@@ -290,8 +290,9 @@ async function mapWithLimit<T, R>(
 }
 
 /**
- * Upload each local file to its own `/tmp/wmux-drop-*` path, returning the
- * remote paths in the order the local paths were given.
+ * Upload each local file to a unique name inside one private
+ * `/tmp/wmux-drop-<batch-id>/` directory, returning the remote paths in the
+ * order the local paths were given.
  *
  * All-or-nothing: if any file fails, the ones that succeeded are deleted again
  * before returning. A partial batch is worse than none — the user would get

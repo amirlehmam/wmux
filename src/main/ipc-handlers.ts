@@ -135,18 +135,24 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       // window may reclaim a surface after the old webContents was destroyed.
       // A different live renderer must not steal an existing surface merely by
       // invoking idempotent PTY_CREATE with its id.
-      if (!created.reused || existingOwner === undefined || existingOwner === _event.sender.id) {
+      const acceptedOwner = !created.reused
+        || existingOwner === undefined
+        || existingOwner === _event.sender.id;
+      if (acceptedOwner) {
         ownSurface(id, _event.sender);
+        // `wmux ssh user@host` puts the whole ssh command line in the REQUESTED
+        // shell spec, which is the one detection source that is authoritative
+        // rather than inferred.
+        //
+        // Deliberately `resolvedOptions.shell` and not `created.shell`: create()
+        // returns the resolved executable with the arguments split off into
+        // `shellExtraArgs`, so `created.shell` is a bare `…\ssh.exe` with no
+        // destination left in it — which parses to nothing at all.
+        // Keep this mutation behind the ownership decision: a different window
+        // can call idempotent PTY_CREATE with a known id, but must not rewrite
+        // where the legitimate owner's next file upload will go.
+        sshDetector.setSurfaceShell(id, resolvedOptions.shell, created.shell, resolvedOptions.cwd);
       }
-      // `wmux ssh user@host` puts the whole ssh command line in the REQUESTED
-      // shell spec, which is the one detection source that is authoritative
-      // rather than inferred.
-      //
-      // Deliberately `resolvedOptions.shell` and not `created.shell`: create()
-      // returns the resolved executable with the arguments split off into
-      // `shellExtraArgs`, so `created.shell` is a bare `…\ssh.exe` with no
-      // destination left in it — which parses to nothing at all.
-      sshDetector.setSurfaceShell(id, resolvedOptions.shell, created.shell, resolvedOptions.cwd);
       // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
       // the original create already wired data/exit forwarding. Re-wiring here
       // would forward every chunk twice and double everything in the renderer.

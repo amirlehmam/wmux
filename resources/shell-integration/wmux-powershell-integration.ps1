@@ -288,7 +288,10 @@ function Report-Command {
     # the Enter handler, before AcceptLine, so reporting every command would
     # tax every command in every pane to learn something only ssh can tell
     # us. Staleness is handled by the prompt, which fires report_shell_state.
-    if ($line -notmatch '^\s*("[^"]*[\\/])?[^\s\\/]*[\\/]?ssh(\.exe)?"?(\s|$)') { return }
+    # Accept bare ssh, quoted paths (including spaces), unquoted absolute paths,
+    # and PowerShell's call operator. Keep the executable token exact so words
+    # such as `myssh.exe` are not mistaken for the OpenSSH client.
+    if ($line -notmatch '^\s*(?:&\s*"ssh(?:\.exe)?"|(?:&\s*)?"[^"]*[\\/]ssh(?:\.exe)?"|(?:&\s*)?[^\s"]*[\\/]ssh(?:\.exe)?|(?:&\s*)?ssh(?:\.exe)?)(?:\s|$)') { return }
     # The transport is line-based, so a multi-line command must arrive flat.
     $flat = $line -replace '\r?\n', ' '
     $sequence = Get-WmuxSshEventMarker

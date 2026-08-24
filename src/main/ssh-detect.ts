@@ -10,8 +10,9 @@
  *                 an ssh command. Instant, covers the typed `ssh host` case,
  *                 cleared when the shell returns to its prompt.
  *   3. Probed   — a background `Win32_Process` sweep finds an `ssh.exe`
- *                 descended from the pane's PTY. The catch-all: nested shells,
- *                 scripts, panes whose shell integration never loaded.
+ *                 descended from the pane's PTY. Windows cannot tell whether
+ *                 that process owns the foreground, so this source may only
+ *                 corroborate one of the two authoritative sources above.
  *
  * (1) and (3) are the two sources cmux has — its `.workspaceRemote` and its
  * `ps -t <tty>` foreground probe. (2) has no cmux counterpart and exists purely
@@ -235,16 +236,13 @@ export class SshDetector {
     // reproduced safely from Windows, so block instead of uploading to either.
     if (managed && reported && managed.destination !== reported.destination) return null;
     const primary = reported ?? managed;
-    return (primary ? mergeProcessFacts(primary, probe) : undefined)
-      ?? this.probed.get(surfaceId)
-      ?? null;
+    return primary ? mergeProcessFacts(primary, probe) : null;
   }
 
   /** Destination evidence used to distinguish a local pane from an unsafe remote ambiguity. */
   remoteHint(surfaceId: string): string | null {
     return this.reported.get(surfaceId)?.destination
       ?? this.managed.get(surfaceId)?.destination
-      ?? this.probed.get(surfaceId)?.destination
       ?? null;
   }
 
@@ -263,7 +261,11 @@ export class SshDetector {
       if (probe?.destination === reported.destination) return mergeProcessFacts(reported, probe);
       return reported.sshExecutable ? reported : null;
     }
-    return probe ?? null;
+    // Windows exposes ancestry but no tty foreground process group. A detached
+    // `ssh host` remains below the pane's PTY root after the local prompt has
+    // returned, so probe-only evidence could upload a file to a background
+    // host. It may enrich a reported/managed answer, never establish one.
+    return null;
   }
 
   /**

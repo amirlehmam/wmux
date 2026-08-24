@@ -79,8 +79,9 @@ Hold Shift while dropping to bypass upload for that drop.
 wmux invokes the Windows OpenSSH `scp` paired with the detected `ssh` client and
 uses `BatchMode=yes`. The connection must therefore authenticate without an
 interactive password or passphrase prompt, normally with a key or `ssh-agent`.
-Each successful file is inserted as a unique remote path under `/tmp`, such as
-`/tmp/wmux-drop-<id>.png`, and remains there for the receiving program to use.
+Each successful file is inserted as a unique path in a private remote batch
+directory, such as `/tmp/wmux-drop-<batch-id>/<file-id>.png`, and remains there
+for the receiving program to use.
 
 Detection covers `wmux ssh` and a direct `ssh` launched from an integrated
 PowerShell or Bash pane. Nested SSH (running a second `ssh` after reaching the
