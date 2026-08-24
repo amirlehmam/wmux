@@ -4,6 +4,17 @@
 
 export WMUX=1
 
+# Sequence the two reports that define an ssh session's lifetime. The remote
+# transport deliberately starts one backgrounded CLI process per report, so
+# process startup can otherwise deliver "back at the prompt" before the ssh
+# command that just finished. The receiver accepts older, unsequenced reports;
+# this counter only lets it discard a late arrival from this integration.
+_wmux_ssh_event_seq=0
+
+_wmux_next_ssh_event_seq() {
+    _wmux_ssh_event_seq=$((_wmux_ssh_event_seq + 1))
+}
+
 # wmux CLI shortcut — Claude Code and users can just type: wmux browser open <url>
 wmux() { node "$WMUX_CLI" "$@"; }
 export -f wmux
@@ -56,10 +67,11 @@ _wmux_precmd() {
     _wmux_report_cwd
     _wmux_report_git
     # 130 = SIGINT (Ctrl+C), 137 = SIGKILL, 143 = SIGTERM
+    _wmux_next_ssh_event_seq
     if [ $exit_code -eq 130 ] || [ $exit_code -eq 137 ] || [ $exit_code -eq 143 ]; then
-        _wmux_report "report_shell_state ${WMUX_SURFACE_ID} interrupted"
+        _wmux_report "report_shell_state ${WMUX_SURFACE_ID} seq=${_wmux_ssh_event_seq} interrupted"
     else
-        _wmux_report "report_shell_state ${WMUX_SURFACE_ID} idle"
+        _wmux_report "report_shell_state ${WMUX_SURFACE_ID} seq=${_wmux_ssh_event_seq} idle"
     fi
     _wmux_report "ports_kick ${WMUX_SURFACE_ID}"
 }
@@ -108,7 +120,8 @@ _wmux_report_command() {
 
     _wmux_command_reported=1
     # The transport is line-based, so a multi-line command must arrive flat.
-    _wmux_report "report_command $surface_id ${cmdline//$'\n'/ }"
+    _wmux_next_ssh_event_seq
+    _wmux_report "report_command $surface_id seq=${_wmux_ssh_event_seq} ${cmdline//$'\n'/ }"
     return 0
 }
 
@@ -116,7 +129,8 @@ _wmux_report_command() {
 _wmux_preexec() {
     local surface_id="${WMUX_SURFACE_ID}"
     [ -z "$surface_id" ] && return
-    _wmux_report "report_shell_state $surface_id running"
+    _wmux_next_ssh_event_seq
+    _wmux_report "report_shell_state $surface_id seq=${_wmux_ssh_event_seq} running"
     _wmux_report_command "$1"
     return 0
 }

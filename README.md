@@ -110,7 +110,7 @@ Save your entire workspace layout (splits, working directories, browser URL, she
 <tr>
 <td width="40%" valign="middle">
 <h3>Clipboard image paste</h3>
-Copy a screenshot (Win+Shift+S, Print Screen, Snipping Tool) and press <code>Ctrl+V</code> in a wmux terminal. The image is saved to a temp file and the path is injected into the terminal — Claude Code reads it directly, like pasting on claude.ai but from any screenshot tool.
+Copy a screenshot (Win+Shift+S, Print Screen, Snipping Tool) and press <code>Ctrl+V</code> in a wmux terminal. The image is saved to a temp file and the path is injected into the terminal — or uploaded with SCP first when the pane is connected directly over SSH.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-full.png" alt="Image paste workflow via clipboard" width="100%" />
@@ -355,6 +355,31 @@ wmux agent kill <agent-id>         # Kill an agent
 wmux tree                          # Workspace / pane / surface hierarchy
 ```
 
+### Files in direct SSH panes
+
+When a pane was opened with `wmux ssh`, or its PowerShell/Bash integration sees
+you run a direct `ssh` command, wmux keeps local file insertion useful on the
+remote host:
+
+- `Ctrl+V` and `Ctrl+Shift+V` upload a clipboard screenshot or copied local
+  file, then insert its remote path. Text paste is unchanged.
+- Dropping one or more files uploads them in order. Hold Shift while dropping
+  to bypass upload for that drop.
+- Uploads use Windows OpenSSH `scp` with `BatchMode=yes`, so authentication must
+  already work non-interactively through a key or `ssh-agent`; wmux never opens
+  a password or passphrase prompt in the background.
+- Files are given unique paths such as `/tmp/wmux-drop-<id>.png`. They remain on
+  the remote host after a successful upload for the receiving program to use.
+
+This applies to a **direct SSH connection from Windows**. A second `ssh` started
+inside the remote shell is a nested connection that wmux cannot observe through
+the Windows process tree. wmux may still see the outer connection, so disable
+upload (or hold Shift for a drop) rather than relying on automatic upload while
+you are on the inner host.
+
+Paste and drop uploads default to on. Configure them independently in
+[`~/.wmux/config.toml`](docs/config.md#remote-file-upload).
+
 ## Socket API
 
 Connect to `\\.\pipe\wmux` for programmatic control. Two protocols supported:
@@ -413,6 +438,20 @@ wmux does **not** restore live process state — a running tmux or vim is gone a
 Claude Code is the one exception, and it is opt-in. Turn on **Settings → Workspace → Resume Claude Code sessions on restore** and each terminal that was running Claude when the session was saved comes back with `claude --resume <id>` in the directory it was in. This resumes the *conversation*, not the process: wmux records which session each pane was on and asks Claude to pick it back up. A pane is skipped when Claude no longer has that conversation on disk, and a Claude you exited cleanly is not resumed. Off by default, because every such pane starts an agent the moment the window opens.
 
 ## Config
+
+### Remote file upload
+
+Control SCP upload for direct SSH panes in `~/.wmux/config.toml`:
+
+```toml
+[remote]
+upload-on-paste = true
+upload-on-drop  = true
+```
+
+Both settings default to `true` and apply after `wmux reload-config`. See
+[Remote file upload](docs/config.md#remote-file-upload) for behavior and
+limitations.
 
 ### Terminal themes
 

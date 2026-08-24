@@ -247,12 +247,23 @@ function Report-GitBranch {
     }
 }
 
+# Sequence the reports that define an SSH session's lifetime. PowerShell sends
+# them synchronously today, but using the same wire shape as Bash keeps ordering
+# explicit across every transport and lets the receiver reject late arrivals.
+$script:WmuxSshEventSequence = 0
+
+function Get-WmuxSshEventMarker {
+    $script:WmuxSshEventSequence++
+    return "seq=$($script:WmuxSshEventSequence)"
+}
+
 # Report shell state
 function Report-ShellState {
     param([string]$State)
     $surfaceId = $env:WMUX_SURFACE_ID
     if ($surfaceId) {
-        Send-WmuxMessage "report_shell_state $surfaceId $State"
+        $sequence = Get-WmuxSshEventMarker
+        Send-WmuxMessage "report_shell_state $surfaceId $sequence $State"
     }
 }
 
@@ -280,7 +291,8 @@ function Report-Command {
     if ($line -notmatch '^\s*("[^"]*[\\/])?[^\s\\/]*[\\/]?ssh(\.exe)?"?(\s|$)') { return }
     # The transport is line-based, so a multi-line command must arrive flat.
     $flat = $line -replace '\r?\n', ' '
-    Send-WmuxMessage "report_command $surfaceId $flat"
+    $sequence = Get-WmuxSshEventMarker
+    Send-WmuxMessage "report_command $surfaceId $sequence $flat"
 }
 
 # Report "running" when user executes a command (pre-execution hook)
