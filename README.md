@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">wmux</h1>
-<p align="center">A visibility layer for Claude Code on Windows — see what your AI agent does in real-time</p>
+<p align="center">A visibility layer for Claude Code on Windows - see what your AI agent does in real-time</p>
 
 <p align="center">
   Built on Electron + xterm.js. Inspired by <a href="https://github.com/manaflow-ai/cmux">cmux</a>.
