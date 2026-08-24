@@ -3,6 +3,59 @@
 // component so the path-display rules (the fiddly part) are unit-testable
 // without mounting a pane.
 
+import { Marked } from 'marked';
+import DOMPurify from 'dompurify';
+
+// A dedicated Marked instance rather than the global `marked` + setOptions():
+// the global is shared by every pane in the window, so configuring it during
+// render meant each pane kept reconfiguring state the others were using. This
+// instance is module-scoped (the config is identical everywhere) and built once.
+const md = new Marked({ gfm: true, breaks: true });
+
+// GFM task lists rendered as glyphs instead of <input type="checkbox">.
+// The sanitizer below forbids `input` outright — relaxing that to admit
+// checkboxes would also admit every other input type from untrusted markdown,
+// so the cheaper trade is to never emit the tag. Previously these rendered as
+// bare bullets, and markdown.css styled a checkbox that could never exist.
+//
+// Registered here, next to the instance and the sanitize policy it exists to
+// work around: the renderer and the FORBID_TAGS list are one decision, and
+// splitting them across modules is how one gets changed without the other.
+md.use({
+  renderer: {
+    checkbox({ checked }: { checked: boolean }) {
+      return checked
+        ? '<span class="markdown-pane__task markdown-pane__task--done">☑</span> '
+        : '<span class="markdown-pane__task">☐</span> ';
+    },
+  },
+});
+
+/**
+ * Markdown → HTML that is safe to hand `dangerouslySetInnerHTML`.
+ *
+ * This is a security boundary, not a formatting helper. Markdown reaches a
+ * surface from CLI/pipe callers, from agents, and from files on disk — none of
+ * it trusted — and the renderer it lands in holds the preload bridge, so an
+ * injected script would inherit `window.wmux` and with it the ability to write
+ * into any PTY. `marked` emits raw HTML by design, so DOMPurify is the only
+ * thing between those two facts.
+ *
+ * Lives here rather than inline in the component so the policy can be pinned by
+ * tests. It had none until 1.12.1, which is uncomfortable for a boundary whose
+ * enforcement is a third-party library we bump on advisories.
+ */
+export function renderMarkdown(content: string): string {
+  if (!content) return '';
+  return DOMPurify.sanitize(md.parse(content) as string, {
+    USE_PROFILES: { html: true },
+    // `style` blocks and form controls are not content — they are ways to
+    // restyle the app around the pane, or to put a convincing prompt inside it.
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
+    FORBID_ATTR: ['style'],
+  });
+}
+
 /**
  * Above this many lines the source view drops the per-line gutter and renders a
  * single <pre>. The 5 MB read cap allows ~100k lines, and one <div> per line at

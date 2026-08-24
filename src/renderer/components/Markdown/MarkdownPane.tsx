@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Marked } from 'marked';
-import DOMPurify from 'dompurify';
 import { openInWmuxBrowser } from '../../utils/open-in-browser';
 import { useT, type TranslationKey } from '../../i18n';
 import {
@@ -8,6 +6,7 @@ import {
   continueList,
   insertIndent,
   middleEllipsize,
+  renderMarkdown,
   toDisplayPath,
   toRelativePath,
 } from './markdown-utils';
@@ -37,27 +36,6 @@ interface MarkdownPaneProps {
   /** A successful write — records the new mtime and clears the dirty flag. */
   onSaved?: (file: { filePath: string; fileName: string; mtimeMs: number }) => void;
 }
-
-// A dedicated Marked instance rather than the global `marked` + setOptions():
-// the global is shared by every pane in the window, so configuring it during
-// render meant each pane kept reconfiguring state the others were using. This
-// instance is module-scoped (the config is identical everywhere) and built once.
-const md = new Marked({ gfm: true, breaks: true });
-
-// GFM task lists rendered as glyphs instead of <input type="checkbox">.
-// The sanitizer forbids `input` outright — relaxing that to admit checkboxes
-// would also admit every other input type from untrusted markdown, so the
-// cheaper trade is to never emit the tag. Previously these rendered as bare
-// bullets, and markdown.css styled a checkbox that could never exist.
-md.use({
-  renderer: {
-    checkbox({ checked }: { checked: boolean }) {
-      return checked
-        ? '<span class="markdown-pane__task markdown-pane__task--done">☑</span> '
-        : '<span class="markdown-pane__task">☐</span> ';
-    },
-  },
-});
 
 const COPIED_FEEDBACK_MS = 1200;
 
@@ -417,20 +395,10 @@ export default function MarkdownPane({
   // says which side wins — see the banner below.
   const [conflict, setConflict] = useState(false);
 
-  const html = useMemo(() => {
-    if (!content) return '';
-
-    // Markdown can arrive from untrusted sources (CLI/pipe callers, agents,
-    // loaded files). marked emits raw HTML, so sanitize before injecting it
-    // via dangerouslySetInnerHTML to prevent XSS in the renderer (which has
-    // preload/IPC access). FORBID javascript: URIs and event handlers.
-    const rawHtml = md.parse(content) as string;
-    return DOMPurify.sanitize(rawHtml, {
-      USE_PROFILES: { html: true },
-      FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
-      FORBID_ATTR: ['style'],
-    });
-  }, [content]);
+  // Parse + sanitize lives in markdown-utils so the policy is unit-testable;
+  // see renderMarkdown for why this is a security boundary rather than
+  // formatting. Memoized because sanitizing a large document is not cheap.
+  const html = useMemo(() => renderMarkdown(content ?? ''), [content]);
 
   const displayPath = useMemo(
     () => (filePath ? toDisplayPath(filePath, { cwd, homeDir: window.wmux?.system?.homeDir }) : ''),
