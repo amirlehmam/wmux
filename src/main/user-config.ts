@@ -363,15 +363,19 @@ function mapBrowserSection(root: TomlTable, errors: string[]): NonNullable<UserC
  * scp is the kind of thing corporate endpoint policy flags, and a user who
  * cannot allow it still needs paste to work — falling back to the local path.
  */
-function mapRemoteSection(root: TomlTable): NonNullable<UserConfig['remote']> | undefined {
+function mapRemoteSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['remote']> | undefined {
   const remote = asTable(root.remote);
   if (!remote) return undefined;
 
   const out: NonNullable<UserConfig['remote']> = {};
-  const onPaste = asBool(remote['upload-on-paste'] ?? remote.uploadOnPaste);
+  const onPasteRaw = remote['upload-on-paste'] ?? remote.uploadOnPaste;
+  const onPaste = asBool(onPasteRaw);
   if (onPaste !== undefined) out.uploadOnPaste = onPaste;
-  const onDrop = asBool(remote['upload-on-drop'] ?? remote.uploadOnDrop);
+  else if (onPasteRaw !== undefined) errors.push('remote.upload-on-paste: expected boolean');
+  const onDropRaw = remote['upload-on-drop'] ?? remote.uploadOnDrop;
+  const onDrop = asBool(onDropRaw);
   if (onDrop !== undefined) out.uploadOnDrop = onDrop;
+  else if (onDropRaw !== undefined) errors.push('remote.upload-on-drop: expected boolean');
 
   return Object.keys(out).length ? out : undefined;
 }
@@ -403,7 +407,7 @@ function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
   const browser = mapBrowserSection(root, errors);
   if (browser) out.browser = browser;
 
-  const remote = mapRemoteSection(root);
+  const remote = mapRemoteSection(root, errors);
   if (remote) out.remote = remote;
 
   const keys = mapKeysSection(root, errors);

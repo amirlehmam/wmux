@@ -133,6 +133,17 @@ describe('loadUserConfig', () => {
     expect(out.browser).toBeUndefined();
   });
 
+  it('maps remote upload booleans and warns about invalid values', () => {
+    tmpPath = writeTmp(`
+      [remote]
+      upload-on-paste = false
+      upload-on-drop = "sometimes"
+    `);
+    const out = loadUserConfig(tmpPath);
+    expect(out.remote).toEqual({ uploadOnPaste: false });
+    expect(out.errors.some((e) => e.includes('remote.upload-on-drop'))).toBe(true);
+  });
+
   // Issue #146 — `[keys]` remaps: the config file is the plugin-shaped ask,
   // answered without a plugin runtime.
   it('parses the [keys] section into validated remaps', () => {
