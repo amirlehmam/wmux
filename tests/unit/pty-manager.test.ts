@@ -293,6 +293,46 @@ describe('resolveExistingShellPath', () => {
  * These tests pin the memoization by counting probes rather than timing, so
  * they mean the same thing on a fast machine and in CI.
  */
+/**
+ * A machine with Git for Windows installed usually has its `usr\bin` ahead of
+ * System32 on PATH, so a bare `ssh` resolved to Git's MSYS2 build. That build
+ * looks for an agent on $SSH_AUTH_SOCK instead of the Windows named pipe
+ * `\\.\pipe\openssh-ssh-agent`, so on a machine whose keys live only in an
+ * agent (1Password, KeePassXC, the ssh-agent service) it sees no keys at all:
+ * `wmux ssh user@host` died on "Permission denied (publickey)" while the
+ * user's own `ssh` in the same pane worked.
+ *
+ * Only shell SPECS come through here — a command typed at a prompt is resolved
+ * by the shell inside the PTY — so this changes what wmux launches, never what
+ * the user launches.
+ */
+describe('a bare ssh spec resolves to Windows OpenSSH, not PATH', () => {
+  beforeEach(() => {
+    resetShellPathCache();
+    vi.spyOn(shellProbe, 'onPath').mockImplementation(
+      (name: string) => (name === 'ssh' ? 'C:\\Program Files\\Git\\usr\\bin\\ssh.exe' : undefined),
+    );
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetShellPathCache();
+  });
+
+  it('prefers Windows OpenSSH over the PATH hit', () => {
+    if (process.platform !== 'win32') return;
+    const resolved = resolveExistingShellPath('ssh');
+    expect(resolved?.replace(/\\/g, '/')).toMatch(/\/(?:Program Files|System32)\/OpenSSH\/ssh\.exe$/i);
+    expect(resolved).not.toMatch(/Git/i);
+    // The PATH probe must not even be consulted for it.
+    expect(vi.mocked(shellProbe.onPath)).not.toHaveBeenCalledWith('ssh');
+  });
+
+  it('leaves every other shell to PATH', () => {
+    resolveExistingShellPath('fake-shell.exe');
+    expect(vi.mocked(shellProbe.onPath)).toHaveBeenCalledWith('fake-shell.exe');
+  });
+});
+
 describe('shell path resolution is memoized (issue #176)', () => {
   let probes: string[];
 

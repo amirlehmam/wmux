@@ -11,6 +11,7 @@ import { attachErrorSink, installPtyCrashGuard } from './pty-crash-guard';
 import { powerShellShimDir } from './powershell-shim';
 import { getCliBinPath } from './cli-paths';
 import { getNodeRuntime } from './node-runtime';
+import { opensshPath } from './system32';
 
 // Applied once, at load, before any PTY can exist — the exit callback it guards
 // is registered by node-pty inside pty.spawn(), so a later install would leave
@@ -163,8 +164,39 @@ export function resolveExistingShellPath(shell: string): string | undefined {
   return resolved;
 }
 
+/**
+ * Windows' own `ssh`/`scp`, for a spec that named one without a path.
+ *
+ * A machine with Git for Windows installed usually has `C:\Program Files\Git\
+ * usr\bin` ahead of `System32` on PATH, so a bare `ssh` resolves to Git's MSYS2
+ * build. The two are not interchangeable: MSYS2 ssh looks for an agent on
+ * `$SSH_AUTH_SOCK`, while the Windows agent — the one 1Password, KeePassXC and
+ * the ssh-agent service all register with — is the named pipe
+ * `\\.\pipe\openssh-ssh-agent`. On a machine whose keys live only in an agent
+ * (no `~/.ssh/id_*` on disk), Git's ssh therefore sees no keys at all and the
+ * pane dies on "Permission denied (publickey)" while the user's own `ssh`
+ * works fine.
+ *
+ * Only reached for a spec wmux is spawning itself — `wmux ssh user@host`, or a
+ * workspace shell set to `ssh …`. A command the user types at a prompt is
+ * resolved by the shell inside the PTY and never comes through here, so panes
+ * keep behaving like every other terminal. Users with on-disk keys notice
+ * nothing: System32 OpenSSH reads the same `~/.ssh/config` and `~/.ssh/id_*`.
+ */
+function nativeOpenSshPath(shell: string): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const base = path.basename(shell).toLowerCase().replace(/\.exe$/, '');
+  if (base !== 'ssh' && base !== 'scp') return undefined;
+  const native = opensshPath(base);
+  return fs.existsSync(native) ? native : undefined;
+}
+
 function resolveExistingShellPathUncached(shell: string): string | undefined {
   if (path.isAbsolute(shell) && fs.existsSync(shell)) return shell;
+  // Before PATH: an absolute path the user wrote still wins (checked above),
+  // but a bare `ssh` should be the platform's, not whatever is first on PATH.
+  const native = nativeOpenSshPath(shell);
+  if (native) return native;
   const onPath = shellProbe.onPath(shell);
   if (onPath) return onPath;
   // Bare alias with no real PATH hit. A Store-only PowerShell — stable or
