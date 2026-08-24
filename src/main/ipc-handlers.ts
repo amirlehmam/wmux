@@ -103,16 +103,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       // returns the resolved executable with the arguments split off into
       // `shellExtraArgs`, so `created.shell` is a bare `…\ssh.exe` with no
       // destination left in it — which parses to nothing at all.
-      //
-      // And only for a genuinely new PTY. On reuse (a remount, a renderer
-      // reload) the caller passes `SurfaceRef.shell`, which the renderer has by
-      // then overwritten with that same resolved executable
-      // (setResolvedShellForSurface in useTerminal.ts) — so re-recording it
-      // would downgrade a correctly detected pane to "local" while its ssh is
-      // still running. The PTY has not changed, so neither has its destination.
-      if (!created.reused) {
-        sshDetector.setSurfaceShell(id, resolvedOptions.shell);
-      }
+      sshDetector.setSurfaceShell(id, resolvedOptions.shell);
       // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
       // the original create already wired data/exit forwarding. Re-wiring here
       // would forward every chunk twice and double everything in the renderer.

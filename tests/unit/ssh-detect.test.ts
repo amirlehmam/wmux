@@ -108,12 +108,12 @@ describe('SshDetector precedence', () => {
   });
 
   it('keeps the managed session when a remount re-reports the bare executable', () => {
-    // The clobber this guards against, seen live: the renderer overwrites
-    // SurfaceRef.shell with the RESOLVED executable once a terminal mounts
-    // (setResolvedShellForSurface), so a remount re-runs PTY_CREATE with a
-    // destination-less `…\ssh.exe`. Re-recording that would flip a correctly
-    // detected pane to "local" while its ssh is still running. The caller only
-    // records on a genuinely new PTY; this pins the value that must survive.
+    // A remount re-runs PTY_CREATE with the same requested spec, so the managed
+    // answer has to survive it. It once did not: the renderer overwrote
+    // SurfaceRef.shell with the resolved executable, so a remount re-reported a
+    // destination-less `…\ssh.exe` and flipped a correctly detected pane to
+    // "local" while its ssh was still running. That write goes to
+    // `resolvedShell` now, so the spec stays intact and no guard is needed.
     const detector = new SshDetector(source({ 'surf-1': 100 }));
     detector.setSurfaceShell('surf-1', 'C:\\Windows\\System32\\OpenSSH\\ssh.exe fortuna@honoured-accident');
     expect(detector.detect('surf-1')?.destination).toBe('fortuna@honoured-accident');
