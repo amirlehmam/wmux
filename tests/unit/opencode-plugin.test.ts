@@ -23,6 +23,13 @@ vi.mock('node:child_process', () => ({
 const PLUGIN = path.resolve(__dirname, '../../resources/opencode-plugin/wmux.js');
 const load = () => import(/* @vite-ignore */ PLUGIN);
 
+/**
+ * The plugin's helpers, which are deliberately NOT exports (#191): OpenCode
+ * calls every export of a plugin file as a plugin factory. Reaching them
+ * through the one real export is what keeps that surface at exactly one.
+ */
+const internals = async () => (await load()).WmuxPlugin.__wmuxInternals;
+
 /** Every wmux CLI invocation the plugin made, as flat argv (minus the script). */
 const verbs = () => calls.map((c) => c.argv.slice(1));
 
@@ -58,8 +65,22 @@ describe('the plugin file itself', () => {
   const src = fs.readFileSync(PLUGIN, 'utf8');
 
   it('carries a version marker, or wmux cannot know to reinstall it', () => {
-    // pluginNeedsUpdate() compares this; an install stuck on v3 keeps #189.
-    expect(src).toMatch(/wmux-plugin-version:\s*4/);
+    // pluginNeedsUpdate() compares this; an install stuck on v4 keeps #191.
+    expect(src).toMatch(/wmux-plugin-version:\s*5/);
+  });
+
+  it('exports WmuxPlugin and NOTHING else (#191)', () => {
+    // OpenCode's auto-discovery loader calls every export as a plugin factory,
+    // then invokes a `config` hook on the result. v3/v4 also exported four
+    // helpers, so it called `summarize(ctx)`, got a string back, and crashed
+    // OpenCode at startup on `null.config`. Helpers now hang off
+    // WmuxPlugin.__wmuxInternals, which the loader never looks at.
+    const DECLARATORS = new Set(['export', 'default', 'const', 'let', 'var', 'function', 'class', 'async']);
+    const exports = src
+      .split('\n')
+      .filter((line) => line.startsWith('export'))
+      .map((line) => line.split(/\W+/).find((word) => word && !DECLARATORS.has(word)));
+    expect(exports).toEqual(['WmuxPlugin']);
   });
 
   it('never logs to the console, which OpenCode\'s TUI swallows (#190)', () => {
@@ -79,7 +100,7 @@ describe('resolveNodeRuntime (#187)', () => {
   const only = (...present: string[]) => (p: string) => present.includes(p);
 
   it('rejects opencode.exe and finds a real node instead', async () => {
-    const { resolveNodeRuntime } = await load();
+    const { resolveNodeRuntime } = await internals();
     const nodePath = path.join('C:\\Program Files\\nodejs', 'node.exe');
     const runtime = resolveNodeRuntime(
       { ProgramFiles: 'C:\\Program Files' },
@@ -91,7 +112,7 @@ describe('resolveNodeRuntime (#187)', () => {
   });
 
   it('prefers WMUX_NODE — the only link that cannot come up empty', async () => {
-    const { resolveNodeRuntime } = await load();
+    const { resolveNodeRuntime } = await internals();
     const runtime = resolveNodeRuntime(
       { WMUX_NODE: 'C:\\wmux\\wmux.exe', WMUX_NODE_ELECTRON: '1' },
       'C:\\x\\opencode.exe',
@@ -102,13 +123,13 @@ describe('resolveNodeRuntime (#187)', () => {
   });
 
   it('ignores a WMUX_NODE that no longer exists (stale env from an old install)', async () => {
-    const { resolveNodeRuntime } = await load();
+    const { resolveNodeRuntime } = await internals();
     const runtime = resolveNodeRuntime({ WMUX_NODE: 'C:\\gone\\node.exe' }, 'C:\\x\\opencode.exe', 'win32', () => false);
     expect(runtime.file).toBe('node');
   });
 
   it('keeps using the host when the host is node — the Claude Code case', async () => {
-    const { resolveNodeRuntime } = await load();
+    const { resolveNodeRuntime } = await internals();
     const runtime = resolveNodeRuntime({}, 'C:\\Program Files\\nodejs\\node.exe', 'win32', () => false);
     expect(runtime).toEqual({ file: 'C:\\Program Files\\nodejs\\node.exe', electron: false });
   });
@@ -217,7 +238,7 @@ describe('event mapping (#188)', () => {
   });
 
   it('reads a nested reason and caps its length', async () => {
-    const { askReason } = await load();
+    const { askReason } = await internals();
     expect(askReason({ type: 'question.asked', properties: { question: { text: 'Which?' } } })).toBe('Which?');
     expect(askReason({ type: 'question.asked', properties: { title: 'x'.repeat(500) } })).toHaveLength(200);
   });
@@ -253,14 +274,14 @@ describe('debug logging (#190)', () => {
 
   describe('resolveDebugLog', () => {
     it('is off unless asked for', async () => {
-      const { resolveDebugLog } = await load();
+      const { resolveDebugLog } = await internals();
       for (const v of [undefined, '', '  ', '0', 'false', 'FALSE']) {
         expect(resolveDebugLog(v)).toBeNull();
       }
     });
 
     it('puts the default log somewhere both the user and the agent can read it', async () => {
-      const { resolveDebugLog } = await load();
+      const { resolveDebugLog } = await internals();
       const fakeTmp = path.join('scratch', 'tmpdir-stub');
       const expected = path.join(fakeTmp, 'wmux-plugin-debug.log');
       expect(resolveDebugLog('1', () => fakeTmp)).toBe(expected);
@@ -268,7 +289,7 @@ describe('debug logging (#190)', () => {
     });
 
     it('treats any other value as an explicit path', async () => {
-      const { resolveDebugLog } = await load();
+      const { resolveDebugLog } = await internals();
       expect(resolveDebugLog('/var/log/wmux.log')).toBe('/var/log/wmux.log');
       expect(resolveDebugLog(' C:\\Users\\me\\wmux.log ')).toBe('C:\\Users\\me\\wmux.log');
     });
@@ -276,12 +297,12 @@ describe('debug logging (#190)', () => {
 
   describe('summarize', () => {
     it('caps length so one event cannot flood the log', async () => {
-      const { summarize } = await load();
+      const { summarize } = await internals();
       expect(summarize('x'.repeat(500))).toHaveLength(301); // 300 + ellipsis
     });
 
     it('survives a circular event payload rather than throwing into OpenCode', async () => {
-      const { summarize } = await load();
+      const { summarize } = await internals();
       const circular: any = { a: 1 };
       circular.self = circular;
       expect(() => summarize(circular)).not.toThrow();

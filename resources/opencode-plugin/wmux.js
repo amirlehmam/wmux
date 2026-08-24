@@ -1,4 +1,4 @@
-// wmux-plugin-version: 4
+// wmux-plugin-version: 5
 // wmux OpenCode plugin — bridges OpenCode hooks/events to the wmux sidebar.
 // Auto-installed by wmux to ~/.config/opencode/plugin/wmux.js.
 // No-ops entirely outside wmux (WMUX !== '1').
@@ -24,9 +24,9 @@ const JS_RUNTIME_RE = /^(node|bun)(\.exe)?$/i;
  * only link in this chain that cannot come up empty. The rest is for a plugin
  * installed by an older wmux that does not declare it yet.
  *
- * Exported for wmux's tests; OpenCode ignores extra exports.
+ * Not exported — see the WmuxPlugin.__wmuxInternals note at the end of the file.
  */
-export function resolveNodeRuntime(
+function resolveNodeRuntime(
   env = process.env,
   execPath = process.execPath,
   platform = process.platform,
@@ -91,9 +91,9 @@ function firstExisting(dirs, names, exists) {
  * `1`/`true` picks the default location; anything else is taken as a path, so a
  * user can drop the log somewhere they are already tailing.
  *
- * Exported for wmux's tests; OpenCode ignores extra exports.
+ * Not exported — see the WmuxPlugin.__wmuxInternals note at the end of the file.
  */
-export function resolveDebugLog(value, tmpdir = os.tmpdir) {
+function resolveDebugLog(value, tmpdir = os.tmpdir) {
   const v = typeof value === "string" ? value.trim() : "";
   if (!v || v === "0" || v.toLowerCase() === "false") return null;
   if (v === "1" || v.toLowerCase() === "true") {
@@ -107,7 +107,7 @@ export function resolveDebugLog(value, tmpdir = os.tmpdir) {
 }
 
 /** One-line, length-capped rendering of anything, including circular values. */
-export function summarize(value, max = 300) {
+function summarize(value, max = 300) {
   let s;
   try {
     s = typeof value === "string" ? value : JSON.stringify(value);
@@ -152,7 +152,7 @@ const REPLY_EVENTS = new Set([
 ]);
 
 /** Best available human-readable reason for a blocked pane; never throws. */
-export function askReason(event) {
+function askReason(event) {
   const p = (event && event.properties) || {};
   const nested = p.question || p.permission || {};
   for (const c of [p.title, p.text, nested.title, nested.text, nested.type, p.pattern]) {
@@ -323,3 +323,19 @@ export const WmuxPlugin = async () => {
     },
   };
 };
+
+/**
+ * The helpers above, reachable by wmux's own test suite (issue #191).
+ *
+ * They are a property rather than four exports because OpenCode's
+ * auto-discovery loader calls EVERY export of a plugin file as if it were a
+ * plugin factory, then invokes a `config` hook on whatever came back. v3 and v4
+ * exported these four, so the loader called e.g. `summarize(ctx)`, got a string,
+ * and dereferenced `null.config` — taking OpenCode down at startup with
+ * "Unexpected server error" for anyone launching it OUTSIDE wmux. Inside wmux it
+ * crashed just the same, but the WMUX gate meant nobody testing wmux ever saw
+ * the export loop as the cause.
+ *
+ * `WmuxPlugin` must stay the only export in this file. A test asserts it.
+ */
+WmuxPlugin.__wmuxInternals = { resolveNodeRuntime, resolveDebugLog, summarize, askReason };
