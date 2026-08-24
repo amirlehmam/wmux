@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
-import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
+import { KeyboardPrefs, ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
+import { formatIndexShortcut } from '../../utils/index-shortcuts';
 import { actionLabel, formatBinding, CATEGORY, CATEGORY_ORDER, CATEGORY_LABEL_KEY } from '../Settings/KeyboardSettings';
 import '../../styles/cheat-sheet.css';
 
@@ -10,18 +11,26 @@ interface ShortcutCheatSheetProps {
   onClose: () => void;
 }
 
-// Fixed (non-remappable) bindings handled by dedicated key listeners, surfaced
-// here so they're discoverable alongside the remappable ones.
-function getFixedBindings(t: (key: TranslationKey, fallback?: string) => string): Array<{ label: string; binding: string; category: string }> {
-  return [
-    { label: t('cheatSheet.selectWorkspace', 'Select workspace 1–9'), binding: 'Ctrl+1…9', category: 'Workspaces' },
-    { label: t('cheatSheet.selectTab', 'Select tab 1–9'), binding: 'Ctrl+Alt+1…9', category: 'Tabs' },
-  ];
+// The number-row families (issue #202). They aren't ShortcutActions — each is
+// one modifier choice covering nine keys — so they're built here rather than
+// coming out of `shortcuts`. Read live from keyboardPrefs so a remap shows up
+// on F1, and dropped entirely when the user has switched a family off.
+function getIndexBindings(
+  keyboardPrefs: KeyboardPrefs,
+  t: (key: TranslationKey, fallback?: string) => string,
+): Array<{ label: string; binding: string; category: string }> {
+  const rows: Array<{ label: string; binding: string; category: string }> = [];
+  const workspace = formatIndexShortcut(keyboardPrefs.workspaceIndexModifiers);
+  if (workspace) rows.push({ label: t('cheatSheet.selectWorkspace', 'Select workspace 1–9'), binding: workspace, category: 'Workspaces' });
+  const surface = formatIndexShortcut(keyboardPrefs.surfaceIndexModifiers);
+  if (surface) rows.push({ label: t('cheatSheet.selectTab', 'Select tab 1–9'), binding: surface, category: 'Tabs' });
+  return rows;
 }
 
 export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps) {
   const t = useT();
   const shortcuts = useStore((s) => s.shortcuts);
+  const keyboardPrefs = useStore((s) => s.keyboardPrefs);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -40,7 +49,7 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
         binding: formatBinding(binding),
         category: CATEGORY[action] ?? 'Other',
       })),
-      ...getFixedBindings(t),
+      ...getIndexBindings(keyboardPrefs, t),
     ];
     const q = query.trim().toLowerCase();
     const filtered = q
@@ -55,7 +64,7 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
     return CATEGORY_ORDER
       .filter((c) => byCategory.has(c))
       .map((c) => ({ category: c, rows: byCategory.get(c)!.sort((a, b) => a.label.localeCompare(b.label)) }));
-  }, [shortcuts, query, t]);
+  }, [shortcuts, keyboardPrefs, query, t]);
 
   return (
     <div className="cheat-sheet-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>

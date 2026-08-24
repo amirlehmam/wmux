@@ -6,6 +6,11 @@ import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import ShortcutRecorder from './ShortcutRecorder';
 import ShortcutFilterCapture from './ShortcutFilterCapture';
 import { bindingsEqual } from '../../utils/shortcut-binding';
+import {
+  INDEX_MODIFIER_CHOICES,
+  IndexModifiers,
+  formatIndexShortcut,
+} from '../../utils/index-shortcuts';
 
 // Human-readable labels for each action
 export const ACTION_LABELS: Record<ShortcutAction, string> = {
@@ -122,10 +127,54 @@ type ShortcutRow = {
   category: string;
 };
 
+/** Translation key for each modifier mode's dropdown entry. */
+const INDEX_MODIFIER_LABEL_KEY: Record<IndexModifiers, TranslationKey> = {
+  'ctrl': 'settings.keyboard.indexMods.ctrl',
+  'alt': 'settings.keyboard.indexMods.alt',
+  'ctrl-alt': 'settings.keyboard.indexMods.ctrlAlt',
+  'ctrl-shift': 'settings.keyboard.indexMods.ctrlShift',
+  'alt-shift': 'settings.keyboard.indexMods.altShift',
+  'off': 'settings.keyboard.indexMods.off',
+};
+
+/**
+ * One index-shortcut family (issue #202).
+ *
+ * These are not `ShortcutAction`s and have no `ShortcutRecorder`: recording a
+ * combo makes no sense for a binding that spans nine keys. A modifier dropdown
+ * is the whole choice — everything else about the family is fixed.
+ */
+function IndexShortcutRow({ labelKey, labelFallback, value, onChange }: {
+  labelKey: TranslationKey;
+  labelFallback: string;
+  value: IndexModifiers;
+  onChange: (next: IndexModifiers) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="settings-row">
+      <label className="settings-label">{t(labelKey, labelFallback)}</label>
+      <select
+        className="settings-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value as IndexModifiers)}
+      >
+        {INDEX_MODIFIER_CHOICES.map((mode) => (
+          <option key={mode} value={mode}>
+            {t(INDEX_MODIFIER_LABEL_KEY[mode], formatIndexShortcut(mode) ?? 'Disabled')}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export default function KeyboardSettings() {
   const t = useT();
   const shortcuts = useStore((s) => s.shortcuts);
   const resetShortcuts = useStore((s) => s.resetShortcuts);
+  const keyboardPrefs = useStore((s) => s.keyboardPrefs);
+  const setKeyboardPrefs = useStore((s) => s.setKeyboardPrefs);
   const [query, setQuery] = useState('');
   const [bindingFilter, setBindingFilter] = useState<ShortcutBinding | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -136,9 +185,9 @@ export default function KeyboardSettings() {
   // each bucket, same as the shortcut cheat-sheet's (F1) behaviour. Unlike
   // the cheat sheet, name and shortcut are two independent filters (AND):
   // the text field matches only the translated label, the capture control
-  // matches the binding exactly. No fixed bindings (Ctrl+1…9 / Ctrl+Alt+1…9)
-  // here — those aren't ShortcutActions and have no ShortcutRecorder, so they
-  // stay cheat-sheet-only.
+  // matches the binding exactly. The number-row families (issue #202) are not
+  // ShortcutActions and have no ShortcutRecorder, so neither filter reaches
+  // them — they get their own section below the list.
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows: ShortcutRow[] = (Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][])
@@ -205,6 +254,31 @@ export default function KeyboardSettings() {
           </div>
         ))
       )}
+
+      <div className="settings-divider" />
+      <h3 className="settings-section-title">
+        {t('settings.keyboard.indexSection', 'Number-row shortcuts')}
+      </h3>
+
+      <IndexShortcutRow
+        labelKey="settings.keyboard.workspaceIndex"
+        labelFallback="Select workspace by number"
+        value={keyboardPrefs.workspaceIndexModifiers}
+        onChange={(workspaceIndexModifiers) => setKeyboardPrefs({ workspaceIndexModifiers })}
+      />
+      <IndexShortcutRow
+        labelKey="settings.keyboard.surfaceIndex"
+        labelFallback="Select tab by number"
+        value={keyboardPrefs.surfaceIndexModifiers}
+        onChange={(surfaceIndexModifiers) => setKeyboardPrefs({ surfaceIndexModifiers })}
+      />
+
+      <p className="settings-hint">
+        {t(
+          'settings.keyboard.indexHint',
+          'The two families can never share the same modifiers — assigning one a combo the other holds swaps them. Number 9 always selects the last workspace or tab, however many there are.',
+        )}
+      </p>
 
       <div className="shortcut-footer">
         <button className="settings-btn settings-btn--danger" onClick={resetShortcuts}>

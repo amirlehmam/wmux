@@ -1,5 +1,6 @@
 import { StateCreator } from 'zustand';
 import { QuickLaunchProfile, SavedLayout } from '../../shared/types';
+import { INDEX_MODIFIER_CHOICES, IndexModifiers, reconcileIndexModifiers } from '../utils/index-shortcuts';
 import {
   Language,
   applyUserLocales,
@@ -32,6 +33,7 @@ const STORAGE_KEYS = {
   savedLayouts:      'wmux-saved-layouts',
   language:          'wmux-language',
   appearancePrefs:   'wmux-appearance-prefs',
+  keyboardPrefs:     'wmux-keyboard-prefs',
 } as const;
 
 // Read the whole settings file once at module load (synchronous IPC). The
@@ -429,6 +431,70 @@ export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
   openLinksExternally: false,
 };
 
+// ─── Keyboard settings (issue #202) ───────────────────────────────────────────
+
+/**
+ * The two numeric-index shortcut families, which are NOT `ShortcutAction`s.
+ *
+ * `Ctrl+1…9` and `Ctrl+Alt+1…9` were hardcoded listeners because nine
+ * remappable entries apiece would have put eighteen rows in Settings. Modelling
+ * them as one modifier choice per family keeps that to two rows while still
+ * covering every request in the issue: rebind either family, swap the two, or
+ * switch either one off so the digits reach the terminal untouched.
+ *
+ * The invariant — the two families never hold the same combo — is enforced in
+ * `setKeyboardPrefs` via `reconcileIndexModifiers`, not by the UI, so the CLI
+ * or a hand-edited settings.json can't produce a binding with two owners.
+ */
+export interface KeyboardPrefs {
+  /** Modifiers that make the digit row select a workspace by index. */
+  workspaceIndexModifiers: IndexModifiers;
+  /** Modifiers that make the digit row select a tab in the focused pane. */
+  surfaceIndexModifiers: IndexModifiers;
+}
+
+export const DEFAULT_KEYBOARD_PREFS: KeyboardPrefs = {
+  // Both defaults reproduce the pre-1.14.0 hardcoded listeners exactly — this
+  // issue asked for the ability to change them, not for different ones.
+  workspaceIndexModifiers: 'ctrl',
+  surfaceIndexModifiers: 'ctrl-alt',
+};
+
+/** Merge stored keyboard prefs over the defaults, then enforce the invariant. */
+export function loadKeyboardPrefs(): KeyboardPrefs {
+  const stored = loadPersisted<KeyboardPrefs>(STORAGE_KEYS.keyboardPrefs);
+  const merged: KeyboardPrefs = {
+    workspaceIndexModifiers: coerceIndexModifiers(stored.workspaceIndexModifiers, DEFAULT_KEYBOARD_PREFS.workspaceIndexModifiers),
+    surfaceIndexModifiers: coerceIndexModifiers(stored.surfaceIndexModifiers, DEFAULT_KEYBOARD_PREFS.surfaceIndexModifiers),
+  };
+  return applyIndexModifiers(merged, {});
+}
+
+/**
+ * Keep an unknown stored value from reaching the Settings dropdown, which would
+ * render blank and silently rewrite the pref on the next unrelated change.
+ * settings.json is hand-editable, so this is a real input, not a formality.
+ */
+function coerceIndexModifiers(value: unknown, fallback: IndexModifiers): IndexModifiers {
+  return INDEX_MODIFIER_CHOICES.includes(value as IndexModifiers) ? (value as IndexModifiers) : fallback;
+}
+
+/**
+ * The one place a `KeyboardPrefs` value is produced. Translates between the
+ * pref field names and the family names `reconcileIndexModifiers` speaks, so
+ * the collision rule itself stays a pure, testable function.
+ */
+function applyIndexModifiers(base: KeyboardPrefs, patch: Partial<KeyboardPrefs>): KeyboardPrefs {
+  const next = reconcileIndexModifiers(
+    { workspace: base.workspaceIndexModifiers, surface: base.surfaceIndexModifiers },
+    {
+      workspace: patch.workspaceIndexModifiers,
+      surface: patch.surfaceIndexModifiers,
+    },
+  );
+  return { workspaceIndexModifiers: next.workspace, surfaceIndexModifiers: next.surface };
+}
+
 // ─── Appearance settings (issue #67) ──────────────────────────────────────────
 
 /**
@@ -553,6 +619,8 @@ export interface SettingsSlice {
   terminalPrefs: TerminalPrefs;
   notificationPrefs: NotificationPrefs;
   browserPrefs: BrowserPrefs;
+  /** Numeric index-shortcut modifiers, one choice per family (issue #202). */
+  keyboardPrefs: KeyboardPrefs;
   /** App UI theme — sidebar/tabbar/titlebar/pane chrome (issue #67). */
   appearancePrefs: AppearancePrefs;
   /** Global quick-launch profiles surfaced in the `+` caret dropdown (issue #32). */
@@ -602,6 +670,7 @@ export interface SettingsSlice {
   setTerminalPrefs(prefs: Partial<TerminalPrefs>): void;
   setNotificationPrefs(prefs: Partial<NotificationPrefs>): void;
   setBrowserPrefs(prefs: Partial<BrowserPrefs>): void;
+  setKeyboardPrefs(prefs: Partial<KeyboardPrefs>): void;
   setAppearancePrefs(prefs: Partial<AppearancePrefs>): void;
   setQuickLaunchProfiles(profiles: QuickLaunchProfile[]): void;
   setSavedLayouts(layouts: SavedLayout[]): void;
@@ -644,6 +713,9 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   terminalPrefs:     { ...DEFAULT_TERMINAL_PREFS,     ...loadPersisted<TerminalPrefs>(STORAGE_KEYS.terminalPrefs) },
   notificationPrefs: { ...DEFAULT_NOTIFICATION_PREFS, ...loadPersisted<NotificationPrefs>(STORAGE_KEYS.notificationPrefs) },
   browserPrefs:      { ...DEFAULT_BROWSER_PREFS,      ...loadPersisted<BrowserPrefs>(STORAGE_KEYS.browserPrefs) },
+  // Reconciled on load as well as on write: settings.json is user-editable, and
+  // two families holding the same combo would leave one of them dead.
+  keyboardPrefs:     loadKeyboardPrefs(),
   appearancePrefs:   loadAppearancePrefs(),
   quickLaunchProfiles: loadPersistedArray<QuickLaunchProfile>(STORAGE_KEYS.quickLaunchProfiles),
   savedLayouts:      loadPersistedArray<SavedLayout>(STORAGE_KEYS.savedLayouts),
@@ -708,6 +780,14 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
       const merged = { ...state.browserPrefs, ...prefs };
       persist(STORAGE_KEYS.browserPrefs, merged);
       return { browserPrefs: merged };
+    });
+  },
+
+  setKeyboardPrefs(prefs: Partial<KeyboardPrefs>): void {
+    set((state) => {
+      const merged = applyIndexModifiers(state.keyboardPrefs, prefs);
+      persist(STORAGE_KEYS.keyboardPrefs, merged);
+      return { keyboardPrefs: merged };
     });
   },
 

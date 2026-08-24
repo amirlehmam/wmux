@@ -227,6 +227,13 @@ Environment variables available in all shells:
 
 All shortcuts are rebindable via Settings (`Ctrl+,`).
 
+The two number-row families — "jump to workspace N" and "jump to surface N" —
+are one dropdown each under **Settings → Keyboard → Number-row shortcuts**,
+rather than eighteen separate rows. Pick the modifiers each answers to
+(`Ctrl`, `Alt`, `Ctrl+Alt`, `Ctrl+Shift`, `Alt+Shift`) or switch either off so
+the digits reach the terminal untouched. Assigning one family a combo the other
+holds swaps them, so trading `Ctrl+1–9` and `Ctrl+Alt+1–9` is a single click.
+
 ### Workspaces
 
 | Shortcut | Action |
@@ -237,7 +244,7 @@ All shortcuts are rebindable via Settings (`Ctrl+,`).
 | Ctrl+PageDown | Next workspace |
 | Ctrl+PageUp | Previous workspace |
 | Ctrl+Shift+W | Close workspace |
-| Ctrl+Shift+R | Rename workspace |
+| Ctrl+Shift+F2 | Rename workspace |
 | Ctrl+B | Toggle sidebar |
 
 ### Surfaces (tabs)
@@ -247,7 +254,8 @@ All shortcuts are rebindable via Settings (`Ctrl+,`).
 | Ctrl+T | New surface |
 | Ctrl+Shift+] | Next surface |
 | Ctrl+Shift+[ | Previous surface |
-| Alt+1–8 | Jump to surface 1–8 |
+| Ctrl+Alt+1–8 | Jump to surface 1–8 |
+| Ctrl+Alt+9 | Jump to last surface |
 | Ctrl+W | Close surface |
 
 ### Split Panes
