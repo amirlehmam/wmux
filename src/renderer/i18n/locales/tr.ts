@@ -453,6 +453,7 @@ export const tr: Translation = {
   'diffPane.noDiffAvailable': '{file} için fark yok',
   // Terminal — kopyalama modu, bulma çubuğu, zil bildirimi
   'terminal.bell': 'Terminal zili',
+  'terminal.uploadFailed': '{host} sunucusuna yükleme başarısız: {reason}',
   'terminal.copyModeHint':
     'KOPYALAMA MODU — hareket için ok tuşları, seçim için Shift+oklar, kopyalamak için Enter, çıkmak için Esc',
   'terminal.findPlaceholder': 'Bul...',

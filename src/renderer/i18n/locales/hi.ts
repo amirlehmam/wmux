@@ -453,6 +453,7 @@ export const hi: Translation = {
   'diffPane.noDiffAvailable': '{file} के लिए कोई diff उपलब्ध नहीं',
   // टर्मिनल — कॉपी मोड, खोज बार, घंटी की सूचना
   'terminal.bell': 'टर्मिनल घंटी',
+  'terminal.uploadFailed': '{host} पर अपलोड विफल: {reason}',
   'terminal.copyModeHint':
     'कॉपी मोड — चलने के लिए तीर कुंजियाँ, चुनने के लिए Shift+तीर, कॉपी करने के लिए Enter, बाहर निकलने के लिए Esc',
   'terminal.findPlaceholder': 'खोजें...',

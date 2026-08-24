@@ -174,14 +174,38 @@ describe('SshDetector precedence', () => {
     // On Windows this may be `ssh background@host` launched with Start-Process
     // or `ssh background@host &`: ancestry survives after the local prompt
     // returns, but there is no tpgid equivalent to prove foreground ownership.
-    const detector = new SshDetector(source({ 'surf-1': 100 }), async () => ({
-      sshProcesses: [proc(200, 100, 'ssh background@host', 'C:\\OpenSSH\\ssh.exe')],
-      parents: new Map([[200, 100]]),
+    //
+    // The sweep runs here because ANOTHER surface has an authoritative report,
+    // so the probe genuinely sees the background ssh and still refuses it —
+    // this is the ranking rule, not the short-circuit below standing in for it.
+    const detector = new SshDetector(source({ 'surf-1': 100, 'surf-2': 300 }), async () => ({
+      sshProcesses: [
+        proc(200, 100, 'ssh background@host', 'C:\\OpenSSH\\ssh.exe'),
+        proc(400, 300, 'ssh real@elsewhere', 'C:\\OpenSSH\\ssh.exe'),
+      ],
+      parents: new Map([[200, 100], [400, 300]]),
     }));
+    detector.reportCommand('surf-2', 'ssh real@elsewhere');
 
+    await expect(detector.refresh('surf-2')).resolves.toMatchObject({ destination: 'real@elsewhere' });
     await expect(detector.refresh('surf-1')).resolves.toBeNull();
     expect(detector.detect('surf-1')).toBeNull();
     expect(detector.remoteHint('surf-1')).toBeNull();
+  });
+
+  it('answers a pane with no authoritative report without sweeping at all', async () => {
+    // The probe may only corroborate a managed or reported session, so for a
+    // local pane a sweep is guaranteed to change nothing. It runs on the paste
+    // path, where ~550ms of PowerShell is felt as input lag, so not paying for
+    // it is part of the contract rather than an incidental optimisation.
+    let sweeps = 0;
+    const detector = new SshDetector(source({ 'surf-1': 100 }), async () => {
+      sweeps += 1;
+      return { sshProcesses: [], parents: new Map<number, number>() };
+    });
+
+    await expect(detector.refresh('surf-1')).resolves.toBeNull();
+    expect(sweeps).toBe(0);
   });
 
   it('does not resurrect a session cleared while a sweep was in flight', async () => {
@@ -191,6 +215,8 @@ describe('SshDetector precedence', () => {
       parents: new Map([[200, 100]]),
     });
     const detector = new SshDetector(source({ 'surf-1': 100 }), () => new Promise((resolve) => { finish = resolve; }));
+    // An authoritative report is what gets the sweep started in the first place.
+    detector.reportCommand('surf-1', 'ssh stale@host');
     const refreshing = detector.refresh('surf-1');
     detector.clearReported('surf-1');
     finish(snapshot());

@@ -453,6 +453,7 @@ export const ru: Translation = {
   'diffPane.noDiffAvailable': 'Для {file} дифф недоступен',
   // Терминал — режим копирования, строка поиска, уведомление о звонке
   'terminal.bell': 'Звонок терминала',
+  'terminal.uploadFailed': 'Не удалось загрузить на {host}: {reason}',
   'terminal.copyModeHint':
     'РЕЖИМ КОПИРОВАНИЯ — стрелки для перемещения, Shift+стрелки для выделения, Enter для копирования, Esc для выхода',
   'terminal.findPlaceholder': 'Найти...',

@@ -443,6 +443,7 @@ export const es: Translation = {
   'diffPane.noDiffAvailable': 'No hay diferencias disponibles para {file}',
   // Terminal — modo copia, barra de búsqueda, notificación de campana
   'terminal.bell': 'Campana del terminal',
+  'terminal.uploadFailed': 'Error al subir a {host}: {reason}',
   'terminal.copyModeHint':
     'MODO COPIA — Flechas para mover, Mayús+flechas para seleccionar, Intro para copiar, Esc para salir',
   'terminal.findPlaceholder': 'Buscar...',

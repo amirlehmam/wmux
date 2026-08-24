@@ -442,6 +442,7 @@ export const it: Translation = {
   'diffPane.noDiffAvailable': 'Nessuna differenza disponibile per {file}',
   // Terminale — modalità copia, barra di ricerca, notifica campanella
   'terminal.bell': 'Campanella del terminale',
+  'terminal.uploadFailed': 'Caricamento su {host} non riuscito: {reason}',
   'terminal.copyModeHint':
     'MODALITÀ COPIA — Frecce per spostarti, Shift+frecce per selezionare, Invio per copiare, Esc per uscire',
   'terminal.findPlaceholder': 'Trova...',

@@ -456,6 +456,7 @@ export const zhTW: Translation = {
   'diffPane.noDiffAvailable': '{file} 沒有可顯示的差異',
   // 終端機 — 複製模式、尋找列、提示音通知
   'terminal.bell': '終端機提示音',
+  'terminal.uploadFailed': '上傳到 {host} 失敗：{reason}',
   'terminal.copyModeHint': '複製模式 — 方向鍵移動，Shift+方向鍵選取，Enter 複製，Esc 離開',
   'terminal.findPlaceholder': '尋找…',
   'terminal.findPrevious': '上一個（Shift+Enter）',

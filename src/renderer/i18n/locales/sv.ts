@@ -442,6 +442,7 @@ export const sv: Translation = {
   'diffPane.noDiffAvailable': 'Ingen diff tillgänglig för {file}',
   // Terminal — kopieringsläge, sökfält, klockaviseringar
   'terminal.bell': 'Terminalklocka',
+  'terminal.uploadFailed': 'Uppladdningen till {host} misslyckades: {reason}',
   'terminal.copyModeHint':
     'KOPIERINGSLÄGE — piltangenter för att flytta, Skift+piltangenter för att markera, Enter för att kopiera, Esc för att avsluta',
   'terminal.findPlaceholder': 'Sök...',

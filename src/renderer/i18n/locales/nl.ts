@@ -442,6 +442,7 @@ export const nl: Translation = {
   'diffPane.noDiffAvailable': 'Geen diff beschikbaar voor {file}',
   // Terminal — kopieermodus, zoekbalk, belmelding
   'terminal.bell': 'Terminalbel',
+  'terminal.uploadFailed': 'Uploaden naar {host} mislukt: {reason}',
   'terminal.copyModeHint':
     'KOPIEERMODUS — pijltjestoetsen om te bewegen, Shift+pijltjes om te selecteren, Enter om te kopiëren, Esc om af te sluiten',
   'terminal.findPlaceholder': 'Zoeken...',

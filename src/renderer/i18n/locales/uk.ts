@@ -453,6 +453,7 @@ export const uk: Translation = {
   'diffPane.noDiffAvailable': 'Для {file} диф недоступний',
   // Термінал — режим копіювання, рядок пошуку, сповіщення про дзвінок
   'terminal.bell': 'Дзвінок термінала',
+  'terminal.uploadFailed': 'Не вдалося завантажити на {host}: {reason}',
   'terminal.copyModeHint':
     'РЕЖИМ КОПІЮВАННЯ — стрілки для переміщення, Shift+стрілки для виділення, Enter для копіювання, Esc для виходу',
   'terminal.findPlaceholder': 'Знайти...',

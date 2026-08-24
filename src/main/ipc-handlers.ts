@@ -444,10 +444,15 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     if (source.kind !== 'files') return resolveInsertion(source, null, false, signal);
     const mayUpload = !invert && uploadEnabled(loadUserConfig().remote, mode);
     if (!mayUpload) return resolveInsertion(source, null, false, signal);
-    sshDetector.start();
+    // Only arm the probe for a pane something already says is remote. `start()`
+    // resets the idle counter, so waking it for a local pane would keep a
+    // ~550ms process sweep running every 3s for as long as the user keeps
+    // pasting files — and `refresh()` cannot answer anything but null there.
     const remoteHint = sshDetector.remoteHint(surfaceId);
+    if (!remoteHint) return resolveInsertion(source, null, true, signal);
+    sshDetector.start();
     const session = await sshDetector.refresh(surfaceId);
-    if (!session && remoteHint) {
+    if (!session) {
       return {
         text: null,
         failure: {

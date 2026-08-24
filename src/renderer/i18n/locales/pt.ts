@@ -442,6 +442,7 @@ export const pt: Translation = {
   'diffPane.noDiffAvailable': 'Nenhum diff disponível para {file}',
   // Terminal — modo de cópia, barra de busca, notificação de campainha
   'terminal.bell': 'Campainha do terminal',
+  'terminal.uploadFailed': 'Falha ao enviar para {host}: {reason}',
   'terminal.copyModeHint':
     'MODO DE CÓPIA — Setas para mover, Shift+setas para selecionar, Enter para copiar, Esc para sair',
   'terminal.findPlaceholder': 'Buscar...',

@@ -453,6 +453,7 @@ export const cs: Translation = {
   'diffPane.noDiffAvailable': 'Pro {file} není k dispozici žádný diff',
   // Terminál — režim kopírování, panel hledání, upozornění zvonkem
   'terminal.bell': 'Zvonek terminálu',
+  'terminal.uploadFailed': 'Nahrání na {host} selhalo: {reason}',
   'terminal.copyModeHint':
     'REŽIM KOPÍROVÁNÍ — šipky pro pohyb, Shift+šipky pro výběr, Enter pro kopírování, Esc pro ukončení',
   'terminal.findPlaceholder': 'Hledat...',

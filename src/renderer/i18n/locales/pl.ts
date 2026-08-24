@@ -453,6 +453,7 @@ export const pl: Translation = {
   'diffPane.noDiffAvailable': 'Brak diffa dla {file}',
   // Terminal — tryb kopiowania, pasek wyszukiwania, dzwonek
   'terminal.bell': 'Dzwonek terminala',
+  'terminal.uploadFailed': 'Przesyłanie na {host} nie powiodło się: {reason}',
   'terminal.copyModeHint':
     'TRYB KOPIOWANIA — strzałki do poruszania się, Shift+strzałki do zaznaczania, Enter do kopiowania, Esc do wyjścia',
   'terminal.findPlaceholder': 'Znajdź...',

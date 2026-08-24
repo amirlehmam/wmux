@@ -115,6 +115,26 @@ function sequenceFrom(value: string | number | undefined): number | undefined {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
+/**
+ * Split a `seq=<n> <rest>` report into its marker and its payload.
+ *
+ * Hand-written rather than a regex because the payload is a whole command line
+ * of arbitrary length and `^(seq=\d+)\s+(.*)$` over it is a backtracking
+ * liability for no benefit. This walks the prefix once and slices.
+ */
+function splitSequencedReport(raw: string): { sequence?: string; rest: string } {
+  if (!raw.startsWith('seq=')) return { rest: raw };
+  let digits = 'seq='.length;
+  while (digits < raw.length && raw[digits] >= '0' && raw[digits] <= '9') digits += 1;
+  if (digits === 'seq='.length) return { rest: raw };
+  let payload = digits;
+  while (payload < raw.length && /\s/.test(raw[payload])) payload += 1;
+  // `seq=7` with nothing after it is not a sequenced report, it is a payload
+  // that happens to look like a marker. Treat it as the payload.
+  if (payload === digits) return { rest: raw };
+  return { sequence: raw.slice(0, digits), rest: raw.slice(payload) };
+}
+
 export class SshDetector {
   /** Layer 1: the surface was created with an ssh command as its shell. */
   private managed = new Map<string, DetectedSsh>();
@@ -177,11 +197,10 @@ export class SshDetector {
    * the user just submitted.
    */
   reportCommand(surfaceId: string, commandLine: string): void {
-    const sequenced = /^(seq=\d+)\s+(.*)$/s.exec(commandLine);
-    if (sequenced && !this.acceptSequence(surfaceId, sequenced[1])) return;
-    const raw = sequenced ? sequenced[2] : commandLine;
+    const { sequence, rest } = splitSequencedReport(commandLine);
+    if (sequence !== undefined && !this.acceptSequence(surfaceId, sequence)) return;
     this.bump(surfaceId);
-    this.record(this.reported, surfaceId, sshSessionFrom(raw, { cwd: this.cwd.get(surfaceId) }));
+    this.record(this.reported, surfaceId, sshSessionFrom(rest, { cwd: this.cwd.get(surfaceId) }));
   }
 
   /**
@@ -248,6 +267,15 @@ export class SshDetector {
 
   /** Await one deduplicated fresh process snapshot, then return the current answer. */
   async refresh(surfaceId: string): Promise<DetectedSsh | null> {
+    // With neither authoritative source present there is nothing to sweep FOR:
+    // the probe may only corroborate a managed or reported session, so every
+    // branch below already answers null. Skipping it is not an optimisation of
+    // the remote path but the removal of a cost from the LOCAL one — this runs
+    // on paste, and pasting a screenshot into an ordinary pane is the common
+    // case. It used to pay ~550ms for a PowerShell enumeration of every process
+    // on the machine, and `start()` then kept that sweep on a 3s timer for five
+    // more passes, to answer a question a local pane cannot ask.
+    if (!this.managed.has(surfaceId) && !this.reported.has(surfaceId)) return null;
     const succeeded = await this.sweep();
     const managed = this.managed.get(surfaceId);
     const reported = this.reported.get(surfaceId);
@@ -275,8 +303,12 @@ export class SshDetector {
   start(): void {
     this.idleSweeps = 0;
     if (this.timer) return;
-    void this.sweep();
-    this.timer = setInterval(() => void this.sweep(), SWEEP_INTERVAL_MS);
+    // `sweep()` resolves false rather than rejecting on a failed query, so the
+    // catch is belt and braces against a future throw in the finally chain —
+    // an unhandled rejection from a timer would take down the main process.
+    const detached = (): void => { this.sweep().catch(() => undefined); };
+    detached();
+    this.timer = setInterval(detached, SWEEP_INTERVAL_MS);
     this.timer.unref?.();
   }
 
@@ -359,43 +391,52 @@ export function attributeSshProcesses(
   const depthBySurface = new Map<string, number>();
 
   for (const proc of processes) {
-    // Walk up to a PTY root, starting AT the ssh itself.
-    //
-    // Starting at the parent would miss the commonest managed case: `wmux ssh`
-    // spawns ssh as the pane's own shell, so the PTY root pid *is* the ssh pid
-    // and it is its own owner at depth 0.
-    //
-    // `seen` guards against a pid-reuse cycle in a stale table rather than a
-    // real one; `depth` doubles as the deepest-wins ranking value.
-    let depth = 0;
-    let current = proc.pid;
-    const seen = new Set<number>();
-    let surfaceId: string | undefined;
-
-    while (current > 0 && depth < 64 && !seen.has(current)) {
-      seen.add(current);
-      const owner = rootToSurface.get(current);
-      if (owner) {
-        surfaceId = owner;
-        break;
-      }
-      const parent = parents.get(current);
-      if (parent === undefined) break;
-      current = parent;
-      depth += 1;
-    }
-
-    if (!surfaceId) continue;
-    const previousDepth = depthBySurface.get(surfaceId);
-    if (previousDepth !== undefined && previousDepth >= depth) continue;
+    const owner = owningSurface(proc.pid, rootToSurface, parents);
+    if (!owner) continue;
+    const previousDepth = depthBySurface.get(owner.surfaceId);
+    if (previousDepth !== undefined && previousDepth >= owner.depth) continue;
 
     const session = sshSessionFrom(proc.commandLine, { executable: proc.executablePath });
     if (!session) continue;
-    depthBySurface.set(surfaceId, depth);
-    result.set(surfaceId, session);
+    depthBySurface.set(owner.surfaceId, owner.depth);
+    result.set(owner.surfaceId, session);
   }
 
   return result;
+}
+
+/** How far a pid sits below a PTY root, and whose. Null when under none. */
+const MAX_ANCESTRY_DEPTH = 64;
+
+/**
+ * Walk up from `pid` to a PTY root, starting AT the pid itself.
+ *
+ * Starting at the parent would miss the commonest managed case: `wmux ssh`
+ * spawns ssh as the pane's own shell, so the PTY root pid *is* the ssh pid and
+ * it is its own owner at depth 0.
+ *
+ * `seen` guards against a pid-reuse cycle in a stale snapshot rather than a
+ * real one; the returned depth doubles as the deepest-wins ranking value.
+ */
+function owningSurface(
+  pid: number,
+  rootToSurface: Map<number, string>,
+  parents: Map<number, number>,
+): { surfaceId: string; depth: number } | null {
+  let current = pid;
+  let depth = 0;
+  const seen = new Set<number>();
+
+  while (current > 0 && depth < MAX_ANCESTRY_DEPTH && !seen.has(current)) {
+    seen.add(current);
+    const surfaceId = rootToSurface.get(current);
+    if (surfaceId) return { surfaceId, depth };
+    const parent = parents.get(current);
+    if (parent === undefined) return null;
+    current = parent;
+    depth += 1;
+  }
+  return null;
 }
 
 /**

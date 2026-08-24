@@ -453,6 +453,7 @@ export const ja: Translation = {
   'diffPane.noDiffAvailable': '{file} の diff は利用できません',
   // ターミナル — コピーモード、検索バー、ベルの通知
   'terminal.bell': 'ターミナルベル',
+  'terminal.uploadFailed': '{host} へのアップロードに失敗しました: {reason}',
   'terminal.copyModeHint':
     'コピーモード — 矢印キーで移動、Shift+矢印で選択、Enter でコピー、Esc で終了',
   'terminal.findPlaceholder': '検索...',

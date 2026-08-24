@@ -461,6 +461,7 @@ export const ko: Translation = {
   'diffPane.noDiffAvailable': '{file}에 대한 변경 내용이 없습니다',
   // 터미널 — 복사 모드, 찾기 바, 벨 알림
   'terminal.bell': '터미널 벨',
+  'terminal.uploadFailed': '{host}(으)로 업로드하지 못했습니다: {reason}',
   'terminal.copyModeHint':
     '복사 모드 — 방향키로 이동, Shift+방향키로 선택, Enter로 복사, Esc로 종료',
   'terminal.findPlaceholder': '찾기...',
