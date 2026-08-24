@@ -9,6 +9,7 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { ProgressAddon } from '@xterm/addon-progress';
 import { useStore } from '../store';
 import { useT } from '../i18n';
+import type { Translator } from '../i18n/core';
 import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
 import { SplitNode, SurfaceId, ThemeConfig, type InsertionResult } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
@@ -134,6 +135,47 @@ function setResolvedShellForSurface(surfaceId: string | undefined, resolvedShell
   const location = findSurfaceLocation(workspace.splitTree, surfaceId);
   if (!location) return;
   state.updateSurface(workspace.id, location.paneId as any, surfaceId as any, { resolvedShell });
+}
+
+/**
+ * Type whatever main decided a paste or drop should produce.
+ *
+ * Main resolves the whole gesture — reads its own clipboard, uploads to the
+ * pane's remote host when it is inside ssh, and quotes for the receiving
+ * shell — so there is nothing to decide here. A null text means either
+ * nothing to paste or a reported failure; inserting a local path in the
+ * failure case would read as success while handing the remote shell a path
+ * it cannot open.
+ *
+ * Module scope, not the terminal-setup closure, because BOTH paste bindings
+ * need it: Ctrl+V is intercepted by xterm, while the configurable
+ * `paste` shortcut (Ctrl+Shift+V by default) arrives as a `wmux:paste-terminal`
+ * event on a different effect. They used to disagree — Ctrl+Shift+V read only
+ * text, so a screenshot or a copied file did nothing at all.
+ *
+ * Routed through terminal.paste() so bracketed-paste mode is honored.
+ */
+function applyInsertion(
+  term: Terminal,
+  surfaceId: string | undefined,
+  t: Translator,
+  result: InsertionResult,
+): void {
+  if (result.failure) {
+    window.wmux?.notification?.fire({
+      surfaceId: surfaceId ?? '',
+      // Composed here rather than in main so it can be translated: main hands
+      // back the host and the transport's own complaint, and only the renderer
+      // knows the user's language.
+      text: t('terminal.uploadFailed', 'Upload to {host} failed: {reason}')
+        .replace('{host}', result.failure.destination)
+        .replace('{reason}', result.failure.detail),
+      title: 'wmux',
+    });
+  }
+  if (!result.text) return;
+  term.paste(result.text);
+  try { term.focus(); } catch { /* no-op */ }
 }
 
 /**
@@ -590,35 +632,6 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       wheelHost.removeEventListener('wheel', onWheelCapture, { capture: true } as any);
     });
 
-    /**
-     * Type whatever main decided this gesture should produce.
-     *
-     * Main resolves the whole thing — reads its own clipboard, uploads to the
-     * pane's remote host when it is inside ssh, and quotes for the right
-     * shell — so there is nothing to decide here. A null text means either
-     * nothing to paste or a reported failure; inserting a local path in the
-     * failure case would read as success while handing the remote shell a
-     * path it cannot open.
-     *
-     * Routed through terminal.paste() so bracketed-paste mode is honored.
-     */
-    const applyInsertion = (result: InsertionResult) => {
-      if (result.failure) {
-        window.wmux?.notification?.fire({
-          surfaceId: surfaceId ?? '',
-          // Composed here rather than in main so it can be translated: main
-          // hands back the host and the transport's own complaint, and only the
-          // renderer knows the user's language.
-          text: t('terminal.uploadFailed', 'Upload to {host} failed: {reason}')
-            .replace('{host}', result.failure.destination)
-            .replace('{reason}', result.failure.detail),
-          title: 'wmux',
-        });
-      }
-      if (!result.text || !ptyIdRef.current) return;
-      terminal.paste(result.text);
-      try { terminal.focus(); } catch { /* no-op */ }
-    };
 
     // File drag-and-drop → insert the dropped path(s) into the terminal.
     // Windows Terminal and macOS Terminal both do this (issue #33). The browser's
@@ -654,7 +667,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // reason).
       void window.wmux.remote
         .resolveDrop(surfaceId ?? '', localPaths, ev.shiftKey)
-        .then(applyInsertion)
+        .then((result: InsertionResult) => {
+          if (ptyIdRef.current) applyInsertion(terminal, surfaceId, t, result);
+        })
         .catch(() => { /* main is the only thing that could fail here */ });
     };
     dropHost.addEventListener('dragover', onDragOver);
@@ -825,7 +840,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // answer it, because only main can upload the first two.
         void window.wmux.remote
           .resolvePaste(surfaceId ?? '')
-          .then(applyInsertion)
+          .then((result: InsertionResult) => {
+            if (ptyIdRef.current) applyInsertion(terminal, surfaceId, t, result);
+          })
           .catch(() => { /* nothing pasted rather than something wrong */ });
         return false; // Prevent default — we handle paste ourselves
       }
@@ -1111,11 +1128,15 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     };
   }, []);
 
-  // Paste delegated from the keyboard-shortcut handler (e.g. Ctrl+Shift+V).
-  // Routed here so it shares the Ctrl+V path's correctness: Electron's
-  // clipboard.readText() (navigator.clipboard garbles non-UTF-8 Windows
-  // formats — em dash → "â") and terminal.paste() (honors bracketed-paste
-  // mode, so multi-line paste into Claude Code doesn't submit on the first \n).
+  // Paste delegated from the keyboard-shortcut handler — the configurable
+  // `paste` action, Ctrl+Shift+V by default.
+  //
+  // Goes through the SAME resolver as Ctrl+V. It used to read only text, so
+  // the two bindings quietly meant different things: with a screenshot or an
+  // Explorer-copied file on the clipboard, Ctrl+V uploaded it and
+  // Ctrl+Shift+V did nothing at all. There is no reason for them to differ —
+  // Shift is not an invert modifier here (it cannot be, it is part of the
+  // binding), so both are plain "paste whatever is on the clipboard".
   useEffect(() => {
     const handler = async (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -1123,13 +1144,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       const term = xtermRef.current;
       if (!term || !ptyIdRef.current) return;
       try {
-        const text = await window.wmux.clipboard.readText();
-        if (text) term.paste(text);
-      } catch {}
+        const result = await window.wmux.remote.resolvePaste(surfaceId ?? '');
+        if (ptyIdRef.current) applyInsertion(term, surfaceId, t, result);
+      } catch { /* nothing pasted rather than something wrong */ }
     };
     document.addEventListener('wmux:paste-terminal', handler);
     return () => document.removeEventListener('wmux:paste-terminal', handler);
-  }, [surfaceId]);
+  }, [surfaceId, t]);
 
   // Manual pane recovery (issue #175). The PTY-exit path above handles the case
   // where wmux can see the application die; this handles the one where it
