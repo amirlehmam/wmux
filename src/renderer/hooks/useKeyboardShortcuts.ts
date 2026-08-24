@@ -5,6 +5,7 @@ import { splitNode, removeLeaf, getAllPaneIds, findLeaf, adjustPaneRatio } from 
 import { PaneId, SplitNode } from '../../shared/types';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { GLOBAL_IN_EDITOR, isEditableTarget } from './shortcut-target';
+import { matchIndexShortcut, resolveIndexTarget } from '../utils/index-shortcuts';
 import { v4 as uuid } from 'uuid';
 import { useT } from '../i18n';
 
@@ -140,6 +141,7 @@ export function useKeyboardShortcuts(
 ): void {
   const {
     shortcuts,
+    keyboardPrefs,
     workspaces,
     activeWorkspaceId,
     createWorkspace,
@@ -437,41 +439,49 @@ export function useKeyboardShortcuts(
     t,
   ]);
 
-  // Ctrl+1 through Ctrl+9 — select workspace by index
+  // ── Numeric index shortcuts — select workspace N / tab N (issue #202) ───────
+  // One listener for both families, not two. They compete for the same digit
+  // row, and `reconcileIndexModifiers` guarantees they never hold the same
+  // modifiers — but only a single handler can *also* guarantee that a matched
+  // digit is consumed once, whichever family claimed it.
+  //
+  // Which modifiers each family answers to now comes from `keyboardPrefs`, so
+  // both are rebindable, swappable and switchable off in Settings. The defaults
+  // are the old hardcoded Ctrl+1–9 / Ctrl+Alt+1–9.
   useEffect(() => {
-    function handleWorkspaceIndexKey(e: KeyboardEvent): void {
-      if (!e.ctrlKey || e.shiftKey || e.altKey) return;
-      const digit = parseInt(e.key, 10);
-      if (isNaN(digit) || digit < 1 || digit > 9) return;
-
-      e.preventDefault();
-      const target = workspaces[digit - 1];
-      if (target) selectWorkspace(target.id);
-    }
-
-    document.addEventListener('keydown', handleWorkspaceIndexKey);
-    return () => {
-      document.removeEventListener('keydown', handleWorkspaceIndexKey);
+    const selectWorkspaceByIndex = (digit: number): void => {
+      const idx = resolveIndexTarget(digit, workspaces.length);
+      if (idx !== null) selectWorkspace(workspaces[idx].id);
     };
-  }, [workspaces, selectWorkspace]);
 
-  // Ctrl+Alt+1 through Ctrl+Alt+9 — select tab (surface) N in the focused pane
-  // (issue #64). Mirrors the Ctrl+1–9 workspace selector above; kept as a fixed
-  // handler rather than nine remappable entries to avoid bloating Settings.
-  useEffect(() => {
-    function handleSurfaceIndexKey(e: KeyboardEvent): void {
-      if (!e.ctrlKey || !e.altKey || e.shiftKey) return;
-      const digit = parseInt(e.key, 10);
-      if (isNaN(digit) || digit < 1 || digit > 9) return;
+    const selectSurfaceByIndex = (digit: number): void => {
       if (!activeWorkspaceId || !focusedPaneId) return;
+      const state = useStore.getState();
+      const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
+      const leaf = ws ? findLeaf(ws.splitTree, focusedPaneId) : undefined;
+      // Tab count is read live rather than from a dep — a pane's surfaces
+      // change far more often than the pane itself, and re-registering the
+      // listener on every tab open would be pure churn.
+      const idx = resolveIndexTarget(digit, leaf?.surfaces.length ?? 0);
+      if (idx !== null) state.selectSurface(activeWorkspaceId, focusedPaneId, idx);
+    };
 
+    function handleIndexKey(e: KeyboardEvent): void {
+      const wsDigit = matchIndexShortcut(e, keyboardPrefs.workspaceIndexModifiers);
+      const surfDigit = wsDigit === null ? matchIndexShortcut(e, keyboardPrefs.surfaceIndexModifiers) : null;
+      if (wsDigit === null && surfDigit === null) return;
+
+      // preventDefault unconditionally once a family claims the combo: the
+      // digit must not also reach the terminal just because the target index
+      // happens to be empty right now. Only 'off' lets a digit through.
       e.preventDefault();
-      useStore.getState().selectSurface(activeWorkspaceId, focusedPaneId, digit - 1);
+      if (wsDigit !== null) selectWorkspaceByIndex(wsDigit);
+      else if (surfDigit !== null) selectSurfaceByIndex(surfDigit);
     }
 
-    document.addEventListener('keydown', handleSurfaceIndexKey);
+    document.addEventListener('keydown', handleIndexKey);
     return () => {
-      document.removeEventListener('keydown', handleSurfaceIndexKey);
+      document.removeEventListener('keydown', handleIndexKey);
     };
-  }, [activeWorkspaceId, focusedPaneId]);
+  }, [workspaces, selectWorkspace, activeWorkspaceId, focusedPaneId, keyboardPrefs]);
 }

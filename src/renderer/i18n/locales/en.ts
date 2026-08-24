@@ -292,6 +292,17 @@ export const en = {
   'settings.keyboard.captureShortcutTitle': 'Click, then press a shortcut to filter by it',
   'settings.keyboard.clearShortcutFilter': 'Clear shortcut filter',
   'settings.keyboard.noMatch': 'No shortcuts match your search.',
+  // Number-row index shortcuts (issue #202)
+  'settings.keyboard.indexSection': 'Number-row shortcuts',
+  'settings.keyboard.workspaceIndex': 'Select workspace by number',
+  'settings.keyboard.surfaceIndex': 'Select tab by number',
+  'settings.keyboard.indexHint': 'The two families can never share the same modifiers — assigning one a combo the other holds swaps them. Number 9 always selects the last workspace or tab, however many there are.',
+  'settings.keyboard.indexMods.ctrl': 'Ctrl+1…9',
+  'settings.keyboard.indexMods.alt': 'Alt+1…9',
+  'settings.keyboard.indexMods.ctrlAlt': 'Ctrl+Alt+1…9',
+  'settings.keyboard.indexMods.ctrlShift': 'Ctrl+Shift+1…9',
+  'settings.keyboard.indexMods.altShift': 'Alt+Shift+1…9',
+  'settings.keyboard.indexMods.off': 'Disabled',
   // Settings — Keyboard panel: per-action shortcut labels
   'shortcutAction.newWorkspace': 'New workspace',
   'shortcutAction.newWindow': 'New window',
