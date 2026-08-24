@@ -126,6 +126,17 @@ const SPECS: Record<string, BridgeSpec> = {
     shape: (r) => ({ workspaces: r || [] }),
     emptyOnNoWindow: { workspaces: [] },
   },
+  // The caller's own workspace. `callerScoped` supplies the id from the
+  // caller's surface; when that resolution misses (no WMUX_SURFACE_ID, or a
+  // stale one from a closed pane) no id is injected, the renderer returns null
+  // and `requireResult` turns that into an error + non-zero CLI exit. An
+  // explicit miss rather than the focused workspace, so a caller can tell
+  // "I don't know" from "it's this one".
+  'workspace.current': {
+    js: (p) => `window.__wmux_currentWorkspace?.(${S(p?.workspaceId)}, ${S(p?.caller)})`,
+    requireResult: 'surface not found',
+    callerScoped: true,
+  },
   'pane.split': {
     js: (p) => `window.__wmux_splitPane?.(${S(p || {})})`,
     requireResult: 'No active workspace or panes',
