@@ -37,7 +37,11 @@ export function getSurfaceLabel(
     case 'terminal': {
       const folder = surface.currentCwd ? cwdFolderName(surface.currentCwd) : null;
       if (folder) return folder;
-      return getShellLabel(surface.shell || workspaceShell) || t('surfaceLabel.terminal', 'Terminal');
+      // resolvedShell first: it is the concrete executable, so it labels a
+      // pane started with no spec at all. `shell` may be a whole command line
+      // (`ssh user@host`), which getShellLabel would render as a mouthful.
+      return getShellLabel(surface.resolvedShell || surface.shell || workspaceShell)
+        || t('surfaceLabel.terminal', 'Terminal');
     }
     case 'browser':
       return t('surfaceLabel.browser', 'Browser');

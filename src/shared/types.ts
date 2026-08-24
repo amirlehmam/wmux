@@ -15,7 +15,20 @@ export interface SurfaceRef {
   id: SurfaceId;
   type: SurfaceType;
   customTitle?: string;
+  /**
+   * How this surface was ASKED to start: a bare executable, or a whole command
+   * line such as `ssh user@host` (issue #78). Immutable once set — it is what
+   * respawns the surface after a restart, so anything that overwrites it with
+   * a resolved executable silently breaks restore for every spec that carries
+   * arguments. The tab label wants the resolved value; that is `resolvedShell`.
+   */
   shell?: string;
+  /**
+   * The executable `shell` actually resolved to, reported back by the PTY.
+   * Display only — the tab caption uses it so a pane started with no spec at
+   * all can still say "PowerShell" rather than "Terminal".
+   */
+  resolvedShell?: string;
   /** Per-surface color scheme override (bundled theme name or user-defined scheme name). */
   colorScheme?: string;
   /** Per-surface working directory override (quick-launch profiles — issue #32). */
