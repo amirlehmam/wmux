@@ -17,6 +17,7 @@ import CommandPalette from './components/CommandPalette/CommandPalette';
 import AgentNavigator from './components/AgentNavigator/AgentNavigator';
 import { focusAgentTarget } from './store/focus-agent';
 import { useAgentDetection } from './hooks/useAgentDetection';
+import { useBlockedAlert } from './hooks/useBlockedAlert';
 import type { AgentRosterEntry } from './store/agent-rollup';
 import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
 import ConfirmCloseDialog from './components/ConfirmCloseDialog';
@@ -443,6 +444,11 @@ export default function App() {
   // Screen detection for agents that report no state of their own. One loop for
   // the whole window; it skips every surface whose agent IS reporting.
   useAgentDetection(useStore((s) => s.workspacePrefs.detectAgentScreens));
+  // Taskbar flash when an agent starts waiting on you. Gated on the EXISTING
+  // notification prefs rather than a new one — `taskbarFlash` had a Settings
+  // toggle and translations in 18 languages and nothing read it, so this is
+  // what that switch has been promising all along.
+  useBlockedAlert(useStore((s) => s.notificationPrefs.taskbarFlash && s.notificationPrefs.agentInputNotify));
   // Shortcut cheat-sheet overlay (issue #64, toggled by F1 via wmux:toggle-cheatsheet).
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
   useEffect(() => {

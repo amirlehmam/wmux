@@ -223,6 +223,23 @@ function rosterEntryFor(
   };
 }
 
+/**
+ * One surface's agent state, for consumers that have a surfaceId and no roster.
+ *
+ * The same precedence as the roster, exported rather than re-derived: the tab
+ * bar and the roster disagreeing about whether a pane is blocked would be worse
+ * than either being wrong, and "declared beats detected" is a rule that must
+ * exist once. Returns null when no layer claims the surface.
+ */
+export function surfaceAgentState(
+  declared: DeclaredAgentSnapshot | undefined,
+  detection: DetectionSnapshot | undefined,
+): { state: AgentPresenceState; source: 'declared' | 'detected' } | null {
+  if (declared && declared.state !== 'unknown') return { state: declared.state, source: 'declared' };
+  if (detection && detection.state !== 'unknown') return { state: detection.state, source: 'detected' };
+  return null;
+}
+
 /** Which layer supplied `state`. Declared always wins — see the note above. */
 function resolveStateSource(
   declaredState: AgentPresenceState | null,

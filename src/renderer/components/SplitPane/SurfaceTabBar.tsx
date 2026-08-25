@@ -4,6 +4,7 @@ import { SurfaceRef, SurfaceId, PaneId, QuickLaunchProfile, ShellInfo } from '..
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
+import { surfaceAgentState } from '../../store/agent-rollup';
 import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret } from './icons';
 import type { SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import { parseSurfaceDragData } from './surface-drag-preview';
@@ -106,6 +107,14 @@ export default function SurfaceTabBar({
   const renameSurface = useStore((state) => state.renameSurface);
   const surfaceProgress = useStore((state) => state.surfaceProgress);
   const getAgentMeta = (surfaceId: string) => agentMeta.get(surfaceId as any);
+
+  // Declared and detected agent state, so a blocked BACKGROUND tab is visible.
+  // Precedence is not re-derived here — surfaceAgentState owns it, so the tab
+  // bar and the sidebar can never disagree about whether a pane is blocked.
+  const agentStates = useStore((state) => state.agentStates);
+  const agentDetections = useStore((state) => state.agentDetections);
+  const tabAgentState = (surfaceId: string): string | null =>
+    surfaceAgentState(agentStates[surfaceId], agentDetections[surfaceId])?.state ?? null;
 
   // Live binding labels for control tooltips (issue #64): read from the store so
   // they stay in sync when the user remaps a shortcut in Settings → Keyboard.
@@ -321,6 +330,9 @@ export default function SurfaceTabBar({
           const isAgent = !!agentMeta;
           const isRenaming = renamingId === surface.id;
           const progress = surfaceProgress[surface.id];
+          // A blocked agent in a BACKGROUND tab was invisible: the sidebar says
+          // its workspace needs you, and nothing in the pane says which tab.
+          const agentState = tabAgentState(surface.id);
           return (
             <div
               key={surface.id}
@@ -332,6 +344,7 @@ export default function SurfaceTabBar({
                 insertIndex === index + 1 && index === surfaces.length - 1 ? 'surface-tab--insert-after' : '',
                 isAgent ? 'surface-tab--agent' : '',
               ].filter(Boolean).join(' ')}
+              data-agent-state={agentState ?? undefined}
               role="tab"
               aria-selected={isActive}
               onClick={() => onSelect(index)}

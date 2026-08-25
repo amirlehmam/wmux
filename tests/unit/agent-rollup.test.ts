@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rollupAgents, workspaceAgentState } from '../../src/renderer/store/agent-rollup';
+import { rollupAgents, workspaceAgentState, surfaceAgentState } from '../../src/renderer/store/agent-rollup';
 import type { DeclaredAgentSnapshot } from '../../src/renderer/store/agent-rollup';
 import { SplitNode, PaneId, WorkspaceInfo, WorkspaceId } from '../../src/shared/types';
 
@@ -355,5 +355,42 @@ describe('rollupAgents — detection merge (phase 3)', () => {
 
     expect(out.totals.blocked).toBe(2);
     expect(out.blocked.map((b) => b.stateSource)).toEqual(['declared', 'detected']);
+  });
+});
+
+/**
+ * The tab bar has a surfaceId and no roster, so it needs the precedence rule on
+ * its own. Exported rather than re-derived: the tab bar and the sidebar
+ * disagreeing about whether a pane is blocked would be worse than either being
+ * wrong on its own.
+ */
+describe('surfaceAgentState', () => {
+  const det = (state: 'blocked' | 'working' | 'idle' | 'unknown') => ({ agent: 'claude', state });
+
+  it('declared wins over detected, exactly as in the roster', () => {
+    expect(surfaceAgentState(declared({ state: 'working' }), det('blocked')))
+      .toEqual({ state: 'working', source: 'declared' });
+  });
+
+  it('falls through to detected when the agent declared nothing', () => {
+    expect(surfaceAgentState(undefined, det('blocked')))
+      .toEqual({ state: 'blocked', source: 'detected' });
+    expect(surfaceAgentState(declared({ state: 'unknown' }), det('idle')))
+      .toEqual({ state: 'idle', source: 'detected' });
+  });
+
+  it('is null when neither layer claims the surface', () => {
+    expect(surfaceAgentState(undefined, undefined)).toBeNull();
+    expect(surfaceAgentState(declared({ state: 'unknown' }), det('unknown'))).toBeNull();
+  });
+
+  it('agrees with the roster on the same inputs', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'idle' }),
+    }, NOW, {}, { 'surf-a': det('working') });
+
+    const direct = surfaceAgentState(declared({ state: 'idle' }), det('working'));
+    expect(direct!.state).toBe(out.roster[0].state);
+    expect(direct!.source).toBe(out.roster[0].stateSource);
   });
 });

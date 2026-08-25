@@ -334,6 +334,9 @@ contextBridge.exposeInMainWorld('wmux', {
     // Windows taskbar progress (OSC 9;4 aggregate). value 0-1, or -1 to remove.
     setProgress: (value: number, mode?: string) =>
       ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_PROGRESS, value, mode),
+    // Taskbar flash when an agent starts waiting on you. Ignored by main when
+    // this window already has focus.
+    flash: (on: boolean) => ipcRenderer.send(IPC_CHANNELS.WINDOW_FLASH, on),
     // Window transparency (Win11 acrylic/mica backdrop).
     setBackdrop: (
       enabled: boolean,

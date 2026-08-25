@@ -23,7 +23,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
-import { surfaceTerminalRegistry, surfaceOutputSeq } from './useTerminal';
+import { surfaceTerminalRegistry, surfaceOutputSeq, surfaceTitle } from './useTerminal';
 import { detectScreen } from '../../shared/detection/engine';
 import { BUNDLED_MANIFESTS } from '../../shared/detection/manifests';
 import type { DetectionResult, Manifest } from '../../shared/detection/types';
@@ -117,7 +117,11 @@ function scanSurface(
   if (!lines) return;
 
   scan.lastScannedSeq = surfaceOutputSeq.get(surfaceId) ?? 0;
-  const result = detectScreen({ lines }, manifests, identity?.kind ?? null);
+  const result = detectScreen(
+    { lines, title: surfaceTitle.get(surfaceId) ?? null },
+    manifests,
+    identity?.kind ?? null,
+  );
 
   const previous = scan.lastResult;
   scan.lastResult = result;

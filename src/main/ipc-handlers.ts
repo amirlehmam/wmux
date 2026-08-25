@@ -409,6 +409,22 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     win.setProgressBar(typeof value === 'number' ? value : -1, { mode: safeMode });
   });
 
+  /**
+   * Flash the taskbar button when an agent starts waiting on the user.
+   *
+   * Delegated to NotificationManager, which already owned both halves and
+   * already refuses to flash a FOCUSED window — the point is to reach a user
+   * looking elsewhere, and blinking the window they are in is noise they cannot
+   * act on any faster for. Windows clears the flash itself on focus, so the off
+   * path is mostly for a block that resolves while the user is still away.
+   */
+  ipcMain.on(IPC_CHANNELS.WINDOW_FLASH, (e, on: boolean) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (!win || win.isDestroyed()) return;
+    if (on) notificationManager.flashTaskbar(win);
+    else notificationManager.stopFlash(win);
+  });
+
   ipcMain.on(
     IPC_CHANNELS.CDP_ATTACH,
     (_event, webContentsId: number, surfaceId?: string | null, workspaceId?: string | null) => {

@@ -335,3 +335,61 @@ describe('bundled manifests', () => {
     }
   });
 });
+
+/**
+ * The OSC title is a real input now, not a typed-but-never-filled field.
+ *
+ * wmux threw every OSC 0/2 away until phase 4 — `onTitleChange` had zero
+ * occurrences in src/ — so a `region: { id: 'osc_title' }` rule could be written
+ * and could never fire. These pin the path itself; no bundled manifest keys on
+ * a title yet, because no agent's title has actually been captured under
+ * ConPTY to key on.
+ */
+describe('detectScreen — OSC title as evidence', () => {
+  const titleManifest: Manifest = {
+    agent: 'claude',
+    version: 1,
+    signatures: [{ kind: 'contains', value: 'Claude Code', ignoreCase: true }],
+    rules: [{
+      id: 'claude.working.title',
+      state: 'working',
+      priority: 900,
+      region: { id: 'osc_title' },
+      all: [{ kind: 'contains', value: 'running', ignoreCase: true }],
+    }],
+  };
+
+  it('identifies an agent from the title alone, with nothing on screen', () => {
+    const out = detectScreen({ lines: ['$ '], title: '✳ Claude Code' }, [titleManifest]);
+    expect(out.agent).toBe('claude');
+  });
+
+  it('fires a title-region rule', () => {
+    const out = detectScreen(
+      { lines: ['$ '], title: 'Claude Code — running' },
+      [titleManifest],
+    );
+    expect(out).toMatchObject({ state: 'working', ruleId: 'claude.working.title' });
+  });
+
+  it('a title-region rule cannot be satisfied by matching screen text', () => {
+    // "running" is on screen but NOT in the title — the region must be honoured.
+    const out = detectScreen(
+      { lines: ['Claude Code', 'running something'], title: 'Claude Code' },
+      [titleManifest],
+    );
+    expect(out.state).toBe('unknown');
+    expect(out.reason).toBe('no-rule-matched');
+  });
+
+  it('a screen with no content but a title is not treated as empty', () => {
+    const out = detectScreen({ lines: [], title: 'Claude Code' }, [titleManifest]);
+    expect(out.reason).not.toBe('empty-screen');
+    expect(out.agent).toBe('claude');
+  });
+
+  it('no title is simply no evidence, never a crash', () => {
+    expect(() => detectScreen({ lines: ['Claude Code'] }, [titleManifest])).not.toThrow();
+    expect(detectScreen({ lines: ['Claude Code'], title: null }, [titleManifest]).state).toBe('unknown');
+  });
+});

@@ -405,6 +405,8 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_SET_PROGRESS: 'window:setProgress',
+  /** Flash this window's taskbar button — an agent started waiting on the user. */
+  WINDOW_FLASH: 'window:flash',
   WINDOW_SET_BACKDROP: 'window:setBackdrop',
   WINDOW_SUPPORTS_BACKDROP: 'window:supportsBackdrop',
   WINDOW_CLOSE_SELF: 'window:closeSelf',
