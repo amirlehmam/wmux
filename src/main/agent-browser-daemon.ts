@@ -60,6 +60,14 @@ export class DashboardDaemon {
     return this.running || this._adopted;
   }
 
+  /**
+   * @throws when the dashboard fails to start (`hooks.start()` resolves
+   * `false`, or `hooks.probe()`/`hooks.start()` itself rejects). The
+   * refcount is rolled back to what it was before this call BEFORE the
+   * rejection reaches the caller — see the rollback comment below — so this
+   * is not void-safe: a caller that fires-and-forgets a failed `acquire()`
+   * gets an unhandled rejection, not a silently-wrong refcount.
+   */
   async acquire(): Promise<void> {
     this.refs++;
     if (this.running || this._adopted) return;
@@ -82,7 +90,14 @@ export class DashboardDaemon {
       // (the surface flipping into agent mode) see the failure and decide
       // whether to retry, while every OTHER concurrent caller sharing this
       // same rejected `attempt` rolls back its own increment too.
-      this.refs--;
+      //
+      // Clamped rather than unconditional: a concurrent `release()`/
+      // `shutdown()` may have already raced this refcount down to zero while
+      // this same failing attempt was still in flight (they both await the
+      // in-flight `starting` before deciding anything — see `settleStarting`
+      // below), and an unconditional `refs--` here would then drive it to
+      // -1. `refs` must never go negative; see the same clamp in `release()`.
+      if (this.refs > 0) this.refs--;
       throw err;
     }
   }
@@ -104,12 +119,47 @@ export class DashboardDaemon {
     }
   }
 
+  /**
+   * If there is an in-flight `acquire()` attempt, wait for it to settle
+   * before `release()`/`shutdown()` decide whether there is anything to
+   * stop. Without this, both read `running`/`adopted` while an attempt is
+   * still probing/starting, see neither flag set yet, and conclude "nothing
+   * to do" — and then the attempt settles a moment later with ZERO live
+   * refs, having started a dashboard nothing will ever stop. Via
+   * `shutdown()` specifically this is a leaked child process that outlives
+   * wmux entirely: shutdown runs at app quit, and there is no later
+   * opportunity to notice.
+   *
+   * A rejected attempt (failed start) is swallowed here, not rethrown: a
+   * failed start means there is nothing running to stop, which is exactly
+   * the outcome `release()`/`shutdown()` want — they must not fail teardown
+   * over a start attempt that never succeeded in the first place. `acquire()`
+   * is the one place that surfaces the rejection to a caller.
+   */
+  private async settleStarting(): Promise<void> {
+    if (!this.starting) return;
+    try {
+      await this.starting;
+    } catch {
+      // Nothing started; nothing to stop. See doc comment above.
+    }
+  }
+
   async release(): Promise<void> {
     // Clamp at zero. A double-release — e.g. an unmount racing a surface
     // close — must not drive the count negative and strand a running
     // dashboard that a later, legitimate release can never reach zero on.
     if (this.refs > 0) this.refs--;
     if (this.refs > 0) return;
+
+    await this.settleStarting();
+
+    // Re-check: a new acquire() may have arrived (and been credited) while
+    // we were waiting for the in-flight attempt above to settle. If so, that
+    // acquire is now relying on the dashboard staying up — this release must
+    // not stop it out from under it.
+    if (this.refs > 0) return;
+
     if (this.running && !this._adopted) {
       await this.hooks.stop();
       this.running = false;
@@ -119,6 +169,12 @@ export class DashboardDaemon {
   /** Teardown on app quit. Ignores the refcount; still respects adoption. */
   async shutdown(): Promise<void> {
     this.refs = 0;
+
+    // Must not return before a start that was in flight at quit time is
+    // accounted for — see `settleStarting`'s doc comment. There is no later
+    // opportunity: this is the last thing that runs before the process exits.
+    await this.settleStarting();
+
     if (this.running && !this._adopted) {
       await this.hooks.stop();
       this.running = false;
