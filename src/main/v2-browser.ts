@@ -128,6 +128,15 @@ async function runBrowserCommand(method: string, params: any, wcId: number): Pro
     case 'browser.wait':
       await cdpBridge.wait(params?.ref, params?.timeout, wcId);
       return { ok: true };
+    case 'browser.back':
+      await cdpBridge.goBack(wcId);
+      return { ok: true };
+    case 'browser.forward':
+      await cdpBridge.goForward(wcId);
+      return { ok: true };
+    case 'browser.reload':
+      await cdpBridge.reload(wcId);
+      return { ok: true };
     default:
       throw Object.assign(new Error(`Unknown: ${method}`), { rpcCode: -32601 });
   }

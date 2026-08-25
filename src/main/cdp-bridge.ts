@@ -281,6 +281,34 @@ export class CDPBridge {
     await loadPromise;
   }
 
+  /**
+   * Step through session history by a signed offset.
+   *
+   * Deliberately a no-op at either end rather than a throw: `wmux browser back`
+   * on the first page of a pane is a user pressing a button that is simply not
+   * available, not an error worth failing an agent's turn over.
+   */
+  private async goHistory(delta: number, wcId?: number): Promise<void> {
+    const target = this.resolveTarget(wcId);
+    const { currentIndex, entries } = await this.sendCommand(target, 'Page.getNavigationHistory');
+    const next = currentIndex + delta;
+    if (next < 0 || next >= entries.length) return;
+    await this.sendCommand(target, 'Page.navigateToHistoryEntry', { entryId: entries[next].id });
+  }
+
+  async goBack(wcId?: number): Promise<void> {
+    await this.goHistory(-1, wcId);
+  }
+
+  async goForward(wcId?: number): Promise<void> {
+    await this.goHistory(1, wcId);
+  }
+
+  async reload(wcId?: number): Promise<void> {
+    const target = this.resolveTarget(wcId);
+    await this.sendCommand(target, 'Page.reload', {});
+  }
+
   async snapshot(wcId?: number): Promise<CDPSnapshot> {
     const target = this.resolveTarget(wcId);
     const result = await this.sendCommand(target, 'Accessibility.getFullAXTree');
