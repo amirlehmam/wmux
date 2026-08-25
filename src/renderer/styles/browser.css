@@ -69,9 +69,152 @@
   color: white;
 }
 
+/* The engine toggle. Two segments in one pill so it reads as one control with
+   two states rather than two independent buttons — the bar is already busy. */
+.browser-address-bar__engine {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 22px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(var(--ui-overlay-rgb),0.06);
+  flex-shrink: 0;
+}
+
+.browser-address-bar__engine-btn {
+  height: 18px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: rgba(var(--ui-overlay-rgb),0.5);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.browser-address-bar__engine-btn:hover {
+  color: rgba(var(--ui-overlay-rgb),0.8);
+}
+
+.browser-address-bar__engine-btn--active {
+  background: rgba(var(--ui-overlay-rgb),0.16);
+  color: rgba(var(--ui-overlay-rgb),0.95);
+}
+
+/* The webview and anything laid over it. Positioned so the setup card can cover
+   the viewport without unmounting the <webview> underneath it — unmounting
+   would destroy the guest page and its CDP registration. */
+.browser-pane__body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
 .browser-pane__webview {
   flex: 1;
   border: none;
+}
+
+.browser-pane__setup {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+  background: var(--ui-bg-2);
+}
+
+.browser-pane__setup-card {
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.browser-pane__setup-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(var(--ui-overlay-rgb),0.95);
+}
+
+.browser-pane__setup-body,
+.browser-pane__setup-cost,
+.browser-pane__setup-hint,
+.browser-pane__setup-status,
+.browser-pane__setup-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(var(--ui-overlay-rgb),0.7);
+}
+
+.browser-pane__setup-cost {
+  color: rgba(var(--ui-overlay-rgb),0.55);
+}
+
+.browser-pane__setup-hint,
+.browser-pane__setup-status {
+  color: rgba(var(--ui-overlay-rgb),0.5);
+}
+
+/* theme-vars.css has no error token, and inventing a hard-coded red here would
+   be the one unthemed colour in the pane. Full-contrast overlay text is enough
+   to separate it from the 0.5/0.7 muted lines above it. */
+.browser-pane__setup-error {
+  color: rgba(var(--ui-overlay-rgb),0.95);
+}
+
+.browser-pane__setup-cmds {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(var(--ui-overlay-rgb),0.06);
+  color: rgba(var(--ui-overlay-rgb),0.85);
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  /* A long command must scroll inside its own box rather than widening the
+     pane, which in a narrow split would push the card off-screen. */
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.browser-pane__setup-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.browser-pane__setup-btn {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid rgba(var(--ui-overlay-rgb),0.16);
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(var(--ui-overlay-rgb),0.8);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.browser-pane__setup-btn:hover:not(:disabled) {
+  background: rgba(var(--ui-overlay-rgb),0.08);
+}
+
+.browser-pane__setup-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.browser-pane__setup-btn--primary {
+  background: rgba(var(--ui-overlay-rgb),0.14);
+  color: rgba(var(--ui-overlay-rgb),0.95);
 }
 
 /* The browser panel is not part of the split tree. It is a separate right-hand

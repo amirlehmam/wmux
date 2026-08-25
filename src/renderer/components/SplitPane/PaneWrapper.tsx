@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { PaneId, SplitNode, SurfaceId, WorkspaceId, QuickLaunchProfile, ShellInfo } from '../../../shared/types';
+import { PaneId, SplitNode, SurfaceId, WorkspaceId, QuickLaunchProfile, ShellInfo, engineOf } from '../../../shared/types';
 import { workspaceFallbackCwd } from '../../../shared/paths';
 import { findLeaf, splitNode } from '../../store/split-utils';
 import TerminalPane from '../Terminal/TerminalPane';
@@ -275,6 +275,13 @@ export default function PaneWrapper({
               surfaceId={surface.id}
               workspaceId={workspaceId}
               {...(surface.url ? { initialUrl: surface.url } : {})}
+              // Read through engineOf, never off the raw field: the session
+              // file is user-editable, so a corrupt value has to degrade to
+              // `web` here exactly as it does in main (v2-browser) and in the
+              // pipe bridge.
+              engine={engineOf(surface)}
+              onEngineChange={(e) =>
+                updateSurface(workspaceId, paneId, surface.id, { browserEngine: e })}
               // Persist the live URL into the surface so a split-tree
               // restructure (which remounts this pane) restores the page the
               // user was on instead of resetting to the default (issue #40).
