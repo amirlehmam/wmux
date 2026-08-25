@@ -494,7 +494,33 @@ export function runAgentBrowser(binary: string, argv: string[], timeoutMs = 60_0
 }
 ```
 
-> **Note on `.cmd` on Windows:** `execFile` cannot execute a `.cmd` directly on modern Node without `shell: true`, which would reintroduce the injection risk above. Task 4 Step 6 verifies this live; if the `.cmd` path fails, resolve the `.ps1`-free sibling or invoke via `cmd.exe /c` with argv still passed as an array.
+> **RESOLVED during implementation — the `.cmd` shim must never be used.**
+>
+> Verified empirically on this machine (Node v24.13.0): `execFile` on a `.cmd`
+> throws a **synchronous `EINVAL`**, not a callback error. This is Node's
+> CVE-2024-27980 mitigation — `.bat`/`.cmd` cannot be spawned without
+> `shell: true`, and `shell: true` would put agent-controlled URLs and `eval`
+> snippets through cmd.exe's parser, which is exactly the trap
+> `powershell-shim.ts` documents.
+>
+> The way out needs no shell and no new dependency. `npm pack agent-browser`
+> (v0.35.0) shows the package ships the native Rust binaries itself:
+>
+> ```
+> package/bin/agent-browser-win32-x64.exe
+> package/bin/agent-browser-darwin-arm64
+> package/bin/agent-browser-linux-x64          (+ arm64, musl variants)
+> package/bin/agent-browser.js                 <- npx wrapper only
+> ```
+>
+> and `bin/agent-browser.js` states in its own header: *"For global installs,
+> postinstall.js patches the shims to invoke the native binary directly."*
+>
+> So resolution targets the real binary at
+> `<npm global root>/node_modules/agent-browser/bin/agent-browser-<platform>-<arch>[.exe]`,
+> probed **before** anything on PATH. `AGENT_BROWSER_NAMES('win32')` is
+> `['agent-browser.exe']` — no `.cmd`, no extensionless name — and a test pins
+> that a lone `.cmd` resolves to `null`, as a regression guard.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -671,20 +697,32 @@ git add src/main/agent-browser-verbs.ts tests/unit/agent-browser-verbs.test.ts
 git commit -m "feat(agent-browser): pure verb → argv translation table"
 ```
 
-- [ ] **Step 6: Live-verify the Windows `.cmd` spawn concern from Task 3**
+- [ ] **Step 6: Live-verify the resolved binary actually runs**
 
-This is the one assumption in Task 3 that unit tests cannot settle. Install the CLI and check that `execFile` can run the resolved path:
+Task 3's `.cmd` question is settled (see the RESOLVED note in Task 3): resolution
+targets the package's real `.exe`, never the shim. What still needs a live check
+is that the resolved path runs and that resolution finds it on a real install:
 
 ```bash
 npm install -g agent-browser
 node -e "
   const { execFile } = require('child_process');
-  const p = process.env.APPDATA + '\\\\npm\\\\agent-browser.cmd';
+  const path = require('path');
+  const p = path.join(process.env.APPDATA, 'npm', 'node_modules', 'agent-browser',
+                      'bin', 'agent-browser-win32-x64.exe');
   execFile(p, ['--version'], (e, out) => console.log(e ? 'FAILED: ' + e.message : 'OK: ' + out.trim()));
 "
 ```
 
-Expected: `OK: <version>`. If it prints `FAILED: spawn EINVAL` (Node ≥18.20 refuses `.cmd` without `shell`), amend `runAgentBrowser` to spawn `cmd.exe` with `['/c', binary, ...argv]` — argv still an array, so the injection guarantee holds — and add a unit test pinning that shape. Do not set `shell: true`.
+Expected: `OK: <version>` — a real `.exe` spawns fine with an argv array and no
+shell. Then confirm wmux's own resolver agrees:
+
+```bash
+npx tsx -e "import('./src/main/agent-browser-cli.ts').then(m => console.log(m.agentBrowserPath()))"
+```
+
+Expected: the same `.exe` path. If it returns a `.cmd`, the search order
+regressed — fix the order, do not reach for `shell: true`.
 
 ---
 
