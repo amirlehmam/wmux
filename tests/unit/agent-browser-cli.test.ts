@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { resolveAgentBrowserBinary, AGENT_BROWSER_NAMES, platformBinaryName } from '../../src/main/agent-browser-cli';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  resolveAgentBrowserBinary,
+  AGENT_BROWSER_NAMES,
+  platformBinaryName,
+  agentBrowserPath,
+  resetAgentBrowserCache,
+  runAgentBrowser,
+} from '../../src/main/agent-browser-cli';
 
 /** A fake filesystem probe: only the listed absolute paths "exist". */
 function existsIn(paths: string[]) {
@@ -33,12 +40,17 @@ describe('platformBinaryName', () => {
 
 describe('resolveAgentBrowserBinary', () => {
   it('prefers an explicit configured path over everything else', () => {
+    // The decoy is a valid npm-package native binary at the correct npm-global
+    // path — i.e. exactly the thing `resolveAgentBrowserBinary` would
+    // otherwise happily resolve to. A `.cmd` decoy would prove nothing here,
+    // since the `.cmd` exclusion would reject it anyway regardless of ordering.
+    const decoy = 'C:/Users/x/AppData/Roaming/npm/node_modules/agent-browser/bin/agent-browser-win32-x64.exe';
     const found = resolveAgentBrowserBinary({
       configured: 'C:/tools/agent-browser.cmd',
       env: { APPDATA: 'C:/Users/x/AppData/Roaming' },
       platform: 'win32',
       arch: 'x64',
-      exists: existsIn(['C:/tools/agent-browser.cmd', 'C:/Users/x/AppData/Roaming/npm/agent-browser.cmd']),
+      exists: existsIn(['C:/tools/agent-browser.cmd', decoy]),
     });
     expect(norm(found)).toBe('C:/tools/agent-browser.cmd');
   });
@@ -113,5 +125,68 @@ describe('resolveAgentBrowserBinary', () => {
 
   it('names only the native .exe on win32 — no .cmd, no extensionless', () => {
     expect(AGENT_BROWSER_NAMES('win32')).toEqual(['agent-browser.exe']);
+  });
+});
+
+describe('agentBrowserPath (memoisation)', () => {
+  beforeEach(() => resetAgentBrowserCache());
+
+  it('does not re-probe on a second call with the same configured value', () => {
+    let calls = 0;
+    const exists = (p: string) => { calls++; return p === 'C:/tools/agent-browser.cmd'; };
+    const deps = { env: {}, platform: 'win32', arch: 'x64', exists };
+
+    const first = agentBrowserPath('C:/tools/agent-browser.cmd', false, deps);
+    const callsAfterFirst = calls;
+    const second = agentBrowserPath('C:/tools/agent-browser.cmd', false, deps);
+
+    expect(second).toBe(first);
+    expect(calls).toBe(callsAfterFirst); // no additional probes on the cache hit
+  });
+
+  it('re-resolves — no `force` needed — when `configured` changes', () => {
+    const exists = (p: string) => p === 'C:/a/agent-browser.cmd' || p === 'C:/b/agent-browser.cmd';
+    const deps = { env: {}, platform: 'win32', arch: 'x64', exists };
+
+    const first = agentBrowserPath('C:/a/agent-browser.cmd', false, deps);
+    expect(norm(first)).toBe('C:/a/agent-browser.cmd');
+
+    // A different `configured` must win even though the caller never asked
+    // for a `force` re-probe — the cache key itself moved.
+    const second = agentBrowserPath('C:/b/agent-browser.cmd', false, deps);
+    expect(norm(second)).toBe('C:/b/agent-browser.cmd');
+  });
+
+  it('force re-probes even when `configured` is unchanged', () => {
+    let installed = false;
+    const exists = (p: string) => installed && p === 'C:/tools/agent-browser.cmd';
+    const deps = { env: {}, platform: 'win32', arch: 'x64', exists };
+
+    const beforeInstall = agentBrowserPath('C:/tools/agent-browser.cmd', false, deps);
+    expect(beforeInstall).toBeNull();
+
+    installed = true; // binary appears at the SAME configured location
+    const stillCached = agentBrowserPath('C:/tools/agent-browser.cmd', false, deps);
+    expect(stillCached).toBeNull(); // cache hit — same key, no force, no re-probe
+
+    const forced = agentBrowserPath('C:/tools/agent-browser.cmd', true, deps);
+    expect(norm(forced)).toBe('C:/tools/agent-browser.cmd');
+  });
+});
+
+describe('runAgentBrowser', () => {
+  // Real spawns rather than a mocked `child_process`, so these pin actual
+  // execFile semantics rather than assumptions about them.
+  it('a non-zero exit is ok:false, spawnFailed:false, with stderr populated', async () => {
+    const result = await runAgentBrowser(process.execPath, ['-e', 'process.stderr.write("boom"); process.exit(1)']);
+    expect(result.ok).toBe(false);
+    expect(result.spawnFailed).toBe(false);
+    expect(result.stderr).toContain('boom');
+  });
+
+  it('a binary path that does not exist is ok:false, spawnFailed:true', async () => {
+    const result = await runAgentBrowser('C:/definitely/does/not/exist/agent-browser-win32-x64.exe', ['status']);
+    expect(result.ok).toBe(false);
+    expect(result.spawnFailed).toBe(true);
   });
 });
