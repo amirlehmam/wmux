@@ -13,6 +13,17 @@
  * (packages/dashboard/src/store/sessions.ts reads `?port=` into activePortAtom).
  * Discovering an OS-assigned port after the fact is a race against the webview
  * load.
+ *
+ * IMPORTANT — this registry is NOT ground truth for what is live. `sessions`
+ * and `usedPorts` are in-memory and start empty on every fresh
+ * `SessionRegistry` (a new wmux process after a restart or a crash). The
+ * "correct by construction" claim above holds only while THIS process stays
+ * up: a `wmux-`-prefixed agent-browser session that survived a wmux crash is
+ * real on the OS and completely invisible here. Reconciliation after a crash
+ * (Task 11) must ask `agent-browser session list` — the real ground truth —
+ * never this registry, and must not assume a port this registry believes is
+ * free is actually free: an orphaned process from a previous run may still be
+ * bound to it.
  */
 import type { SurfaceId } from '../shared/types';
 
@@ -41,8 +52,14 @@ export const WMUX_SESSION_PREFIX = 'wmux-';
  * rather than sanitising — a surface id that does not look like one means
  * wmux's own invariants are already broken, and silently rewriting it would
  * hide that.
+ *
+ * Bounded at 128 characters after the `surf-` prefix, matching the same bound
+ * `CLAUDE_SESSION_ID_RE` uses (`{8,128}`) for the same reason — an unbounded
+ * pattern is not actually a boundary. A real wmux surface id is `surf-<uuid>`
+ * (36 chars), so 128 leaves generous headroom without accepting an
+ * arbitrarily long string onto a command line.
  */
-export const SURFACE_ID_RE = /^surf-[A-Za-z0-9-]+$/;
+export const SURFACE_ID_RE = /^surf-[A-Za-z0-9-]{1,128}$/;
 
 export function sessionNameFor(surfaceId: SurfaceId): string {
   if (!SURFACE_ID_RE.test(surfaceId)) {

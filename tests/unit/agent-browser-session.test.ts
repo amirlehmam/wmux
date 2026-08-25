@@ -27,6 +27,11 @@ describe('sessionNameFor', () => {
   it('throws on an empty surface id', () => {
     expect(() => sessionNameFor('' as any)).toThrow();
   });
+
+  it('throws on a surface id over the length bound', () => {
+    const tooLong = `surf-${'a'.repeat(129)}`;
+    expect(() => sessionNameFor(tooLong as any)).toThrow();
+  });
 });
 
 describe('SessionRegistry', () => {
@@ -39,9 +44,9 @@ describe('SessionRegistry', () => {
     expect(a.sessionName).not.toBe(b.sessionName);
   });
 
-  it('is idempotent for the same surface', () => {
+  it('is idempotent for the same surface, returning the SAME object', () => {
     const r = new SessionRegistry(9300);
-    expect(r.ensure('surf-a' as any)).toEqual(r.ensure('surf-a' as any));
+    expect(r.ensure('surf-a' as any)).toBe(r.ensure('surf-a' as any));
   });
 
   it('deep-links the dashboard to the session stream port', () => {
@@ -67,5 +72,18 @@ describe('SessionRegistry', () => {
     r.ensure('surf-a' as any);
     r.ensure('surf-b' as any);
     expect(r.all().map((s) => s.sessionName).sort()).toEqual(['wmux-surf-a', 'wmux-surf-b']);
+  });
+
+  it('tracks size across ensure and release', () => {
+    const r = new SessionRegistry(9300);
+    expect(r.size).toBe(0);
+    r.ensure('surf-a' as any);
+    expect(r.size).toBe(1);
+    r.ensure('surf-b' as any);
+    expect(r.size).toBe(2);
+    r.ensure('surf-a' as any); // idempotent, does not grow size
+    expect(r.size).toBe(2);
+    r.release('surf-a' as any);
+    expect(r.size).toBe(1);
   });
 });
