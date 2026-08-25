@@ -375,6 +375,16 @@ export const IPC_CHANNELS = {
   AGENT_ANSWER: 'agent:answer',
   /** Bootstrap for AGENT_STATE, which is delta-only — a new window starts blind. */
   AGENT_STATE_LIST: 'agent:state-list',
+  /**
+   * Which agent a surface is running: `{ surfaceId, kind, source }`.
+   *
+   * A separate channel from AGENT_STATE because it answers a different question
+   * (WHO, not HOW) and has a different source of truth. Carries the derived
+   * agent KIND only — never the command line it was derived from, which is the
+   * user's full typed input and routinely holds credentials.
+   */
+  AGENT_IDENTITY: 'agent:identity',
+  AGENT_IDENTITY_LIST: 'agent:identity-list',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
   SETTINGS_CHANGED: 'settings:changed',

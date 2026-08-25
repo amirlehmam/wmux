@@ -27,7 +27,7 @@ const declared = (over: Partial<DeclaredAgentSnapshot> = {}): DeclaredAgentSnaps
 describe('rollupAgents', () => {
   it('reports nothing when no surface has declared a state', () => {
     const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW);
-    expect(out.totals).toEqual({ blocked: 0, working: 0, idle: 0, total: 0 });
+    expect(out.totals).toEqual({ blocked: 0, working: 0, idle: 0, unknown: 0, total: 0 });
     expect(out.roster).toEqual([]);
     expect(out.blocked).toEqual([]);
   });
@@ -43,9 +43,9 @@ describe('rollupAgents', () => {
       'surf-c': declared({ state: 'idle' }),
     }, NOW);
 
-    expect(out.byWorkspace['ws-1']).toEqual({ blocked: 1, working: 1, idle: 0, total: 2 });
-    expect(out.byWorkspace['ws-2']).toEqual({ blocked: 0, working: 0, idle: 1, total: 1 });
-    expect(out.totals).toEqual({ blocked: 1, working: 1, idle: 1, total: 3 });
+    expect(out.byWorkspace['ws-1']).toEqual({ blocked: 1, working: 1, idle: 0, unknown: 0, total: 2 });
+    expect(out.byWorkspace['ws-2']).toEqual({ blocked: 0, working: 0, idle: 1, unknown: 0, total: 1 });
+    expect(out.totals).toEqual({ blocked: 1, working: 1, idle: 1, unknown: 0, total: 3 });
   });
 
   /**
@@ -60,7 +60,7 @@ describe('rollupAgents', () => {
       'surf-ghost': declared({ state: 'blocked' }),
     }, NOW);
 
-    expect(out.totals).toEqual({ blocked: 1, working: 0, idle: 0, total: 1 });
+    expect(out.totals).toEqual({ blocked: 1, working: 0, idle: 0, unknown: 0, total: 1 });
     expect(out.blocked.map((b) => b.surfaceId)).toEqual(['surf-a']);
   });
 
@@ -153,29 +153,123 @@ describe('rollupAgents', () => {
       'surf-a': declared({ state: 'blocked' }),
       'surf-b': declared({ state: 'working' }),
     }, NOW);
-    expect(out.byWorkspace['ws-1']).toEqual({ blocked: 1, working: 1, idle: 0, total: 2 });
+    expect(out.byWorkspace['ws-1']).toEqual({ blocked: 1, working: 1, idle: 0, unknown: 0, total: 2 });
   });
 
   it('gives every workspace an entry, including those with no agents', () => {
     const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW);
-    expect(out.byWorkspace['ws-1']).toEqual({ blocked: 0, working: 0, idle: 0, total: 0 });
+    expect(out.byWorkspace['ws-1']).toEqual({ blocked: 0, working: 0, idle: 0, unknown: 0, total: 0 });
   });
 });
 
 describe('workspaceAgentState', () => {
   it('blocked outranks working — one parked agent beats three busy ones', () => {
-    expect(workspaceAgentState({ blocked: 1, working: 3, idle: 0, total: 4 })).toBe('blocked');
+    expect(workspaceAgentState({ blocked: 1, working: 3, idle: 0, unknown: 0, total: 4 })).toBe('blocked');
   });
 
   it('working outranks idle', () => {
-    expect(workspaceAgentState({ blocked: 0, working: 1, idle: 2, total: 3 })).toBe('working');
+    expect(workspaceAgentState({ blocked: 0, working: 1, idle: 2, unknown: 0, total: 3 })).toBe('working');
   });
 
   it('idle when agents exist but none are busy', () => {
-    expect(workspaceAgentState({ blocked: 0, working: 0, idle: 2, total: 2 })).toBe('idle');
+    expect(workspaceAgentState({ blocked: 0, working: 0, idle: 2, unknown: 0, total: 2 })).toBe('idle');
   });
 
   it('null when the workspace hosts no agent at all — the row keeps its shell status', () => {
-    expect(workspaceAgentState({ blocked: 0, working: 0, idle: 0, total: 0 })).toBeNull();
+    expect(workspaceAgentState({ blocked: 0, working: 0, idle: 0, unknown: 0, total: 0 })).toBeNull();
+  });
+});
+
+describe('rollupAgents — identity (phase 2)', () => {
+  const ident = (kind: string, source: 'shell-spec' | 'command' | 'probe' = 'command') => ({ kind, source });
+
+  /**
+   * The point of identity. A Codex pane reports nothing over the pipe, so before
+   * this it was invisible — which made identifying it pointless.
+   */
+  it('lists an identified agent that has declared nothing', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW, {
+      'surf-a': ident('codex'),
+    });
+    expect(out.totals).toEqual({ blocked: 0, working: 0, idle: 0, unknown: 1, total: 1 });
+    expect(out.roster[0]).toMatchObject({ state: 'unknown', kind: 'codex', identitySource: 'command' });
+  });
+
+  /**
+   * Invariant 1 again, at the new boundary: `idle` is a claim. An agent we
+   * merely SAW must not be reported as having said it is idle.
+   */
+  it('reports an identified but silent agent as unknown, never idle', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'unknown' }),
+    }, NOW, { 'surf-a': ident('aider', 'probe') });
+    expect(out.roster[0].state).toBe('unknown');
+    expect(out.totals.idle).toBe(0);
+    expect(out.totals.unknown).toBe(1);
+  });
+
+  it('declared state wins over identity for what the agent is DOING', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'blocked', blockedReason: 'permission: Bash' }),
+    }, NOW, { 'surf-a': ident('claude', 'shell-spec') });
+
+    expect(out.roster[0]).toMatchObject({
+      state: 'blocked', blockedReason: 'permission: Bash', kind: 'claude', identitySource: 'shell-spec',
+    });
+  });
+
+  /**
+   * With three panes in one repo the folder name identifies nothing; the agent
+   * name is the distinction the user opened the list to make.
+   */
+  it('labels a pane by its agent kind in preference to the cwd folder', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a', currentCwd: 'C:\dev\myproj' }]))],
+      {}, NOW, { 'surf-a': ident('claude') });
+    expect(out.roster[0].label).toBe('claude');
+  });
+
+  it('a hand-set tab title still wins over the agent kind', () => {
+    const out = rollupAgents(
+      [ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a', customTitle: 'reviewer' }]))],
+      {}, NOW, { 'surf-a': ident('claude') },
+    );
+    expect(out.roster[0].label).toBe('reviewer');
+  });
+
+  it('carries a null kind when only declared state is known', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'working' }),
+    }, NOW);
+    expect(out.roster[0]).toMatchObject({ kind: null, identitySource: null });
+  });
+
+  it('ignores identity for a surface no longer in any split tree', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW, {
+      'surf-a': ident('claude'),
+      'surf-ghost': ident('codex'),
+    });
+    expect(out.totals.total).toBe(1);
+  });
+
+  it('blocked agents still sort ahead of identified-but-silent ones', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', split(
+      leaf('pane-1', [{ id: 'surf-silent' }]),
+      leaf('pane-2', [{ id: 'surf-blocked' }]),
+    ))], {
+      'surf-blocked': declared({ state: 'blocked', blockedSince: NOW - 5_000 }),
+    }, NOW, { 'surf-silent': ident('codex') });
+
+    expect(out.blocked.map((b) => b.surfaceId)).toEqual(['surf-blocked']);
+    expect(out.totals).toEqual({ blocked: 1, working: 0, idle: 0, unknown: 1, total: 2 });
+  });
+});
+
+describe('workspaceAgentState — unknown', () => {
+  it('a workspace of silent agents reads as unknown, not idle', () => {
+    expect(workspaceAgentState({ blocked: 0, working: 0, idle: 0, unknown: 2, total: 2 })).toBe('unknown');
+  });
+
+  it('one declared idle outranks any number of silent agents', () => {
+    expect(workspaceAgentState({ blocked: 0, working: 0, idle: 1, unknown: 5, total: 6 })).toBe('idle');
   });
 });

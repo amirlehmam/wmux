@@ -94,7 +94,7 @@
 
 .agent-nav__row {
   display: grid;
-  grid-template-columns: 8px minmax(60px, auto) minmax(60px, auto) 1fr auto;
+  grid-template-columns: 8px minmax(50px, auto) auto minmax(50px, auto) 1fr auto;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -189,4 +189,30 @@
 
 .agent-nav__hint-rollup {
   font-variant-numeric: tabular-nums;
+}
+
+/* The agent kind, when the row's label is something else (a hand-set tab title,
+   or a folder name). Muted: it is context, not the thing being scanned for. */
+.agent-nav__row-kind {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(var(--ui-overlay-rgb), 0.08);
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Probed identity is a guess — Windows cannot tell a foreground process from a
+   background one, so this row's kind is corroboration, not testimony. Dashed
+   for the same reason traceState draws no-telemetry dashed rather than solid. */
+.agent-nav__row-kind[data-source='probe'] {
+  border: 1px dashed rgba(var(--ui-overlay-rgb), 0.25);
+  padding: 0 4px;
+}
+
+/* Identified, but saying nothing. Hollow rather than filled: the pane is known
+   to hold an agent, and nothing is known about what it is doing. */
+.agent-nav__row[data-state='unknown'] .agent-nav__row-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ui-text-muted);
 }

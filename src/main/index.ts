@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys, sshDetector } from './ipc-handlers';
+import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys, sshDetector, agentIdentity } from './ipc-handlers';
+import { sequenceFrom, splitSequencedReport } from './ssh-detect';
 import { isPtyCrashGuardInstalled } from './pty-manager';
 import { logDiagnostic } from './crash-diagnostics';
 import { handleBrowserV2 } from './v2-browser';
@@ -689,41 +690,92 @@ app.whenReady().then(() => {
     });
   });
 
+  /**
+   * Tell every window which agent a surface is running.
+   *
+   * The payload is `{ surfaceId, kind, source }` and nothing else. The command
+   * line the kind was derived from stays in this process — see the note on the
+   * v1 forwarding guard below.
+   */
+  function broadcastAgentIdentity(surfaceId: string): void {
+    const identity = agentIdentity.identify(surfaceId);
+    const payload = { surfaceId, kind: identity?.kind ?? null, source: identity?.source ?? null };
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.AGENT_IDENTITY, payload);
+    });
+  }
+
+  /**
+   * Apply one shell-integration report to the main-process trackers.
+   *
+   * Split out of the v1 handler because two independent consumers now read the
+   * same two reports — ssh-detect and agent-identity, for the same reason:
+   * Windows has no tty foreground process group, so "what is this pane running"
+   * has to be told to us rather than asked of the OS. `cmd.args` is mutated in
+   * place for the shell-state case, which is why this stays a statement
+   * sequence rather than becoming a pure function.
+   */
+  function applySurfaceReport(cmd: { command: string; surfaceId?: string; args: string[] }): void {
+    const surfaceId = cmd.surfaceId;
+    if (!surfaceId) return;
+
+    // The preexec hook reporting the command the pane just ran. This is what
+    // makes a hand-typed `ssh host` — or `claude` — detectable the instant it
+    // is submitted, rather than one background process sweep later.
+    if (cmd.command === 'report_command') {
+      const raw = cmd.args[0] ?? '';
+      sshDetector.reportCommand(surfaceId, raw);
+      // A pane may have just become remote, so make sure the probe is awake to
+      // back the report up (and to notice when that ssh exits).
+      sshDetector.start();
+
+      const { sequence, rest } = splitSequencedReport(raw);
+      agentIdentity.reportCommand(surfaceId, rest, sequenceFrom(sequence));
+      broadcastAgentIdentity(surfaceId);
+      return;
+    }
+
+    if (cmd.command === 'report_pwd') {
+      sshDetector.reportCwd(surfaceId, cmd.args[0] ?? '');
+      return;
+    }
+
+    // Back at a prompt: whatever was running has exited, so both the ssh
+    // session and the agent the preexec hook reported are over.
+    if (cmd.command === 'report_shell_state') {
+      const sequenced = /^seq=\d+$/.test(cmd.args[0] ?? '');
+      const state = cmd.args[sequenced ? 1 : 0] ?? '';
+      const rawSequence = sequenced ? cmd.args[0] : undefined;
+      if (state !== 'running') {
+        sshDetector.clearReported(surfaceId, rawSequence);
+        // `sequenceFrom`, not `splitSequencedReport`: here the marker is the
+        // WHOLE argument (`seq=7`), and splitSequencedReport deliberately reads
+        // a bare marker with no payload as a payload.
+        agentIdentity.clearReported(surfaceId, sequenceFrom(rawSequence));
+        broadcastAgentIdentity(surfaceId);
+      }
+      // The renderer's metadata protocol remains [state]; sequencing is a
+      // main-process implementation detail used only by these two detectors.
+      if (sequenced) cmd.args = [state];
+    }
+  }
+
   pipeServer.on('v1', (cmd) => {
     // Trigger port scan when requested from shell integration
     if (cmd.command === 'ports_kick') {
       portScanner.kick();
     }
-    // The preexec hook reporting that the pane just ran an ssh command. This
-    // is what makes a hand-typed `ssh host` detectable the instant it is
-    // submitted, rather than one background process sweep later.
-    if (cmd.command === 'report_command' && cmd.surfaceId) {
-      sshDetector.reportCommand(cmd.surfaceId, cmd.args[0] ?? '');
-      // A pane may have just become remote, so make sure the probe is awake
-      // to back the report up (and to notice when that ssh exits).
-      sshDetector.start();
-    }
-    if (cmd.command === 'report_pwd' && cmd.surfaceId) {
-      sshDetector.reportCwd(cmd.surfaceId, cmd.args[0] ?? '');
-    }
-    // Back at a prompt: whatever was running has exited, so any ssh session
-    // the preexec hook reported is over.
-    if (cmd.command === 'report_shell_state' && cmd.surfaceId) {
-      const sequenced = /^seq=\d+$/.test(cmd.args[0] ?? '');
-      const state = cmd.args[sequenced ? 1 : 0] ?? '';
-      if (state !== 'running') sshDetector.clearReported(cmd.surfaceId, sequenced ? cmd.args[0] : undefined);
-      // The renderer's metadata protocol remains [state]; sequencing is a
-      // main-process implementation detail used only by the SSH detector.
-      if (sequenced) cmd.args = [state];
-    }
+    if (cmd.surfaceId) applySurfaceReport(cmd);
+
     // Forward metadata updates to all windows.
     //
-    // `report_command` is deliberately NOT forwarded: its consumer is the
-    // detector three lines above, in this process, and its payload is the
-    // full command line of everything the user types — which routinely
-    // carries secrets (`curl -H 'Authorization: …'`, a psql URL with a
-    // password). No renderer code reads it, so broadcasting it would push
-    // credentials into a web context for nothing.
+    // `report_command` is deliberately NOT forwarded: its consumers are the ssh
+    // detector and the agent-identity tracker, both in THIS process, and its
+    // payload is the full command line of everything the user types — which
+    // routinely carries secrets (`curl -H 'Authorization: …'`, a psql URL with
+    // a password). No renderer code reads it, so broadcasting it would push
+    // credentials into a web context for nothing. The agent LABEL derived from
+    // it does cross, on its own channel; the command line never does.
     if (cmd.command === 'report_command') return;
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) {

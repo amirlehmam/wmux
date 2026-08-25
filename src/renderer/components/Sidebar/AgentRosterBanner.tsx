@@ -23,11 +23,12 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
   const t = useT();
   const workspaces = useStore((s) => s.workspaces);
   const agentStates = useStore((s) => s.agentStates);
+  const agentIdentities = useStore((s) => s.agentIdentities);
   const [now, setNow] = useState(() => Date.now());
 
   const rollup = useMemo(
-    () => rollupAgents(workspaces, agentStates, now),
-    [workspaces, agentStates, now],
+    () => rollupAgents(workspaces, agentStates, now, agentIdentities),
+    [workspaces, agentStates, agentIdentities, now],
   );
 
   const { blocked, working, total } = rollup.totals;

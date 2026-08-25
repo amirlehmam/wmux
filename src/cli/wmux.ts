@@ -1606,7 +1606,7 @@ const COMMAND_SPECS = {
     value: ['--seq', '--surface'],
   },
   'agent-state': {
-    usage: 'wmux agent-state [--surface <id>]   (no --surface → every pane, plus the blocked list)',
+    usage: 'wmux agent-state [--surface <id>]   (no --surface → every pane, the blocked list, and every identified agent)',
     value: ['--surface'],
   },
 } satisfies Record<string, CommandSpec>;

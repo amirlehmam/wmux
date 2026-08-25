@@ -26,6 +26,7 @@ import {
   listBlocked,
   type AnswerFailure,
 } from './agent-state';
+import { agentIdentity } from './agent-identity';
 
 type Respond = (result: any) => void;
 type RespondError = (code: number, message: string) => void;
@@ -59,6 +60,22 @@ function targetSurface(params: any): SurfaceId | undefined {
 }
 
 /**
+ * Attach WHO to a snapshot of WHAT.
+ *
+ * Two separate trackers because they have two separate sources of truth — the
+ * agent's own reports, and what wmux launched or the shell hook saw. They are
+ * joined here, at the read, rather than merged in either store, so a caller can
+ * still tell "Claude, silent" from "something, blocked".
+ */
+function withIdentity<T extends { surfaceId: string }>(snapshot: T): T & {
+  agent: string | null;
+  agentSource: string | null;
+} {
+  const identity = agentIdentity.identify(snapshot.surfaceId);
+  return { ...snapshot, agent: identity?.kind ?? null, agentSource: identity?.source ?? null };
+}
+
+/**
  * Handle a `pane.*` agent-state method.
  * Returns false for anything this module does not own, so the caller can
  * continue routing.
@@ -73,8 +90,17 @@ export function handleAgentStateV2(
   // method here that does not need a surface.
   if (method === 'pane.agent_state') {
     const sid = targetSurface(params);
-    if (sid) respond({ state: getAgentState(sid) ?? { surfaceId: sid, state: 'unknown' } });
-    else respond({ states: listAgentStates(), blocked: listBlocked() });
+    if (sid) respond({ state: withIdentity(getAgentState(sid) ?? { surfaceId: sid, state: 'unknown' }) });
+    else {
+      respond({
+        states: listAgentStates().map(withIdentity),
+        blocked: listBlocked().map(withIdentity),
+        // Panes wmux identified as agents that have never declared anything —
+        // exactly the population the identity layer exists to surface, and the
+        // one `states` cannot show because it is keyed on having reported.
+        identified: agentIdentity.list(),
+      });
+    }
     return true;
   }
 

@@ -6,6 +6,7 @@ import { clearAgentState, noteHumanInput, listAgentStates } from './agent-state'
 import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
 import { SshDetector } from './ssh-detect';
+import { agentIdentity } from './agent-identity';
 import {
   readClipboardSource,
   regularFilePaths,
@@ -74,6 +75,7 @@ function forgetSurface(surfaceId: SurfaceId): void {
   surfaceOwners.delete(surfaceId);
   insertionQueue.cancel(surfaceId);
   sshDetector.forget(surfaceId);
+  agentIdentity.forget(surfaceId);
 }
 
 function ownsLiveSurface(surfaceId: unknown, webContents: Electron.WebContents): surfaceId is SurfaceId {
@@ -91,10 +93,29 @@ function ownsLiveSurface(surfaceId: unknown, webContents: Electron.WebContents):
  * needs lives there. Exported the same way ptyManager and agentManager are,
  * so index.ts can feed it the shell-integration reports directly.
  */
-export const sshDetector = new SshDetector({
-  getPid: (surfaceId) => ptyManager.getPid(surfaceId as SurfaceId),
-  liveSurfaceIds: () => ptyManager.liveSurfaceIds(),
-});
+export const sshDetector = new SshDetector(
+  {
+    getPid: (surfaceId) => ptyManager.getPid(surfaceId as SurfaceId),
+    liveSurfaceIds: () => ptyManager.liveSurfaceIds(),
+  },
+  undefined,
+  // The sweep's other half. One ~550ms PowerShell spawn now answers both "is
+  // this pane in ssh?" and "what agent is this pane running?" — the process
+  // table already carried every row's name and was throwing all but ssh.exe away.
+  (found, liveSurfaceIds) => agentIdentity.applyProbe(found, liveSurfaceIds),
+);
+
+/**
+ * Which agent, if any, each surface is running.
+ *
+ * Fed from the same two report paths as sshDetector, and for the same reason:
+ * Windows has no tty foreground process group, so the authoritative answer has
+ * to come from what wmux launched or what the shell hook says was submitted.
+ *
+ * Re-exported rather than constructed here — see the note on the singleton in
+ * agent-identity.ts for why it cannot live in this module.
+ */
+export { agentIdentity };
 
 
 
@@ -152,6 +173,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         // can call idempotent PTY_CREATE with a known id, but must not rewrite
         // where the legitimate owner's next file upload will go.
         sshDetector.setSurfaceShell(id, resolvedOptions.shell, created.shell, resolvedOptions.cwd);
+        // Same spec, same reason: `wmux agent spawn --cmd claude` and
+        // `--shell "claude --resume"` put the agent's own command line here, so
+        // this pane IS that agent for as long as it lives. Pure string work —
+        // nothing added to the synchronous create path's budget (issue #176).
+        agentIdentity.setSurfaceShell(id, resolvedOptions.shell);
       }
       // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
       // the original create already wired data/exit forwarding. Re-wiring here
@@ -569,6 +595,10 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // window showed an empty roster beside three busy panes, and a blocked agent
   // that is waiting reports nothing at all, so it could stay invisible forever.
   ipcMain.handle(IPC_CHANNELS.AGENT_STATE_LIST, () => listAgentStates());
+
+  // Same bootstrap problem, same shape: AGENT_IDENTITY is delta-only, and a
+  // pane whose shell spec named an agent at create time never emits again.
+  ipcMain.handle(IPC_CHANNELS.AGENT_IDENTITY_LIST, () => agentIdentity.list());
 
   // Agent-integration consent (issue #132). Deliberately NOT routed through the
   // generic settings:set above: changing this decision has to reconcile the files

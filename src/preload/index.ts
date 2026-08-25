@@ -245,6 +245,16 @@ contextBridge.exposeInMainWorld('wmux', {
     // Read-only seed for onUpdate, which is delta-only (see App.tsx).
     list: (): Promise<any[]> => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STATE_LIST),
   },
+  // Which agent each surface runs. Carries the derived KIND only; the command
+  // line it came from never leaves the main process (see index.ts).
+  agentIdentity: {
+    onUpdate: (callback: (data: any) => void) => {
+      const handler = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.AGENT_IDENTITY, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT_IDENTITY, handler);
+    },
+    list: (): Promise<any[]> => ipcRenderer.invoke(IPC_CHANNELS.AGENT_IDENTITY_LIST),
+  },
   orchestration: {
     onUpdate: (callback: (state: any) => void) => {
       const handler = (_event: any, state: any) => callback(state);

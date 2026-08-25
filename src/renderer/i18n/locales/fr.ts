@@ -564,9 +564,12 @@ export const fr: Translation = {
   'agentNavigator.filterBlocked': 'bloqués',
   'agentNavigator.filterWorking': 'en cours',
   'agentNavigator.filterIdle': 'inactifs',
+  'agentNavigator.filterUnknown': 'muets',
   'agentNavigator.emptyAll': 'Aucun agent ne tourne dans cette fenêtre.',
   'agentNavigator.emptyFilter': 'Aucun agent ne correspond à ce filtre.',
   'agentNavigator.answerSent': 'réponse envoyée — en attente',
-  'agentNavigator.hint': '↑↓ naviguer · entrée aller · a/b/w/i filtrer · échap fermer',
+  'agentNavigator.silent': 'ne déclare aucun état',
+  'agentNavigator.silentProbed': 'détecté — ne déclare aucun état',
+  'agentNavigator.hint': '↑↓ naviguer · entrée aller · a/b/w/i/u filtrer · échap fermer',
   'agentNavigator.workspacesWithAgents': 'espaces',
 };

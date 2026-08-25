@@ -625,10 +625,13 @@ export const en = {
   'agentNavigator.filterBlocked': 'blocked',
   'agentNavigator.filterWorking': 'working',
   'agentNavigator.filterIdle': 'idle',
+  'agentNavigator.filterUnknown': 'silent',
   'agentNavigator.emptyAll': 'No agent is running in this window.',
   'agentNavigator.emptyFilter': 'No agent matches this filter.',
   'agentNavigator.answerSent': 'answer sent — waiting',
-  'agentNavigator.hint': '↑↓ move · enter jump · a/b/w/i filter · esc close',
+  'agentNavigator.silent': 'reports no state',
+  'agentNavigator.silentProbed': 'detected — reports no state',
+  'agentNavigator.hint': '↑↓ move · enter jump · a/b/w/i/u filter · esc close',
   'agentNavigator.workspacesWithAgents': 'workspaces',
 } as const;
 

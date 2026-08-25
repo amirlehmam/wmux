@@ -20,15 +20,30 @@
 import { SplitNode, SurfaceId, PaneId, WorkspaceId, WorkspaceInfo } from '../../shared/types';
 import type { AgentChoiceView } from './claude-session-view';
 
-/** The three states an agent can be IN. `unknown` is absence, and never appears here. */
-export type AgentPresenceState = 'blocked' | 'working' | 'idle';
+/**
+ * What an agent in the roster is doing.
+ *
+ * `unknown` is NOT absence — absence is not being in the roster at all. It means
+ * "we know an agent is running here (it was identified) but it has not told us
+ * what it is doing". Keeping that distinct from `idle` is invariant 1 of the
+ * declared-state protocol: `idle` is a CLAIM, and asserting it for an agent that
+ * never spoke is exactly the lie the protocol exists to prevent. This is also
+ * the slot screen detection fills in later.
+ */
+export type AgentPresenceState = 'blocked' | 'working' | 'idle' | 'unknown';
+
+/** Which agent is running, and how confident we are about that. */
+export interface AgentIdentitySnapshot {
+  kind: string | null;
+  source: 'shell-spec' | 'command' | 'probe' | null;
+}
 
 /**
  * One AGENT_STATE payload as the renderer receives it (src/main/agent-state.ts,
  * `AgentStateSnapshot`). Only the fields the rollup needs are declared.
  */
 export interface DeclaredAgentSnapshot {
-  state: AgentPresenceState | 'unknown';
+  state: AgentPresenceState;
   blockedReason?: string | null;
   choices?: AgentChoiceView[];
   answeredAt?: number | null;
@@ -57,13 +72,19 @@ export interface AgentRosterEntry {
   answerPending: boolean;
   /** How long this agent has been in `state`, in ms. */
   dwellMs: number;
+  /** Which agent (`claude`, `codex`, …), when one was identified. */
+  kind: string | null;
+  /** How that kind was established — null when only declared state is known. */
+  identitySource: AgentIdentitySnapshot['source'];
 }
 
 export interface AgentCounts {
   blocked: number;
   working: number;
   idle: number;
-  /** Agents present, i.e. blocked + working + idle. Not the pane count. */
+  /** Identified, but silent about what it is doing. */
+  unknown: number;
+  /** Agents present, i.e. blocked + working + idle + unknown. Not the pane count. */
   total: number;
 }
 
@@ -110,7 +131,7 @@ function cwdBasename(cwd: string | undefined): string | null {
   return base || null;
 }
 
-const EMPTY_COUNTS = (): AgentCounts => ({ blocked: 0, working: 0, idle: 0, total: 0 });
+const EMPTY_COUNTS = (): AgentCounts => ({ blocked: 0, working: 0, idle: 0, unknown: 0, total: 0 });
 
 /**
  * One surface → one roster entry, or null when no agent claimed it.
@@ -123,30 +144,44 @@ function rosterEntryFor(
   surface: SurfaceEntry,
   workspace: WorkspaceInfo,
   declared: DeclaredAgentSnapshot | undefined,
+  identity: AgentIdentitySnapshot | undefined,
   now: number,
 ): AgentRosterEntry | null {
-  // Absence and `unknown` are the same fact: nobody claimed this pane.
-  if (!declared || declared.state === 'unknown') return null;
+  const declaredState = declared && declared.state !== 'unknown' ? declared.state : null;
+  const kind = identity?.kind ?? null;
 
-  const state = declared.state;
+  // Two independent ways to be an agent pane: the agent said so, or wmux
+  // identified the process. Either alone is enough to be listed — an agent that
+  // reports nothing is exactly the case identity exists to cover.
+  if (!declaredState && !kind) return null;
+
+  // `unknown` rather than `idle` when only identity spoke: idle is a claim, and
+  // no one made it.
+  const state: AgentPresenceState = declaredState ?? 'unknown';
   const blocked = state === 'blocked';
-  const choices = blocked ? (declared.choices ?? []) : [];
+  const choices = blocked ? (declared?.choices ?? []) : [];
   // A stamped blockedSince is truthful; updatedAt is the best guess when main
   // did not stamp one. The dwell is clamped at 0 — a report from the future
   // (clock skew, a replayed hookAt) must not sort to the top of the queue.
-  const since = (blocked ? declared.blockedSince : null) ?? declared.updatedAt ?? now;
+  const since = (blocked ? declared?.blockedSince : null) ?? declared?.updatedAt ?? now;
 
   return {
     surfaceId: surface.surfaceId,
     paneId: surface.paneId,
     workspaceId: workspace.id,
     workspaceTitle: workspace.title,
-    label: surface.customTitle ?? cwdBasename(surface.currentCwd) ?? 'Agent',
+    // The agent's own name beats a folder name: with three panes in one repo,
+    // "myproj / myproj / myproj" identifies nothing, "claude / codex / claude"
+    // is the distinction the user is looking at the list to make. A hand-set tab
+    // title still wins over both — it is the only label the user chose.
+    label: surface.customTitle ?? kind ?? cwdBasename(surface.currentCwd) ?? 'Agent',
     state,
-    blockedReason: blocked ? (declared.blockedReason ?? null) : null,
+    blockedReason: blocked ? (declared?.blockedReason ?? null) : null,
     choices,
-    answerPending: blocked && choices.length === 0 && !!declared.answeredAt,
+    answerPending: blocked && choices.length === 0 && !!declared?.answeredAt,
     dwellMs: Math.max(0, now - since),
+    kind,
+    identitySource: identity?.source ?? null,
   };
 }
 
@@ -163,6 +198,7 @@ export function rollupAgents(
   workspaces: WorkspaceInfo[],
   agentStates: Record<string, DeclaredAgentSnapshot | undefined>,
   now: number,
+  identities: Record<string, AgentIdentitySnapshot | undefined> = {},
 ): AgentRollup {
   const byWorkspace: Record<string, AgentCounts> = {};
   const totals = EMPTY_COUNTS();
@@ -176,7 +212,13 @@ export function rollupAgents(
     collectSurfaces(workspace.splitTree, surfaces);
 
     for (const surface of surfaces) {
-      const entry = rosterEntryFor(surface, workspace, agentStates[surface.surfaceId], now);
+      const entry = rosterEntryFor(
+        surface,
+        workspace,
+        agentStates[surface.surfaceId],
+        identities[surface.surfaceId],
+        now,
+      );
       if (!entry) continue;
 
       roster.push(entry);
@@ -206,5 +248,8 @@ export function workspaceAgentState(counts: AgentCounts | undefined): AgentPrese
   if (!counts || counts.total === 0) return null;
   if (counts.blocked > 0) return 'blocked';
   if (counts.working > 0) return 'working';
-  return 'idle';
+  // `idle` outranks `unknown` because it is a claim someone actually made; a
+  // workspace of nothing but silent agents must not borrow it.
+  if (counts.idle > 0) return 'idle';
+  return 'unknown';
 }

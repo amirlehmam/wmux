@@ -23,6 +23,7 @@
  */
 
 import { parseSshArgv, splitCommandLine, normalizedExecutableName, type DetectedSsh } from './ssh-argv';
+import { identifyAgentCommand } from './agent-argv';
 import { queryWin32Processes } from './win32-process';
 import * as path from 'path';
 
@@ -55,9 +56,25 @@ export interface SshProcess {
   commandLine: string;
 }
 
+/** One process the table recognised as a coding agent. */
+export interface AgentProcess {
+  pid: number;
+  /** Canonical agent kind — see AGENT_ALIASES in agent-argv.ts. */
+  kind: string;
+}
+
 /** A probe sweep's raw output: the ssh processes, and the whole pid -> ppid tree. */
 export interface ProcessSnapshot {
   sshProcesses: SshProcess[];
+  /**
+   * Coding agents seen in the same pass.
+   *
+   * Collected here rather than by a second sweep because this table already
+   * carries every process's name and command line and was discarding all of
+   * them but `ssh.exe`. The ~550ms PowerShell spawn is the entire cost of the
+   * probe; classifying two kinds of row instead of one is free.
+   */
+  agentProcesses: AgentProcess[];
   /** Every pid on the machine, so the ancestry walk can cross non-ssh shells. */
   parents: Map<number, number>;
 }
@@ -107,7 +124,7 @@ function mergeProcessFacts(primary: DetectedSsh, probed: DetectedSsh | undefined
   };
 }
 
-function sequenceFrom(value: string | number | undefined): number | undefined {
+export function sequenceFrom(value: string | number | undefined): number | undefined {
   if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
   const match = /^seq=(\d+)$/.exec(value ?? '');
   if (!match) return undefined;
@@ -122,7 +139,7 @@ function sequenceFrom(value: string | number | undefined): number | undefined {
  * of arbitrary length and `^(seq=\d+)\s+(.*)$` over it is a backtracking
  * liability for no benefit. This walks the prefix once and slices.
  */
-function splitSequencedReport(raw: string): { sequence?: string; rest: string } {
+export function splitSequencedReport(raw: string): { sequence?: string; rest: string } {
   if (!raw.startsWith('seq=')) return { rest: raw };
   let digits = 'seq='.length;
   while (digits < raw.length && raw[digits] >= '0' && raw[digits] <= '9') digits += 1;
@@ -153,6 +170,23 @@ export class SshDetector {
   constructor(
     private readonly source: SurfaceProcessSource,
     private readonly processList: () => Promise<ProcessSnapshot> = listSshProcesses,
+    /**
+     * Called with each sweep's agent attribution.
+     *
+     * A callback rather than a direct import so this module keeps knowing only
+     * about ssh: the sweep is a shared resource, not a shared concern, and the
+     * agent tracker owns what to do with its half.
+     *
+     * KNOWN LIMIT, deliberately accepted: this fires only while the sweep is
+     * running, and the sweep's lifecycle is still governed entirely by ssh —
+     * `park()` counts sweeps that found no ssh, so on a machine with no ssh at
+     * all it stops after IDLE_SWEEPS_BEFORE_PARK and the agent probe stops with
+     * it. Keeping it alive for agents would mean a ~550ms PowerShell spawn
+     * every 3s for the whole session, which is exactly the cost parking exists
+     * to avoid. The probe is therefore opportunistic; the two authoritative
+     * layers in agent-identity.ts are what actually cover the common cases.
+     */
+    private readonly onAgentSweep?: (found: Map<string, string>, liveSurfaceIds: string[]) => void,
   ) {}
 
   private bump(surfaceId: string): number {
@@ -337,8 +371,13 @@ export class SshDetector {
     try {
       const surfaceIds = this.source.liveSurfaceIds();
       const generations = new Map(surfaceIds.map((id) => [id, this.generations.get(id) ?? 0]));
-      const { sshProcesses, parents } = await this.processList();
+      const { sshProcesses, agentProcesses, parents } = await this.processList();
       const found = attributeSshProcesses(sshProcesses, parents, this.source);
+      // Same snapshot, second consumer. Reported outside the generation guard
+      // below because the agent tracker does its own debouncing and ranks the
+      // probe beneath both authoritative layers anyway — a stale row there can
+      // only ever fill a gap, never overwrite a report.
+      this.onAgentSweep?.(attributeAgentProcesses(agentProcesses, parents, this.source), surfaceIds);
       for (const surfaceId of surfaceIds) {
         // A prompt/command report that arrived during CIM wins over the stale snapshot.
         if ((this.generations.get(surfaceId) ?? 0) !== generations.get(surfaceId)) continue;
@@ -400,6 +439,49 @@ export function attributeSshProcesses(
     if (!session) continue;
     depthBySurface.set(owner.surfaceId, owner.depth);
     result.set(owner.surfaceId, session);
+  }
+
+  return result;
+}
+
+/**
+ * Map each agent process onto the surface whose PTY subtree contains it.
+ *
+ * Shares `owningSurface` with the ssh attribution above deliberately: it is the
+ * same ancestry walk answering the same unanswerable question, and two copies
+ * would be two chances to disagree about what "this pane's process" means.
+ *
+ * What it is NOT is foreground detection — Windows has no `tpgid`, so a
+ * backgrounded agent under the pane's shell is indistinguishable from the one
+ * the user is looking at. For an SSH upload that ambiguity is unusable and
+ * `detect()` refuses to act on it; for a status label a wrong guess is
+ * cosmetic, which is why this may stand alone where the ssh probe may not.
+ * Deepest-wins, so `pwsh -> claude` attributes to claude rather than to the
+ * shell that happens to be an ancestor of everything.
+ */
+export function attributeAgentProcesses(
+  processes: AgentProcess[],
+  parents: Map<number, number>,
+  source: SurfaceProcessSource,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  if (processes.length === 0) return result;
+
+  const rootToSurface = new Map<number, string>();
+  for (const surfaceId of source.liveSurfaceIds()) {
+    const pid = source.getPid(surfaceId);
+    if (typeof pid === 'number' && pid > 0) rootToSurface.set(pid, surfaceId);
+  }
+  if (rootToSurface.size === 0) return result;
+
+  const depthBySurface = new Map<string, number>();
+  for (const proc of processes) {
+    const owner = owningSurface(proc.pid, rootToSurface, parents);
+    if (!owner) continue;
+    const previousDepth = depthBySurface.get(owner.surfaceId);
+    if (previousDepth !== undefined && previousDepth >= owner.depth) continue;
+    depthBySurface.set(owner.surfaceId, owner.depth);
+    result.set(owner.surfaceId, proc.kind);
   }
 
   return result;
@@ -478,6 +560,7 @@ export async function listSshProcesses(): Promise<ProcessSnapshot> {
  */
 export function parseProcessTable(stdout: string): ProcessSnapshot {
   const sshProcesses: SshProcess[] = [];
+  const agentProcesses: AgentProcess[] = [];
   const parents = new Map<number, number>();
 
   for (const rawLine of stdout.split(/\r?\n/)) {
@@ -497,12 +580,24 @@ export function parseProcessTable(stdout: string): ProcessSnapshot {
     parents.set(pid, ppid);
 
     const name = line.slice(second + 1, third).trim().toLowerCase();
-    if (name !== 'ssh.exe') continue;
     const executablePath = line.slice(third + 1, fourth).trim() || undefined;
     const commandLine = line.slice(fourth + 1).trim();
-    if (!commandLine) continue;
-    sshProcesses.push({ pid, ppid, executablePath, commandLine });
+
+    if (name === 'ssh.exe') {
+      if (commandLine) sshProcesses.push({ pid, ppid, executablePath, commandLine });
+      continue;
+    }
+
+    // Classified off the PROCESS NAME, not the command line.
+    //
+    // A command line is what a process was asked to run; the name is what it
+    // actually is. `identifyAgentCommand` unwraps `cmd /c claude` to "claude",
+    // which is right for a preexec report — the shell is about to become that
+    // agent — and wrong here, where the cmd.exe wrapper and the claude it
+    // spawned are two separate rows, and only one of them IS the agent.
+    const kind = identifyAgentCommand(name);
+    if (kind) agentProcesses.push({ pid, kind });
   }
 
-  return { sshProcesses, parents };
+  return { sshProcesses, agentProcesses, parents };
 }

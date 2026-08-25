@@ -8,7 +8,28 @@ import '../../styles/agent-navigator.css';
 
 type Filter = 'all' | AgentPresenceState;
 
-const FILTER_KEYS: Record<string, Filter> = { a: 'all', b: 'blocked', w: 'working', i: 'idle' };
+/**
+ * The right-hand column when the agent declared no reason.
+ *
+ * A `unknown` row says WHY it is unknown rather than leaving the column blank:
+ * "wmux can see this agent but it never reports" is a fact about the agent's
+ * integration, not a wmux failure, and the user can act on it (install the
+ * integration) in a way they cannot act on an empty cell.
+ */
+function reasonFallback(
+  entry: AgentRosterEntry,
+  t: (key: any, fallback?: string) => string,
+): string {
+  if (entry.answerPending) return t('agentNavigator.answerSent', 'answer sent — waiting');
+  if (entry.state !== 'unknown') return '';
+  return entry.identitySource === 'probe'
+    ? t('agentNavigator.silentProbed', 'detected — reports no state')
+    : t('agentNavigator.silent', 'reports no state');
+}
+
+const FILTER_KEYS: Record<string, Filter> = {
+  a: 'all', b: 'blocked', w: 'working', i: 'idle', u: 'unknown',
+};
 
 /**
  * Every agent in the window, in one list, ranked by who needs you most.
@@ -26,14 +47,15 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
   const t = useT();
   const workspaces = useStore((s) => s.workspaces);
   const agentStates = useStore((s) => s.agentStates);
+  const agentIdentities = useStore((s) => s.agentIdentities);
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const listRef = useRef<HTMLDivElement>(null);
 
   const rollup = useMemo(
-    () => rollupAgents(workspaces, agentStates, now),
-    [workspaces, agentStates, now],
+    () => rollupAgents(workspaces, agentStates, now, agentIdentities),
+    [workspaces, agentStates, agentIdentities, now],
   );
 
   /**
@@ -100,6 +122,7 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
     ['blocked', t('agentNavigator.filterBlocked', 'blocked'), counts.blocked],
     ['working', t('agentNavigator.filterWorking', 'working'), counts.working],
     ['idle', t('agentNavigator.filterIdle', 'idle'), counts.idle],
+    ['unknown', t('agentNavigator.filterUnknown', 'silent'), counts.unknown],
   ];
 
   return (
@@ -148,11 +171,16 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
             >
               <span className="agent-nav__row-dot" />
               <span className="agent-nav__row-label">{entry.label}</span>
+              {/* Shown only when it adds something the label does not already
+                  say — otherwise every row reads "claude   claude". */}
+              {entry.kind && entry.kind !== entry.label && (
+                <span className="agent-nav__row-kind" data-source={entry.identitySource ?? 'none'}>
+                  {entry.kind}
+                </span>
+              )}
               <span className="agent-nav__row-workspace">{entry.workspaceTitle}</span>
               <span className="agent-nav__row-reason">
-                {entry.blockedReason ?? (entry.answerPending
-                  ? t('agentNavigator.answerSent', 'answer sent — waiting')
-                  : '')}
+                {entry.blockedReason ?? reasonFallback(entry, t)}
               </span>
               <span className="agent-nav__row-dwell">
                 {entry.state === 'blocked' ? formatDwell(entry.dwellMs) : ''}

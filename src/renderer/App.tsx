@@ -771,6 +771,26 @@ export default function App() {
     return unsub;
   }, []);
 
+  // Which agent runs in each surface (phase 2). Same delta-plus-seed shape as
+  // the state channel above, and needed for the same reason: a pane whose shell
+  // spec named an agent at create time never emits again, so a window opened
+  // afterwards would never learn about it.
+  useEffect(() => {
+    if (!window.wmux?.agentIdentity?.onUpdate) return;
+    const unsub = window.wmux.agentIdentity.onUpdate((data: any) => {
+      if (data?.surfaceId) useStore.getState().setAgentIdentity(data);
+    });
+    void (async () => {
+      const list = await window.wmux?.agentIdentity?.list?.();
+      if (Array.isArray(list) && list.length > 0) {
+        // Merge, never replace: a delta may already have landed for a surface
+        // the seed does not know about, and the seed is the older view.
+        for (const entry of list) useStore.getState().setAgentIdentity(entry);
+      }
+    })();
+    return unsub;
+  }, []);
+
   // ── Windows taskbar progress (OSC 9;4) ──────────────────────────────────
   // Fold every surface's progress into one value for this window's taskbar
   // button — the same convention Windows Terminal follows for the sequence.

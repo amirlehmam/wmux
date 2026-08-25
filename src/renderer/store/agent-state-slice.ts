@@ -14,10 +14,15 @@
  */
 import { StateCreator } from 'zustand';
 import { SurfaceId } from '../../shared/types';
-import type { DeclaredAgentSnapshot } from './agent-rollup';
+import type { DeclaredAgentSnapshot, AgentIdentitySnapshot } from './agent-rollup';
 
 /** The AGENT_STATE payload, which carries its own surfaceId. */
 export interface AgentStatePayload extends DeclaredAgentSnapshot {
+  surfaceId: SurfaceId;
+}
+
+/** The AGENT_IDENTITY payload. Kind only — never the command line behind it. */
+export interface AgentIdentityPayload extends AgentIdentitySnapshot {
   surfaceId: SurfaceId;
 }
 
@@ -36,6 +41,11 @@ export interface AgentStateSlice {
   setAgentState: (payload: AgentStatePayload) => void;
   /** Seed the whole map — used once per window, at mount (see agentState.list). */
   replaceAgentStates: (payloads: AgentStatePayload[]) => void;
+
+  /** surfaceId → which agent runs there. Same delta-channel caveats as above. */
+  agentIdentities: Record<string, AgentIdentitySnapshot>;
+  setAgentIdentity: (payload: AgentIdentityPayload) => void;
+  replaceAgentIdentities: (payloads: AgentIdentityPayload[]) => void;
 }
 
 export const createAgentStateSlice: StateCreator<AgentStateSlice, [], [], AgentStateSlice> = (set) => ({
@@ -54,5 +64,35 @@ export const createAgentStateSlice: StateCreator<AgentStateSlice, [], [], AgentS
       if (p?.surfaceId) next[p.surfaceId] = p;
     }
     set({ agentStates: next });
+  },
+
+  agentIdentities: {},
+
+  setAgentIdentity(payload: AgentIdentityPayload): void {
+    if (!payload?.surfaceId) return;
+    set((state) => {
+      // A null kind is main saying "this pane is no longer an agent" — drop the
+      // entry rather than storing a tombstone the rollup would have to skip.
+      if (!payload.kind) {
+        if (!(payload.surfaceId in state.agentIdentities)) return state;
+        const next = { ...state.agentIdentities };
+        delete next[payload.surfaceId];
+        return { agentIdentities: next };
+      }
+      return {
+        agentIdentities: {
+          ...state.agentIdentities,
+          [payload.surfaceId]: { kind: payload.kind, source: payload.source },
+        },
+      };
+    });
+  },
+
+  replaceAgentIdentities(payloads: AgentIdentityPayload[]): void {
+    const next: Record<string, AgentIdentitySnapshot> = {};
+    for (const p of payloads ?? []) {
+      if (p?.surfaceId && p.kind) next[p.surfaceId] = { kind: p.kind, source: p.source };
+    }
+    set({ agentIdentities: next });
   },
 });
