@@ -5,7 +5,7 @@
 import { useStore } from './store';
 import { splitNode, getAllPaneIds, findLeaf, buildGridLayout } from './store/split-utils';
 import { surfaceTerminalRegistry } from './hooks/useTerminal';
-import { PaneId, SurfaceId, WorkspaceId, SurfaceType } from '../shared/types';
+import { PaneId, SurfaceId, WorkspaceId, SurfaceType, engineOf, type BrowserEngine } from '../shared/types';
 import { v4 as uuid } from 'uuid';
 import { translate, type TranslationKey } from './i18n/core';
 
@@ -94,9 +94,60 @@ export function initPipeBridge(): void {
     return ids;
   };
 
+  /**
+   * Which engine backs a browser surface — `web` (the Electron <webview>) or
+   * `agent` (vercel-labs agent-browser driving a real Chrome).
+   *
+   * The split tree lives here, in the Zustand store, and main has no copy of
+   * it, so main asks this before routing any `browser.*` verb (see
+   * `engineForSurface` in v2-browser.ts).
+   *
+   * An UNKNOWN surface answers `web`, and that is the safe answer rather than a
+   * lazy one: `web` needs no external binary and can always render, so a stale
+   * id, a surface on another window, or a race against a pane being created can
+   * only ever degrade to today's behaviour. Read through `engineOf` rather than
+   * off the raw field so a corrupt persisted value (the session file is
+   * user-editable) degrades identically here and in main.
+   */
+  w.__wmux_getBrowserEngine = (surfaceId: string): BrowserEngine => {
+    const store = useStore.getState();
+    for (const ws of store.workspaces) {
+      for (const paneId of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, paneId);
+        const surface = leaf?.surfaces?.find(s => s.id === surfaceId);
+        if (surface) return engineOf(surface);
+      }
+    }
+    return 'web';
+  };
+
+  /**
+   * Flip a browser surface's engine. Returns whether it took.
+   *
+   * Refuses a non-browser surface outright instead of writing the field
+   * anyway: `engineOf` would ignore `browserEngine` on a terminal surface, so
+   * the write would persist a value that reads back as `web` forever — a
+   * mutation that "succeeds" while changing nothing, which is the #143 failure
+   * mode.
+   */
+  w.__wmux_setBrowserEngine = (surfaceId: string, engine: BrowserEngine): boolean => {
+    const store = useStore.getState();
+    for (const ws of store.workspaces) {
+      for (const paneId of getAllPaneIds(ws.splitTree)) {
+        const leaf = findLeaf(ws.splitTree, paneId);
+        const surface = leaf?.surfaces?.find(s => s.id === surfaceId);
+        if (!surface) continue;
+        if (surface.type !== 'browser') return false;
+        store.updateSurface(ws.id, paneId, surfaceId as SurfaceId, { browserEngine: engine });
+        return true;
+      }
+    }
+    return false;
+  };
+
   // ─── Pane ───────────────────────────────────────────────────────────────────
 
-  w.__wmux_splitPane = (params?: { direction?: string; type?: string; workspaceId?: string; colorScheme?: string }) => {
+  w.__wmux_splitPane = (params?: { direction?: string; type?: string; workspaceId?: string; colorScheme?: string; startupCommands?: string[] }) => {
     const store = useStore.getState();
     const wsId = (params?.workspaceId || store.activeWorkspaceId) as WorkspaceId;
     if (!wsId) return null;
@@ -118,10 +169,17 @@ export function initPipeBridge(): void {
     const newLeaf = findLeaf(newTree, newPaneId);
     const surfaceId = newLeaf?.surfaces?.[0]?.id || null;
 
-    // Apply a per-pane color scheme override to the freshly-created surface
-    // so `wmux split --color-scheme prod` takes effect immediately.
-    if (params?.colorScheme && surfaceId && newLeaf) {
-      store.updateSurface(wsId, newPaneId, surfaceId as SurfaceId, { colorScheme: params.colorScheme });
+    // Patch the freshly-created surface before React gets a chance to mount it:
+    // `colorScheme` so `wmux split --color-scheme prod` takes effect
+    // immediately, and `startupCommands` because useTerminal reads them once,
+    // at pty.create time — a patch that landed after mount would never run.
+    // Both store writes happen in this same synchronous tick as
+    // `updateSplitTree` above, which is what makes that safe.
+    const patch: Partial<{ colorScheme: string; startupCommands: string[] }> = {};
+    if (params?.colorScheme) patch.colorScheme = params.colorScheme;
+    if (params?.startupCommands?.length) patch.startupCommands = params.startupCommands;
+    if (surfaceId && newLeaf && Object.keys(patch).length > 0) {
+      store.updateSurface(wsId, newPaneId, surfaceId as SurfaceId, patch);
     }
 
     return { paneId: newPaneId, surfaceId };

@@ -470,6 +470,19 @@ export const IPC_CHANNELS = {
   CDP_GET_TEXT: 'cdp:get-text',
   CDP_EVAL: 'cdp:eval',
   CDP_WAIT: 'cdp:wait',
+  /**
+   * agent-browser engine control for ONE browser surface (renderer → main).
+   *
+   * Distinct from the `browser.*`/CDP channels above, which run a verb against
+   * whichever engine a surface already has: these four change WHICH engine it
+   * has, plus the install flow that makes `agent` reachable at all. The renderer
+   * cannot do any of it itself — the binary, the session registry and the
+   * dashboard refcount all live in main.
+   */
+  AGENT_BROWSER_ENABLE: 'agent-browser:enable',
+  AGENT_BROWSER_DISABLE: 'agent-browser:disable',
+  AGENT_BROWSER_STATUS: 'agent-browser:status',
+  AGENT_BROWSER_INSTALL: 'agent-browser:install',
   // Active workspace query (renderer → main)
   GET_ACTIVE_WORKSPACE: 'get-active-workspace',
   // Hook events (Claude Code hooks → main → renderer)

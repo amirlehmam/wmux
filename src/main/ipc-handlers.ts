@@ -43,6 +43,13 @@ import {
   MD_DIALOG_EXTENSIONS,
 } from './markdown-file';
 import { grantMarkdownPath, isMarkdownPathGranted } from './markdown-grants';
+import { agentBrowserPath, runAgentBrowser, type RunResult } from './agent-browser-cli';
+// The process-wide singletons. Constructing a second SessionRegistry or
+// DashboardDaemon here would hand the same stream port to two surfaces and let
+// either daemon stop the dashboard out from under the other — see the header of
+// agent-browser-runtime.ts.
+import { dashboardDaemon, sessionRegistry } from './agent-browser-runtime';
+import type { AgentSession } from './agent-browser-session';
 
 // Claimed at module load, before anything can spawn a PTY, so the candidate
 // list is strictly what a PREVIOUS instance left behind (issue #139). The
@@ -131,6 +138,198 @@ export function reapOrphanedPtys(): void {
     (err) => { console.warn('[wmux] orphan reap failed:', err?.message); },
   );
 }
+
+// ─── agent-browser engine control ──────────────────────────────────────────
+//
+// Flipping one browser surface between the `web` <webview> and the `agent`
+// engine. The renderer owns the decision (it is a per-surface toggle in the
+// pane) but owns none of the machinery: the binary, the session registry and
+// the dashboard refcount all live here.
+//
+// Everything below the argv builders is dependency-INJECTED rather than reading
+// the module singletons directly, for the same reason `agent-browser-verbs.ts`
+// is pure: the sequencing (acquire, ensure, open, bind stream / read-back,
+// close, release) is the part most likely to be wrong, and it must be testable
+// with no Chrome, no dashboard and no ports.
+
+/**
+ * Open the session's pinned tab, optionally at `currentUrl`.
+ *
+ * `--pin-tab` binds the session to its own CDP target. Without it a second
+ * pane's session can attach to the tab this one is driving, and two agents
+ * silently share one page.
+ *
+ * `about:blank` is dropped rather than passed through: it is what a browser
+ * surface reports when it has never navigated anywhere, and handing it to
+ * agent-browser would spend a page load arriving at the same nothing.
+ */
+export function agentBrowserOpenArgv(sessionName: string, currentUrl?: string): string[] {
+  const target = currentUrl && currentUrl !== 'about:blank' ? [currentUrl] : [];
+  return ['--session', sessionName, '--pin-tab', 'open', ...target];
+}
+
+/**
+ * Bind the session's stream to the port wmux allocated for it.
+ *
+ * Load-bearing for the pane, not optional telemetry: the dashboard deep-link
+ * in `AgentSession.dashboardUrl` is `?port=<streamPort>`, so a session whose
+ * stream is not on that exact port renders an empty dashboard. wmux picks the
+ * port itself precisely so this can be stated up front instead of discovered
+ * after the webview has already loaded.
+ */
+export function agentBrowserStreamArgv(sessionName: string, streamPort: number): string[] {
+  return ['--session', sessionName, 'stream', 'enable', '--port', String(streamPort)];
+}
+
+/** Read the page back before closing, so flipping to `web` lands where the agent was. */
+export function agentBrowserGetUrlArgv(sessionName: string): string[] {
+  return ['--session', sessionName, 'get', 'url'];
+}
+
+export function agentBrowserCloseArgv(sessionName: string): string[] {
+  return ['--session', sessionName, 'close'];
+}
+
+/**
+ * Schemes the read-back url may carry into the webview.
+ *
+ * This value comes from whatever page the agent navigated to, and its only
+ * consumer sets it as a `<webview>` src — so `javascript:` (and `data:`) would
+ * be script execution inside the pane chrome, sourced from a page nobody
+ * audited. Anything unrecognised is dropped and the pane falls back to its own
+ * default, which is a worse handoff but never an exploit.
+ */
+const READBACK_SCHEMES = /^(https?|file|about):/i;
+
+/**
+ * The url from a `get url` invocation, or undefined.
+ *
+ * Prefers parsed JSON over stdout because not every agent-browser verb emits
+ * JSON (see `agentResultShape` in v2-browser.ts, which makes the same choice).
+ */
+export function readBackUrl(res: RunResult): string | undefined {
+  if (!res.ok) return undefined;
+  const fromJson = (res.data as { url?: unknown } | null)?.url;
+  const raw = (typeof fromJson === 'string' ? fromJson : res.stdout).trim();
+  return raw && READBACK_SCHEMES.test(raw) ? raw : undefined;
+}
+
+export interface AgentBrowserEnableResult {
+  installed: boolean;
+  dashboardUrl?: string;
+  sessionName?: string;
+}
+
+export interface AgentBrowserDisableResult {
+  url?: string;
+}
+
+/**
+ * Everything enable/disable touch that is not pure.
+ *
+ * `acquireDashboard`/`releaseDashboard` take a surfaceId because the daemon is
+ * refcounted per LIVE AGENT-MODE SURFACE, and the renderer may legitimately
+ * call enable twice for one pane (a re-enable, a remount) or disable a pane
+ * that was never enabled. Making the pair surface-scoped is what keeps the
+ * refcount balanced regardless.
+ */
+export interface AgentBrowserDeps {
+  binary: () => string | null;
+  run: (binary: string, argv: string[]) => Promise<RunResult>;
+  acquireDashboard: (surfaceId: SurfaceId) => Promise<void>;
+  releaseDashboard: (surfaceId: SurfaceId) => Promise<void>;
+  ensureSession: (surfaceId: SurfaceId) => AgentSession;
+  getSession: (surfaceId: SurfaceId) => AgentSession | undefined;
+  releaseSession: (surfaceId: SurfaceId) => AgentSession | undefined;
+}
+
+export async function enableAgentBrowser(
+  surfaceId: SurfaceId,
+  currentUrl: string | undefined,
+  deps: AgentBrowserDeps,
+): Promise<AgentBrowserEnableResult> {
+  const binary = deps.binary();
+  // Not an error: the renderer answers a missing binary with the setup card,
+  // and throwing here would turn an offer to install into a broken pane.
+  if (!binary) return { installed: false };
+
+  try {
+    await deps.acquireDashboard(surfaceId);
+  } catch (err) {
+    // The dashboard is OBSERVABILITY. agent-browser drives Chrome perfectly
+    // well without its viewer, so refusing to enable because the viewer did
+    // not start would trade a degraded feature for a broken one. Same call as
+    // v2-browser.ts's `agentTargetFor` makes, for the same reason.
+    console.warn('[wmux] agent-browser dashboard did not start:', (err as Error)?.message);
+  }
+
+  const session = deps.ensureSession(surfaceId);
+  await deps.run(binary, agentBrowserOpenArgv(session.sessionName, currentUrl));
+  await deps.run(binary, agentBrowserStreamArgv(session.sessionName, session.streamPort));
+  return { installed: true, dashboardUrl: session.dashboardUrl, sessionName: session.sessionName };
+}
+
+export async function disableAgentBrowser(
+  surfaceId: SurfaceId,
+  deps: AgentBrowserDeps,
+): Promise<AgentBrowserDisableResult> {
+  // Idempotent by design: the renderer calls this on unmount, which fires for
+  // panes that never entered agent mode at all. No session means there is
+  // nothing to close and — since `enableAgentBrowser` only ever acquires the
+  // dashboard on the path that also creates one — nothing to release either.
+  const session = deps.getSession(surfaceId);
+  if (!session) return {};
+
+  const binary = deps.binary();
+  let url: string | undefined;
+  if (binary) {
+    // Read BEFORE close; the page is gone afterwards. Failure here is
+    // tolerated rather than propagated: not knowing where the agent was is a
+    // worse handoff, but refusing to tear the session down over it would
+    // strand a Chrome and a dashboard reference for the rest of the session.
+    try {
+      url = readBackUrl(await deps.run(binary, agentBrowserGetUrlArgv(session.sessionName)));
+    } catch { /* see above */ }
+    try {
+      await deps.run(binary, agentBrowserCloseArgv(session.sessionName));
+    } catch { /* see above */ }
+  }
+
+  deps.releaseSession(surfaceId);
+  await deps.releaseDashboard(surfaceId);
+  return url ? { url } : {};
+}
+
+/**
+ * Surfaces this module currently holds a dashboard reference for.
+ *
+ * The daemon's contract is one reference per live agent-mode surface, so the
+ * bookkeeping has to be per surface: a double enable must not take two
+ * references, and a disable for a surface that never enabled must not give one
+ * back that was never taken (the daemon clamps at zero, but a phantom release
+ * would still stop a dashboard other panes are using).
+ */
+const dashboardHeldFor = new Set<string>();
+
+/** The real machine behind `AgentBrowserDeps`. Every production call uses this. */
+const agentBrowserDeps: AgentBrowserDeps = {
+  binary: () => agentBrowserPath(),
+  run: (binary, argv) => runAgentBrowser(binary, argv),
+  acquireDashboard: async (surfaceId) => {
+    if (dashboardHeldFor.has(surfaceId)) return;
+    // Recorded only after acquire SUCCEEDS, so a failed start is retried by the
+    // next enable rather than remembered as done.
+    await dashboardDaemon.acquire();
+    dashboardHeldFor.add(surfaceId);
+  },
+  releaseDashboard: async (surfaceId) => {
+    if (!dashboardHeldFor.delete(surfaceId)) return;
+    await dashboardDaemon.release();
+  },
+  ensureSession: (surfaceId) => sessionRegistry.ensure(surfaceId),
+  getSession: (surfaceId) => sessionRegistry.get(surfaceId),
+  releaseSession: (surfaceId) => sessionRegistry.release(surfaceId),
+};
 
 export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstance?: CDPProxy): void {
   // Toggle DevTools for the renderer window
@@ -441,6 +640,47 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     if (webContentsId === undefined || cdpProxyInstance?.currentWebContentsId === webContentsId) {
       cdpProxyInstance?.setWebContentsId(null);
     }
+  });
+
+  /**
+   * Cheap enough to call on every entry into agent mode — `agentBrowserPath()`
+   * is memoised (#176) and `isAvailable` is a boolean field, so neither touches
+   * the filesystem or a socket here.
+   */
+  ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_STATUS, () => ({
+    installed: agentBrowserPath() !== null,
+    dashboardAvailable: dashboardDaemon.isAvailable,
+  }));
+
+  ipcMain.handle(
+    IPC_CHANNELS.AGENT_BROWSER_ENABLE,
+    (_event, surfaceId: string, currentUrl?: string) =>
+      enableAgentBrowser(surfaceId as SurfaceId, currentUrl, agentBrowserDeps),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_DISABLE, (_event, surfaceId: string) =>
+    disableAgentBrowser(surfaceId as SurfaceId, agentBrowserDeps));
+
+  /**
+   * Install agent-browser in a REAL terminal pane, not a hidden child process.
+   *
+   * This is ~240 MB of npm plus a Chrome-for-Testing download, and every way it
+   * fails — a corporate proxy, EACCES on the global prefix, no network — is
+   * only diagnosable from the output. A spinner that ends in "install failed"
+   * would be strictly less useful than the scrollback the user can read, paste
+   * into an issue, and retry from.
+   */
+  ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_INSTALL, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return { started: false };
+    const created = await win.webContents.executeJavaScript(`
+      window.__wmux_splitPane?.({
+        direction: 'vertical',
+        type: 'terminal',
+        startupCommands: ['npm i -g agent-browser', 'agent-browser install'],
+      }) ?? null
+    `);
+    return { started: created !== null };
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_LIST, async (_event, workspaceId?: string) => {
