@@ -3,10 +3,10 @@
 </p>
 
 <h1 align="center">wmux</h1>
-<p align="center">A visibility layer for Claude Code on Windows - see what your AI agent does in real-time</p>
+<p align="center">A visibility layer for coding agents on Windows — never hunt for the one that's waiting on you</p>
 
 <p align="center">
-  Built on Electron + xterm.js. Inspired by <a href="https://github.com/manaflow-ai/cmux">cmux</a>.
+  Built on Electron + xterm.js. Inspired by <a href="https://github.com/manaflow-ai/cmux">cmux</a>, with the agent-visibility model modelled on <a href="https://github.com/herdrdev/herdr">herdr</a>.
 </p>
 
 <p align="center">
@@ -22,6 +22,28 @@
 <p align="center">
   <img src="https://wmux.org/assets/wmux-screen.png" alt="wmux — split terminal panes with the agent session sidebar" width="900" />
 </p>
+
+## New in 2.0 — wmux sees every agent, not just Claude Code
+
+Until now wmux could only tell you what an agent was doing if that agent **told it**. That meant Claude Code (hooks), OpenCode (plugin) and Kiro. Codex, Gemini, Aider, Amp, Cursor and Copilot ran in panes wmux could display and could not read.
+
+2.0 closes that with three layers, each of which only fills the gap the one above left:
+
+**1. One roster for every agent in the window.** wmux already knew which panes were blocked — it just never said so above a single sidebar row. Now a banner over the workspace list answers *"who needs me?"* across every workspace at once, ranked by who has been waiting longest.
+
+**2. `Ctrl+Shift+A` — the agent navigator.** Every agent in the window in one list, blocked first. Filter with `a`/`b`/`w`/`i`/`u`, `↑↓` to move, `enter` to jump straight to the pane — it selects the workspace *and* raises the tab, so an agent buried in a background tab is one keystroke away. **`Ctrl+Shift+B`** goes straight to whoever has waited longest, and cycles on repeat.
+
+**3. wmux now identifies and reads agents that report nothing.** It works out which agent a pane is running from the command line you typed or the shell wmux launched, then matches the agent's own on-screen UI against bundled rules to tell *blocked* from *working*. All of it local — nothing is sent anywhere.
+
+Three things that are deliberately **not** clever about this:
+
+- **A detected state never overrides a reported one.** If an agent tells wmux it is working, that wins over anything the screen looks like. wmux's "needs you" never expires and answering it doesn't clear it, so a rule re-reading a repainted frame would leave you clicking a button that does nothing.
+- **When wmux can't parse a screen it says so.** No rule matched means the pane reads *silent*, never *idle* — because "idle" is a claim, and nobody made it. A new prompt shape wmux hasn't learned yet shows as "we don't know", which is the honest answer and the one that doesn't hide a pane needing you.
+- **You can see exactly why.** `wmux detect explain` names the rule that fired and the line that matched. `wmux detect explain --file screen.txt` replays a captured screen offline, so you can debug or author a rule without the agent even installed.
+
+Screen detection is on by default, skips every pane whose agent reports properly, and is one click off in **Settings → Workspace**. Rules live in `%APPDATA%\wmux\agent-detection` if you want to add or fix one.
+
+> Bundled rules currently cover **Claude Code** (blocked / working / idle), plus **Codex** and **OpenCode** (identity and idle). Anything else is identified but reads as *silent* until someone contributes rules — `wmux detect explain --file` is how you write them, and PRs are very welcome.
 
 ## Features
 
@@ -47,10 +69,28 @@ When Claude Code browses the web, every action appears in the wmux browser panel
 <tr>
 <td width="40%" valign="middle">
 <h3>Activity indicators</h3>
-Sidebar dots show what each Claude Code session is doing at a glance. <b>Orange pulsing</b> = working. <b>Green</b> = done. <b>Red</b> = interrupted (Ctrl+C). Git branch, dirty state, working directory, open ports, and PR status update in real-time from shell integration hooks.
+Sidebar dots show what each agent session is doing at a glance. <b>Violet pulsing</b> = needs you. <b>Orange pulsing</b> = working. <b>Green</b> = done. <b>Red</b> = interrupted (Ctrl+C). A <b>hollow</b> dot means wmux read that state off the screen rather than being told it — the colour says what, the fill says how sure. Blocked and working also mark the <b>tab</b>, so an agent waiting in a background tab is visible without opening it. Git branch, dirty state, working directory, open ports, and PR status update in real-time from shell integration hooks.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-sidebar.png" alt="Sidebar with live activity indicators" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>Agent roster &amp; navigator</h3>
+A banner above the workspace list answers <i>"who needs me?"</i> across every workspace at once, with the longest wait first — click it to jump straight there. <code>Ctrl+Shift+A</code> opens the full navigator: every agent in the window, blocked first, filterable by state with a single keystroke. <code>Ctrl+Shift+B</code> cycles through whoever is waiting. Both are bound by default, because a shortcut you have to discover in Settings is one you won't have when you need it.
+</td>
+<td width="60%">
+<img src="./docs/assets/wmux-sidebar.png" alt="Agent roster banner above the workspace list" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>Reads agents that report nothing</h3>
+Codex, Gemini, Aider, Amp, Cursor and Copilot don't tell any multiplexer what they're doing. wmux works out which agent a pane runs — from the command you typed, the shell it launched, or the process tree — then matches the agent's own UI against bundled rules to tell blocked from working. Entirely local. It never overrides what an agent actually reports, and when it can't parse a screen it says <i>silent</i> rather than guessing <i>idle</i>. <code>wmux detect explain</code> shows which rule fired.
+</td>
+<td width="60%">
+<img src="./docs/assets/wmux-terminals.png" alt="Several agents running in split panes" width="100%" />
 </td>
 </tr>
 <tr>
@@ -181,6 +221,8 @@ So I built wmux — a visibility layer for AI coding agents. It doesn't replace 
 
 The sidebar shows exactly what each agent is doing — the git branch it is on, the PR it opened, the ports it is listening on, and whether it needs your attention. Shell integration scripts inject themselves into PowerShell, CMD, and Bash sessions and report CWD changes, git branch switches, shell state, and PR status back to the sidebar via a named pipe in real time.
 
+Since 2.0 that no longer depends on the agent cooperating. wmux identifies which agent a pane is running and, for the ones that report nothing of their own, reads their on-screen UI to tell blocked from working — so Codex and Aider sit in the same roster as Claude Code. The ranking is the point: with ten workspaces open, the question is never "what is agent #7 doing", it is "which one of these has stopped and is waiting on me", and that answer is one banner and one keystroke away.
+
 On first launch, wmux auto-configures itself: it injects a minimal informational block into `~/.claude/CLAUDE.md`, adds a `PostToolUse` hook to `~/.claude/settings.json`, installs the wmux-orchestrator Claude Code plugin, and starts a CDP proxy on `localhost:9222`. No API keys needed — everything runs through the user's existing Claude Code session.
 
 Everything is automatable through the `wmux` CLI or the named pipe directly. The protocol matches cmux, so tools built for one work with the other.
@@ -276,6 +318,16 @@ holds swaps them, so trading `Ctrl+1–9` and `Ctrl+Alt+1–9` is a single click
 | Ctrl+Alt+I | Toggle Developer Tools |
 | Ctrl+Alt+C | Show JavaScript Console |
 
+### Agents
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+Shift+A | Agent navigator — every agent, blocked first |
+| Ctrl+Shift+B | Jump to the agent waiting longest (cycles on repeat) |
+
+Inside the navigator: `↑`/`↓` move, `enter` jumps, `esc` closes, and `a` / `b` /
+`w` / `i` / `u` filter to all / blocked / working / idle / silent.
+
 ### Notifications
 
 | Shortcut | Action |
@@ -327,6 +379,19 @@ wmux split --right                 # Split focused pane
 wmux send "npm test"               # Send text to terminal
 wmux send-key Enter --ctrl         # Send keystroke
 wmux read-screen --lines 50        # Read terminal content
+
+# Agents — who is running what, and who is waiting on you
+wmux agent-state                   # every pane's state, the blocked list, and
+                                   # every agent wmux identified but that reports nothing
+wmux agent-state --surface <id>    # just this pane
+wmux report-agent --blocked "Run the migration?" \
+  --choices '[{"id":"y","label":"Yes","key":"1"}]'   # your own agent, parked on a human
+wmux answer-agent --surface <id> --choice y          # answer another pane from yours
+
+# Screen detection — why does a pane read the way it does?
+wmux detect explain                          # the rule that decided this pane, and the line it matched
+wmux detect explain --file screen.txt --agent codex   # replay a capture offline, no agent needed
+wmux detect reload                           # re-read %APPDATA%\wmux\agent-detection
 
 # Browser (CDP-powered)
 wmux browser open http://localhost:3000
