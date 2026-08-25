@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">wmux</h1>
-<p align="center">A visibility layer for coding agents on Windows — never hunt for the one that's waiting on you</p>
+<p align="center">The original visibility layer for coding agents on Windows - never hunt for the one that's waiting on you</p>
 
 <p align="center">
   Built on Electron + xterm.js. Inspired by <a href="https://github.com/manaflow-ai/cmux">cmux</a>, with the agent-visibility model modelled on <a href="https://github.com/herdrdev/herdr">herdr</a>.
