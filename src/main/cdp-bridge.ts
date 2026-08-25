@@ -306,7 +306,7 @@ export class CDPBridge {
 
   async reload(wcId?: number): Promise<void> {
     const target = this.resolveTarget(wcId);
-    await this.sendCommand(target, 'Page.reload', {});
+    await this.sendCommand(target, 'Page.reload');
   }
 
   async snapshot(wcId?: number): Promise<CDPSnapshot> {

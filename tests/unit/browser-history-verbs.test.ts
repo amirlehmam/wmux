@@ -50,6 +50,20 @@ describe('browser history verbs', () => {
   it('reload issues Page.reload', async () => {
     const { bridge, sent } = bridgeWithStub(HISTORY);
     await bridge.reload(1);
-    expect(sent.at(-1)).toEqual({ method: 'Page.reload', params: {} });
+    expect(sent.at(-1)).toEqual({ method: 'Page.reload', params: undefined });
+  });
+
+  it('threads wcId through to resolveTarget for every history verb', async () => {
+    const seen: Array<number | undefined> = [];
+    const bridge = new CDPBridge();
+    (bridge as any).resolveTarget = (wcId?: number) => { seen.push(wcId); return { wcId: wcId ?? 0, refMap: new Map() }; };
+    (bridge as any).sendCommand = async (_t: any, method: string) =>
+      method === 'Page.getNavigationHistory' ? HISTORY : {};
+
+    await bridge.goBack(42);
+    await bridge.goForward(43);
+    await bridge.reload(44);
+
+    expect(seen).toEqual([42, 43, 44]);
   });
 });
