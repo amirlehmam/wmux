@@ -11,6 +11,19 @@ export type SplitNode =
 
 export type SurfaceType = 'terminal' | 'browser' | 'markdown' | 'diff';
 
+/**
+ * Which engine backs a `browser` surface.
+ *
+ * `web`   — the Electron <webview>. The default, always, and what every
+ *           browser surface was before agent-browser existed.
+ * `agent` — vercel-labs/agent-browser: a real Chrome driven by the CLI, shown
+ *           through its own dashboard.
+ *
+ * Absent means `web`, so an older saved session restores correctly with no
+ * migration (session-persistence.ts superset rule, #145).
+ */
+export type BrowserEngine = 'web' | 'agent';
+
 export interface SurfaceRef {
   id: SurfaceId;
   type: SurfaceType;
@@ -48,6 +61,12 @@ export interface SurfaceRef {
   claudeSessionId?: string;
   /** Initial URL for a browser surface created from a quick-launch profile (issue #32). */
   url?: string;
+  /**
+   * Which engine backs this browser surface. Absent ⇒ 'web'. Read through
+   * `engineOf()` rather than directly, so an absent or corrupt value can only
+   * ever degrade to the safe engine.
+   */
+  browserEngine?: BrowserEngine;
   /** Rendered markdown content for a `markdown` surface (issue #54). Persisted so
    *  the content survives split-tree restructures that remount the pane. */
   markdownContent?: string;
@@ -550,4 +569,15 @@ export interface OrchestrationState {
   reviewer?: OrchestrationReviewer;
   // Client-side only — populated by the watcher so the renderer knows where to dismiss from.
   _orchDir?: string;
+}
+
+/**
+ * The engine a surface actually runs on. Never trust the raw field: it is
+ * persisted to a user-editable session file, and every unknown value must
+ * degrade to `web` — the engine that needs no external binary and so can
+ * always be rendered.
+ */
+export function engineOf(surface: { type: SurfaceType; browserEngine?: BrowserEngine }): BrowserEngine {
+  if (surface.type !== 'browser') return 'web';
+  return surface.browserEngine === 'agent' ? 'agent' : 'web';
 }
