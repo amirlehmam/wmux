@@ -57,6 +57,16 @@ describe('toAgentBrowserArgv', () => {
     expect(verb('browser.wait', { timeout: 500 })).toEqual(['wait', '500']);
   });
 
+  it('wait with BOTH ref and timeout: ref wins, timeout is dropped', () => {
+    // Known engine divergence (see the comment on the `browser.wait` case):
+    // agent-browser's `wait <selector>` has no per-call --timeout flag (only
+    // a global AGENT_BROWSER_DEFAULT_TIMEOUT env var, confirmed against its
+    // README), so a caller-supplied timeout alongside a ref cannot be
+    // represented in argv. This test pins that the drop is deliberate, not
+    // an oversight.
+    expect(verb('browser.wait', { ref: 'e5', timeout: 9999 })).toEqual(['wait', '@e5']);
+  });
+
   it('maps the history verbs', () => {
     expect(verb('browser.back')).toEqual(['back']);
     expect(verb('browser.forward')).toEqual(['forward']);
@@ -97,6 +107,26 @@ describe('toAgentBrowserArgv', () => {
     it('fill without a ref throws -32602', () => {
       try {
         toAgentBrowserArgv('browser.fill', { value: 'x' }, S);
+        throw new Error('expected toAgentBrowserArgv to throw');
+      } catch (e: any) {
+        expect(e.rpcCode).toBe(-32602);
+        expect(e.message).toMatch(/ref/i);
+      }
+    });
+
+    it('click with an empty-string ref throws -32602', () => {
+      try {
+        toAgentBrowserArgv('browser.click', { ref: '' }, S);
+        throw new Error('expected toAgentBrowserArgv to throw');
+      } catch (e: any) {
+        expect(e.rpcCode).toBe(-32602);
+        expect(e.message).toMatch(/ref/i);
+      }
+    });
+
+    it('click with a non-string ref throws -32602', () => {
+      try {
+        toAgentBrowserArgv('browser.click', { ref: 123 }, S);
         throw new Error('expected toAgentBrowserArgv to throw');
       } catch (e: any) {
         expect(e.rpcCode).toBe(-32602);
