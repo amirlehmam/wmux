@@ -293,6 +293,8 @@ export const fr: Translation = {
   'shortcutAction.nextSurface': 'Onglet suivant',
   'shortcutAction.prevSurface': 'Onglet précédent',
   'shortcutAction.jumpToUnread': 'Aller au non lu',
+  'shortcutAction.jumpToBlocked': 'Aller à l’agent qui vous attend',
+  'shortcutAction.openAgentNavigator': 'Tous les agents',
   'shortcutAction.showNotifications': 'Afficher les notifications',
   'shortcutAction.flashFocused': 'Faire clignoter le panneau actif',
   'shortcutAction.openBrowser': 'Ouvrir le navigateur',
@@ -549,4 +551,22 @@ export const fr: Translation = {
   // Barre latérale — répondre à un agent bloqué depuis l'extérieur de son panneau (issue #128)
   'workspaceRow.answerSent': 'Envoyé — en attente…',
   'workspaceRow.answerTitle': 'Répondre sans basculer vers ce panneau',
+
+  // Bandeau du roster d'agents + navigateur — « qui m'attend ? », tous espaces confondus.
+  'agentRoster.needYou': '{count} vous attendent',
+  'agentRoster.allBusy': '{count} en cours',
+  'agentRoster.alsoWorking': '· {count} en cours',
+  'agentRoster.jumpHint': 'Aller à l’agent qui attend depuis le plus longtemps — {label}',
+  'agentRoster.noneBlocked': 'Aucun agent ne vous attend',
+  'agentRoster.openNavigator': 'Tous les agents (Ctrl+Maj+A)',
+  'agentNavigator.title': 'Agents',
+  'agentNavigator.filterAll': 'tous',
+  'agentNavigator.filterBlocked': 'bloqués',
+  'agentNavigator.filterWorking': 'en cours',
+  'agentNavigator.filterIdle': 'inactifs',
+  'agentNavigator.emptyAll': 'Aucun agent ne tourne dans cette fenêtre.',
+  'agentNavigator.emptyFilter': 'Aucun agent ne correspond à ce filtre.',
+  'agentNavigator.answerSent': 'réponse envoyée — en attente',
+  'agentNavigator.hint': '↑↓ naviguer · entrée aller · a/b/w/i filtrer · échap fermer',
+  'agentNavigator.workspacesWithAgents': 'espaces',
 };

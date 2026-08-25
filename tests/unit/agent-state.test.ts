@@ -281,3 +281,62 @@ describe('broadcast', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 });
+
+describe('blockedSince', () => {
+  it('is null while the agent is not parked on a human', () => {
+    reportAgent(surf, { runDelta: 1 });
+    expect(getAgentState(surf)?.blockedSince).toBeNull();
+  });
+
+  it('is stamped when the agent becomes blocked', () => {
+    const before = Date.now();
+    reportAgent(surf, { awaitingHuman: true, reason: 'permission: Bash' });
+    const since = getAgentState(surf)?.blockedSince;
+    expect(since).toBeGreaterThanOrEqual(before);
+    expect(since).toBeLessThanOrEqual(Date.now());
+  });
+
+  /**
+   * The whole reason this field exists rather than reusing `updatedAt`: a
+   * blocked Claude Code pane keeps sending token counts, and every one of those
+   * bumps `updatedAt`. Ordering the "needs you" queue by `updatedAt` would sink
+   * the longest-waiting agent to the bottom precisely because it reports most.
+   */
+  it('survives metadata reports that keep bumping updatedAt', () => {
+    reportAgent(surf, { awaitingHuman: true, reason: 'permission: Bash' });
+    const stamped = getAgentState(surf)!.blockedSince;
+    const firstUpdatedAt = getAgentState(surf)!.updatedAt;
+
+    reportMetadata(surf, { tokens: '12k' });
+    reportMetadata(surf, { contextPct: 42 });
+
+    expect(getAgentState(surf)!.blockedSince).toBe(stamped);
+    expect(getAgentState(surf)!.updatedAt).toBeGreaterThanOrEqual(firstUpdatedAt);
+  });
+
+  it('re-declaring the same block does not restart the clock', () => {
+    reportAgent(surf, { awaitingHuman: true, reason: 'permission: Bash' });
+    const stamped = getAgentState(surf)!.blockedSince;
+    reportAgent(surf, { awaitingHuman: true, reason: 'permission: Bash (still)' });
+    expect(getAgentState(surf)!.blockedSince).toBe(stamped);
+  });
+
+  it('clears on unblock, and a second block stamps afresh', () => {
+    reportAgent(surf, { awaitingHuman: true });
+    const first = getAgentState(surf)!.blockedSince;
+    reportAgent(surf, { awaitingHuman: false });
+    expect(getAgentState(surf)?.blockedSince).toBeNull();
+
+    reportAgent(surf, { awaitingHuman: true });
+    const second = getAgentState(surf)!.blockedSince;
+    expect(second).not.toBeNull();
+    expect(second!).toBeGreaterThanOrEqual(first!);
+  });
+
+  it('clears when the human answers in the pane, alongside awaitingHuman', () => {
+    reportAgent(surf, { awaitingHuman: true });
+    expect(getAgentState(surf)?.blockedSince).not.toBeNull();
+    releaseAgent(surf);
+    expect(getAgentState(surf)).toBeUndefined();
+  });
+});

@@ -154,6 +154,8 @@ export type ShortcutAction =
   | 'nextSurface'
   | 'prevSurface'
   | 'jumpToUnread'
+  | 'jumpToBlocked'
+  | 'openAgentNavigator'
   | 'showNotifications'
   | 'flashFocused'
   | 'openBrowser'
@@ -257,6 +259,17 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // since the users who need this binding are the ones already fighting their
   // shell.
   resetTerminal:          { key: 'r', ctrl: true, shift: true },
+  // ─── Agent roster ───────────────────────────────────────────────────────────
+  // Ctrl+Shift+B and Ctrl+Shift+A were both unbound. Shift-modified like every
+  // batch above, so isSafeToIntercept keeps bare Ctrl+A (start-of-line in every
+  // shell) and Ctrl+B (tmux prefix, for users running tmux inside a pane) going
+  // to the terminal untouched.
+  //
+  // Bound by DEFAULT rather than shipped blank: the whole feature is "find the
+  // stuck agent without hunting", and a keystroke the user must first discover
+  // in Settings is one they will not have when they need it.
+  jumpToBlocked:          { key: 'b', ctrl: true, shift: true },
+  openAgentNavigator:     { key: 'a', ctrl: true, shift: true },
 };
 
 // ─── Sidebar settings ─────────────────────────────────────────────────────────

@@ -373,6 +373,8 @@ export const IPC_CHANNELS = {
   NOTIFICATION_JUMP: 'notification:jump',
   // Settings
   AGENT_ANSWER: 'agent:answer',
+  /** Bootstrap for AGENT_STATE, which is delta-only — a new window starts blind. */
+  AGENT_STATE_LIST: 'agent:state-list',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
   SETTINGS_CHANGED: 'settings:changed',

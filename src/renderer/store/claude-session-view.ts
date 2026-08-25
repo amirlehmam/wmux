@@ -31,6 +31,8 @@ export interface DeclaredAgentState {
   blockedReason?: string | null;
   choices?: AgentChoiceView[];
   answeredAt?: number | null;
+  /** When this pane became blocked — see AgentStateRecord.blockedSince. */
+  blockedSince?: number | null;
 }
 
 /** One Claude Code session (= one surface where Claude ran) inside a workspace. */
@@ -69,6 +71,14 @@ export interface WorkspaceSessionsView {
   working: number;
   /** Number of sessions parked on the user — the "who needs me?" count. */
   blocked: number;
+  /**
+   * Earliest block still open in this workspace, or null when none is.
+   *
+   * The row is one row for N panes, so it reports the OLDEST wait rather than
+   * the newest: a workspace where something has been stuck for ten minutes is
+   * not made less urgent by a second agent blocking just now.
+   */
+  oldestBlockedSince: number | null;
 }
 
 interface SurfaceEntry {
@@ -167,6 +177,7 @@ export function claudeSessionsForWorkspace(
   const sessions: ClaudeSessionView[] = [];
   let working = 0;
   let blocked = 0;
+  let oldestBlockedSince: number | null = null;
 
   for (const { surfaceId, paneId, currentCwd, customTitle } of surfaces) {
     const hook = hookActivity[surfaceId];
@@ -187,8 +198,15 @@ export function claudeSessionsForWorkspace(
       skill: observed?.activeSkill ?? null,
     });
     if (activity.working) working++;
-    if (activity.blocked) blocked++;
+    if (activity.blocked) {
+      blocked++;
+      // `?? now` so a block declared before main stamped one still counts as a
+      // block: the rail is driven by "is anything waiting", and a missing
+      // timestamp must not read as "nothing is".
+      const since = declared?.blockedSince ?? now;
+      if (oldestBlockedSince === null || since < oldestBlockedSince) oldestBlockedSince = since;
+    }
   }
 
-  return { sessions, working, blocked };
+  return { sessions, working, blocked, oldestBlockedSince };
 }

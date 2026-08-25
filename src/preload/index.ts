@@ -242,6 +242,8 @@ contextBridge.exposeInMainWorld('wmux', {
     // normal outcome the UI reports, not an exception.
     answer: (surfaceId: string, choiceId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_ANSWER, surfaceId, choiceId),
+    // Read-only seed for onUpdate, which is delta-only (see App.tsx).
+    list: (): Promise<any[]> => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STATE_LIST),
   },
   orchestration: {
     onUpdate: (callback: (state: any) => void) => {

@@ -23,7 +23,7 @@ describe('claudeSessionsForWorkspace', () => {
   it('returns no sessions when neither hooks nor observer saw Claude', () => {
     const tree = leaf('pane-1', [{ id: 'surf-a' }]);
     const out = claudeSessionsForWorkspace(tree, {}, {}, NOW);
-    expect(out).toEqual({ sessions: [], working: 0, blocked: 0 });
+    expect(out).toEqual({ sessions: [], working: 0, blocked: 0, oldestBlockedSince: null });
   });
 
   it('a fresh hook event makes the surface a working session with its tool', () => {
@@ -97,7 +97,7 @@ describe('claudeSessionsForWorkspace', () => {
       'surf-foreign': hook('Bash', NOW),
       'ws-1234': hook('Bash', NOW),
     }, NOW);
-    expect(out).toEqual({ sessions: [], working: 0, blocked: 0 });
+    expect(out).toEqual({ sessions: [], working: 0, blocked: 0, oldestBlockedSince: null });
   });
 
   it('prefers the user-set surface title over the cwd basename (rename bug)', () => {
@@ -182,5 +182,45 @@ describe('declared agent state precedence', () => {
       tree, {}, { 'surf-a': hook('Bash', NOW - 60_000) }, NOW, { 'surf-a': declared('blocked') },
     );
     expect(out.sessions[0].tool).toBeNull();
+  });
+});
+
+describe('oldestBlockedSince', () => {
+  const declaredBlocked = (blockedSince?: number | null) => ({
+    state: 'blocked' as const, blockedReason: null, choices: [], answeredAt: null, blockedSince,
+  });
+
+  it('is null when nothing is blocked', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Edit', NOW) }, NOW);
+    expect(out.oldestBlockedSince).toBeNull();
+  });
+
+  /**
+   * One row stands for N panes, so it reports the OLDEST open wait: a workspace
+   * stuck for ten minutes is not made less urgent by a second agent blocking now.
+   */
+  it('reports the earliest of several open blocks', () => {
+    const tree = split(leaf('pane-1', [{ id: 'surf-a' }]), leaf('pane-2', [{ id: 'surf-b' }]));
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, {
+      'surf-a': declaredBlocked(NOW - 1_000),
+      'surf-b': declaredBlocked(NOW - 600_000),
+    });
+    expect(out.blocked).toBe(2);
+    expect(out.oldestBlockedSince).toBe(NOW - 600_000);
+  });
+
+  it('still reports a block whose stamp never arrived', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, { 'surf-a': declaredBlocked(null) });
+    expect(out.oldestBlockedSince).toBe(NOW);
+  });
+
+  it('ignores the stamp of a session that is no longer blocked', () => {
+    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, {
+      'surf-a': { state: 'working', blockedSince: NOW - 900_000 } as any,
+    });
+    expect(out.oldestBlockedSince).toBeNull();
   });
 });

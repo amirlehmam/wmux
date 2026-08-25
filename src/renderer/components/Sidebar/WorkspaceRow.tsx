@@ -265,13 +265,17 @@ export default function WorkspaceRow({
       toolCount,
       lastSeen,
       prev: prev.at ? prev : undefined,
+      // Was never passed, so traceState's entire `blocked` branch — and the
+      // blocked rail in trace.css it drives — had been unreachable since it was
+      // written. An optional field nobody supplies type-checks perfectly.
+      blockedSince: sessionsView.oldestBlockedSince,
       now,
     });
     // Idempotent under a StrictMode double render: same inputs, same write.
     if (toolCount !== prev.toolCount) traceRateRef.current = { toolCount, at: now };
 
     return { ...state, toolCount };
-  }, [uiMode, workspace.splitTree, hookActivity, sessions, workingSessions, isClaudeActive, tick]);
+  }, [uiMode, workspace.splitTree, hookActivity, sessions, workingSessions, isClaudeActive, sessionsView.oldestBlockedSince, tick]);
 
   if (rowTrace) {
     // Two numbers, both continuous, both read by CSS. --tr-lit is the staleness
@@ -363,13 +367,17 @@ export default function WorkspaceRow({
         ? 'workspace-row__state-dot--running'
         : 'workspace-row__state-dot--idle';
     }
+    // Above isClaudeActive, mirroring statusClassFor: a blocked workspace was
+    // rendering a GREY dot beside a violet "Needs you", so the two halves of
+    // the same row disagreed about whether anything was wrong.
+    if (blockedSessions > 0) return 'workspace-row__state-dot--blocked';
     if (isClaudeActive) return 'workspace-row__state-dot--running';
     if (claudeIsIdle) return 'workspace-row__state-dot--idle';
     if (workspace.shellState === 'running') return 'workspace-row__state-dot--running';
     if (workspace.shellState === 'interrupted') return 'workspace-row__state-dot--interrupted';
     if (workspace.shellState === 'idle') return 'workspace-row__state-dot--idle';
     return '';
-  }, [workspace.statusOverride, isClaudeActive, claudeIsIdle, workspace.shellState]);
+  }, [workspace.statusOverride, blockedSessions, isClaudeActive, claudeIsIdle, workspace.shellState]);
 
   return (
     <div

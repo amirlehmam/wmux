@@ -328,6 +328,8 @@ export const en = {
   'shortcutAction.nextSurface': 'Next surface',
   'shortcutAction.prevSurface': 'Previous surface',
   'shortcutAction.jumpToUnread': 'Jump to unread',
+  'shortcutAction.jumpToBlocked': 'Jump to agent needing you',
+  'shortcutAction.openAgentNavigator': 'All agents',
   'shortcutAction.showNotifications': 'Show notifications',
   'shortcutAction.flashFocused': 'Flash focused pane',
   'shortcutAction.openBrowser': 'Open browser',
@@ -610,6 +612,24 @@ export const en = {
   // Sidebar — answering a blocked agent from outside its pane (issue #128)
   'workspaceRow.answerSent': 'Sent — waiting…',
   'workspaceRow.answerTitle': 'Answer without switching to this pane',
+
+  // Agent roster banner + navigator — "who needs me?", across workspaces.
+  'agentRoster.needYou': '{count} need you',
+  'agentRoster.allBusy': '{count} working',
+  'agentRoster.alsoWorking': '· {count} working',
+  'agentRoster.jumpHint': 'Go to the agent waiting longest — {label}',
+  'agentRoster.noneBlocked': 'No agent is waiting on you',
+  'agentRoster.openNavigator': 'All agents (Ctrl+Shift+A)',
+  'agentNavigator.title': 'Agents',
+  'agentNavigator.filterAll': 'all',
+  'agentNavigator.filterBlocked': 'blocked',
+  'agentNavigator.filterWorking': 'working',
+  'agentNavigator.filterIdle': 'idle',
+  'agentNavigator.emptyAll': 'No agent is running in this window.',
+  'agentNavigator.emptyFilter': 'No agent matches this filter.',
+  'agentNavigator.answerSent': 'answer sent — waiting',
+  'agentNavigator.hint': '↑↓ move · enter jump · a/b/w/i filter · esc close',
+  'agentNavigator.workspacesWithAgents': 'workspaces',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

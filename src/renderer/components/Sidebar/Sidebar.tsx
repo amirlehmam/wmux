@@ -5,6 +5,8 @@ import SidebarResizeHandle from './SidebarResizeHandle';
 import WorkspaceContextMenu from './WorkspaceContextMenu';
 import SessionMenu from './SessionMenu';
 import OrchestrationPanel from './OrchestrationPanel';
+import AgentRosterBanner from './AgentRosterBanner';
+import type { AgentRosterEntry } from '../../store/agent-rollup';
 import { DropEdge, edgeForPointer, reorderByDrop } from './reorder';
 import ErrorBoundary from '../ErrorBoundary';
 import { useStore } from '../../store';
@@ -37,6 +39,9 @@ interface SidebarProps {
   onLoadSession?: (name: string) => void;
   onCollapse?: () => void;
   onFocusAgentPane?: (wsId: WorkspaceId, paneId: PaneId) => void;
+  /** Jump to one agent — selects its workspace AND raises its tab. */
+  onFocusAgent?: (entry: AgentRosterEntry) => void;
+  onOpenAgentNavigator?: () => void;
 }
 
 export default function Sidebar({
@@ -57,6 +62,8 @@ export default function Sidebar({
   onLoadSession,
   onCollapse,
   onFocusAgentPane,
+  onFocusAgent,
+  onOpenAgentNavigator,
 }: SidebarProps) {
   const t = useT();
   const [draggedId, setDraggedId] = useState<WorkspaceId | null>(null);
@@ -263,6 +270,10 @@ export default function Sidebar({
           </button>
         )}
       </div>
+
+      <ErrorBoundary label="agent-roster" silent>
+        <AgentRosterBanner onFocusAgent={onFocusAgent} onOpenNavigator={onOpenAgentNavigator} />
+      </ErrorBoundary>
 
       <ErrorBoundary label="orchestration" silent>
         <OrchestrationPanel />

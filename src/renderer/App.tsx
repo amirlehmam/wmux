@@ -14,6 +14,9 @@ import Titlebar from './components/Titlebar/Titlebar';
 import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcuts';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
+import AgentNavigator from './components/AgentNavigator/AgentNavigator';
+import { focusAgentTarget } from './store/focus-agent';
+import type { AgentRosterEntry } from './store/agent-rollup';
 import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
 import ConfirmCloseDialog from './components/ConfirmCloseDialog';
 import ConfirmCloseSurfaceDialog from './components/ConfirmCloseSurfaceDialog';
@@ -435,6 +438,7 @@ export default function App() {
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [agentNavigatorOpen, setAgentNavigatorOpen] = useState(false);
   // Shortcut cheat-sheet overlay (issue #64, toggled by F1 via wmux:toggle-cheatsheet).
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
   useEffect(() => {
@@ -473,7 +477,9 @@ export default function App() {
   // Per-surface Claude activity (parsed from terminal output)
   const [claudeActivity, setClaudeActivity] = useState<Record<string, any>>({});
   // surfaceId → declared agent state (blocked / working / idle), issue #128.
-  const [agentStates, setAgentStates] = useState<Record<string, any>>({});
+  // Lives in the store, not in local state: consumers outside this subtree —
+  // the keyboard shortcuts, the agent navigator — need to read it too.
+  const agentStates = useStore(s => s.agentStates);
   // Track when each workspace entered "running" state (for notification threshold)
   const runningStartTimes = useRef<Record<string, number>>({});
   // Browser URL tracking is now per-workspace via WorkspaceInfo.browserUrl
@@ -735,12 +741,33 @@ export default function App() {
   // Declared agent state pushed by the agent itself (issue #128). Unlike the
   // scraped/heuristic signals above this is authoritative, so it is kept in its
   // own map and given precedence in claude-session-view.
+  //
+  // AGENT_STATE is a delta channel, so a window that opens while agents are
+  // already running would see nothing until each next reported — a new window
+  // showed an empty sidebar next to three busy panes. Seed once at mount, then
+  // apply deltas. The seed is fired first but applied through `replace`, so a
+  // delta that lands during the await is not silently overwritten by an older
+  // snapshot: the listener is attached before the request goes out, and any
+  // surface it touched is re-applied after.
   useEffect(() => {
     if (!window.wmux?.agentState?.onUpdate) return;
+    let seeded = false;
+    const pending: any[] = [];
+
     const unsub = window.wmux.agentState.onUpdate((data: any) => {
       if (!data?.surfaceId) return;
-      setAgentStates(prev => ({ ...prev, [data.surfaceId]: data }));
+      if (!seeded) pending.push(data);
+      useStore.getState().setAgentState(data);
     });
+
+    void (async () => {
+      const states = await window.wmux?.agentState?.list?.();
+      if (Array.isArray(states)) useStore.getState().replaceAgentStates(states);
+      seeded = true;
+      for (const data of pending) useStore.getState().setAgentState(data);
+      pending.length = 0;
+    })();
+
     return unsub;
   }, []);
 
@@ -943,6 +970,32 @@ export default function App() {
     [selectWorkspace, markRead, selectSurface],
   );
 
+  /**
+   * Go to one agent — the roster banner, the navigator and the jumpToBlocked
+   * shortcut all land here, so "jump" means exactly one thing.
+   *
+   * Reads the workspaces off the store rather than the render closure: the
+   * shortcut fires from a document listener whose closure can be a tick stale,
+   * and a split that just happened would otherwise resolve against the old tree.
+   */
+  const focusAgent = useCallback((entry: AgentRosterEntry) => {
+    const state = useStore.getState();
+    const paneId = focusAgentTarget(
+      { workspaces: state.workspaces, selectWorkspace: state.selectWorkspace, selectSurface: state.selectSurface },
+      entry,
+    );
+    if (paneId) setFocusedPaneId(paneId);
+  }, []);
+
+  // The shortcut lives in useKeyboardShortcuts, which has no way to reach this
+  // component's state — same document-event relay as rename-surface and
+  // reset-terminal use.
+  useEffect(() => {
+    const open = () => setAgentNavigatorOpen(true);
+    document.addEventListener('wmux:open-agent-navigator', open);
+    return () => document.removeEventListener('wmux:open-agent-navigator', open);
+  }, []);
+
   const handleToggleNotifPanel = useCallback(() => {
     setNotifPanelOpen((o) => !o);
   }, []);
@@ -1108,6 +1161,8 @@ export default function App() {
               selectWorkspace(wsId);
               setFocusedPaneId(paneId);
             }}
+            onFocusAgent={focusAgent}
+            onOpenAgentNavigator={() => setAgentNavigatorOpen(true)}
           />
         ) : (
           <div
@@ -1282,6 +1337,13 @@ export default function App() {
         <CommandPalette
           onClose={handlePaletteClose}
           onAction={handlePaletteAction}
+        />
+      )}
+
+      {agentNavigatorOpen && (
+        <AgentNavigator
+          onClose={() => setAgentNavigatorOpen(false)}
+          onFocusAgent={focusAgent}
         />
       )}
 

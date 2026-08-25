@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme } fr
 import * as path from 'path';
 import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type InsertionResult } from '../shared/types';
 import { observePtyData, clearActivity } from './claude-observer';
-import { clearAgentState, noteHumanInput } from './agent-state';
+import { clearAgentState, noteHumanInput, listAgentStates } from './agent-state';
 import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
 import { SshDetector } from './ssh-detect';
@@ -563,6 +563,12 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       if (!handled) resolve({ ok: false, error: 'answer_agent not routed' });
     }),
   );
+
+  // Seed for the delta-only AGENT_STATE channel. A window opened after agents
+  // were already running received nothing until each next reported — a fresh
+  // window showed an empty roster beside three busy panes, and a blocked agent
+  // that is waiting reports nothing at all, so it could stay invisible forever.
+  ipcMain.handle(IPC_CHANNELS.AGENT_STATE_LIST, () => listAgentStates());
 
   // Agent-integration consent (issue #132). Deliberately NOT routed through the
   // generic settings:set above: changing this decision has to reconcile the files
