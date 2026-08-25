@@ -48,7 +48,7 @@ import { agentBrowserPath, runAgentBrowser, type RunResult } from './agent-brows
 // DashboardDaemon here would hand the same stream port to two surfaces and let
 // either daemon stop the dashboard out from under the other — see the header of
 // agent-browser-runtime.ts.
-import { dashboardDaemon, sessionRegistry } from './agent-browser-runtime';
+import { acquireDashboardFor, dashboardDaemon, releaseDashboardFor, sessionRegistry } from './agent-browser-runtime';
 import type { AgentSession } from './agent-browser-session';
 
 // Claimed at module load, before anything can spawn a PTY, so the candidate
@@ -301,31 +301,20 @@ export async function disableAgentBrowser(
 }
 
 /**
- * Surfaces this module currently holds a dashboard reference for.
+ * The real machine behind `AgentBrowserDeps`. Every production call uses this.
  *
- * The daemon's contract is one reference per live agent-mode surface, so the
- * bookkeeping has to be per surface: a double enable must not take two
- * references, and a disable for a surface that never enabled must not give one
- * back that was never taken (the daemon clamps at zero, but a phantom release
- * would still stop a dashboard other panes are using).
+ * The per-surface dashboard reference is NOT tracked here. It used to be, in a
+ * Set local to this module — but `v2-browser.ts` independently kept its own for
+ * the same surfaces, and a pane enabled from the UI and then driven by
+ * `wmux browser open` took two references and gave back one, so the dashboard
+ * outlived every agent pane. `acquireDashboardFor`/`releaseDashboardFor` own
+ * that bookkeeping for the whole process; both call paths go through them.
  */
-const dashboardHeldFor = new Set<string>();
-
-/** The real machine behind `AgentBrowserDeps`. Every production call uses this. */
 const agentBrowserDeps: AgentBrowserDeps = {
   binary: () => agentBrowserPath(),
   run: (binary, argv) => runAgentBrowser(binary, argv),
-  acquireDashboard: async (surfaceId) => {
-    if (dashboardHeldFor.has(surfaceId)) return;
-    // Recorded only after acquire SUCCEEDS, so a failed start is retried by the
-    // next enable rather than remembered as done.
-    await dashboardDaemon.acquire();
-    dashboardHeldFor.add(surfaceId);
-  },
-  releaseDashboard: async (surfaceId) => {
-    if (!dashboardHeldFor.delete(surfaceId)) return;
-    await dashboardDaemon.release();
-  },
+  acquireDashboard: (surfaceId) => acquireDashboardFor(surfaceId),
+  releaseDashboard: (surfaceId) => releaseDashboardFor(surfaceId),
   ensureSession: (surfaceId) => sessionRegistry.ensure(surfaceId),
   getSession: (surfaceId) => sessionRegistry.get(surfaceId),
   releaseSession: (surfaceId) => sessionRegistry.release(surfaceId),

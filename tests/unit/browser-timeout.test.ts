@@ -29,6 +29,20 @@ import { browserRequest, timeoutMessage } from '../../src/cli/wmux';
 const SRC = path.join(__dirname, '..', '..', 'src', 'main');
 const cdpBridge = fs.readFileSync(path.join(SRC, 'cdp-bridge.ts'), 'utf-8');
 const v2Browser = fs.readFileSync(path.join(SRC, 'v2-browser.ts'), 'utf-8');
+const agentRuntime = fs.readFileSync(path.join(SRC, 'agent-browser-runtime.ts'), 'utf-8');
+
+/**
+ * Every main-process file that can spend time before a browser command replies.
+ *
+ * This list is the whole point of the guard: when the agent-browser engine
+ * landed, its budgets moved into a NEW file, and a readiness sweep that read
+ * only v2-browser.ts kept passing while the real worst case grew past the CLI's
+ * deadline. A budget the sweep cannot see is a budget nobody is checking.
+ */
+const READINESS_SOURCES: Array<[string, string]> = [
+  ['v2-browser.ts', v2Browser],
+  ['agent-browser-runtime.ts', agentRuntime],
+];
 
 /** Pull a `timeout = <ms>` default off a method signature in cdp-bridge.ts. */
 function cdpDefault(method: string): number {
@@ -37,12 +51,27 @@ function cdpDefault(method: string): number {
   return Number(match[1]);
 }
 
-/** The longest wait v2-browser can spend readying a browser before the verb runs. */
+/** The longest wait the main process can spend readying a browser before the verb runs. */
 function browserReadyBudget(): number {
-  const waits = [...v2Browser.matchAll(/(?:Date\.now\(\) \+ |pollSurfaceWcId\([^,]+,\s*)(\d+)/g)]
-    .map((m) => Number(m[1]));
-  if (waits.length === 0) throw new Error('no readiness budget found in v2-browser.ts');
+  const waits = READINESS_SOURCES.flatMap(([, src]) =>
+    [...src.matchAll(/(?:Date\.now\(\) \+ |pollSurfaceWcId\([^,]+,\s*)(\d+)/g)].map((m) => Number(m[1])),
+  );
+  if (waits.length === 0) throw new Error('no readiness budget found in the main process');
   return Math.max(...waits);
+}
+
+/** An `const NAME_MS = <ms>` budget declared in a main-process source file. */
+function constMs(src: string, name: string): number {
+  const match = new RegExp(`const ${name} = (\\d[\\d_]*)`).exec(src);
+  if (!match) throw new Error(`no ${name} constant found`);
+  return Number(match[1].replace(/_/g, ''));
+}
+
+/** How long v2-browser lets ONE agent-browser invocation run, per verb. */
+function agentVerbBudget(verb: string): number {
+  if (verb === 'open') return constMs(v2Browser, 'AGENT_NAVIGATE_MS');
+  if (verb === 'wait') return constMs(v2Browser, 'AGENT_WAIT_MS');
+  return constMs(v2Browser, 'AGENT_VERB_MS');
 }
 
 const deadlineOf = (argv: string[]): number => {
@@ -117,6 +146,47 @@ describe('browser command deadlines outlast the main process', () => {
 
   it('rejects an unknown verb instead of guessing a deadline', () => {
     expect(browserRequest(['browser', 'teleport'])).toBeNull();
+  });
+});
+
+/**
+ * The same contract, for the second engine.
+ *
+ * agent-browser runs as a child process with its own timeout, and that timeout
+ * is subject to exactly the reasoning above: a server budget LARGER than the
+ * CLI's deadline is not a longer budget, it is an unreportable one. The client
+ * has already hung up and printed `timed out`, so 'agent-browser … failed:
+ * chrome not installed' — the one line that would tell the user what to do —
+ * never arrives. These assertions are what stop the two drifting apart.
+ */
+describe('the agent engine fits inside the same client deadlines', () => {
+  it('finds the budgets it is meant to be checking', () => {
+    expect(agentVerbBudget('open')).toBeGreaterThan(0);
+    expect(agentVerbBudget('wait')).toBeGreaterThan(0);
+    expect(agentVerbBudget('snapshot')).toBeGreaterThan(0);
+  });
+
+  it('leaves every verb able to report its own failure before the CLI hangs up', () => {
+    const ready = browserReadyBudget();
+    for (const argv of VERBS) {
+      const verb = argv[1];
+      expect(ready + agentVerbBudget(verb), `${verb}: readiness + agent budget vs CLI deadline`)
+        .toBeLessThan(deadlineOf(argv));
+    }
+  });
+
+  it('does not put the dashboard start on the readiness path', () => {
+    // A cold `dashboard start` is 30s — longer than the CLI's whole deadline
+    // for most verbs. The dashboard is a viewer, so the verb must not wait for
+    // it; awaiting the acquire here would reintroduce the timeout this file
+    // exists to prevent, and no arithmetic could rescue it.
+    expect(constMs(agentRuntime, 'DASHBOARD_START_TIMEOUT_MS')).toBeGreaterThan(browserReadyBudget());
+    expect(v2Browser).toMatch(/acquireDashboardFor\(/);
+    expect(v2Browser).not.toMatch(/await\s+acquireDashboardFor\(/);
+  });
+
+  it('gives a page load a bigger budget than a click', () => {
+    expect(agentVerbBudget('open')).toBeGreaterThan(agentVerbBudget('click'));
   });
 });
 

@@ -22,7 +22,7 @@
 import { BrowserWindow } from 'electron';
 import { cdpBridge } from './ipc-handlers';
 import { agentBrowserPath, runAgentBrowser, type RunResult } from './agent-browser-cli';
-import { dashboardDaemon, sessionRegistry } from './agent-browser-runtime';
+import { acquireDashboardFor, sessionRegistry } from './agent-browser-runtime';
 import type { AgentSession } from './agent-browser-session';
 import { toAgentBrowserArgv } from './agent-browser-verbs';
 import type { BrowserEngine, SurfaceId } from '../shared/types';
@@ -49,7 +49,7 @@ export type BrowserTarget =
  */
 export interface BrowserDeps {
   bridge: typeof cdpBridge;
-  runAgent: (argv: string[]) => Promise<RunResult>;
+  runAgent: (argv: string[], timeoutMs: number) => Promise<RunResult>;
 }
 
 function firstWindow(): BrowserWindow | null {
@@ -135,6 +135,13 @@ async function resolveBrowserWcId(caller?: string): Promise<number | null> {
 
   callerBrowserSurface.set(caller, browserSurfaceId);
   boundBrowserSurfaces.add(browserSurfaceId);
+  // An agent-mode surface is not driven over CDP, so waiting for a wcId to
+  // attach is pure latency — up to the full 5s, on the first command a caller
+  // ever issues, every time. Give up immediately instead; `resolveBrowserTarget`
+  // re-reads this binding and routes it to the agent engine. The answer is the
+  // same either way, it just arrives 5s sooner, which matters because the CLI's
+  // client-side deadline is spending that time too.
+  if ((await engineForSurface(browserSurfaceId)) === 'agent') return null;
   return pollSurfaceWcId(browserSurfaceId, 5000);
 }
 
@@ -142,82 +149,94 @@ async function resolveBrowserWcId(caller?: string): Promise<number | null> {
  * Which engine backs this browser surface?
  *
  * Asked of the RENDERER, because the split tree lives in the Zustand store and
- * main has no copy of it. `?.` and `?? 'web'` are load-bearing: this ships
- * before the renderer half exists, and a renderer that has never heard of
- * `__wmux_getBrowserEngine` must degrade to exactly today's behaviour rather
- * than throwing on every browser command. Anything that is not literally
- * 'agent' is 'web', mirroring `engineOf()`'s rule that an unknown value can
- * only ever degrade to the engine that needs no external binary.
+ * main has no copy of it. Three details are load-bearing:
+ *
+ *  - EVERY window is asked, first affirmative answer wins. `firstWindow()` is
+ *    `getAllWindows()[0]`, and the surface may live in window 2 — the #143
+ *    "window ≠ workspace" mistake. `resolveBrowserWcId` has the same shape, but
+ *    its wrong answer is a benign fall-back to the shared browser, whereas a
+ *    wrong answer HERE dispatches to the wrong engine silently.
+ *  - `?.` and `?? 'web'` let this ship before the renderer half exists: a
+ *    renderer that has never heard of `__wmux_getBrowserEngine` degrades to
+ *    exactly today's behaviour instead of throwing on every browser command.
+ *  - a rejected `executeJavaScript` (renderer reloading, webContents destroyed
+ *    mid-flight) is 'web', not a failure. This runs on the hot path of every
+ *    command, where it previously did no renderer IPC at all; without the catch
+ *    it would be a brand-new way for a working command to fail -32000.
  */
 async function engineForSurface(surfaceId: string): Promise<BrowserEngine> {
-  const win = firstWindow();
-  if (!win) return 'web';
-  const engine = await win.webContents.executeJavaScript(
-    `window.__wmux_getBrowserEngine?.(${JSON.stringify(surfaceId)}) ?? 'web'`,
-  );
-  return engine === 'agent' ? 'agent' : 'web';
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    const engine = await win.webContents
+      .executeJavaScript(`window.__wmux_getBrowserEngine?.(${JSON.stringify(surfaceId)}) ?? 'web'`)
+      .catch(() => 'web');
+    if (engine === 'agent') return 'agent';
+  }
+  return 'web';
 }
-
-/**
- * Surfaces whose dashboard reference this process has already taken.
- *
- * `DashboardDaemon.acquire()` increments a refcount, so acquiring per COMMAND
- * would inflate it without bound and the last surface closing could never
- * bring it back to zero. One acquire per surface is what the daemon's contract
- * ("refcounted by the number of live agent-mode surfaces") actually asks for,
- * and it pairs one-to-one with the per-surface release teardown owns. A
- * surface is recorded only after acquire SUCCEEDS, so a failed start is
- * retried by the next command rather than remembered as done.
- */
-const dashboardAcquiredFor = new Set<string>();
 
 /**
  * Ready an agent-mode surface: its session, and the dashboard that displays it.
  *
- * `acquire()` throws when the dashboard cannot be started (having first rolled
- * its own refcount back, so nothing leaks here). That failure is deliberately
- * NOT fatal to the command: the dashboard is observability — agent-browser
- * drives Chrome perfectly well without it — and failing every `browser open`
- * because a viewer process did not start would trade a degraded feature for a
- * broken one. The pane itself shows the missing dashboard, so the user is not
- * left guessing.
+ * The dashboard reference is taken but NOT awaited, and that is the whole
+ * point. agent-browser drives Chrome perfectly well without its viewer, so the
+ * verb has nothing to gain by waiting — while a cold `dashboard start` can take
+ * 30s, which is longer than the CLI's entire client-side deadline for most
+ * verbs (see AGENT_*_MS below). Blocking here would turn "the viewer is slow"
+ * into "every browser command times out", which is precisely the failure
+ * `tests/unit/browser-timeout.test.ts` exists to prevent.
+ *
+ * The failure is logged rather than swallowed: it is invisible to the user
+ * otherwise. It is deliberately not fatal — but it is also not harmless. After
+ * Task 8 the pane loads the dashboard url in its webview, so a dashboard that
+ * never started renders ERR_CONNECTION_REFUSED, which reads as "my browser is
+ * broken" rather than "an optional viewer did not start". A console line is the
+ * least this can do; naming the situation in the pane is Task 8's to fix.
  */
-async function agentTargetFor(surfaceId: string): Promise<BrowserTarget> {
-  const session = sessionRegistry.ensure(surfaceId as SurfaceId);
-  if (!dashboardAcquiredFor.has(surfaceId)) {
-    try {
-      await dashboardDaemon.acquire();
-      dashboardAcquiredFor.add(surfaceId);
-    } catch {
-      // Observability only — see above. Left unrecorded so the next command retries.
-    }
-  }
-  return { kind: 'agent', session };
+function agentTargetFor(surfaceId: string): BrowserTarget {
+  // Deliberately NOT awaited — see above. `.catch` is what keeps an unawaited
+  // rejection from surfacing as an unhandled promise rejection.
+  acquireDashboardFor(surfaceId).catch((err: Error) => {
+    console.warn('[wmux] agent-browser dashboard did not start:', err?.message);
+  });
+  return { kind: 'agent', session: sessionRegistry.ensure(surfaceId as SurfaceId) };
 }
 
 /**
  * Resolve where a command should run: which browser, on which engine.
  *
- * The engine is checked BEFORE `resolveBrowserWcId` for an already-bound
- * caller, and that order is not cosmetic. An agent-mode surface has no
- * webview attached to the CDPBridge, so `wcIdForSurface` returns null for it —
- * running the wcId path first would read that null as "my browser died", drop
- * a perfectly live binding (#62) and split a second pane on top of it.
+ * The engine is checked for whichever surface ends up bound, on EVERY outcome
+ * — not only when there was no wcId. That is the correctness core of this
+ * function, and the obvious shortcut is wrong:
+ *
+ * A surface TOGGLED from web to agent keeps its CDP registration. Nothing calls
+ * `cdp.detach` on a toggle, and `pruneDead()` only drops destroyed webContents,
+ * so `wcIdForSurface` keeps returning a perfectly valid, NON-null id for it.
+ * Checking the engine only on the null branch therefore misses the toggled case
+ * entirely: `resolveBrowserWcId` adopts the surface, polls, gets that stale id,
+ * and the command drives CDP against agent-browser's own dashboard SPA —
+ * corrupting the pane the user is watching, silently.
+ *
+ * The pre-check on an already-bound caller is a separate matter, and also not
+ * cosmetic: it keeps `resolveBrowserWcId` from reading an agent surface's
+ * missing wcId as "my browser died" and dropping a live #62 binding.
  */
 export async function resolveBrowserTarget(caller?: string): Promise<BrowserTarget | null> {
   const bound = caller ? callerBrowserSurface.get(caller) : undefined;
   if (bound && (await engineForSurface(bound)) === 'agent') return agentTargetFor(bound);
 
   const wcId = await resolveBrowserWcId(caller);
-  if (wcId === null) {
-    // resolveBrowserWcId may have just created and bound a browser surface that
-    // starts in agent mode — in which case there is no wcId to wait for and its
-    // null is the expected answer, not a failure. Re-check before giving up.
-    const created = caller ? callerBrowserSurface.get(caller) : undefined;
-    if (created && (await engineForSurface(created)) === 'agent') return agentTargetFor(created);
-    return null;
+
+  // Whatever `resolveBrowserWcId` settled on — a surface it just adopted, one
+  // it created, or a rebind after the old one died — is the surface this
+  // command will actually run against, so it is the one whose engine decides.
+  // `bound` was already checked above and is skipped rather than re-asked.
+  const settled = caller ? callerBrowserSurface.get(caller) : undefined;
+  if (settled && settled !== bound && (await engineForSurface(settled)) === 'agent') {
+    return agentTargetFor(settled);
   }
-  return { kind: 'web', wcId };
+
+  return wcId === null ? null : { kind: 'web', wcId };
 }
 
 /** Does `data` actually carry `key`, as opposed to merely not contradicting it?
@@ -303,7 +322,7 @@ export async function runBrowserCommandForTarget(
     // the identical -32601 the web switch below does, which is what makes the
     // engines indistinguishable for an unknown verb.
     const argv = toAgentBrowserArgv(method, params, target.session.sessionName);
-    const res = await deps.runAgent(argv);
+    const res = await deps.runAgent(argv, agentTimeoutFor(method, params));
     if (!res.ok) throw agentFailure(method, res);
     return agentResultShape(method, res);
   }
@@ -348,15 +367,48 @@ export async function runBrowserCommandForTarget(
   }
 }
 
+/**
+ * ── Agent-engine budgets ───────────────────────────────────────────────────
+ *
+ * How long one agent-browser invocation may run. These are NOT free-floating:
+ * the CLI hangs up on its own deadline (`browserDeadline()` in
+ * `src/cli/wmux.ts` = BROWSER_READY_MS + verb + BROWSER_SLACK_MS), and a server
+ * budget larger than that deadline is not a longer budget — it is an
+ * UNREPORTABLE one. The client is already gone, so a command that overruns
+ * prints a bare `timed out` and the server's real diagnosis
+ * ('agent-browser … failed: …') never reaches the user. That is exactly the
+ * regression `tests/unit/browser-timeout.test.ts` was written to prevent, and
+ * it now checks these numbers against the CLI's directly.
+ *
+ * Sizing, against a CLI that allows READY(5000) + verb + SLACK(5000):
+ *   navigate — 30000, matching cdp-bridge's own navigate budget; CLI allows 40000.
+ *   wait     — the caller's own timeout when given, else 10000, matching
+ *              cdp-bridge's wait(); the CLI scales its deadline the same way.
+ *   the rest — 4000. The CLI allows 10000 total for them, and readiness can
+ *              legitimately eat 5000 of it (`pollSurfaceWcId`), so anything
+ *              larger could not be reported.
+ */
+const AGENT_NAVIGATE_MS = 30000;
+const AGENT_WAIT_MS = 10000;
+const AGENT_VERB_MS = 4000;
+
+function agentTimeoutFor(method: string, params: any): number {
+  if (method === 'browser.navigate') return AGENT_NAVIGATE_MS;
+  if (method === 'browser.wait') {
+    return typeof params?.timeout === 'number' ? params.timeout : AGENT_WAIT_MS;
+  }
+  return AGENT_VERB_MS;
+}
+
 /** The real machine behind `BrowserDeps`. Every production call uses this. */
 const defaultDeps: BrowserDeps = {
   bridge: cdpBridge,
-  runAgent: async (argv) => {
+  runAgent: async (argv, timeoutMs) => {
     const binary = agentBrowserPath();
     if (!binary) {
       throw new Error('agent-browser is not installed — open a browser tab in agent mode to install it');
     }
-    return runAgentBrowser(binary, argv);
+    return runAgentBrowser(binary, argv, timeoutMs);
   },
 };
 
@@ -390,5 +442,9 @@ export function handleBrowserV2(
     const target = await resolveBrowserTarget(params?.caller);
     if (target === null) { respondError(-32000, 'Could not open browser panel'); return; }
     respond(await runBrowserCommandForTarget(method, params, target, defaultDeps));
-  })().catch((err: any) => respondError(-32000, err.message));
+    // `err.rpcCode ?? -32000`, matching the batch loop. It used to be a flat
+    // -32000 here, so an unknown verb reported -32601 inside a batch and -32000
+    // as a single command — undoing, one frame up, the engine-indistinguishable
+    // -32601 that runBrowserCommandForTarget goes to some trouble to produce.
+  })().catch((err: any) => respondError(err?.rpcCode ?? -32000, err?.message));
 }

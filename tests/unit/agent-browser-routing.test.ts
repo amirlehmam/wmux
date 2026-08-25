@@ -1,16 +1,53 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { engineOf } from '../../src/shared/types';
 import type { SurfaceRef } from '../../src/shared/types';
 
-// v2-browser reaches the real bridge through ipc-handlers, which pulls in
-// node-pty and most of the main process at import time. Routing is
-// dependency-injected, so the module only has to exist — nothing here reads it.
-vi.mock('electron', () => ({
-  BrowserWindow: { getAllWindows: () => [], getFocusedWindow: () => null },
+/**
+ * Mutable fakes for the three things v2-browser reaches out to: Electron's
+ * windows, the CDP bridge (which lives in ipc-handlers, a module that pulls in
+ * node-pty and most of the main process at import time), and the agent-browser
+ * runtime singletons. Hoisted so the `vi.mock` factories can close over them.
+ */
+const env = vi.hoisted(() => ({
+  windows: [] as any[],
+  wcIdBySurface: new Map<string, number>(),
+  acquired: [] as string[],
+  /** Swappable so a test can make the dashboard hang or fail. */
+  acquireImpl: async (_surfaceId: string): Promise<void> => {},
 }));
-vi.mock('../../src/main/ipc-handlers', () => ({ cdpBridge: {} }));
 
-import { runBrowserCommandForTarget, type BrowserDeps, type BrowserTarget } from '../../src/main/v2-browser';
+vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: () => env.windows, getFocusedWindow: () => env.windows[0] ?? null },
+}));
+vi.mock('../../src/main/ipc-handlers', () => ({
+  cdpBridge: {
+    wcIdForSurface: (id: string) => env.wcIdBySurface.get(id) ?? null,
+    get isAttached() { return env.wcIdBySurface.size > 0; },
+    get attachedWebContentsId() { return [...env.wcIdBySurface.values()][0] ?? null; },
+  },
+}));
+vi.mock('../../src/main/agent-browser-runtime', () => ({
+  acquireDashboardFor: (surfaceId: string) => {
+    env.acquired.push(surfaceId);
+    return env.acquireImpl(surfaceId);
+  },
+  sessionRegistry: {
+    ensure: (surfaceId: string) => ({
+      surfaceId,
+      sessionName: `wmux-${surfaceId}`,
+      streamPort: 9300,
+      dashboardUrl: `http://127.0.0.1:4848/?port=9300`,
+    }),
+  },
+}));
+
+import {
+  handleBrowserV2,
+  resolveBrowserTarget,
+  runBrowserCommandForTarget,
+  type BrowserDeps,
+  type BrowserTarget,
+} from '../../src/main/v2-browser';
 
 describe('engineOf', () => {
   it('defaults an undefined engine to web', () => {
@@ -134,8 +171,28 @@ describe('runBrowserCommandForTarget — engine dispatch', () => {
     const runAgent = vi.fn(async () => ok({ url: 'https://a' }));
     await runBrowserCommandForTarget('browser.navigate', { url: 'https://a' }, agent(), deps(bridge, runAgent));
 
-    expect(runAgent).toHaveBeenCalledWith(['--session', 'wmux-surf-a', 'open', 'https://a']);
+    expect(runAgent).toHaveBeenCalledWith(['--session', 'wmux-surf-a', 'open', 'https://a'], expect.any(Number));
     expect(bridge.navigate).not.toHaveBeenCalled();
+  });
+
+  // A server budget above the CLI's client deadline is not a longer budget, it
+  // is an unreportable one: the client has already hung up and printed a bare
+  // `timed out`, so the server's real diagnosis never reaches the user.
+  // browser-timeout.test.ts pins the actual numbers against src/cli/wmux.ts;
+  // this pins that a budget is passed at all, per verb.
+  it('bounds every agent invocation with a per-verb timeout', async () => {
+    const runAgent = vi.fn(async () => ok({}));
+    const d = deps(makeBridge(), runAgent);
+    await runBrowserCommandForTarget('browser.navigate', { url: 'u' }, agent(), d);
+    await runBrowserCommandForTarget('browser.snapshot', {}, agent(), d);
+    await runBrowserCommandForTarget('browser.wait', { timeout: 777 }, agent(), d);
+
+    const budgets = runAgent.mock.calls.map((c: any[]) => c[1]);
+    for (const ms of budgets) expect(ms).toBeGreaterThan(0);
+    // navigate is a page load; a click is not. They must not share a budget.
+    expect(budgets[0]).toBeGreaterThan(budgets[1]);
+    // An explicit caller timeout is honoured rather than replaced by a default.
+    expect(budgets[2]).toBe(777);
   });
 
   it('never spawns a process for a verb the agent engine cannot express', async () => {
@@ -262,7 +319,7 @@ describe('the two engines are indistinguishable to a caller', () => {
     expect(fromAgent).toEqual({ result: false });
   });
 
-  it('answers ok:true for the action verbs on both engines', async () => {
+  it('answers ok:true for the action verbs on all engines', async () => {
     const bridge = makeBridge();
     for (const method of ['browser.navigate', 'browser.click', 'browser.type', 'browser.fill', 'browser.wait', 'browser.back', 'browser.forward', 'browser.reload']) {
       const params = { url: 'u', ref: 'e1', text: 't', value: 'v' };
@@ -271,5 +328,276 @@ describe('the two engines are indistinguishable to a caller', () => {
       expect(fromAgent, method).toEqual(fromWeb);
       expect(fromAgent, method).toEqual({ ok: true });
     }
+  });
+});
+
+// ── target resolution ──────────────────────────────────────────────────────
+
+/**
+ * A renderer window that answers the four `window.__wmux_*` globals
+ * `resolveBrowserTarget` reaches for. Dispatch is on the global's name and the
+ * first quoted argument, because that string of JS is genuinely how main talks
+ * to the store.
+ */
+function fakeWindow(opts: {
+  workspaceOf?: Record<string, string>;
+  browsersIn?: Record<string, string[]>;
+  engines?: Record<string, string>;
+  created?: string;
+  destroyed?: boolean;
+}) {
+  const calls: string[] = [];
+  return {
+    calls,
+    isDestroyed: () => opts.destroyed ?? false,
+    webContents: {
+      executeJavaScript: async (js: string) => {
+        calls.push(js);
+        const arg = /"([^"]+)"/.exec(js)?.[1] ?? '';
+        if (js.includes('__wmux_getBrowserEngine')) return opts.engines?.[arg] ?? 'web';
+        if (js.includes('__wmux_getWorkspaceIdForSurface')) return opts.workspaceOf?.[arg] ?? null;
+        if (js.includes('__wmux_listBrowserSurfaces')) return opts.browsersIn?.[arg] ?? [];
+        if (js.includes('__wmux_splitPane')) return opts.created ? { surfaceId: opts.created } : null;
+        return null;
+      },
+    },
+  };
+}
+
+// Module state (the #62 caller→browser binding) lives for the whole file, so
+// every test uses its own caller id rather than trying to reset it.
+let callerSeq = 0;
+const nextCaller = () => `surf-caller-${++callerSeq}`;
+
+function resetEnv(): void {
+  env.windows = [];
+  env.wcIdBySurface = new Map();
+  env.acquired = [];
+  env.acquireImpl = async () => {};
+}
+
+describe('resolveBrowserTarget — which engine a command lands on', () => {
+  beforeEach(resetEnv);
+
+  /**
+   * THE regression this rewrite exists for.
+   *
+   * A surface toggled web → agent keeps its CDP registration: nothing calls
+   * cdp.detach on a toggle and pruneDead() only drops DESTROYED webContents. So
+   * wcIdForSurface returns a perfectly valid, NON-null id for an agent-mode
+   * surface — and a resolver that only consults the engine when the wcId came
+   * back null routes the command to the web engine, driving CDP against
+   * agent-browser's own dashboard SPA and corrupting the pane the user is
+   * watching. Silently.
+   */
+  it('routes to the agent engine for a toggled surface that still has a live wcId', async () => {
+    const caller = nextCaller();
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-toggled'] },
+      engines: { 'surf-toggled': 'agent' },
+    })];
+    env.wcIdBySurface.set('surf-toggled', 5); // the stale-but-valid registration
+
+    const target = await resolveBrowserTarget(caller);
+
+    expect(target?.kind).toBe('agent');
+    expect((target as any).session.sessionName).toBe('wmux-surf-toggled');
+  });
+
+  it('still routes an ordinary web surface to the bridge, wcId intact', async () => {
+    const caller = nextCaller();
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-web'] },
+      engines: { 'surf-web': 'web' },
+    })];
+    env.wcIdBySurface.set('surf-web', 11);
+
+    expect(await resolveBrowserTarget(caller)).toEqual({ kind: 'web', wcId: 11 });
+  });
+
+  // The second command for a caller takes the already-bound fast path, which
+  // must notice a toggle that happened between the two.
+  it('notices a toggle that happens after the caller is already bound', async () => {
+    const caller = nextCaller();
+    const engines: Record<string, string> = { 'surf-flip': 'web' };
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-flip'] },
+      engines,
+    })];
+    env.wcIdBySurface.set('surf-flip', 7);
+
+    expect((await resolveBrowserTarget(caller))?.kind).toBe('web');
+    engines['surf-flip'] = 'agent'; // user flips the pane
+    expect((await resolveBrowserTarget(caller))?.kind).toBe('agent');
+  });
+
+  // A surface that STARTED in agent mode and has no webview at all: the wcId
+  // path gives up with null, which is the expected answer, not a failure.
+  it('routes to the agent engine when there is no wcId to be had', async () => {
+    const caller = nextCaller();
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-native'] },
+      engines: { 'surf-native': 'agent' },
+    })];
+
+    const target = await resolveBrowserTarget(caller);
+    expect(target?.kind).toBe('agent');
+  });
+
+  /**
+   * `firstWindow()` is `getAllWindows()[0]`, but a surface may live in window 2
+   * — the #143 "window ≠ workspace" mistake. `resolveBrowserWcId` has the same
+   * shape and its wrong answer is a benign fall-back to the shared browser;
+   * a wrong answer about the ENGINE silently dispatches to the wrong one, so
+   * this query has to poll every window and take the first affirmative.
+   */
+  it('asks every window, not just the first, which engine a surface is on (#143)', async () => {
+    const caller = nextCaller();
+    const engines: Record<string, string> = { 'surf-elsewhere': 'web' };
+    const home = fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-elsewhere'] },
+      engines,
+    });
+    env.windows = [home];
+    env.wcIdBySurface.set('surf-elsewhere', 3);
+    expect((await resolveBrowserTarget(caller))?.kind).toBe('web'); // binds the caller
+
+    // A second window opens in front of the one holding the surface, and the
+    // pane flips to agent mode. Window 0 knows nothing about either.
+    env.windows = [fakeWindow({}), home];
+    engines['surf-elsewhere'] = 'agent';
+
+    expect((await resolveBrowserTarget(caller))?.kind).toBe('agent');
+  });
+
+  // The first command a caller issues used to poll 5s for a CDP attachment that
+  // an agent-mode surface is never going to make — latency the CLI's own
+  // deadline was spending at the same time.
+  it('does not poll for a wcId that an agent surface will never produce', async () => {
+    const caller = nextCaller();
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-nopoll'] },
+      engines: { 'surf-nopoll': 'agent' },
+    })];
+
+    const started = Date.now();
+    expect((await resolveBrowserTarget(caller))?.kind).toBe('agent');
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('treats a renderer that rejects the query as web rather than failing the command', async () => {
+    const caller = nextCaller();
+    const win = fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-noisy'] },
+    });
+    const inner = win.webContents.executeJavaScript;
+    win.webContents.executeJavaScript = async (js: string) => {
+      if (js.includes('__wmux_getBrowserEngine')) throw new Error('renderer went away');
+      return inner(js);
+    };
+    env.windows = [win];
+    env.wcIdBySurface.set('surf-noisy', 9);
+
+    expect(await resolveBrowserTarget(caller)).toEqual({ kind: 'web', wcId: 9 });
+  });
+});
+
+describe('the dashboard reference an agent command takes', () => {
+  beforeEach(resetEnv);
+
+  function agentWorld(caller: string, surfaceId: string): void {
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': [surfaceId] },
+      engines: { [surfaceId]: 'agent' },
+    })];
+  }
+
+  it('takes it for the surface the command actually runs against', async () => {
+    const caller = nextCaller();
+    agentWorld(caller, 'surf-dash');
+    await resolveBrowserTarget(caller);
+    expect(env.acquired).toEqual(['surf-dash']);
+  });
+
+  /**
+   * The dashboard is a VIEWER. A cold `dashboard start` can take 30s, which is
+   * longer than the CLI's entire client-side deadline for most verbs — so
+   * waiting for it would turn "the viewer is slow" into "every browser command
+   * times out". Resolution must complete while the acquire is still in flight.
+   */
+  it('does not wait for the dashboard to come up', async () => {
+    const caller = nextCaller();
+    agentWorld(caller, 'surf-slow');
+    env.acquireImpl = () => new Promise<void>(() => {}); // never settles
+
+    const target = await Promise.race([
+      resolveBrowserTarget(caller),
+      new Promise((r) => setTimeout(() => r('TIMED_OUT'), 1000)),
+    ]);
+    expect((target as any)?.kind).toBe('agent');
+  });
+
+  it('survives a dashboard that fails to start, and still returns a usable target', async () => {
+    const caller = nextCaller();
+    agentWorld(caller, 'surf-nodash');
+    env.acquireImpl = async () => { throw new Error('dashboard failed to start'); };
+
+    const target = await resolveBrowserTarget(caller);
+    expect(target?.kind).toBe('agent');
+  });
+});
+
+describe('handleBrowserV2 error codes', () => {
+  beforeEach(resetEnv);
+
+  const respondTo = (method: string, params: any) =>
+    new Promise<{ code?: number; message?: string; result?: any }>((resolve) => {
+      handleBrowserV2(method, params, (result) => resolve({ result }), (code, message) => resolve({ code, message }));
+    });
+
+  /**
+   * The batch loop already forwarded `err.rpcCode ?? -32000` while this path
+   * responded a flat -32000, so an unknown verb reported -32601 inside a batch
+   * and -32000 as a single command — destroying, one frame up the stack, the
+   * engine-indistinguishable -32601 the runner goes to some trouble to produce.
+   */
+  it('forwards the JSON-RPC code an unknown verb threw, rather than flattening it', async () => {
+    const caller = nextCaller();
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-codes'] },
+    })];
+    env.wcIdBySurface.set('surf-codes', 4);
+
+    const single = await respondTo('browser.nope', { caller });
+    expect(single.code).toBe(-32601);
+    expect(single.message).toBe('Unknown: browser.nope');
+  });
+
+  it('agrees with the batch path on that code', async () => {
+    const caller = nextCaller();
+    env.windows = [fakeWindow({
+      workspaceOf: { [caller]: 'ws-1' },
+      browsersIn: { 'ws-1': ['surf-codes2'] },
+    })];
+    env.wcIdBySurface.set('surf-codes2', 4);
+
+    const batch = await respondTo('browser.batch', { caller, commands: [{ method: 'browser.nope', params: {} }] });
+    expect(batch.result.results[0].error.code).toBe(-32601);
+  });
+
+  it('still reports a browser that could not be opened as -32000', async () => {
+    // No window at all: resolution returns null and nothing was ever attempted.
+    const answer = await respondTo('browser.snapshot', { caller: nextCaller() });
+    expect(answer.code).toBe(-32000);
+    expect(answer.message).toBe('Could not open browser panel');
   });
 });

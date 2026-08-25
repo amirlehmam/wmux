@@ -66,6 +66,26 @@ export function probeDashboardPort(port: number = DASHBOARD_PORT, timeoutMs: num
 }
 
 /**
+ * How long a failed `dashboard start` suppresses the next attempt.
+ *
+ * Without this, every agent-mode command and every pane enable re-runs the
+ * whole attempt — a probe plus up to 30s of `dashboard start` — because a
+ * failure is deliberately not recorded as "held" (so that a fix is picked up
+ * without a restart). `DashboardDaemon`'s own in-flight guard does not help:
+ * it clears in a `finally`, so it coalesces CONCURRENT callers only and does
+ * nothing for sequential ones.
+ *
+ * 60s is chosen against what actually breaks a dashboard start: a broken or
+ * partial install, a port conflict on 4848, or a failed Chrome download. None
+ * of those clear up in seconds, so retrying faster only burns a child process
+ * per command; and none of them take longer than a minute to FIX once noticed,
+ * so a user who installs agent-browser or frees the port sees it recover
+ * without restarting wmux. It bounds the cost of a persistent outage to one
+ * attempt per minute instead of one per command.
+ */
+export const DASHBOARD_RETRY_COOLDOWN_MS = 60_000;
+
+/**
  * The observability dashboard, refcounted by live agent-mode surfaces.
  *
  * `start`/`stop` resolve the binary at call time rather than closing over one:
@@ -87,3 +107,97 @@ export const dashboardDaemon = new DashboardDaemon({
     await runAgentBrowser(binary, ['dashboard', 'stop'], DASHBOARD_STOP_TIMEOUT_MS);
   },
 });
+
+// ─── the per-surface dashboard reference ───────────────────────────────────
+//
+// SINGLE OWNER, on purpose. Two call paths take a dashboard reference for a
+// surface — the renderer enabling agent mode on a pane (`ipc-handlers.ts`) and
+// a `wmux browser` verb arriving for that pane (`v2-browser.ts`) — and they
+// happen in either order, or both, for the SAME surface. When each kept its own
+// Set, a surface enabled from the UI and then driven by the CLI took two
+// references and gave back one, so the refcount never reached zero and the
+// dashboard outlived every agent pane until app quit.
+//
+// The daemon's contract is one reference per LIVE AGENT-MODE SURFACE, which is
+// a fact about the surface, not about who asked. So the bookkeeping belongs
+// with the daemon, and both callers route through the pair below.
+
+/** Surfaces this process currently holds a dashboard reference for. */
+const heldFor = new Set<string>();
+
+/**
+ * In-flight acquisitions, keyed by surface.
+ *
+ * Needed because `acquireDashboardFor` is not always awaited by its caller (the
+ * command path deliberately does not block a verb on the viewer starting), so
+ * two calls for one surface can overlap. `heldFor` alone cannot dedupe them —
+ * neither has finished, so neither is in it yet — and both would take a
+ * reference for a single surface.
+ */
+const acquiring = new Map<string, Promise<void>>();
+
+/** When a failed start stops being suppressed. 0 ⇒ nothing has failed. */
+let cooldownUntil = 0;
+
+/**
+ * Take this surface's dashboard reference, at most once.
+ *
+ * Idempotent per surface: a second call while one is held, or while one is in
+ * flight, takes no further reference. A surface is recorded as held only after
+ * `acquire()` SUCCEEDS, so a failure is retried later rather than remembered as
+ * done — but not immediately, see `DASHBOARD_RETRY_COOLDOWN_MS`.
+ *
+ * Rejects when the dashboard could not be started. Callers are expected to
+ * treat that as non-fatal (it is observability), but they are told, so it can
+ * be logged rather than vanishing.
+ */
+export function acquireDashboardFor(surfaceId: string, now: () => number = Date.now): Promise<void> {
+  if (heldFor.has(surfaceId)) return Promise.resolve();
+  const pending = acquiring.get(surfaceId);
+  if (pending) return pending;
+  if (now() < cooldownUntil) {
+    return Promise.reject(new Error(
+      `agent-browser: dashboard start failed recently; not retrying for another ${cooldownUntil - now()}ms`,
+    ));
+  }
+
+  const attempt = dashboardDaemon.acquire().then(
+    () => {
+      heldFor.add(surfaceId);
+      cooldownUntil = 0;
+      acquiring.delete(surfaceId);
+    },
+    (err) => {
+      // acquire() already rolled its own refcount back, so there is no
+      // reference to give away here — only a failure to remember.
+      cooldownUntil = now() + DASHBOARD_RETRY_COOLDOWN_MS;
+      acquiring.delete(surfaceId);
+      throw err;
+    },
+  );
+  acquiring.set(surfaceId, attempt);
+  return attempt;
+}
+
+/**
+ * Give back this surface's dashboard reference, if it ever took one.
+ *
+ * A no-op for a surface that never acquired — including one whose acquire
+ * FAILED, and one whose session exists but whose dashboard start was
+ * suppressed by the cooldown. That matters more than it looks: teardown is
+ * gated on the session registry, not on this Set, so without the guard a
+ * surface that has a session but no reference would pay down a reference
+ * belonging to a different, live surface and could stop a dashboard somebody
+ * is watching. The daemon clamps at zero; it cannot detect a phantom release.
+ */
+export async function releaseDashboardFor(surfaceId: string): Promise<void> {
+  if (!heldFor.delete(surfaceId)) return;
+  await dashboardDaemon.release();
+}
+
+/** Test seam: forget all per-surface bookkeeping and any active cooldown. */
+export function resetDashboardRefs(): void {
+  heldFor.clear();
+  acquiring.clear();
+  cooldownUntil = 0;
+}
