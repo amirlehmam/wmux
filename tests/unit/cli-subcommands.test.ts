@@ -56,3 +56,35 @@ describe('group commands with no subcommand (issue #156)', () => {
     }
   });
 });
+
+/**
+ * Every handler is invoked as `handler(args)` where args[0] is the COMMAND
+ * NAME — cmdAgent and cmdPane both read args[1] for their subcommand. `detect`
+ * read args[0], so `wmux detect explain` rejected itself with "expected
+ * `explain` or `reload`". Only running it found this; the unit tests exercised
+ * the engine and the RPC, never the argv seam between them.
+ */
+describe('subcommand dispatch reads args[1], not args[0]', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'cli', 'wmux.ts'),
+    'utf8',
+  );
+
+  it('the detect handler takes its subcommand from args[1]', () => {
+    const body = source.slice(source.indexOf("'detect': async (args: string[])"));
+    const handler = body.slice(0, body.indexOf('\n  },'));
+    expect(handler).toContain('const sub = args[1]');
+    expect(handler).not.toMatch(/const sub = args\[0\]/);
+  });
+
+  it('and slices its flags from index 2, so --file is not eaten as the subcommand', () => {
+    const body = source.slice(source.indexOf("'detect': async (args: string[])"));
+    const handler = body.slice(0, body.indexOf('\n  },'));
+    expect(handler).toContain('args.slice(2)');
+  });
+
+  /** The convention this broke — kept honest for the next subcommand added. */
+  it('matches how the other group commands dispatch', () => {
+    expect(source).toMatch(/AGENT_CMDS\[args\[1\]\]/);
+  });
+});

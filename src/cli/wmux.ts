@@ -1391,7 +1391,10 @@ const AGENT_STATE_COMMANDS = {
    * machine, which is also how the bundled manifests were authored.
    */
   'detect': async (args: string[]) => {
-    const sub = args[0];
+    // args[0] is the command name itself — every handler is called with the
+    // full argv, as cmdAgent/cmdPane do. Reading args[0] as the subcommand made
+    // `wmux detect explain` refuse itself.
+    const sub = args[1];
     if (sub === 'reload') {
       print(await sendV2('detect.reload', {}));
       return;
@@ -1400,7 +1403,7 @@ const AGENT_STATE_COMMANDS = {
       console.error('detect: expected `explain` or `reload`');
       process.exit(1);
     }
-    const rest = args.slice(1);
+    const rest = args.slice(2);
     const file = getFlag(rest, '--file');
     const surfaceId = getFlag(rest, '--surface') || process.env.WMUX_SURFACE_ID;
     if (file) {
