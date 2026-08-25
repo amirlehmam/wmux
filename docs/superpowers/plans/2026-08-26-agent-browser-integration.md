@@ -1759,6 +1759,26 @@ git commit -m "feat(browser): engine toggle and agent-browser setup card"
 
 ## Task 11: Install flow + teardown + orphan registration
 
+> **Carried forward from Tasks 5 and 6 review — three constraints this task must honour.**
+>
+> 1. **`SessionRegistry` is NOT ground truth for what is running.** Its maps are
+>    in-memory and start empty after a restart or crash, so a `wmux-` prefixed
+>    session that survived a crash is real on the OS and invisible to a fresh
+>    registry. Startup reconciliation must consult `agent-browser session list`,
+>    never the registry. The "ephemeral ⇒ orphans are unambiguous" property holds
+>    for the *naming convention*, not for the in-memory bookkeeping.
+>
+> 2. **A handed-out stream port may not be bindable.** `nextPort()` tracks only
+>    what this process allocated; it never asks the OS. An orphan from a previous
+>    wmux — or any unrelated program — can already hold it. Treat an
+>    `EADDRINUSE`-style launch failure as "ask the registry for the next port and
+>    retry", not as a hard failure.
+>
+> 3. **`DashboardDaemon.acquire()` throws when `start()` fails.** It rolls the
+>    refcount back and rethrows so the caller sees it, rather than reporting a ref
+>    it cannot serve. Every call site needs a `try`/`catch` — a surface flipping
+>    into agent mode must fall back to the setup card or to `web`, not hang.
+
 **Files:**
 - Create: `src/main/agent-browser-daemon-instance.ts`
 - Modify: `src/main/ipc-handlers.ts` (the `AGENT_BROWSER_INSTALL` handler)
@@ -1980,6 +2000,26 @@ In `CLAUDE.md`, in the `### Main Process (src/main/)` table:
 | `agent-browser-verbs.ts` | Pure `wmux verb + params → agent-browser argv`. Pure so the table most likely to drift as the upstream CLI evolves is testable with no daemon, no Chrome and no Electron. Throws the SAME -32601 as the web engine for an unknown verb, so a caller cannot tell the engines apart by their errors |
 | `agent-browser-daemon.ts` | Refcounted `dashboard start`/`stop`. **Adopt, never fight**: a dashboard already on :4848 was started by someone else, so wmux uses it and never stops it — killing a dashboard the user is watching in their own Chrome is a baffling bug to receive |
 | `agent-browser-session.ts` | `surfaceId` → session. Sessions are EPHEMERAL — process lifetime equals surface lifetime, nothing persisted. That is what makes orphan handling correct by construction: no wmux-owned session legitimately survives, so any `wmux-` session with no live surface is garbage. wmux allocates the stream port itself because the dashboard deep-link keys on `?port=` |
+```
+
+- [ ] **Step 1b: Document the one known engine divergence**
+
+Verified against agent-browser's real CLI docs during Task 4: `wait` accepts
+`wait <selector>` or `wait <ms>`, but has **no per-call timeout flag**. Its only
+timeout control is the global `AGENT_BROWSER_DEFAULT_TIMEOUT` env var (25s
+default). wmux's own `wmux browser wait <ref> [ms]` sends both a ref and a
+timeout, so in `agent` mode the caller's `ms` is unrepresentable and is dropped —
+while in `web` mode `cdpBridge.wait(ref, timeout)` honours it.
+
+This is the only place the two engines behave differently for the same command,
+so it has to be written down rather than discovered. Add to the CLI Reference:
+
+```bash
+wmux browser wait <ref> [ms]           # NOTE: in agent mode the [ms] bound is
+                                       # ignored — agent-browser has no per-call
+                                       # wait timeout, only the global
+                                       # AGENT_BROWSER_DEFAULT_TIMEOUT (25s).
+                                       # The web engine honours [ms] normally.
 ```
 
 - [ ] **Step 2: Document the CLI verb**
