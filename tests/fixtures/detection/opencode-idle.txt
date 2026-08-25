@@ -1,0 +1,8 @@
+                ┃                                                                                
+                ┃  Ask anything... "What is the tech stack of this project?"                      
+                ┃                                                                                
+                ┃  Build · qwen3-coder-64k Ollama                                                
+                ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                tab agents  ctrl+p commands       
+
+  ~OneDrive - PulsaBureauwmux:feat/agent-attention-rollup  ⊙ 1 MCP /status             1.17.4

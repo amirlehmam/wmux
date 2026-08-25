@@ -21,6 +21,9 @@ function reasonFallback(
   t: (key: any, fallback?: string) => string,
 ): string {
   if (entry.answerPending) return t('agentNavigator.answerSent', 'answer sent — waiting');
+  // Read off the screen, not reported. Said out loud rather than shown only as
+  // a style, because the difference changes how much the user should trust it.
+  if (entry.stateSource === 'detected') return t('agentNavigator.fromScreen', 'read from the screen');
   if (entry.state !== 'unknown') return '';
   return entry.identitySource === 'probe'
     ? t('agentNavigator.silentProbed', 'detected — reports no state')
@@ -48,14 +51,15 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
   const workspaces = useStore((s) => s.workspaces);
   const agentStates = useStore((s) => s.agentStates);
   const agentIdentities = useStore((s) => s.agentIdentities);
+  const agentDetections = useStore((s) => s.agentDetections);
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const listRef = useRef<HTMLDivElement>(null);
 
   const rollup = useMemo(
-    () => rollupAgents(workspaces, agentStates, now, agentIdentities),
-    [workspaces, agentStates, agentIdentities, now],
+    () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections),
+    [workspaces, agentStates, agentIdentities, agentDetections, now],
   );
 
   /**
@@ -165,6 +169,7 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
               key={entry.surfaceId}
               className="agent-nav__row"
               data-state={entry.state}
+              data-source={entry.stateSource ?? 'none'}
               data-selected={i === selected}
               onMouseEnter={() => setSelected(i)}
               onClick={() => jump(entry)}

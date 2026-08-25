@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys, sshDetector, agentIdentity } from './ipc-handlers';
 import { sequenceFrom, splitSequencedReport } from './ssh-detect';
+import { handleDetectionV2 } from './detection-rpc';
 import { isPtyCrashGuardInstalled } from './pty-manager';
 import { logDiagnostic } from './crash-diagnostics';
 import { handleBrowserV2 } from './v2-browser';
@@ -1240,6 +1241,9 @@ app.whenReady().then(() => {
       }
 
       default:
+        // Routed families before the not-found: `detect.*` owns its own module,
+        // the same way `pane.report_agent` and friends do.
+        if (handleDetectionV2(request.method, request.params, respond, respondError)) break;
         respondError(-32601, `Method not found: ${request.method}`);
     }
   });

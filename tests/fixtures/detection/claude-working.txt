@@ -1,0 +1,12 @@
+● Phase 3. Je commence par du reel.
+
+● Running 2 shell commands…
+  ⏎  $ cd "C:/dev/x" && wmux read-screen --lines 14
+
+✻ Unravelling… (26s · ↓ 1.4k tokens)
+
+────────────────────────────────────────────────────────────────────────────────────────────────── wmux ──
+> 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [Opus 5] | 5h: 33.0% | Wkly: 15.0% | Ctx: 375.2k                                                    /rc
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

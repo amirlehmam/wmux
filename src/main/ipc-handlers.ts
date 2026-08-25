@@ -7,6 +7,7 @@ import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
 import { SshDetector } from './ssh-detect';
 import { agentIdentity } from './agent-identity';
+import { setDetection, forgetDetection, activeManifests } from './detection-store';
 import {
   readClipboardSource,
   regularFilePaths,
@@ -76,6 +77,7 @@ function forgetSurface(surfaceId: SurfaceId): void {
   insertionQueue.cancel(surfaceId);
   sshDetector.forget(surfaceId);
   agentIdentity.forget(surfaceId);
+  forgetDetection(surfaceId);
 }
 
 function ownsLiveSurface(surfaceId: unknown, webContents: Electron.WebContents): surfaceId is SurfaceId {
@@ -599,6 +601,17 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Same bootstrap problem, same shape: AGENT_IDENTITY is delta-only, and a
   // pane whose shell spec named an agent at create time never emits again.
   ipcMain.handle(IPC_CHANNELS.AGENT_IDENTITY_LIST, () => agentIdentity.list());
+
+  // The detection loop's mirror. `on`, not `handle`: the renderer is reporting,
+  // not asking, and making it await an ack would put the loop's cadence on the
+  // far side of an IPC round trip.
+  ipcMain.on(IPC_CHANNELS.AGENT_DETECTION, (_event, surfaceId: string, result: any) => {
+    if (typeof surfaceId === 'string') setDetection(surfaceId, result ?? null);
+  });
+
+  // Manifests flow the other way: main owns the config directory, the renderer
+  // owns the loop that uses them.
+  ipcMain.handle(IPC_CHANNELS.AGENT_DETECTION_MANIFESTS, () => activeManifests());
 
   // Agent-integration consent (issue #132). Deliberately NOT routed through the
   // generic settings:set above: changing this decision has to reconcile the files

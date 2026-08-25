@@ -320,6 +320,19 @@ export interface WorkspacePrefs {
    */
   confirmWorkspaceClose: boolean;
   /**
+   * Read agent TUIs off the screen to infer blocked/working/idle for agents
+   * that do not report state themselves (Codex, Gemini, Aider, …).
+   *
+   * On by default: it only ever fills a gap. Detection is ranked strictly below
+   * declared state and can never override it, so a user whose agents all report
+   * is unaffected — their panes are skipped without being scanned at all.
+   *
+   * The escape hatch matters anyway. This reads the terminal buffer several
+   * times a second, and a user who does not want their screen contents pattern
+   * matched — however locally — should be able to say so in one click.
+   */
+  detectAgentScreens: boolean;
+  /**
    * Which `savedLayouts` entry (by id) new workspaces start with — Ctrl+N, the
    * sidebar "+" button, CLI `wmux new-workspace`, "Open folder as workspace",
    * and the first-launch/empty-session workspace all read this. `null` (the
@@ -354,6 +367,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   confirmWorkspaceClose: false,
   defaultLayoutId: null,
   restoreClaudeSessions: false,
+  detectAgentScreens: true,
 };
 
 // ─── Terminal settings ────────────────────────────────────────────────────────

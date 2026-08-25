@@ -16,6 +16,7 @@ import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import AgentNavigator from './components/AgentNavigator/AgentNavigator';
 import { focusAgentTarget } from './store/focus-agent';
+import { useAgentDetection } from './hooks/useAgentDetection';
 import type { AgentRosterEntry } from './store/agent-rollup';
 import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
 import ConfirmCloseDialog from './components/ConfirmCloseDialog';
@@ -439,6 +440,9 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [agentNavigatorOpen, setAgentNavigatorOpen] = useState(false);
+  // Screen detection for agents that report no state of their own. One loop for
+  // the whole window; it skips every surface whose agent IS reporting.
+  useAgentDetection(useStore((s) => s.workspacePrefs.detectAgentScreens));
   // Shortcut cheat-sheet overlay (issue #64, toggled by F1 via wmux:toggle-cheatsheet).
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
   useEffect(() => {

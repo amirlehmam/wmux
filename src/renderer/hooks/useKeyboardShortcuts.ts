@@ -246,7 +246,7 @@ export function useKeyboardShortcuts(
      */
     const jumpToBlocked = () => {
       const state = useStore.getState();
-      const { blocked } = rollupAgents(state.workspaces, state.agentStates, Date.now(), state.agentIdentities);
+      const { blocked } = rollupAgents(state.workspaces, state.agentStates, Date.now(), state.agentIdentities, state.agentDetections);
       if (blocked.length === 0) return;
 
       const currentIdx = blocked.findIndex((e) => e.paneId === focusedPaneId);

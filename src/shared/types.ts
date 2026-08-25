@@ -385,6 +385,14 @@ export const IPC_CHANNELS = {
    */
   AGENT_IDENTITY: 'agent:identity',
   AGENT_IDENTITY_LIST: 'agent:identity-list',
+  /**
+   * Renderer → main mirror of what the detection loop decided, so the CLI and
+   * the pipe can answer without interrupting the thread that draws terminals.
+   * Carries the VERDICT, never the screen text it was read from.
+   */
+  AGENT_DETECTION: 'agent:detection',
+  /** Main → renderer: bundled manifests with user overrides applied. */
+  AGENT_DETECTION_MANIFESTS: 'agent:detection-manifests',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
   SETTINGS_CHANGED: 'settings:changed',

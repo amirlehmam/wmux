@@ -15,6 +15,7 @@
 import { StateCreator } from 'zustand';
 import { SurfaceId } from '../../shared/types';
 import type { DeclaredAgentSnapshot, AgentIdentitySnapshot } from './agent-rollup';
+import type { DetectionResult } from '../../shared/detection/types';
 
 /** The AGENT_STATE payload, which carries its own surfaceId. */
 export interface AgentStatePayload extends DeclaredAgentSnapshot {
@@ -46,6 +47,19 @@ export interface AgentStateSlice {
   agentIdentities: Record<string, AgentIdentitySnapshot>;
   setAgentIdentity: (payload: AgentIdentityPayload) => void;
   replaceAgentIdentities: (payloads: AgentIdentityPayload[]) => void;
+
+  /**
+   * surfaceId → what the pane's SCREEN says, kept strictly apart from what the
+   * agent DECLARED (invariant 5 of the detection design).
+   *
+   * They are never merged here. A consumer merges them at render time, so an
+   * operator running `wmux agent-state` can still tell a reported block from a
+   * seen one — and so a detected state can never be mistaken for a claim the
+   * agent made.
+   */
+  agentDetections: Record<string, DetectionResult>;
+  setAgentDetection: (surfaceId: string, result: DetectionResult | null) => void;
+  clearAgentDetections: () => void;
 }
 
 export const createAgentStateSlice: StateCreator<AgentStateSlice, [], [], AgentStateSlice> = (set) => ({
@@ -94,5 +108,36 @@ export const createAgentStateSlice: StateCreator<AgentStateSlice, [], [], AgentS
       if (p?.surfaceId && p.kind) next[p.surfaceId] = { kind: p.kind, source: p.source };
     }
     set({ agentIdentities: next });
+  },
+
+  agentDetections: {},
+
+  setAgentDetection(surfaceId: string, result: DetectionResult | null): void {
+    set((state) => {
+      const previous = state.agentDetections[surfaceId];
+
+      if (!result) {
+        if (!previous) return state;
+        const next = { ...state.agentDetections };
+        delete next[surfaceId];
+        return { agentDetections: next };
+      }
+
+      // The loop re-scans several times a second. Returning the same object for
+      // an unchanged verdict is what keeps every downstream useMemo from
+      // recomputing at that rate (issue #141's lesson, one layer up).
+      if (previous
+        && previous.state === result.state
+        && previous.agent === result.agent
+        && previous.ruleId === result.ruleId) {
+        return state;
+      }
+
+      return { agentDetections: { ...state.agentDetections, [surfaceId]: result } };
+    });
+  },
+
+  clearAgentDetections(): void {
+    set((state) => (Object.keys(state.agentDetections).length === 0 ? state : { agentDetections: {} }));
   },
 });

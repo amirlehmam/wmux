@@ -273,3 +273,87 @@ describe('workspaceAgentState — unknown', () => {
     expect(workspaceAgentState({ blocked: 0, working: 0, idle: 1, unknown: 5, total: 6 })).toBe('idle');
   });
 });
+
+describe('rollupAgents — detection merge (phase 3)', () => {
+  const det = (state: 'blocked' | 'working' | 'idle' | 'unknown', agent = 'claude') => ({ agent, state });
+
+  it('lists an agent known only from its screen', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW, {}, {
+      'surf-a': det('working', 'codex'),
+    });
+    expect(out.totals).toEqual({ blocked: 0, working: 1, idle: 0, unknown: 0, total: 1 });
+    expect(out.roster[0]).toMatchObject({
+      kind: 'codex', state: 'working', stateSource: 'detected', detectedState: 'working',
+    });
+  });
+
+  /**
+   * THE invariant. wmux deliberately diverges from the prior art here: a visible
+   * blocker must NOT override a declaration, because wmux's `blocked` never
+   * expires AND answering never clears it. A screen rule re-asserting `blocked`
+   * on a repainted frame would make the sidebar's answer button permanently
+   * useless — the user clicks, the agent moves on, and the next scan puts the
+   * pane straight back in the queue.
+   */
+  it('declared state always beats detected state', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'working' }),
+    }, NOW, {}, { 'surf-a': det('blocked') });
+
+    expect(out.roster[0]).toMatchObject({
+      state: 'working', stateSource: 'declared', detectedState: 'blocked',
+    });
+    expect(out.totals.blocked).toBe(0);
+  });
+
+  /** Both facts survive to the UI so an operator can still tell them apart. */
+  it('keeps the detected verdict alongside the declared one', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'idle' }),
+    }, NOW, {}, { 'surf-a': det('working') });
+    expect(out.roster[0].detectedState).toBe('working');
+    expect(out.roster[0].state).toBe('idle');
+  });
+
+  it('detection fills in only where the agent declared nothing', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'unknown' }),
+    }, NOW, { 'surf-a': { kind: 'claude', source: 'command' } }, { 'surf-a': det('blocked') });
+
+    expect(out.roster[0]).toMatchObject({ state: 'blocked', stateSource: 'detected' });
+    expect(out.blocked).toHaveLength(1);
+  });
+
+  /** A detection that concluded nothing must not push the pane off `unknown`. */
+  it('an unknown detection leaves an identified agent unknown', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW,
+      { 'surf-a': { kind: 'claude', source: 'shell-spec' } }, { 'surf-a': det('unknown') });
+    expect(out.roster[0]).toMatchObject({ state: 'unknown', stateSource: null, detectedState: null });
+  });
+
+  it('falls back to the detected agent name when identity said nothing', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW, {}, {
+      'surf-a': det('idle', 'opencode'),
+    });
+    expect(out.roster[0]).toMatchObject({ kind: 'opencode', label: 'opencode' });
+  });
+
+  it('ignores detection for a surface no longer in any split tree', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {}, NOW, {}, {
+      'surf-ghost': det('blocked'),
+    });
+    expect(out.totals.total).toBe(0);
+  });
+
+  it('a detected block still sorts into the needs-you queue by dwell', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', split(
+      leaf('pane-1', [{ id: 'surf-declared' }]),
+      leaf('pane-2', [{ id: 'surf-detected' }]),
+    ))], {
+      'surf-declared': declared({ state: 'blocked', blockedSince: NOW - 1_000 }),
+    }, NOW, {}, { 'surf-detected': det('blocked') });
+
+    expect(out.totals.blocked).toBe(2);
+    expect(out.blocked.map((b) => b.stateSource)).toEqual(['declared', 'detected']);
+  });
+});

@@ -1,0 +1,10 @@
+╭────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.98.0)                          │
+│                                                    │
+│ model:     gpt-5.3-codex medium   /model to change │
+│ directory: ~OneDrive - PulsaBureauwmux          │
+╰────────────────────────────────────────────────────╯
+
+› Run /review on my current changes
+
+  ? for shortcuts                                                                      100% context left

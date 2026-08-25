@@ -39,6 +39,18 @@ export interface AgentIdentitySnapshot {
 }
 
 /**
+ * What the pane's SCREEN said (src/shared/detection).
+ *
+ * Only the two fields the rollup consumes are declared, so this module keeps
+ * compiling for both processes without dragging the engine's types into the
+ * renderer's dependency graph.
+ */
+export interface DetectionSnapshot {
+  agent: string | null;
+  state: AgentPresenceState;
+}
+
+/**
  * One AGENT_STATE payload as the renderer receives it (src/main/agent-state.ts,
  * `AgentStateSnapshot`). Only the fields the rollup needs are declared.
  */
@@ -76,6 +88,17 @@ export interface AgentRosterEntry {
   kind: string | null;
   /** How that kind was established — null when only declared state is known. */
   identitySource: AgentIdentitySnapshot['source'];
+  /**
+   * Where `state` came from.
+   *
+   * Kept beside the merged value rather than folded into it: "Claude says it is
+   * blocked" and "Claude's screen looks blocked" are different facts with
+   * different reliability, and the UI marks the second one so a user is never
+   * told wmux knows something it inferred.
+   */
+  stateSource: 'declared' | 'detected' | null;
+  /** What the screen said, independent of what the agent declared. */
+  detectedState: AgentPresenceState | null;
 }
 
 export interface AgentCounts {
@@ -145,19 +168,32 @@ function rosterEntryFor(
   workspace: WorkspaceInfo,
   declared: DeclaredAgentSnapshot | undefined,
   identity: AgentIdentitySnapshot | undefined,
+  detection: DetectionSnapshot | undefined,
   now: number,
 ): AgentRosterEntry | null {
   const declaredState = declared && declared.state !== 'unknown' ? declared.state : null;
-  const kind = identity?.kind ?? null;
+  const detectedState = detection && detection.state !== 'unknown' ? detection.state : null;
+  const kind = identity?.kind ?? detection?.agent ?? null;
 
-  // Two independent ways to be an agent pane: the agent said so, or wmux
-  // identified the process. Either alone is enough to be listed — an agent that
-  // reports nothing is exactly the case identity exists to cover.
-  if (!declaredState && !kind) return null;
+  // Three independent ways to be an agent pane: the agent said so, wmux
+  // identified the process, or the screen carries an agent's chrome. Any one is
+  // enough to be listed — an agent that reports nothing AND was started outside
+  // wmux's sight is exactly the case detection exists to cover.
+  if (!declaredState && !kind && !detectedState) return null;
 
-  // `unknown` rather than `idle` when only identity spoke: idle is a claim, and
-  // no one made it.
-  const state: AgentPresenceState = declaredState ?? 'unknown';
+  /**
+   * THE precedence rule, and the point where this could have gone wrong.
+   *
+   * Declared beats detected, always. wmux deliberately does NOT let a visible
+   * blocker override a stale declaration, which is where the prior art goes the
+   * other way — because in wmux `blocked` never expires AND answering never
+   * clears it, so a screen rule re-asserting `blocked` on a repainted frame
+   * would make the sidebar's answer button permanently useless.
+   *
+   * `unknown` rather than `idle` when nobody spoke: idle is a claim.
+   */
+  const state: AgentPresenceState = declaredState ?? detectedState ?? 'unknown';
+  const stateSource = resolveStateSource(declaredState, detectedState);
   const blocked = state === 'blocked';
   const choices = blocked ? (declared?.choices ?? []) : [];
   // A stamped blockedSince is truthful; updatedAt is the best guess when main
@@ -182,7 +218,19 @@ function rosterEntryFor(
     dwellMs: Math.max(0, now - since),
     kind,
     identitySource: identity?.source ?? null,
+    stateSource,
+    detectedState,
   };
+}
+
+/** Which layer supplied `state`. Declared always wins — see the note above. */
+function resolveStateSource(
+  declaredState: AgentPresenceState | null,
+  detectedState: AgentPresenceState | null,
+): AgentRosterEntry['stateSource'] {
+  if (declaredState) return 'declared';
+  if (detectedState) return 'detected';
+  return null;
 }
 
 /**
@@ -199,6 +247,7 @@ export function rollupAgents(
   agentStates: Record<string, DeclaredAgentSnapshot | undefined>,
   now: number,
   identities: Record<string, AgentIdentitySnapshot | undefined> = {},
+  detections: Record<string, DetectionSnapshot | undefined> = {},
 ): AgentRollup {
   const byWorkspace: Record<string, AgentCounts> = {};
   const totals = EMPTY_COUNTS();
@@ -217,6 +266,7 @@ export function rollupAgents(
         workspace,
         agentStates[surface.surfaceId],
         identities[surface.surfaceId],
+        detections[surface.surfaceId],
         now,
       );
       if (!entry) continue;

@@ -255,6 +255,14 @@ contextBridge.exposeInMainWorld('wmux', {
     },
     list: (): Promise<any[]> => ipcRenderer.invoke(IPC_CHANNELS.AGENT_IDENTITY_LIST),
   },
+  // Screen detection. The renderer owns the loop (that is where the xterm
+  // buffer is) and reports its VERDICT here; the screen text never crosses.
+  agentDetection: {
+    report: (surfaceId: string, result: unknown): void =>
+      ipcRenderer.send(IPC_CHANNELS.AGENT_DETECTION, surfaceId, result),
+    manifests: (): Promise<{ manifests: unknown[]; warnings: string[] }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_DETECTION_MANIFESTS),
+  },
   orchestration: {
     onUpdate: (callback: (state: any) => void) => {
       const handler = (_event: any, state: any) => callback(state);

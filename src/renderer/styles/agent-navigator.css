@@ -216,3 +216,18 @@
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--ui-text-muted);
 }
+
+/* Read off the screen rather than reported by the agent. Hollow-centred so a
+   detected state is visibly a weaker claim than a declared one — the colour
+   still says WHAT, the fill says HOW SURE. Same idea as the dashed border on a
+   probed agent kind above. */
+.agent-nav__row[data-source='detected'] .agent-nav__row-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+.agent-nav__row[data-source='detected'][data-state='blocked'] .agent-nav__row-dot {
+  color: var(--ui-agent-blocked);
+}
+.agent-nav__row[data-source='detected'][data-state='working'] .agent-nav__row-dot {
+  color: #e8a33d;
+}
