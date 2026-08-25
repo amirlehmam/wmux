@@ -23,7 +23,7 @@
   <img src="https://wmux.org/assets/wmux-screen.png" alt="wmux — split terminal panes with the agent session sidebar" width="900" />
 </p>
 
-## New in 2.0 — wmux sees every agent, not just Claude Code
+## New in 2.0 - wmux sees every agent, not just Claude Code
 
 Until now wmux could only tell you what an agent was doing if that agent **told it**. That meant Claude Code (hooks), OpenCode (plugin) and Kiro. Codex, Gemini, Aider, Amp, Cursor and Copilot ran in panes wmux could display and could not read.
 
