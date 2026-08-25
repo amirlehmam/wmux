@@ -298,6 +298,52 @@ const MAX_BUFFER_CACHE = 32;
 // setup→cleanup→setup sequence can't delete the replacement instance).
 export const surfaceTerminalRegistry = new Map<string, Terminal>();
 
+/**
+ * surfaceId → count of PTY chunks written into that terminal.
+ *
+ * A change counter, not a byte count: screen detection only needs to know
+ * whether the buffer could possibly differ since it last looked, and comparing
+ * one integer is cheaper than re-reading and re-matching 40 lines. Never
+ * pruned on purpose — a stale entry is one integer, and deleting it on teardown
+ * would make a remounting tab look like it had new output.
+ */
+export const surfaceOutputSeq = new Map<string, number>();
+
+/**
+ * surfaceId → the last OSC 0/2 title the pane set.
+ *
+ * xterm parses these and, until now, wmux threw every one away —
+ * `terminal.onTitleChange` had zero occurrences in src/. Agent TUIs set it
+ * ("✳ Claude Code", "codex — running"), so it is detection evidence that
+ * survives a full-screen repaint scrolling the footer out of reach, and it is
+ * the highest-priority region in the prior art's own Claude rules.
+ *
+ * Renderer-local, deliberately: it is only ever read by the detection loop two
+ * files away, and a title is arbitrary process-controlled text that has no
+ * reason to cross into main.
+ */
+export const surfaceTitle = new Map<string, string>();
+
+/** Longest title kept. A title is chrome; anything longer is a program misusing OSC. */
+const MAX_TITLE_CHARS = 256;
+
+/**
+ * Record OSC 0/2 for a surface. Returns the disposable, or null for a surface
+ * with no id.
+ *
+ * Recorded, not RENDERED: wmux tab titles are the user's to set (renameSurface),
+ * and letting any program rewrite them would take that away. The value exists
+ * only as detection evidence.
+ */
+function recordTitleChanges(terminal: Terminal, surfaceId: string | undefined) {
+  if (!surfaceId) return null;
+  return terminal.onTitleChange((title) => {
+    const trimmed = (title ?? '').trim().slice(0, MAX_TITLE_CHARS);
+    if (trimmed) surfaceTitle.set(surfaceId, trimmed);
+    else surfaceTitle.delete(surfaceId);
+  });
+}
+
 // Convert a wheel delta to a line count (sign preserved, magnitude ≥ 1).
 function wheelDeltaToLines(ev: WheelEvent, rows: number): number {
   let amount: number;
@@ -480,7 +526,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   const bgAlpha = terminalBgAlpha(appearance, transparencyPending);
 
   const finishInsertion = (request: Promise<InsertionResult>): void => {
-    void request
+    // No `void` marker needed: the chain below ends in a .catch(), so the
+    // promise is fully handled and nothing can go unobserved.
+    request
       .then((result) => {
         // Do not close over the terminal that began the request. A tab can
         // remount while scp is running; use the current live instance, or drop
@@ -592,6 +640,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     terminal.open(terminalRef.current);
 
     if (surfaceId) surfaceTerminalRegistry.set(surfaceId, terminal);
+
+    const titleDisposable = recordTitleChanges(terminal, surfaceId);
 
     // Restore a buffer snapshot captured before a previous unmount (issue #49).
     // Written now — before the PTY reattaches below — so the restored scrollback
@@ -884,6 +934,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // recorded at all, which is the actual defect in issue #164.
         // See utils/mouse-modes.ts.
         applyMouseModeSequences(mouseModesFor(id), data);
+        // Cheapest possible "did anything change?" for screen detection, which
+        // would otherwise re-read and re-match an unchanged buffer several
+        // times a second on every idle pane. One integer add per chunk; the
+        // detection loop compares it against what it last scanned.
+        surfaceOutputSeq.set(id, (surfaceOutputSeq.get(id) ?? 0) + 1);
         terminal.write(data);
       });
 
@@ -1067,6 +1122,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       resizeObserver.disconnect();
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       dataDisposable.dispose();
+      titleDisposable?.dispose();
 
       // Run all IPC unsubscribe functions
       for (const fn of cleanupFnsRef.current) {

@@ -2,10 +2,12 @@ import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme } fr
 import * as path from 'path';
 import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type InsertionResult } from '../shared/types';
 import { observePtyData, clearActivity } from './claude-observer';
-import { clearAgentState, noteHumanInput } from './agent-state';
+import { clearAgentState, noteHumanInput, listAgentStates } from './agent-state';
 import { PtyManager } from './pty-manager';
 import { PtyLedger, reapOrphans } from './pty-ledger';
 import { SshDetector } from './ssh-detect';
+import { agentIdentity } from './agent-identity';
+import { setDetection, forgetDetection, activeManifests } from './detection-store';
 import {
   readClipboardSource,
   regularFilePaths,
@@ -74,6 +76,8 @@ function forgetSurface(surfaceId: SurfaceId): void {
   surfaceOwners.delete(surfaceId);
   insertionQueue.cancel(surfaceId);
   sshDetector.forget(surfaceId);
+  agentIdentity.forget(surfaceId);
+  forgetDetection(surfaceId);
 }
 
 function ownsLiveSurface(surfaceId: unknown, webContents: Electron.WebContents): surfaceId is SurfaceId {
@@ -91,10 +95,29 @@ function ownsLiveSurface(surfaceId: unknown, webContents: Electron.WebContents):
  * needs lives there. Exported the same way ptyManager and agentManager are,
  * so index.ts can feed it the shell-integration reports directly.
  */
-export const sshDetector = new SshDetector({
-  getPid: (surfaceId) => ptyManager.getPid(surfaceId as SurfaceId),
-  liveSurfaceIds: () => ptyManager.liveSurfaceIds(),
-});
+export const sshDetector = new SshDetector(
+  {
+    getPid: (surfaceId) => ptyManager.getPid(surfaceId as SurfaceId),
+    liveSurfaceIds: () => ptyManager.liveSurfaceIds(),
+  },
+  undefined,
+  // The sweep's other half. One ~550ms PowerShell spawn now answers both "is
+  // this pane in ssh?" and "what agent is this pane running?" — the process
+  // table already carried every row's name and was throwing all but ssh.exe away.
+  (found, liveSurfaceIds) => agentIdentity.applyProbe(found, liveSurfaceIds),
+);
+
+/**
+ * Which agent, if any, each surface is running.
+ *
+ * Fed from the same two report paths as sshDetector, and for the same reason:
+ * Windows has no tty foreground process group, so the authoritative answer has
+ * to come from what wmux launched or what the shell hook says was submitted.
+ *
+ * Re-exported rather than constructed here — see the note on the singleton in
+ * agent-identity.ts for why it cannot live in this module.
+ */
+export { agentIdentity };
 
 
 
@@ -152,6 +175,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
         // can call idempotent PTY_CREATE with a known id, but must not rewrite
         // where the legitimate owner's next file upload will go.
         sshDetector.setSurfaceShell(id, resolvedOptions.shell, created.shell, resolvedOptions.cwd);
+        // Same spec, same reason: `wmux agent spawn --cmd claude` and
+        // `--shell "claude --resume"` put the agent's own command line here, so
+        // this pane IS that agent for as long as it lives. Pure string work —
+        // nothing added to the synchronous create path's budget (issue #176).
+        agentIdentity.setSurfaceShell(id, resolvedOptions.shell);
       }
       // Reused PTY (idempotent create — e.g. StrictMode's double create() race):
       // the original create already wired data/exit forwarding. Re-wiring here
@@ -381,6 +409,22 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     win.setProgressBar(typeof value === 'number' ? value : -1, { mode: safeMode });
   });
 
+  /**
+   * Flash the taskbar button when an agent starts waiting on the user.
+   *
+   * Delegated to NotificationManager, which already owned both halves and
+   * already refuses to flash a FOCUSED window — the point is to reach a user
+   * looking elsewhere, and blinking the window they are in is noise they cannot
+   * act on any faster for. Windows clears the flash itself on focus, so the off
+   * path is mostly for a block that resolves while the user is still away.
+   */
+  ipcMain.on(IPC_CHANNELS.WINDOW_FLASH, (e, on: boolean) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (!win || win.isDestroyed()) return;
+    if (on) notificationManager.flashTaskbar(win);
+    else notificationManager.stopFlash(win);
+  });
+
   ipcMain.on(
     IPC_CHANNELS.CDP_ATTACH,
     (_event, webContentsId: number, surfaceId?: string | null, workspaceId?: string | null) => {
@@ -563,6 +607,27 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       if (!handled) resolve({ ok: false, error: 'answer_agent not routed' });
     }),
   );
+
+  // Seed for the delta-only AGENT_STATE channel. A window opened after agents
+  // were already running received nothing until each next reported — a fresh
+  // window showed an empty roster beside three busy panes, and a blocked agent
+  // that is waiting reports nothing at all, so it could stay invisible forever.
+  ipcMain.handle(IPC_CHANNELS.AGENT_STATE_LIST, () => listAgentStates());
+
+  // Same bootstrap problem, same shape: AGENT_IDENTITY is delta-only, and a
+  // pane whose shell spec named an agent at create time never emits again.
+  ipcMain.handle(IPC_CHANNELS.AGENT_IDENTITY_LIST, () => agentIdentity.list());
+
+  // The detection loop's mirror. `on`, not `handle`: the renderer is reporting,
+  // not asking, and making it await an ack would put the loop's cadence on the
+  // far side of an IPC round trip.
+  ipcMain.on(IPC_CHANNELS.AGENT_DETECTION, (_event, surfaceId: string, result: any) => {
+    if (typeof surfaceId === 'string') setDetection(surfaceId, result ?? null);
+  });
+
+  // Manifests flow the other way: main owns the config directory, the renderer
+  // owns the loop that uses them.
+  ipcMain.handle(IPC_CHANNELS.AGENT_DETECTION_MANIFESTS, () => activeManifests());
 
   // Agent-integration consent (issue #132). Deliberately NOT routed through the
   // generic settings:set above: changing this decision has to reconcile the files

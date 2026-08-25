@@ -242,6 +242,26 @@ contextBridge.exposeInMainWorld('wmux', {
     // normal outcome the UI reports, not an exception.
     answer: (surfaceId: string, choiceId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_ANSWER, surfaceId, choiceId),
+    // Read-only seed for onUpdate, which is delta-only (see App.tsx).
+    list: (): Promise<any[]> => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STATE_LIST),
+  },
+  // Which agent each surface runs. Carries the derived KIND only; the command
+  // line it came from never leaves the main process (see index.ts).
+  agentIdentity: {
+    onUpdate: (callback: (data: any) => void) => {
+      const handler = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.AGENT_IDENTITY, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.AGENT_IDENTITY, handler);
+    },
+    list: (): Promise<any[]> => ipcRenderer.invoke(IPC_CHANNELS.AGENT_IDENTITY_LIST),
+  },
+  // Screen detection. The renderer owns the loop (that is where the xterm
+  // buffer is) and reports its VERDICT here; the screen text never crosses.
+  agentDetection: {
+    report: (surfaceId: string, result: unknown): void =>
+      ipcRenderer.send(IPC_CHANNELS.AGENT_DETECTION, surfaceId, result),
+    manifests: (): Promise<{ manifests: unknown[]; warnings: string[] }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_DETECTION_MANIFESTS),
   },
   orchestration: {
     onUpdate: (callback: (state: any) => void) => {
@@ -314,6 +334,9 @@ contextBridge.exposeInMainWorld('wmux', {
     // Windows taskbar progress (OSC 9;4 aggregate). value 0-1, or -1 to remove.
     setProgress: (value: number, mode?: string) =>
       ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_PROGRESS, value, mode),
+    // Taskbar flash when an agent starts waiting on you. Ignored by main when
+    // this window already has focus.
+    flash: (on: boolean) => ipcRenderer.send(IPC_CHANNELS.WINDOW_FLASH, on),
     // Window transparency (Win11 acrylic/mica backdrop).
     setBackdrop: (
       enabled: boolean,

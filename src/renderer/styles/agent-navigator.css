@@ -1,0 +1,233 @@
+/*
+ * Agent navigator (issue #128 follow-up) — every agent in the window, ranked.
+ *
+ * Modelled on the command palette rather than on a sidebar panel: it answers a
+ * question that spans workspaces, so it must not live inside one workspace's
+ * row. State colours come from the same vocabulary as the sidebar — violet
+ * "needs you", amber working, grey idle — because a user who has learned the
+ * dot in one place must not have to relearn it here.
+ */
+
+.agent-nav__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 900;
+}
+
+.agent-nav {
+  width: min(640px, 92vw);
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ui-bg-2);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  outline: none;
+}
+
+/* ── Filters ─────────────────────────────────────────────────────────────── */
+
+.agent-nav__filters {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--ui-border);
+  flex-shrink: 0;
+}
+
+.agent-nav__filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agent-nav__filter:hover {
+  background: rgba(var(--ui-overlay-rgb), 0.06);
+}
+
+.agent-nav__filter[data-active='true'] {
+  background: rgba(var(--ui-accent-rgb), 0.16);
+  border-color: rgba(var(--ui-accent-rgb), 0.4);
+  color: var(--ui-text-primary);
+}
+
+/* The letter that selects this filter, shown rather than documented — the hint
+   line at the bottom lists them too, but a user who has used it once should be
+   able to stop reading the hint. */
+.agent-nav__filter-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.agent-nav__filter-count {
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────────── */
+
+.agent-nav__list {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.agent-nav__row {
+  display: grid;
+  grid-template-columns: 8px minmax(50px, auto) auto minmax(50px, auto) 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ui-text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-nav__row[data-selected='true'] {
+  background: rgba(var(--ui-overlay-rgb), 0.09);
+}
+
+.agent-nav__row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ui-text-muted);
+}
+
+.agent-nav__row[data-state='blocked'] .agent-nav__row-dot {
+  background: var(--ui-agent-blocked);
+  animation: pulse-blocked-dot 2s ease-in-out infinite;
+}
+
+.agent-nav__row[data-state='working'] .agent-nav__row-dot {
+  background: #e8a33d;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-nav__row-dot { animation: none !important; }
+}
+
+.agent-nav__row-label {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-nav__row[data-state='blocked'] .agent-nav__row-label {
+  color: var(--ui-agent-blocked);
+}
+
+.agent-nav__row-workspace {
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The declared reason. Truncates rather than wraps: a row that changes height
+   when an agent re-words its question would shuffle every row below it. */
+.agent-nav__row-reason {
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.agent-nav__row-dwell {
+  color: var(--ui-agent-blocked);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+.agent-nav__empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+/* ── Hint ────────────────────────────────────────────────────────────────── */
+
+.agent-nav__hint {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--ui-border);
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.agent-nav__hint-rollup {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The agent kind, when the row's label is something else (a hand-set tab title,
+   or a folder name). Muted: it is context, not the thing being scanned for. */
+.agent-nav__row-kind {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(var(--ui-overlay-rgb), 0.08);
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Probed identity is a guess — Windows cannot tell a foreground process from a
+   background one, so this row's kind is corroboration, not testimony. Dashed
+   for the same reason traceState draws no-telemetry dashed rather than solid. */
+.agent-nav__row-kind[data-source='probe'] {
+  border: 1px dashed rgba(var(--ui-overlay-rgb), 0.25);
+  padding: 0 4px;
+}
+
+/* Identified, but saying nothing. Hollow rather than filled: the pane is known
+   to hold an agent, and nothing is known about what it is doing. */
+.agent-nav__row[data-state='unknown'] .agent-nav__row-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ui-text-muted);
+}
+
+/* Read off the screen rather than reported by the agent. Hollow-centred so a
+   detected state is visibly a weaker claim than a declared one — the colour
+   still says WHAT, the fill says HOW SURE. Same idea as the dashed border on a
+   probed agent kind above. */
+.agent-nav__row[data-source='detected'] .agent-nav__row-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+.agent-nav__row[data-source='detected'][data-state='blocked'] .agent-nav__row-dot {
+  color: var(--ui-agent-blocked);
+}
+.agent-nav__row[data-source='detected'][data-state='working'] .agent-nav__row-dot {
+  color: #e8a33d;
+}

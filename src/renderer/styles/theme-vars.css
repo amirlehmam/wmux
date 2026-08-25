@@ -27,6 +27,18 @@
   --ui-accent-rgb: 0, 145, 255;
   --ui-accent-contrast: #ffffff;
 
+  /* "Needs you" — an agent parked on a human (issue #128). Deliberately NOT
+     amber: amber already means "working", and the whole value of this state is
+     that it reads differently from the panes getting on with it. Violet is
+     unused elsewhere in the chrome vocabulary, so it cannot be confused with
+     running (amber), done (green) or interrupted (red).
+     Lifted here rather than repeated per stylesheet for the same reason the
+     accent was: the roster banner and the agent navigator are two more places
+     that need the exact same colour, and the sidebar had already drifted to
+     three hardcoded copies. */
+  --ui-agent-blocked: #b388ff;
+  --ui-agent-blocked-rgb: 179, 136, 255;
+
   /* Background elevation scale, darkest recess -> most elevated control. */
   --ui-bg-0: #111111;
   --ui-bg-1: #1a1a1a;
@@ -53,6 +65,12 @@
   --ui-accent: #0067c0;
   --ui-accent-rgb: 0, 103, 192;
   --ui-accent-contrast: #ffffff;
+
+  /* Same reasoning as the accent above: #b388ff is 2.1:1 on white, unreadable
+     as text in the light palette. #6a3ab8 is 6.3:1 on --ui-bg-2 and stays
+     unmistakably violet, so the state vocabulary survives the theme switch. */
+  --ui-agent-blocked: #6a3ab8;
+  --ui-agent-blocked-rgb: 106, 58, 184;
 
   --ui-bg-0: #e4e4e4;
   --ui-bg-1: #f5f5f5;

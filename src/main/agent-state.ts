@@ -110,6 +110,16 @@ export interface AgentStateRecord {
    */
   lastHookAt: number;
   updatedAt: number;
+  /**
+   * When this pane became parked on a human, or null when it is not.
+   *
+   * Deliberately NOT derived from `updatedAt`: that field moves on every
+   * accepted report, including metadata-only ones, and a blocked agent goes on
+   * sending token counts while it waits. Ordering a "who needs me?" queue by
+   * `updatedAt` would sink the longest-waiting agent to the bottom precisely
+   * because it is the chattiest — the opposite of the intended answer.
+   */
+  blockedSince: number | null;
 }
 
 /** Metadata with no explicit TTL is trusted this long before it stops being shown. */
@@ -137,6 +147,7 @@ function blank(surfaceId: SurfaceId): AgentStateRecord {
     lastSeq: 0,
     lastHookAt: 0,
     updatedAt: Date.now(),
+    blockedSince: null,
   };
 }
 
@@ -329,6 +340,10 @@ function applyBlocked(record: AgentStateRecord, params: ReportAgentParams): void
   if (wasAwaiting !== record.awaitingHuman) {
     record.choices = [];
     record.answeredAt = null;
+    // Stamped on the EDGE, not on every blocked report, so re-declaring the
+    // same question (a reworded reason, a fresh set of choices) does not
+    // restart the clock the sidebar orders its queue by.
+    record.blockedSince = record.awaitingHuman ? Date.now() : null;
   }
 }
 
@@ -606,6 +621,7 @@ export function noteHumanInput(surfaceId: SurfaceId, data: string): boolean {
     record.runDepth = 0;
     record.awaitingHuman = false;
     record.blockedReason = null;
+    record.blockedSince = null;
     record.choices = [];
     record.answeredAt = null;
     commit(record);
@@ -617,6 +633,7 @@ export function noteHumanInput(surfaceId: SurfaceId, data: string): boolean {
 
   record.awaitingHuman = false;
   record.blockedReason = null;
+  record.blockedSince = null;
   record.choices = [];
   record.answeredAt = null;
   commit(record);
@@ -663,6 +680,7 @@ function forget(surfaceId: SurfaceId): void {
     surfaceId,
     state: 'unknown',
     blockedReason: null,
+    blockedSince: null,
     choices: [],
     answeredAt: null,
     sessionId: null,
@@ -684,6 +702,8 @@ export interface AgentStateSnapshot {
   runDepth: number;
   metadata: AgentMetadata;
   updatedAt: number;
+  /** When this pane became blocked — how long it has been waiting on you. */
+  blockedSince: number | null;
 }
 
 function snapshot(record: AgentStateRecord, now = Date.now()): AgentStateSnapshot {
@@ -699,6 +719,9 @@ function snapshot(record: AgentStateRecord, now = Date.now()): AgentStateSnapsho
     runDepth: record.runDepth,
     metadata: liveMetadata(record, now),
     updatedAt: record.updatedAt,
+    // Only meaningful while blocked. Reported as null otherwise so a consumer
+    // cannot accidentally render "waiting 4m" for a pane that resumed.
+    blockedSince: resolveState(record, now) === 'blocked' ? record.blockedSince : null,
   };
 }
 

@@ -373,6 +373,26 @@ export const IPC_CHANNELS = {
   NOTIFICATION_JUMP: 'notification:jump',
   // Settings
   AGENT_ANSWER: 'agent:answer',
+  /** Bootstrap for AGENT_STATE, which is delta-only — a new window starts blind. */
+  AGENT_STATE_LIST: 'agent:state-list',
+  /**
+   * Which agent a surface is running: `{ surfaceId, kind, source }`.
+   *
+   * A separate channel from AGENT_STATE because it answers a different question
+   * (WHO, not HOW) and has a different source of truth. Carries the derived
+   * agent KIND only — never the command line it was derived from, which is the
+   * user's full typed input and routinely holds credentials.
+   */
+  AGENT_IDENTITY: 'agent:identity',
+  AGENT_IDENTITY_LIST: 'agent:identity-list',
+  /**
+   * Renderer → main mirror of what the detection loop decided, so the CLI and
+   * the pipe can answer without interrupting the thread that draws terminals.
+   * Carries the VERDICT, never the screen text it was read from.
+   */
+  AGENT_DETECTION: 'agent:detection',
+  /** Main → renderer: bundled manifests with user overrides applied. */
+  AGENT_DETECTION_MANIFESTS: 'agent:detection-manifests',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
   SETTINGS_CHANGED: 'settings:changed',
@@ -385,6 +405,8 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_SET_PROGRESS: 'window:setProgress',
+  /** Flash this window's taskbar button — an agent started waiting on the user. */
+  WINDOW_FLASH: 'window:flash',
   WINDOW_SET_BACKDROP: 'window:setBackdrop',
   WINDOW_SUPPORTS_BACKDROP: 'window:supportsBackdrop',
   WINDOW_CLOSE_SELF: 'window:closeSelf',

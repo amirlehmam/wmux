@@ -536,3 +536,50 @@ body.wmux-dragging * {
   font-size: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
+
+/* ─── Agent state on a tab (phase 4) ──────────────────────────────────────
+   A blocked agent in a BACKGROUND tab used to be invisible: the sidebar said
+   its workspace needed you, and nothing in the pane said which tab. The dot
+   sits before the icon and uses the same vocabulary as the sidebar — violet
+   "needs you", amber working — because a user who learned it there must not
+   have to relearn it here.
+
+   Only blocked and working are drawn. Idle needs no mark: a tab that is fine
+   should look like every other tab, and marking all four states would make the
+   one that matters harder to find, not easier. */
+.surface-tab[data-agent-state='blocked'],
+.surface-tab[data-agent-state='working'] {
+  padding-left: 4px;
+}
+
+.surface-tab[data-agent-state='blocked']::before,
+.surface-tab[data-agent-state='working']::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 3px;
+}
+
+.surface-tab[data-agent-state='working']::before {
+  background: #e8a33d;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+.surface-tab[data-agent-state='blocked']::before {
+  background: var(--ui-agent-blocked);
+  animation: pulse-blocked-dot 2s ease-in-out infinite;
+}
+
+/* An inactive blocked tab is the case this exists for, so it gets more than the
+   dot: the label stops being dimmed and takes the colour too. */
+.surface-tab[data-agent-state='blocked']:not(.surface-tab--active) .surface-tab__label {
+  color: var(--ui-agent-blocked);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-tab[data-agent-state='blocked']::before,
+  .surface-tab[data-agent-state='working']::before { animation: none; }
+}

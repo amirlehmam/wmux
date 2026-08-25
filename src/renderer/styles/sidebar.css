@@ -262,7 +262,7 @@
    is unused elsewhere in the sidebar vocabulary, so it cannot be confused with
    running (amber), done (green) or interrupted (red). */
 .workspace-row__status--blocked {
-  color: #b388ff;
+  color: var(--ui-agent-blocked);
   font-weight: 600;
 }
 
@@ -611,6 +611,19 @@
   will-change: opacity;
 }
 
+/* Matches the "Needs you" status text beside it. Without this the two halves of
+   a blocked row disagreed: violet words, grey dot. Slower, wider pulse than
+   running, same as the per-session blocked dot further down. */
+.workspace-row__state-dot--blocked {
+  background: var(--ui-agent-blocked);
+  animation: pulse-blocked-dot 2s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-row__state-dot--blocked { animation: none; }
+}
+
 .workspace-row__state-dot--idle {
   background: #4caf50;
 }
@@ -663,7 +676,7 @@
    it"; this one says "waiting on you" — different rhythm, different meaning,
    readable without reading the label. */
 .workspace-row__agent-dot--blocked {
-  background: #b388ff;
+  background: var(--ui-agent-blocked);
   animation: pulse-blocked-dot 2s ease-in-out infinite;
 }
 @keyframes pulse-blocked-dot {
@@ -674,7 +687,7 @@
   .workspace-row__agent-dot--blocked { animation: none; opacity: 1; }
 }
 .workspace-row__session--blocked .workspace-row__agent-detail {
-  color: #b388ff;
+  color: var(--ui-agent-blocked);
   opacity: 1;
 }
 /* Answer buttons for a blocked pane (issue #128, the back-channel).
@@ -1297,4 +1310,110 @@
 .orch-panel[data-collapsed="true"] .orch-panel__reviewer,
 .orch-panel[data-collapsed="true"] .orch-panel__dismiss {
   display: none;
+}
+
+/* ── Agent roster banner ──────────────────────────────────────────────────
+   "Who needs me?", above the workspace list. Sits in the same slot as the
+   orchestration panel and follows the same contract: auto-hides when there is
+   no agent to talk about, so a user who never runs one never sees it.
+
+   Deliberately two buttons, not one row with a mode: the common gesture is
+   "take me to whoever has waited longest" (one click, no reading), and the
+   list is the escape hatch for when that guess is wrong. */
+.agent-roster {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  margin: 0 8px 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--ui-bg-3);
+}
+
+.agent-roster[data-blocked='true'] {
+  border-color: rgba(var(--ui-agent-blocked-rgb), 0.55);
+  background: rgba(var(--ui-agent-blocked-rgb), 0.12);
+}
+
+.agent-roster__main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-roster__main:hover:not(:disabled) {
+  background: rgba(var(--ui-overlay-rgb), 0.06);
+}
+
+/* Nothing is waiting, so there is nowhere to jump — but the row still carries
+   the working count, so it stays visible rather than disappearing mid-run. */
+.agent-roster__main:disabled {
+  cursor: default;
+}
+
+.agent-roster__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e8a33d;
+  flex-shrink: 0;
+}
+
+.agent-roster[data-blocked='true'] .agent-roster__dot {
+  background: var(--ui-agent-blocked);
+  animation: pulse-blocked-dot 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-roster__dot { animation: none; }
+}
+
+.agent-roster__count {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.agent-roster[data-blocked='true'] .agent-roster__count {
+  color: var(--ui-agent-blocked);
+}
+
+.agent-roster__secondary {
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-roster__dwell {
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.agent-roster__expand {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: none;
+  border-left: 1px solid var(--ui-border);
+  background: transparent;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+
+.agent-roster__expand:hover {
+  background: rgba(var(--ui-overlay-rgb), 0.08);
+  color: var(--ui-text-primary);
 }

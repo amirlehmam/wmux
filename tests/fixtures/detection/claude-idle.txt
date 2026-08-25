@@ -1,0 +1,7 @@
+  ⎿  Tip: Use Plan Mode to prepare for a complex request before making changes.
+
+──────────────────────────────────────────────────────────────────────────────────────────────── energy ──
+> 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [Opus 5] | 5h: 33.0% | Wkly: 16.0% | Ctx: 389.6k                                                    /rc
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

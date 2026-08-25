@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useStore } from '../store';
 import { ShortcutBinding, ShortcutAction } from '../store/settings-slice';
 import { splitNode, removeLeaf, getAllPaneIds, findLeaf, adjustPaneRatio } from '../store/split-utils';
+import { rollupAgents } from '../store/agent-rollup';
+import { focusAgentTarget } from '../store/focus-agent';
 import { PaneId, SplitNode } from '../../shared/types';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { GLOBAL_IN_EDITOR, isEditableTarget } from './shortcut-target';
@@ -231,6 +233,31 @@ export function useKeyboardShortcuts(
       state.markRead(unread.surfaceId);
     };
 
+    /**
+     * Go to the agent that has been waiting longest — and on a second press, to
+     * the next one.
+     *
+     * Cycling matters more than it looks: with three blocked agents, a jump
+     * that always lands on the same one is useless the moment you answer it,
+     * because the answer does NOT clear `blocked` (the agent must confirm), so
+     * the pane you just dealt with stays top of the queue for a beat and eats
+     * every further press. Skipping past the pane already focused sidesteps
+     * that without wmux having to guess whether the answer took.
+     */
+    const jumpToBlocked = () => {
+      const state = useStore.getState();
+      const { blocked } = rollupAgents(state.workspaces, state.agentStates, Date.now(), state.agentIdentities, state.agentDetections);
+      if (blocked.length === 0) return;
+
+      const currentIdx = blocked.findIndex((e) => e.paneId === focusedPaneId);
+      const next = blocked[(currentIdx + 1) % blocked.length];
+      const paneId = focusAgentTarget(
+        { workspaces: state.workspaces, selectWorkspace: state.selectWorkspace, selectSurface: state.selectSurface },
+        next,
+      );
+      if (paneId) onFocusPane?.(paneId);
+    };
+
     const copySelection = () => {
       // Same line-end trim as the terminal Ctrl+C path (issue #102) — DOM
       // selections over xterm rows carry the same ConPTY padding spaces.
@@ -329,6 +356,8 @@ export function useKeyboardShortcuts(
       nextSurface: () => { if (activeWorkspaceId && focusedPaneId) nextSurface(activeWorkspaceId, focusedPaneId); },
       prevSurface: () => { if (activeWorkspaceId && focusedPaneId) prevSurface(activeWorkspaceId, focusedPaneId); },
       jumpToUnread,
+      jumpToBlocked,
+      openAgentNavigator: () => fire('wmux:open-agent-navigator'),
       showNotifications: () => onToggleNotifications?.(),
       flashFocused: () => { if (focusedPaneId) fire('wmux:trigger-flash', { paneId: focusedPaneId }); },
       openBrowser: () => onToggleBrowser?.(),

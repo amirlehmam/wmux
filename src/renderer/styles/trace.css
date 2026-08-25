@@ -44,6 +44,18 @@
 
   --tr-blocked: #ff5c5c;       /* waiting on YOU — outranks working */
   --tr-silk: rgba(var(--ui-overlay-rgb), 0.28); /* silkscreen hairlines */
+
+  /* Rebind the shared "needs you" token to this mode's own red.
+     The classic sidebar picks violet because violet is the colour free in ITS
+     vocabulary (amber = working, green = done, red = interrupted); TRACE picks
+     red because red is the one free in the copper/current palette. Neither is
+     wrong, and the two never appear together — but the roster banner, the agent
+     navigator and the tab-bar dots render in BOTH modes, so pinning them to the
+     classic violet made a TRACE workspace show a red rail beside a violet dot.
+     Following the mode is the fix; unifying the colour would break one of the
+     two designs to satisfy a consistency neither of them lacked. */
+  --ui-agent-blocked: var(--tr-blocked);
+  --ui-agent-blocked-rgb: 255, 92, 92;
 }
 
 /* Light theme: the metaphor inverts from "lit trace on a dark board" to "ink
@@ -63,6 +75,10 @@
 
   --tr-blocked: #c62828;
   --tr-silk: rgba(var(--ui-overlay-rgb), 0.22);
+
+  /* Same rebinding as the dark palette above, at this mode's light value. */
+  --ui-agent-blocked: var(--tr-blocked);
+  --ui-agent-blocked-rgb: 198, 40, 40;
 }
 
 /* ─── Board ──────────────────────────────────────────────────────────────── */
