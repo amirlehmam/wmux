@@ -1374,6 +1374,40 @@ const AGENT_STATE_COMMANDS = {
         const surfaceId = getFlag(args, '--surface');
         print(await sendV2('pane.agent_state', surfaceId ? { surfaceId } : {}));
     },
+    /**
+     * Why does a pane read the way it does?
+     *
+     * `--file` is the mode worth having: it replays a captured screen through the
+     * same engine, with no running detection and without the agent installed. A
+     * rule regression is then debuggable from a `wmux read-screen` capture, on any
+     * machine, which is also how the bundled manifests were authored.
+     */
+    'detect': async (args) => {
+        // args[0] is the command name itself — every handler is called with the
+        // full argv, as cmdAgent/cmdPane do. Reading args[0] as the subcommand made
+        // `wmux detect explain` refuse itself.
+        const sub = args[1];
+        if (sub === 'reload') {
+            print(await sendV2('detect.reload', {}));
+            return;
+        }
+        if (sub !== 'explain') {
+            console.error('detect: expected `explain` or `reload`');
+            process.exit(1);
+        }
+        const rest = args.slice(2);
+        const file = getFlag(rest, '--file');
+        const surfaceId = getFlag(rest, '--surface') || process.env.WMUX_SURFACE_ID;
+        if (file) {
+            print(await sendV2('detect.explain', { file, agent: getFlag(rest, '--agent') }));
+            return;
+        }
+        if (!surfaceId) {
+            console.error('detect explain: --surface <id> or --file <path> required');
+            process.exit(1);
+        }
+        print(await sendV2('detect.explain', { surfaceId }));
+    },
 };
 const SURFACE_NOTE = '(surface defaults to $WMUX_SURFACE_ID inside a pane)';
 const COMMAND_SPECS = {
@@ -1560,8 +1594,16 @@ const COMMAND_SPECS = {
         value: ['--seq', '--surface'],
     },
     'agent-state': {
-        usage: 'wmux agent-state [--surface <id>]   (no --surface → every pane, plus the blocked list)',
+        usage: 'wmux agent-state [--surface <id>]   (no --surface → every pane, the blocked list, and every identified agent)',
         value: ['--surface'],
+    },
+    detect: {
+        usage: [
+            'wmux detect explain [--surface <id>]              (why this pane reads the way it does)',
+            'wmux detect explain --file <path> [--agent <k>]   (replay a captured screen, no live wmux needed)',
+            'wmux detect reload                                (re-read %APPDATA%\\wmux\\agent-detection)',
+        ].join('\n'),
+        value: ['--surface', '--file', '--agent'],
     },
 };
 /**
