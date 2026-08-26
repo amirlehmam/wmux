@@ -4,6 +4,7 @@ import { LANGUAGES, Language, useT } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
 import AgentIntegrationSettings from './AgentIntegrationSettings';
+import { formatBinding } from './KeyboardSettings';
 import { MIN_TERMINAL_OPACITY_PCT, opacityToAlpha } from '../../store/backdrop';
 import { backdropCaps, NO_BACKDROP, type BackdropCaps } from '../../utils/backdrop-caps';
 
@@ -46,6 +47,7 @@ export default function GeneralSettings() {
   const setLanguage = useStore((s) => s.setLanguage);
   const uiTheme = useStore((s) => s.appearancePrefs.uiTheme);
   const appearancePrefs = useStore((s) => s.appearancePrefs);
+  const openHubBinding = useStore((s) => s.shortcuts.openHub);
   const setAppearancePrefs = useStore((s) => s.setAppearancePrefs);
   const t = useT();
 
@@ -339,7 +341,10 @@ export default function GeneralSettings() {
       </div>
 
       <p className="settings-hint">
-        {t('settings.general.hubEnableHint', 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables Ctrl+Shift+O.')}
+        {/* The LIVE binding, not the default — a rebind in the panel one tab
+            over must not leave this hint advertising a dead combo. */}
+        {t('settings.general.hubEnableHint', 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables {binding}.')
+          .replace('{binding}', formatBinding(openHubBinding))}
       </p>
     </div>
   );

@@ -642,17 +642,17 @@ export const en = {
   'titlebar.hub': 'Agent office',
   'settings.general.easterEggSection': 'Easter eggs',
   'settings.general.hubEnable': 'Agent office',
-  'settings.general.hubEnableHint': 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables Ctrl+Shift+O.',
+  'settings.general.hubEnableHint': 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables {binding}.',
   'hub.title': 'Agent office',
   'hub.close': 'Close',
-  'hub.empty': 'No agents running — the office is quiet.',
+  'hub.empty': 'No agents running. The office is quiet.',
   'hub.needsYou': 'Needs your input',
   'hub.goToPane': 'Go to pane',
   'hub.model': 'model',
   'hub.tokens': 'tokens',
   'hub.context': 'context',
   'hub.workingCount': '{count} working',
-  'hub.blockedCount': '{count} need you',
+  'hub.blockedCount': '{count} waiting for you',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

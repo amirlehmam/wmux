@@ -242,13 +242,19 @@ function rosterEntryFor(
   };
 }
 
-/** Metadata is a claim with a shelf life — render nothing rather than a stale token count. */
+/**
+ * Metadata is a claim with a shelf life — render nothing rather than a stale
+ * token count. Main always sends a `metadata` object (`{}` when nothing was
+ * reported or it expired server-side), so emptiness must map to null too or
+ * the roster's "null when absent" contract would never hold in practice.
+ */
 function liveMetadata(
   meta: DeclaredAgentMetadata | undefined,
   now: number,
 ): DeclaredAgentMetadata | null {
   if (!meta) return null;
   if (typeof meta.expiresAt === 'number' && meta.expiresAt <= now) return null;
+  if (meta.model === undefined && meta.tokens === undefined && meta.contextPct === undefined) return null;
   return meta;
 }
 

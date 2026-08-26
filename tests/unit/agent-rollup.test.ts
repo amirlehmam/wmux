@@ -409,4 +409,13 @@ describe('roster metadata passthrough', () => {
     }, NOW);
     expect(out.roster[0].metadata).toBeNull();
   });
+
+  it('treats an empty metadata object as absent', () => {
+    // Main always sends a metadata object — {} when nothing was reported — so
+    // emptiness must map to null or "null when absent" would never hold.
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'working', metadata: {} }),
+    }, NOW);
+    expect(out.roster[0].metadata).toBeNull();
+  });
 });

@@ -63,6 +63,17 @@ interface DragState {
   moved: boolean;
 }
 
+// Keyed frame tables instead of template-string casts: the compiler proves
+// every entry is a real FrameName, so a renamed sprite frame fails the build
+// here instead of silently drawing nothing.
+const WALK_FRAMES: Record<'up' | 'down' | 'side', [FrameName, FrameName]> = {
+  up: ['walk-up-0', 'walk-up-1'],
+  down: ['walk-down-0', 'walk-down-1'],
+  side: ['walk-side-0', 'walk-side-1'],
+};
+const TYPE_FRAMES: [FrameName, FrameName] = ['sit-up-0', 'sit-up-1'];
+const REST_FRAMES: [FrameName, FrameName] = ['rest-0', 'rest-1'];
+
 function frameFor(ch: Character): { name: FrameName; mirror: boolean } {
   const mirror = ch.facing === 'right';
   switch (ch.phase) {
@@ -70,17 +81,16 @@ function frameFor(ch: Character): { name: FrameName; mirror: boolean } {
     case 'walkingToBreak':
     case 'walkingToPeer':
     case 'leaving': {
-      const step = (Math.floor(ch.animClock / 200) % 2) as 0 | 1;
       const dir = ch.facing === 'up' ? 'up' : ch.facing === 'down' ? 'down' : 'side';
-      return { name: `walk-${dir}-${step}` as FrameName, mirror };
+      return { name: WALK_FRAMES[dir][Math.floor(ch.animClock / 200) % 2], mirror };
     }
     case 'atDesk':
       if (ch.rosterState === 'working') {
-        return { name: `sit-up-${Math.floor(ch.animClock / 250) % 2}` as FrameName, mirror: false };
+        return { name: TYPE_FRAMES[Math.floor(ch.animClock / 250) % 2], mirror: false };
       }
       return { name: 'sit-still', mirror: false };
     case 'resting':
-      return { name: `rest-${Math.floor(ch.animClock / 600) % 2}` as FrameName, mirror: false };
+      return { name: REST_FRAMES[Math.floor(ch.animClock / 600) % 2], mirror: false };
     case 'chatting':
       return ch.facing === 'down'
         ? { name: 'stand-down', mirror: false }
@@ -116,18 +126,37 @@ export default function HubView({ onClose, onFocusAgent }: {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Focus ONCE on mount. An inline `ref={(el) => el?.focus()}` callback gets a
+  // new identity every render, so React re-runs it — and this component
+  // re-renders every second — which would steal focus from the popover's
+  // buttons continuously.
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   const rollup = useMemo(
     () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections),
     [workspaces, agentStates, agentIdentities, agentDetections, now],
   );
 
+  // Keyed on a stable projection, not on `rollup` itself: rollup's identity
+  // changes every second (dwell tick) while the office geometry only changes
+  // when a workspace or an agent appears, disappears, or is renamed.
+  const layoutKey = useMemo(
+    () => workspaces.map((w) => `${w.id}:${w.title}`).join('|')
+      + '||' + rollup.roster.map((e) => `${e.surfaceId}:${e.workspaceId}`).join('|'),
+    [workspaces, rollup],
+  );
   const layout = useMemo(
     () => buildLayout(
       workspaces.map((w) => ({ id: w.id, title: w.title })),
       rollup.roster.map((e) => ({ surfaceId: e.surfaceId, workspaceId: e.workspaceId })),
     ),
-    [workspaces, rollup],
+    // layoutKey IS the projection of both inputs; when it is unchanged, the
+    // values the body reads are geometrically equivalent.
+    [layoutKey],
   );
 
   // Rasterize every sprite once per mount. Keyed `${variantIdx}:${frame}`.
@@ -386,13 +415,17 @@ export default function HubView({ onClose, onFocusAgent }: {
     const prev = prevSimRef.current;
     const alpha = alphaRef.current;
     let best: HoverInfo | null = null;
+    let bestIy = -Infinity;
     for (const ch of Object.values(sim.characters)) {
       const before = prev.characters[ch.surfaceId];
       const ix = before ? before.x + (ch.x - before.x) * alpha : ch.x;
       const iy = before ? before.y + (ch.y - before.y) * alpha : ch.y;
       const x0 = offX + ix * ts;
       const y0 = offY + (iy - 0.5) * ts;
-      if (local.mx >= x0 && local.mx <= x0 + ts && local.my >= y0 && local.my <= y0 + 1.5 * ts) {
+      // Highest interpolated y wins, matching the painter's sort — the click
+      // must select the character drawn on top, not insertion order.
+      if (local.mx >= x0 && local.mx <= x0 + ts && local.my >= y0 && local.my <= y0 + 1.5 * ts && iy >= bestIy) {
+        bestIy = iy;
         best = { surfaceId: ch.surfaceId, sx: x0 + ts / 2, sy: y0 };
       }
     }
@@ -420,8 +453,8 @@ export default function HubView({ onClose, onFocusAgent }: {
     onClose();
   }, [onFocusAgent, onClose]);
 
-  const openWorkspace = useCallback((workspaceId: string) => {
-    useStore.getState().selectWorkspace(workspaceId as WorkspaceId);
+  const openWorkspace = useCallback((workspaceId: WorkspaceId) => {
+    useStore.getState().selectWorkspace(workspaceId);
     onClose();
   }, [onClose]);
 
@@ -439,8 +472,11 @@ export default function HubView({ onClose, onFocusAgent }: {
     setPopover(null);
   }, [charAt, tableAt, entryFor, jump, openWorkspace]);
 
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button !== 0) return;
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Capture ONLY when the press starts on the canvas itself. Capturing a
+    // press that bubbled up from the popover's buttons would retarget the
+    // pointerup to the wrap and swallow the button's click.
+    if (e.button !== 0 || e.target !== canvasRef.current) return;
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -449,10 +485,10 @@ export default function HubView({ onClose, onFocusAgent }: {
       panY: cameraRef.current.panY,
       moved: false,
     };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (drag && (e.buttons & 1)) {
       const dx = e.clientX - drag.startX;
@@ -464,22 +500,40 @@ export default function HubView({ onClose, onFocusAgent }: {
         hoverRef.current = null;
         hoverTableRef.current = null;
         setHover(null);
+        // The popover anchors to screen coordinates; a moving camera would
+        // leave it floating over the wrong tiles.
+        setPopover(null);
         return;
       }
     }
     const charHit = charAt(e.clientX, e.clientY);
     hoverRef.current = charHit;
     hoverTableRef.current = charHit ? null : tableAt(e.clientX, e.clientY);
-    setHover(charHit);
+    // Bail when nothing changed — a fresh object per mousemove would re-render
+    // the whole overlay at pointer speed.
+    setHover((previous) => {
+      if (!charHit) return previous === null ? previous : null;
+      if (previous
+        && previous.surfaceId === charHit.surfaceId
+        && Math.abs(previous.sx - charHit.sx) < 1
+        && Math.abs(previous.sy - charHit.sy) < 1) return previous;
+      return charHit;
+    });
   }, [charAt, tableAt]);
 
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     dragRef.current = null;
     if (drag && !drag.moved && e.button === 0) handleActivate(e.clientX, e.clientY);
   }, [handleActivate]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  const handlePointerCancel = useCallback(() => {
+    dragRef.current = null;
+  }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    // A purely horizontal trackpad swipe emits deltaY 0 — that is not a zoom.
+    if (e.deltaY === 0) return;
     const local = toLocal(e.clientX, e.clientY);
     if (!local) return;
     const current = viewRef.current;
@@ -487,22 +541,34 @@ export default function HubView({ onClose, onFocusAgent }: {
     if (requested < MIN_SCALE || requested > MAX_ZOOM) return;
     const next = zoomAt(current, local.mx, local.my, requested);
     cameraRef.current = { zoom: next.zoom, panX: next.panX, panY: next.panY };
+    // Anchored DOM (tooltip, popover) would detach from the moving world.
+    hoverRef.current = null;
+    hoverTableRef.current = null;
+    setHover(null);
+    setPopover(null);
   }, [toLocal]);
 
   /**
    * Relay a declared choice. Refusal (the pane stopped asking, the choice is
-   * gone) falls back to focusing the pane — same contract as WorkspaceRow.
+   * gone) falls back to focusing the pane — same contract as WorkspaceRow,
+   * including the in-flight guard: answering writes into a live PTY, so a
+   * double-click must not relay the keystroke twice (issue #128).
    */
+  const [answering, setAnswering] = useState(false);
   const answer = useCallback(async (surfaceId: string, choiceId: string) => {
+    if (answering) return;
+    setAnswering(true);
     const entry = entryFor(surfaceId);
     try {
-      const res = await (window as any).wmux?.agentState?.answer?.(surfaceId, choiceId);
+      const res = await window.wmux?.agentState?.answer?.(surfaceId, choiceId);
       if (!res?.ok && entry) jump(entry);
     } catch {
       if (entry) jump(entry);
+    } finally {
+      setAnswering(false);
+      setPopover(null);
     }
-    setPopover(null);
-  }, [entryFor, jump]);
+  }, [answering, entryFor, jump]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -522,7 +588,7 @@ export default function HubView({ onClose, onFocusAgent }: {
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
         tabIndex={-1}
-        ref={(el) => el?.focus()}
+        ref={dialogRef}
         role="dialog"
         aria-label={t('hub.title', 'Agent office')}
       >
@@ -531,7 +597,7 @@ export default function HubView({ onClose, onFocusAgent }: {
           <span className="hub__totals">
             {working > 0 && t('hub.workingCount', '{count} working').replace('{count}', String(working))}
             {working > 0 && blocked > 0 && ' · '}
-            {blocked > 0 && t('hub.blockedCount', '{count} need you').replace('{count}', String(blocked))}
+            {blocked > 0 && t('hub.blockedCount', '{count} waiting for you').replace('{count}', String(blocked))}
           </span>
           <button className="hub__close" onClick={onClose} aria-label={t('hub.close', 'Close')}>×</button>
         </div>
@@ -542,6 +608,7 @@ export default function HubView({ onClose, onFocusAgent }: {
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           onPointerLeave={() => { hoverRef.current = null; hoverTableRef.current = null; setHover(null); }}
           onWheel={handleWheel}
         >
@@ -549,7 +616,7 @@ export default function HubView({ onClose, onFocusAgent }: {
 
           {total === 0 && (
             <div className="hub__empty-hint">
-              {t('hub.empty', 'No agents running — the office is quiet.')}
+              {t('hub.empty', 'No agents running. The office is quiet.')}
             </div>
           )}
 
@@ -576,7 +643,11 @@ export default function HubView({ onClose, onFocusAgent }: {
           )}
 
           {popoverEntry && popover && (
-            <div className="hub__popover" style={{ left: popover.sx, top: popover.sy }}>
+            <div
+              className="hub__popover"
+              style={{ left: popover.sx, top: popover.sy }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <div className="hub__popover-reason">
                 {popoverEntry.blockedReason ?? t('hub.needsYou', 'Needs your input')}
               </div>
@@ -584,12 +655,13 @@ export default function HubView({ onClose, onFocusAgent }: {
                 <button
                   key={choice.id}
                   className="hub__popover-choice"
+                  disabled={answering}
                   onClick={() => void answer(popoverEntry.surfaceId, choice.id)}
                 >
                   {choice.label}
                 </button>
               ))}
-              <button className="hub__popover-goto" onClick={() => jump(popoverEntry)}>
+              <button className="hub__popover-goto" disabled={answering} onClick={() => jump(popoverEntry)}>
                 {t('hub.goToPane', 'Go to pane')}
               </button>
             </div>

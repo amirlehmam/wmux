@@ -57,4 +57,15 @@ describe('zoomAt', () => {
     expect(zoomAt(view, 0, 0, 99).zoom).toBe(MAX_ZOOM);
     expect(zoomAt(view, 0, 0, 0).zoom).toBe(MIN_SCALE);
   });
+
+  it('recenters a non-pannable axis instead of anchoring the cursor there', () => {
+    // Office fits at both zooms: cursor anchoring is deliberately sacrificed
+    // so a fitting office stays centered (documented in zoomAt's contract).
+    const before = computeCamera({ viewW: 1000, viewH: 800, officeW: 100, officeH: 100, zoom: 2, panX: 0, panY: 0 });
+    const next = zoomAt(before, 100, 100, 3);
+    const after = computeCamera({ viewW: 1000, viewH: 800, officeW: 100, officeH: 100, zoom: next.zoom, panX: next.panX, panY: next.panY });
+    expect(after.offX).toBe((1000 - 300) / 2);
+    expect(after.offY).toBe((800 - 300) / 2);
+    expect(after.pannableX).toBe(false);
+  });
 });

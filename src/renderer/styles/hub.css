@@ -117,12 +117,14 @@
   margin-bottom: 2px;
 }
 
+/* Same state-color vocabulary as the sidebar and agent navigator — a user who
+   has learned the violet "needs you" must not have to relearn it here. */
 .hub__tooltip-row[data-state='blocked'] {
-  color: #c084fc;
+  color: var(--ui-agent-blocked);
 }
 
 .hub__tooltip-row[data-state='working'] {
-  color: #e2b458;
+  color: #e8a33d;
 }
 
 /* ── Answer popover ──────────────────────────────────────────────────────── */

@@ -61,7 +61,10 @@ export function computeCamera(input: CameraInput): CameraView {
 }
 
 /**
- * Change zoom while keeping the world point under the cursor stationary.
+ * Change zoom while keeping the world point under the cursor stationary on
+ * every pannable axis. An axis on which the office still fits ignores pan and
+ * recenters instead (computeCamera's contract), so the point can shift there
+ * — deliberate: a fitting office should stay centered, not drift off-middle.
  * Returns the new camera state; clamping happens on the next computeCamera.
  */
 export function zoomAt(
