@@ -188,11 +188,13 @@ async function engineForSurface(surfaceId: string): Promise<BrowserEngine> {
  * `tests/unit/browser-timeout.test.ts` exists to prevent.
  *
  * The failure is logged rather than swallowed: it is invisible to the user
- * otherwise. It is deliberately not fatal — but it is also not harmless. After
- * Task 8 the pane loads the dashboard url in its webview, so a dashboard that
- * never started renders ERR_CONNECTION_REFUSED, which reads as "my browser is
- * broken" rather than "an optional viewer did not start". A console line is the
- * least this can do; naming the situation in the pane is Task 8's to fix.
+ * otherwise. It is deliberately not fatal — but it is also not harmless. The
+ * pane loads the dashboard url in its webview, so a dashboard that never
+ * started would render ERR_CONNECTION_REFUSED, which reads as "my browser is
+ * broken" rather than "an optional viewer did not start". `BrowserPane` closes
+ * that gap on the renderer side: it checks `dashboardAvailable` before ever
+ * calling `loadURL` and shows a distinct no-dashboard card, so the interstitial
+ * is never painted. This log is the main-side half of the same story.
  */
 function agentTargetFor(surfaceId: string): BrowserTarget {
   // Deliberately NOT awaited — see above. `.catch` is what keeps an unawaited

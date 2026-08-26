@@ -17,11 +17,11 @@
  * `probe` answers one question — is something already listening on the
  * dashboard's port (4848)? It says nothing about the PER-SESSION stream ports
  * that `agent-browser-session.ts`'s `SessionRegistry` hands out (9300+):
- * that registry tracks only the ports it has itself allocated and never
- * verifies the OS can actually bind them, so a squatting process — including
- * an orphan from a previous wmux — could make a handed-out stream port
- * unbindable. That is a real gap, but it is a Task 11 (teardown/orphan
- * cleanup) concern, not this file's. Do not assume `probe()` here covers it.
+ * that registry tracks only the ports it has itself allocated. Bindability of
+ * those is `SessionRegistry.ensureBindable`'s job — it probes each candidate
+ * with a real `listen` before committing, because a squatting process (including
+ * an orphan from a previous wmux) can hold a port the registry believes is free.
+ * Do not assume `probe()` here covers any of that; it answers about 4848 only.
  */
 
 export interface DaemonHooks {

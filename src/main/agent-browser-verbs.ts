@@ -6,9 +6,10 @@
  * daemon, a Chrome, or an Electron.
  *
  * Returns an argv ARRAY, never a shell string. Callers pass it straight to
- * execFile (see `agent-browser-cli.ts`). `params` originates from a pipe
- * command an agent controls, so a joined string here would be a
- * command-injection hole.
+ * `spawn` (see `agent-browser-cli.ts`, which explains why it is spawn and not
+ * execFile — the latter never returns for any command that starts the daemon).
+ * `params` originates from a pipe command an agent controls, so a joined string
+ * here would be a command-injection hole.
  */
 
 /**
