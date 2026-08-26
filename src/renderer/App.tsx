@@ -15,7 +15,7 @@ import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcu
 import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import AgentNavigator from './components/AgentNavigator/AgentNavigator';
-import HubView from './components/Hub/HubView';
+import HubView from './components/Hub/hub-view';
 import { focusAgentTarget } from './store/focus-agent';
 import { useAgentDetection } from './hooks/useAgentDetection';
 import { useBlockedAlert } from './hooks/useBlockedAlert';
