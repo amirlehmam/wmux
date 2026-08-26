@@ -58,6 +58,11 @@ docs/             Planning docs
 | `pipe-server.ts` | Named pipe `\\.\pipe\wmux` — V1 text (shell hooks), V2 JSON-RPC (CLI/agents) |
 | `cdp-bridge.ts` | Browser webview control via Chrome DevTools Protocol |
 | `cdp-proxy.ts` | CDP WebSocket proxy |
+| `agent-browser-cli.ts` | Where `agent-browser` is on this machine, and how to run it. Two traps, both found by running the real binary rather than by reading its docs. (1) **`execFile` never returns.** Its callback fires on stdio CLOSE, not on process exit, and every command that starts the daemon — the first `open` of a session, `dashboard start` — leaves that daemon holding the inherited stdout pipe open for as long as it lives. Measured against 0.35.0: an identical cold `open` had the child exit 0 at **787 ms** while `execFile`'s callback had still not fired at 3 min, so the verb burned its whole timeout and was reported as a FAILURE despite having succeeded. Hence `spawn`, resolving on `'exit'` (the event that actually means "done"), with a 50 ms drain window so output is not truncated — `'close'` lands right behind `'exit'` when nothing holds the pipe, so the wait is only ever paid by the daemon-spawning commands. Anyone "simplifying" this back to `execFile` breaks agent mode completely and silently. (2) **Never a `.cmd`.** Node refuses to spawn `.bat`/`.cmd` without `shell: true` (the CVE-2024-27980 mitigation) and throws a **synchronous** `EINVAL` — in main that is an uncaught throw, not a failed command. `shell: true` is not available as a fix: argv carries agent-controlled URLs and `eval` snippets, and routing them through cmd.exe's parser is the exact trap `powershell-shim.ts` documents (#154). The npm package ships real per-platform binaries under its own `node_modules/agent-browser/bin/`, so resolution targets those first and the shim is never a candidate. Memoised like `node-runtime.ts` (#187) because it is read on the pane path (#176), and keyed on the configured path so a Settings change invalidates without every caller remembering to ask |
+| `agent-browser-verbs.ts` | The pure wmux-verb → argv table. I/O-free on purpose: it is the piece most likely to drift as agent-browser's CLI evolves, so it must be exhaustively testable with no daemon, no Chrome, no Electron. Returns an ARRAY, never a joined string — `params` arrive from a pipe command an agent controls. A missing `ref` on `click`/`type`/`fill` throws -32602 rather than putting `undefined` on a command line, and an unknown verb throws the same -32601 the web engine does so a caller cannot tell the engines apart by their error. Also where the **one engine divergence** is recorded in code: `wait` has no per-call timeout in agent-browser, so a caller `ms` sent alongside a ref is unrepresentable in argv and deliberately dropped — see CLI Reference |
+| `agent-browser-session.ts` | surfaceId → session name + wmux-allocated stream port. Sessions are **ephemeral** — nothing persisted, no profile dir, a session's process lifetime equals its surface's — and that is what makes orphan handling correct by construction rather than by heuristic: no wmux-owned session can legitimately survive, so any prefixed session with no live surface is garbage. That is the property the #139 post-mortem wanted and did not have. But the registry is in-memory and starts EMPTY, so it is **not ground truth after a crash** — the sessions that actually survived are precisely the ones it cannot see, and reconciliation asks `agent-browser session list` instead. wmux allocates the stream port ITSELF (9300+, above the CDP proxy's 9222-9230) because the dashboard deep-links by `?port=`, and discovering an OS-assigned port after the fact races the webview load; `ensureBindable` verifies each candidate with a real `listen` first, since the registry tracks only what it handed out and never what the OS holds — an orphan from a previous run may still be bound. `isWmuxSessionName` is a security boundary, not tidiness: names come out of a machine-global namespace anyone can write into and go straight back onto a command line as `--session <name> close`, so both the instance prefix AND the full `surf-<uuid>` shape are required. `WMUX_INSTANCE` gets its own prefix — a side-by-side wmux is exactly as much "not us" as a human's hand-made session |
+| `agent-browser-daemon.ts` | The observability dashboard, refcounted by live agent-mode surfaces: first acquire starts it, last release stops it. **Adopt, never fight** — if :4848 already answers, a human or another wmux started it, so wmux uses it, records `adopted`, and NEVER stops it: not on the last release, not on shutdown. `adopted` is a getter with deliberately no setter, since anything that could write it could make teardown kill a dashboard wmux does not own. A failed `acquire()` rolls back its own increment (clamped — `refs` must never go negative) so a phantom ref cannot strand a dashboard no later release can reach zero on, and `release()`/`shutdown()` wait out an in-flight start before deciding there is nothing to stop — otherwise a start that settles just after shutdown leaks a child process that outlives wmux entirely |
+| `agent-browser-runtime.ts` | The single home for the singletons — exactly one `SessionRegistry`, exactly one `DashboardDaemon` — plus the impure halves the pure modules take by injection. A second copy silently corrupts both: two registries hand 9300 to two surfaces, two daemons each believe they own the dashboard and the first `release()` to hit zero stops it out from under the other. It also owns the **per-surface** dashboard reference, because two paths take one for the SAME surface (the renderer enabling agent mode, and a `wmux browser` verb arriving for that pane) and when each kept its own Set the pane took two references and gave back one, so the dashboard outlived every agent pane until quit. Readiness is the PORT, never the exit: `dashboard start` exits at 58 ms having daemonised while :4848 does not accept a connection for ~500 ms, and in some configurations it does not exit at all. `reconcileOrphanSessions` runs at startup off `session list` because a crash reaches none of the other teardown paths and Windows reparents rather than kills (#139); a `close` that hangs (observed after a daemon version-mismatch restart) is deadlined and left for the next launch rather than resolved by killing a PID — agent-browser exposes no per-session PID and its daemon fronts several sessions, so leaking one Chrome beats killing somebody else's browser |
 | `agent-manager.ts` | Agent PTY spawning, round-robin distribution across panes |
 | `window-manager.ts` | Electron BrowserWindow creation/management |
 | `ipc-handlers.ts` | All IPC channel handlers |
@@ -92,7 +97,7 @@ docs/             Planning docs
 **Components** (in `components/`):
 - `SplitPane/` — PaneWrapper, SplitContainer, SplitDivider, SurfaceTabBar
 - `Terminal/` — TerminalPane, FindBar, CopyMode, NotificationRing
-- `Browser/` — BrowserPane, AddressBar
+- `Browser/` — BrowserPane, AddressBar, AgentBrowserSetup (the `not-installed` vs `no-dashboard` cards — two genuinely different situations, never one card: the second means the agent browser works fine and only its optional viewer is missing)
 - `Sidebar/` — Sidebar, WorkspaceRow, SessionMenu, SidebarResizeHandle
 - `Titlebar/` — Titlebar, NotificationBell, NotificationPanel
 - `Settings/` — SettingsWindow + per-category panels
@@ -107,7 +112,10 @@ docs/             Planning docs
 **Pipe Bridge** (`pipe-bridge.ts`):
 - Exposes Zustand store operations as `window.__wmux_*` globals
 - Called by main process via `executeJavaScript` to bridge V2 pipe commands to renderer
-- Covers: workspace CRUD, pane split/close/list, surface CRUD, markdown content, notifications
+- Covers: workspace CRUD, pane split/close/list, surface CRUD, markdown content, notifications,
+  browser engine get/set (`__wmux_getBrowserEngine` / `__wmux_setBrowserEngine` — the split tree
+  lives in the store and main has no copy, so main asks the renderer before routing any
+  `browser.*` verb. An unknown surface answers `web`, which is the safe answer, not a lazy one)
 
 **Store** (Zustand, in `store/`):
 - `workspace-slice.ts` — Workspace CRUD, split tree updates
@@ -127,6 +135,19 @@ config:   getTheme, getThemeList, importWindowsTerminal, importGhostty
 metadata: onUpdate
 notification: fire, onFocusSurface
 browser:  navigate
+agentBrowser: status, enable, disable, currentUrl, open, install
+                                     # WHICH engine a browser surface runs on, not
+                                     # what it does — the `cdp` verbs below act on
+                                     # whichever engine a surface already has.
+                                     # `{installed:false}` from enable is a normal
+                                     # answer (show the setup card), not a failure.
+                                     # currentUrl exists because the address bar was
+                                     # lying: in agent mode the agent navigates the
+                                     # real Chrome, so the last URL the PANE asked for
+                                     # stops being true. open is its counterpart — the
+                                     # pane used to reuse enable to mean "navigate",
+                                     # re-acquiring the dashboard and re-binding the
+                                     # stream on every address-bar Enter
 agent:    list, status, onUpdate
 clipboard: writeText, readText    # no pasteImage since 1.12.0 — see remote below
 remote:   resolvePaste, resolveDrop  # what should this gesture type? Main answers
@@ -350,7 +371,8 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 - `markdown.set_content`, `markdown.load_file`, `markdown.get_content`
 - `notification.list`, `notification.clear`
 - `sidebar.set_status`, `sidebar.set_progress`, `sidebar.log`, `sidebar.get_state`
-- `browser.*` (via CDP bridge)
+- `browser.*` — routed per surface by its engine: `web` → the CDP bridge, `agent` → the agent-browser CLI. `engineForSurface` asks the RENDERER (the split tree lives in the Zustand store, main has no copy) and asks EVERY window, first affirmative wins — the surface may be in window 2, the #143 "window ≠ workspace" mistake. A renderer that has never heard of `__wmux_getBrowserEngine`, or a rejected `executeJavaScript`, answers `web`: this runs on the hot path of every browser command, where it previously did no renderer IPC at all. The engine is re-checked on **every** outcome of target resolution, not only when there was no wcId — a surface toggled web→agent keeps a valid CDP registration (nothing detaches on a toggle), so the null-branch-only shortcut drives CDP against agent-browser's own dashboard SPA and silently corrupts the pane the user is watching
+- `browser.get_engine`, `browser.set_engine` — matched BEFORE the generic `browser.*` passthrough, or they fall into the verb switch and come back as `Unknown: browser.get_engine` (-32601). `set_engine` validates `web`/`agent` and refuses a surface that is not a browser surface
 - `agent.spawn`, `agent.spawn_batch`, `agent.status`, `agent.list`, `agent.kill`
 - `pane.report_agent`, `pane.report_agent_session`, `pane.report_metadata`, `pane.release_agent`, `pane.agent_state`
 - `pane.answer_agent` — the back-channel (issue #128). The only non-`report_*` method: it WRITES into a pane's PTY. Guarded — refuses unless the pane is currently `blocked`, and only ever sends a payload the agent itself declared
@@ -423,12 +445,32 @@ wmux split [--down] [--type T] | close-pane | focus-pane | zoom-pane | list-pane
 wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]
 wmux read-screen [--lines N] [--surface <id>] | trigger-flash
 
-# Browser (CDP)
+# Browser — the same verbs on either engine, so agents need no re-education
 wmux browser open <url> | snapshot | click eN | type eN <text>
 wmux browser fill eN <value> | get-text | screenshot | eval <js>
-wmux browser back | forward | reload
+wmux browser wait <ref> [ms] | back | forward | reload
 wmux browser <verb> [--surface <id>]   # whose browser to drive; defaults to
                                        # $WMUX_SURFACE_ID inside a pane
+wmux browser engine [web|agent] [--surface <id>]
+                                       # print, or switch, which engine backs this
+                                       # browser surface. `web` (the default, and
+                                       # what every browser surface was before) is
+                                       # the Electron <webview>, driven over CDP;
+                                       # `agent` is vercel-labs/agent-browser — a
+                                       # real Chrome the CLI drives, shown in the
+                                       # pane through its own dashboard, deep-linked
+                                       # to that surface's session. Every verb above
+                                       # routes to whichever engine the surface is
+                                       # on, which is why the global CLAUDE.md wmux
+                                       # writes never has to mention any of this.
+# ENGINE DIVERGENCE — the only one, so it is written down rather than discovered:
+# `wmux browser wait <ref> [ms]` sends a ref AND a timeout. In `web` mode both reach
+# cdpBridge.wait(ref, timeout) and the ms is honoured. agent-browser's `wait
+# <selector>` has no per-call timeout flag at all — only the global
+# AGENT_BROWSER_DEFAULT_TIMEOUT (25 s) — so in `agent` mode the caller's ms is
+# DROPPED and the ref wins. Unrepresentable in argv, not fixable in the verb table;
+# see the KNOWN ENGINE DIVERGENCE note in src/main/agent-browser-verbs.ts. Every
+# other verb behaves identically on both engines.
 
 # Declared agent state (issue #128) — blocked / working / idle, no screen scraping.
 # Surface defaults to $WMUX_SURFACE_ID, so an agent inside a pane needs no id.
@@ -481,6 +523,7 @@ System:  system:getShells/openExternal
 Notify:  notification:fire/list/clear/jump
 Agent:   agent:spawn/spawn-batch/status/list/kill/update
 CDP:     cdp:attach/detach
+AgentBr: agent-browser:enable/disable/status/install/current-url/open   # engine control
 Session: session:save-named/load-named/list-named/delete-named
 Meta:    metadata:update, hook:event, claude:activity, agent:state
 ```
