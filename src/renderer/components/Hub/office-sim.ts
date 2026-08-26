@@ -66,7 +66,9 @@ export interface SimState {
   handoffStarters: HandoffMark[];
 }
 
-export const MAX_CHARACTERS = 64;
+// 128 characters cost the sim and canvas nothing measurable; the old layout
+// bound (one desk row per table) is gone since desks wrap at 6 per row.
+export const MAX_CHARACTERS = 128;
 export const SPEED_TILES_PER_SEC = 4;
 export const HANDOFF_WINDOW_MS = 5000;
 export const CHAT_DURATION_MS = 2000;

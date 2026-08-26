@@ -36,6 +36,22 @@ describe('buildLayout', () => {
     }
   });
 
+  it('wraps a big workspace into multiple desk rows of at most 6', () => {
+    const layout = buildLayout(wss(1), agents([14]));
+    const table = layout.tables[0];
+    expect(table.w).toBe(6);
+    expect(table.deskRows).toBe(3);
+    const chairs = Object.values(layout.chairBySurface);
+    expect(chairs).toHaveLength(14);
+    const rows = new Set(chairs.map((c) => c.y));
+    expect(rows.size).toBe(3);
+    for (const chair of chairs) {
+      expect(isBlocked(layout, chair.x, chair.y)).toBe(false);
+      expect(isBlocked(layout, chair.x, chair.y - 1)).toBe(true);
+      walkableAndReachable(layout, chair, `wrapped chair ${chair.x},${chair.y}`);
+    }
+  });
+
   it('desk count grows with agents: 5 agents in one workspace fit', () => {
     const layout = buildLayout(wss(1), agents([5]));
     expect(Object.keys(layout.chairBySurface)).toHaveLength(5);
@@ -56,6 +72,31 @@ describe('buildLayout', () => {
     const big = buildLayout(wss(9), []);
     expect(big.rows).toBeGreaterThan(small.rows);
     expect(big.cols * big.rows).toBeLessThan(4000); // sanity: no runaway grid
+  });
+
+  it('places decorations without walling anyone in', () => {
+    const layout = buildLayout(wss(5), agents([2, 8, 1, 0, 3]));
+    expect(layout.decorations.length).toBeGreaterThan(0);
+    const kinds = new Set(layout.decorations.map((d) => d.kind));
+    expect(kinds.has('window')).toBe(true);
+    expect(kinds.has('rug')).toBe(true);
+    for (const deco of layout.decorations) {
+      if (deco.kind === 'window' || deco.kind === 'painting') {
+        // wall dressing lives ON the wall
+        expect(deco.y === 0 || deco.y === layout.rows - 1).toBe(true);
+      }
+      if (deco.kind === 'rug') {
+        // rugs are cosmetic floor — never blocked
+        for (let x = deco.x; x < deco.x + (deco.w ?? 1); x++) {
+          for (let y = deco.y; y < deco.y + (deco.h ?? 1); y++) {
+            expect(isBlocked(layout, x, y), `rug tile ${x},${y}`).toBe(false);
+          }
+        }
+      }
+    }
+    // decorations must not break the core guarantee
+    for (const chair of Object.values(layout.chairBySurface)) walkableAndReachable(layout, chair, 'chair');
+    for (const seat of layout.breakSeats) walkableAndReachable(layout, seat, 'seat');
   });
 
   it('outer border is walled', () => {
