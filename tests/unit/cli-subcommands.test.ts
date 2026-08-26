@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { subcommandError } from '../../src/cli/wmux';
+import { subcommandError, browserRequest } from '../../src/cli/wmux';
 
 /**
  * `wmux browser`, `wmux agent` and `wmux pane` with no subcommand printed the
@@ -86,5 +86,54 @@ describe('subcommand dispatch reads args[1], not args[0]', () => {
   /** The convention this broke — kept honest for the next subcommand added. */
   it('matches how the other group commands dispatch', () => {
     expect(source).toMatch(/AGENT_CMDS\[args\[1\]\]/);
+  });
+});
+
+/**
+ * `wmux browser engine [web|agent] [--surface <id>]` — get or flip which
+ * engine a browser surface runs on (Task 12). Unlike every other `browser`
+ * subcommand, this one is two distinct V2 methods depending on whether a
+ * value was given, and it validates that value client-side rather than
+ * leaving a typo to round-trip to the server and back.
+ */
+describe('browser engine', () => {
+  it('a bare "engine" asks the server what engine this surface is on', () => {
+    const req = browserRequest(['browser', 'engine']);
+    expect(req?.method).toBe('browser.get_engine');
+    expect(req?.params).not.toHaveProperty('engine');
+  });
+
+  it('"engine agent" asks to switch to agent-browser', () => {
+    const req = browserRequest(['browser', 'engine', 'agent']);
+    expect(req?.method).toBe('browser.set_engine');
+    expect(req?.params.engine).toBe('agent');
+  });
+
+  it('"engine web" asks to switch back to the built-in webview', () => {
+    const req = browserRequest(['browser', 'engine', 'web']);
+    expect(req?.method).toBe('browser.set_engine');
+    expect(req?.params.engine).toBe('web');
+  });
+
+  it('carries --surface through as the caller, same as every other browser verb', () => {
+    // cmdBrowser extracts --surface (or $WMUX_SURFACE_ID) and passes it into
+    // browserRequest as `caller` — the same mechanism every other browser
+    // subcommand already uses, so no extra CLI code was needed for this.
+    const req = browserRequest(['browser', 'engine', 'web'], 'surf-1');
+    expect(req?.method).toBe('browser.set_engine');
+    expect(req?.params.engine).toBe('web');
+    expect(req?.params.caller).toBe('surf-1');
+  });
+
+  it('rejects anything other than exactly "web" or "agent", naming both', () => {
+    expect(() => browserRequest(['browser', 'engine', 'bogus'])).toThrow(/web/);
+    expect(() => browserRequest(['browser', 'engine', 'bogus'])).toThrow(/agent/);
+  });
+
+  it('does not silently coerce a near-miss value', () => {
+    // Case and whitespace variants must fail exactly like any other typo —
+    // "Do not silently coerce" from the task spec, spelled out as a test.
+    expect(() => browserRequest(['browser', 'engine', 'Web'])).toThrow();
+    expect(() => browserRequest(['browser', 'engine', ' web'])).toThrow();
   });
 });

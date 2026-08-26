@@ -17,7 +17,7 @@ import { distributeAgents } from './agent-manager';
 import { PipeServer } from './pipe-server';
 import { PortScanner } from './port-scanner';
 import { CDPProxy } from './cdp-proxy';
-import { IPC_CHANNELS, SurfaceId } from '../shared/types';
+import { IPC_CHANNELS, SurfaceId, BrowserEngine } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken } from '../shared/instance';
 import { loadSession, saveSession, handleVersionChange, SessionData } from './session-persistence';
 import { getAgentState, reportAgentSession } from './agent-state';
@@ -42,6 +42,206 @@ import { ensurePowerShellShim } from './powershell-shim';
 import fs from 'fs';
 import path from 'path';
 
+// ─── browser.get_engine / browser.set_engine ────────────────────────────────
+//
+// These are handled here rather than in v2-browser.ts's `handleBrowserV2`
+// (out of scope for this change) even though their names start with
+// `browser.` — `routeSpecialV2` below checks for them BEFORE the generic
+// `browser.*` delegation, or they would fall into `runBrowserCommandForTarget`'s
+// verb switch and be rejected as `Unknown: browser.get_engine`.
+
+/** What resolving a terminal `caller` to ITS bound browser surface found. */
+type CallerBrowserResolution =
+  | { kind: 'found'; surfaceId: string }
+  // No browser surface exists yet in the caller's workspace. Carries the
+  // window + workspaceId so a `set` can create one there; a `get` just
+  // answers 'web' without creating anything (see handleBrowserEngineV2).
+  | { kind: 'none'; win: BrowserWindow; workspaceId: string }
+  | { kind: 'ambiguous' }
+  | { kind: 'unresolved' };
+
+/**
+ * Resolve which browser surface a terminal `caller` (e.g. $WMUX_SURFACE_ID) is
+ * effectively bound to, for `browser.get_engine` / `browser.set_engine`.
+ *
+ * `wmux browser <verb>` already resolves a caller to ITS OWN browser surface
+ * (issue #62) — but that binding (`callerBrowserSurface` in v2-browser.ts) is
+ * a private module-level map in a file this change does not touch. So this
+ * does NOT read or write that map; it re-derives an answer from the same
+ * renderer bridge globals v2-browser.ts's `resolveBrowserWcId` uses
+ * (`__wmux_getWorkspaceIdForSurface`, `__wmux_listBrowserSurfaces`,
+ * `__wmux_splitPane`) — the ones that actually own the split-tree state.
+ *
+ * That is safe, not just convenient: a surface this creates is never added to
+ * v2-browser.ts's private `boundBrowserSurfaces` set either, so it is still
+ * "unowned" and gets adopted normally the first time the same caller runs a
+ * REAL browser verb — the two paths agree without sharing state.
+ *
+ * More than one existing browser surface in the caller's workspace (e.g. two
+ * agents that already each own one) is refused rather than guessed at:
+ * silently picking one risks flipping the WRONG agent's browser, exactly the
+ * cross-talk issue #62 exists to prevent.
+ */
+async function resolveCallerBrowserSurface(caller: string): Promise<CallerBrowserResolution> {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    const workspaceId: string | null = await win.webContents.executeJavaScript(
+      `window.__wmux_getWorkspaceIdForSurface?.(${JSON.stringify(caller)}) ?? null`,
+    );
+    if (!workspaceId) continue;
+    const existing: string[] = await win.webContents.executeJavaScript(
+      `window.__wmux_listBrowserSurfaces?.(${JSON.stringify(workspaceId)}) ?? []`,
+    );
+    if (existing.length === 1) return { kind: 'found', surfaceId: existing[0] };
+    if (existing.length > 1) return { kind: 'ambiguous' };
+    return { kind: 'none', win, workspaceId };
+  }
+  return { kind: 'unresolved' };
+}
+
+/** Ask every window whether `surfaceId` is a browser surface, and its engine. */
+async function readBrowserEngine(surfaceId: string): Promise<BrowserEngine> {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    const engine = await win.webContents.executeJavaScript(
+      `window.__wmux_getBrowserEngine?.(${JSON.stringify(surfaceId)}) ?? 'web'`,
+    );
+    if (engine === 'agent') return 'agent';
+  }
+  return 'web';
+}
+
+/** Ask every window to flip `surfaceId`'s engine. True the moment one takes it. */
+async function writeBrowserEngine(surfaceId: string, engine: BrowserEngine): Promise<boolean> {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    const ok = await win.webContents.executeJavaScript(
+      `window.__wmux_setBrowserEngine?.(${JSON.stringify(surfaceId)}, ${JSON.stringify(engine)}) ?? false`,
+    );
+    if (ok) return true;
+  }
+  return false;
+}
+
+/**
+ * Failure branches shared by get/set once a `caller` (no explicit
+ * `surfaceId`) needs resolving. Split out of the get/set handlers below
+ * purely to keep each of THEIR cognitive complexity down — every branch here
+ * ends in `respondError` and returns, so the caller only has to check for a
+ * truthy return to know whether it already answered.
+ */
+function respondResolutionFailure(
+  method: string,
+  caller: string,
+  resolution: Extract<CallerBrowserResolution, { kind: 'ambiguous' | 'unresolved' }>,
+  respondError: (code: number, message: string) => void,
+): void {
+  if (resolution.kind === 'ambiguous') {
+    respondError(-32000, `${method}: surface ${caller} has more than one browser pane in its workspace — pass --surface <id> to pick one`);
+  } else {
+    respondError(-32000, `${method}: no workspace found for surface ${caller} — is it a live terminal surface?`);
+  }
+}
+
+/** `browser.get_engine`. See `handleBrowserEngineV2` for the params contract. */
+async function handleGetEngine(
+  params: any,
+  respond: (result: any) => void,
+  respondError: (code: number, message: string) => void,
+): Promise<void> {
+  let surfaceId: string | undefined = params?.surfaceId;
+  if (!surfaceId) {
+    const caller: string | undefined = params?.caller;
+    if (!caller) {
+      respondError(-32602, 'browser.get_engine: surface required — pass --surface <id>, or run from inside a pane so $WMUX_SURFACE_ID is set');
+      return;
+    }
+    const resolution = await resolveCallerBrowserSurface(caller);
+    if (resolution.kind === 'found') {
+      surfaceId = resolution.surfaceId;
+    } else if (resolution.kind === 'none') {
+      // Nothing bound yet: the next REAL browser verb from this caller would
+      // create a 'web' pane by default, so that is the honest answer — no
+      // need to create anything just to answer a query.
+      respond({ engine: 'web' });
+      return;
+    } else {
+      respondResolutionFailure('browser.get_engine', caller, resolution, respondError);
+      return;
+    }
+  }
+  if (!surfaceId) { respondError(-32000, 'browser.get_engine: could not resolve a browser surface'); return; }
+  respond({ engine: await readBrowserEngine(surfaceId) });
+}
+
+/** `browser.set_engine`. See `handleBrowserEngineV2` for the params contract. */
+async function handleSetEngine(
+  params: any,
+  respond: (result: any) => void,
+  respondError: (code: number, message: string) => void,
+): Promise<void> {
+  const engine: BrowserEngine | undefined = params?.engine;
+  if (engine !== 'web' && engine !== 'agent') {
+    respondError(-32602, `browser.set_engine: engine must be "web" or "agent" (got ${JSON.stringify(params?.engine)})`);
+    return;
+  }
+
+  let surfaceId: string | undefined = params?.surfaceId;
+  if (!surfaceId) {
+    const caller: string | undefined = params?.caller;
+    if (!caller) {
+      respondError(-32602, 'browser.set_engine: surface required — pass --surface <id>, or run from inside a pane so $WMUX_SURFACE_ID is set');
+      return;
+    }
+    const resolution = await resolveCallerBrowserSurface(caller);
+    if (resolution.kind === 'found') {
+      surfaceId = resolution.surfaceId;
+    } else if (resolution.kind === 'none') {
+      const created = await resolution.win.webContents.executeJavaScript(
+        `window.__wmux_splitPane?.({ direction: 'horizontal', type: 'browser', workspaceId: ${JSON.stringify(resolution.workspaceId)} }) ?? null`,
+      );
+      if (!created?.surfaceId) {
+        respondError(-32000, `browser.set_engine: could not create a browser pane for surface ${caller}`);
+        return;
+      }
+      surfaceId = created.surfaceId;
+    } else {
+      respondResolutionFailure('browser.set_engine', caller, resolution, respondError);
+      return;
+    }
+  }
+  if (!surfaceId) { respondError(-32000, 'browser.set_engine: could not resolve a browser surface'); return; }
+
+  const ok = await writeBrowserEngine(surfaceId, engine);
+  if (!ok) {
+    respondError(-32000, `browser.set_engine: surface ${surfaceId} does not exist or is not a browser surface`);
+    return;
+  }
+  respond({ engine });
+}
+
+/**
+ * `browser.get_engine` / `browser.set_engine`.
+ *
+ * Params carry either an explicit `surfaceId` (a known browser surface —
+ * always used as-is) or a `caller` (a terminal surface, the shape every other
+ * `browser.*` verb already accepts, forwarded here by `cmdBrowser`'s existing
+ * `--surface`/`$WMUX_SURFACE_ID` handling with no CLI-side special-casing).
+ * Neither present is the one case Part 2 asks for directly: -32602, since
+ * there is nothing to resolve.
+ */
+function handleBrowserEngineV2(
+  method: string,
+  params: any,
+  respond: (result: any) => void,
+  respondError: (code: number, message: string) => void,
+): void {
+  const task = method === 'browser.set_engine'
+    ? handleSetEngine(params, respond, respondError)
+    : handleGetEngine(params, respond, respondError);
+  task.catch((err: any) => respondError(-32000, err?.message ?? String(err)));
+}
+
 // Route the V2 methods that live in their own modules: browser.* (per-caller
 // isolated routing, issue #62) and the uniform renderer-bridge methods. Returns
 // true when the method was handled here so the main switch can be skipped.
@@ -50,6 +250,13 @@ function routeSpecialV2(
   respond: (result: any) => void,
   respondError: (code: number, message: string) => void,
 ): boolean {
+  // get_engine/set_engine must be caught BEFORE the generic browser.*
+  // delegation just below, or they fall into handleBrowserV2's verb switch
+  // and are rejected as `Unknown: browser.get_engine` (-32601).
+  if (request.method === 'browser.get_engine' || request.method === 'browser.set_engine') {
+    handleBrowserEngineV2(request.method, request.params, respond, respondError);
+    return true;
+  }
   if (request.method.startsWith('browser.')) {
     handleBrowserV2(request.method, request.params, respond, respondError);
     return true;

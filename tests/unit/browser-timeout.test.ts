@@ -94,6 +94,13 @@ const VERBS: string[][] = [
   ['browser', 'back'],
   ['browser', 'forward'],
   ['browser', 'reload'],
+  // `browser engine` never touches cdp-bridge or agent-browser at all — it's
+  // handled entirely in index.ts (see handleBrowserEngineV2) — so none of the
+  // budgets this file checks actually bound it. It's still swept here so a
+  // verb added to BROWSER_CMDS without a deadline opinion never goes
+  // unmeasured (the whole point of the "covers every verb" test below), and
+  // `browserDeadline(0)` comfortably clears every comparison regardless.
+  ['browser', 'engine'],
 ];
 
 describe('browser command deadlines outlast the main process', () => {
