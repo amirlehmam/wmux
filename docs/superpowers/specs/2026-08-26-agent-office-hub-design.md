@@ -205,3 +205,24 @@ behavioral logic lives in the pure modules under unit test.
   sound effects, layout persistence/editor, per-tool animations (needs
   claudeActivity/hookActivity moved into a store slice), scrolling/panning
   for very large offices.
+
+## v2 addendum (2026-08-26, same day)
+
+Approved changes after the first build:
+
+- Rendering interpolates between sim ticks (fixed-timestep + alpha lerp), so
+  movement is display-rate smooth while the sim stays 10 Hz deterministic.
+- Decorations: windows/painting on walls, bookshelf, water cooler, corner
+  plants (blocking, placed only at corridor endpoints), rug under the break
+  seats (cosmetic). Emitted by the layout as `decorations`, covered by the
+  reachability tests.
+- Tables hover-highlight and click-to-switch-workspace (selectWorkspace +
+  close).
+- The `wmux hub` CLI command, `hub.open` pipe method and renderer bridge
+  global are REMOVED: the hub is an easter egg. It is gated on
+  `appearancePrefs.hubEnabled` (default off, persisted), toggled at the
+  bottom of Settings -> General; when enabled, a titlebar button (pixel
+  invader, left of the settings gear) opens it and Ctrl+Shift+O works.
+- Scale: desks wrap at 6 per table row (multi-row tables), MAX_CHARACTERS is
+  128, and the viewport never drops below pixel scale 2 - larger offices pan
+  (drag) and zoom (wheel, 2-6) via the pure `camera.ts` helper.
