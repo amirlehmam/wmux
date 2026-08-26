@@ -330,6 +330,7 @@ export const en = {
   'shortcutAction.jumpToUnread': 'Jump to unread',
   'shortcutAction.jumpToBlocked': 'Jump to agent needing you',
   'shortcutAction.openAgentNavigator': 'All agents',
+  'shortcutAction.openHub': 'Agent office',
   'shortcutAction.showNotifications': 'Show notifications',
   'shortcutAction.flashFocused': 'Flash focused pane',
   'shortcutAction.openBrowser': 'Open browser',

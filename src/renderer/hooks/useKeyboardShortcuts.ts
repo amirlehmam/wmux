@@ -358,6 +358,7 @@ export function useKeyboardShortcuts(
       jumpToUnread,
       jumpToBlocked,
       openAgentNavigator: () => fire('wmux:open-agent-navigator'),
+      openHub: () => fire('wmux:open-hub'),
       showNotifications: () => onToggleNotifications?.(),
       flashFocused: () => { if (focusedPaneId) fire('wmux:trigger-flash', { paneId: focusedPaneId }); },
       openBrowser: () => onToggleBrowser?.(),
