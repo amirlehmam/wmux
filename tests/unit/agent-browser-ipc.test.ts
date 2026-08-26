@@ -69,6 +69,8 @@ vi.mock('electron', () => ({
 
 import { initPipeBridge } from '../../src/renderer/pipe-bridge';
 import {
+  agentBrowserCurrentUrl,
+  agentBrowserOpen,
   agentBrowserOpenArgv,
   agentBrowserStreamEnv,
   disableAgentBrowser,
@@ -371,5 +373,172 @@ describe('readBackUrl', () => {
   it('has no answer when the invocation failed', () => {
     expect(readBackUrl({ ok: false, spawnFailed: false, data: null, stdout: 'https://a.test/', stderr: '' }))
       .toBeUndefined();
+  });
+});
+
+// ─── main: the two verbs that keep the address bar honest ──────────────────
+//
+// In agent mode the pane's bar could only ever show the last URL the PANE
+// asked for, while the agent navigates the real Chrome independently — so the
+// two drift and the bar reports a page nobody is on. `currentUrl` reads where
+// the session actually is; `open` is its counterpart, replacing the pane's old
+// habit of reusing `enable` to mean "navigate" (which re-acquired the dashboard
+// and re-bound the stream on every address-bar Enter).
+
+describe('agentBrowserCurrentUrl', () => {
+  it('asks the session where it is, by name', async () => {
+    const h = harness({}, async () => okRun(null, 'https://example.com/\n'));
+    const session = h.registry.ensure(SURF);
+
+    expect(await agentBrowserCurrentUrl(SURF, h.deps)).toEqual({ url: 'https://example.com/' });
+    expect(h.calls).toEqual([['--session', session.sessionName, 'get', 'url']]);
+  });
+
+  /**
+   * The argv carries no `--json` today, so the bare line IS the answer — but
+   * with `--json` the url sits at `data.url` inside a `{success, data, error}`
+   * envelope (verified against 0.35.0). Both forms are unwrapped in one place
+   * so adding the flag later cannot silently blank the address bar.
+   */
+  it('reads the --json envelope as readily as the bare line', async () => {
+    const h = harness({}, async () =>
+      okRun({ success: true, data: { url: 'https://a.test/' }, error: null }, 'noise'));
+    h.registry.ensure(SURF);
+    expect(await agentBrowserCurrentUrl(SURF, h.deps)).toEqual({ url: 'https://a.test/' });
+  });
+
+  // A read must never create. `ensureSession` here would start a Chrome for a
+  // pane that is not in agent mode at all.
+  it('answers nothing, and spawns nothing, for a surface with no session', async () => {
+    const h = harness();
+    expect(await agentBrowserCurrentUrl(SURF, h.deps)).toEqual({});
+    expect(h.calls).toEqual([]);
+    expect(h.registry.get(SURF)).toBeUndefined();
+  });
+
+  it('answers nothing when agent-browser is not installed', async () => {
+    const h = harness({ binary: () => null });
+    h.registry.ensure(SURF);
+    expect(await agentBrowserCurrentUrl(SURF, h.deps)).toEqual({});
+    expect(h.calls).toEqual([]);
+  });
+
+  /**
+   * This is POLLED. A transient CLI failure has to degrade to "the bar keeps
+   * its last value", not to a rejected IPC call every few seconds.
+   */
+  it('degrades to no answer rather than throwing', async () => {
+    const h = harness({}, async () => { throw new Error('spawn exploded'); });
+    h.registry.ensure(SURF);
+    await expect(agentBrowserCurrentUrl(SURF, h.deps)).resolves.toEqual({});
+  });
+
+  it('drops a scheme it would not hand back to a webview', async () => {
+    const h = harness({}, async () => okRun(null, 'javascript:alert(1)'));
+    h.registry.ensure(SURF);
+    expect(await agentBrowserCurrentUrl(SURF, h.deps)).toEqual({});
+  });
+});
+
+describe('agentBrowserOpen', () => {
+  it('opens the url against the existing session, pinned to its tab', async () => {
+    const h = harness();
+    const session = h.registry.ensure(SURF);
+
+    expect(await agentBrowserOpen(SURF, 'https://example.com', h.deps)).toEqual({ ok: true });
+    expect(h.calls).toEqual([
+      ['--session', session.sessionName, '--pin-tab', 'open', 'https://example.com'],
+    ]);
+  });
+
+  /**
+   * The whole reason this verb exists: `enable` also acquires a dashboard
+   * reference and relaunches with the stream env, and neither does anything for
+   * a session that is already live — the stream port is read at browser LAUNCH
+   * and cannot be moved afterwards. Both were pure cost on every Enter.
+   */
+  it('takes no dashboard reference and re-binds no stream', async () => {
+    const h = harness();
+    h.registry.ensure(SURF);
+    await agentBrowserOpen(SURF, 'https://example.com', h.deps);
+    expect(h.acquired).toEqual([]);
+    expect(h.envs).toEqual([undefined]);
+  });
+
+  // "Navigate" is meaningless for a surface that is not in agent mode, and
+  // creating a session here would let a stray renderer call start a Chrome for
+  // a pane the user never flipped.
+  it('refuses a surface with no session, and creates none', async () => {
+    const h = harness();
+    expect(await agentBrowserOpen(SURF, 'https://example.com', h.deps)).toEqual({ ok: false });
+    expect(h.calls).toEqual([]);
+    expect(h.registry.get(SURF)).toBeUndefined();
+  });
+
+  /**
+   * This value arrives from the renderer and becomes a POSITIONAL argument to
+   * agent-browser, so anything not anchored to a known scheme would be parsed
+   * as part of the command rather than as a target.
+   */
+  it('refuses anything that is not an anchored, known scheme', async () => {
+    const h = harness();
+    h.registry.ensure(SURF);
+    for (const url of ['--all', '-x', '', 'javascript:alert(1)', 'data:text/html,x', 'example.com']) {
+      expect(await agentBrowserOpen(SURF, url, h.deps)).toEqual({ ok: false });
+    }
+    expect(h.calls).toEqual([]);
+  });
+
+  it('accepts exactly the schemes a read-back url can carry', async () => {
+    const h = harness();
+    h.registry.ensure(SURF);
+    for (const url of ['https://a.test/', 'file:///c:/x.html', 'about:blank']) {
+      expect(await agentBrowserOpen(SURF, url, h.deps)).toEqual({ ok: true });
+    }
+  });
+
+  it('reports a refusal from the CLI as a refusal', async () => {
+    const h = harness({}, async () => ({ ok: false, spawnFailed: false, data: null, stdout: '', stderr: 'no' }));
+    h.registry.ensure(SURF);
+    expect(await agentBrowserOpen(SURF, 'https://a.test/', h.deps)).toEqual({ ok: false });
+  });
+
+  it('does not throw when the spawn itself explodes', async () => {
+    const h = harness({}, async () => { throw new Error('spawn exploded'); });
+    h.registry.ensure(SURF);
+    await expect(agentBrowserOpen(SURF, 'https://a.test/', h.deps)).resolves.toEqual({ ok: false });
+  });
+
+  it('answers false when agent-browser is not installed', async () => {
+    const h = harness({ binary: () => null });
+    h.registry.ensure(SURF);
+    expect(await agentBrowserOpen(SURF, 'https://a.test/', h.deps)).toEqual({ ok: false });
+  });
+});
+
+// ─── main: enable awaits a bindable session ────────────────────────────────
+
+describe('enableAgentBrowser session allocation', () => {
+  /**
+   * The production `ensureSession` probes the stream port before committing to
+   * it (`SessionRegistry.ensureBindable`), which makes it async. A synchronous
+   * stub stays valid — that is what keeps every other test here port-free — but
+   * the async shape has to actually be awaited, or the open would be spawned
+   * against a Promise instead of a session.
+   */
+  it('awaits an async ensureSession', async () => {
+    const h = harness();
+    const registry = h.registry;
+    const deps: AgentBrowserDeps = {
+      ...h.deps,
+      ensureSession: async (id) => {
+        await Promise.resolve();
+        return registry.ensure(id);
+      },
+    };
+    const res = await enableAgentBrowser(SURF, undefined, deps);
+    const session = registry.get(SURF)!;
+    expect(res.sessionName).toBe(session.sessionName);
+    expect(h.calls[0]).toEqual(['--session', session.sessionName, '--pin-tab', 'open']);
   });
 });

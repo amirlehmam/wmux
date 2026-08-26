@@ -17,9 +17,16 @@
  * processes. What is added here — and only here — is the impure half.
  */
 import * as net from 'net';
-import { agentBrowserPath, runAgentBrowser } from './agent-browser-cli';
+import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
 import { DashboardDaemon } from './agent-browser-daemon';
-import { DASHBOARD_PORT, SessionRegistry } from './agent-browser-session';
+import {
+  DASHBOARD_PORT,
+  isWmuxSessionName,
+  SessionRegistry,
+  surfaceIdFromSessionName,
+  type AgentSession,
+} from './agent-browser-session';
+import type { SurfaceId } from '../shared/types';
 
 /**
  * How long to wait for a TCP connect before calling the dashboard absent.
@@ -242,4 +249,357 @@ export function resetDashboardRefs(): void {
   heldFor.clear();
   acquiring.clear();
   cooldownUntil = 0;
+}
+
+// ─── stream-port bindability ───────────────────────────────────────────────
+
+/**
+ * Can a server bind this port on loopback right now?
+ *
+ * The impure half of `SessionRegistry.ensureBindable` — see that method for why
+ * asking at all is necessary. A real `listen`, not a connect probe: "nothing is
+ * listening" and "we are allowed to listen" are different questions, and only
+ * the second one predicts whether agent-browser's stream server will come up.
+ * A port held by a process that accepts no connections, or refused by a
+ * firewall rule, answers the first question misleadingly and the second
+ * correctly.
+ *
+ * `exclusive: true` defeats SO_REUSEADDR-style sharing, so a port another
+ * process already owns reads as taken rather than as a successful bind onto
+ * somebody else's socket. The server is always closed again — this is a test,
+ * not a reservation, and holding it would deny the port to the very session we
+ * are allocating it for.
+ */
+export function probeBindablePort(port: number, host = '127.0.0.1'): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    let settled = false;
+    const done = (bindable: boolean): void => {
+      if (settled) return;
+      settled = true;
+      try {
+        server.close();
+      } catch {
+        /* never listened */
+      }
+      resolve(bindable);
+    };
+    server.once('error', () => done(false));
+    server.once('listening', () => done(true));
+    try {
+      server.listen({ port, host, exclusive: true });
+    } catch {
+      done(false);
+    }
+  });
+}
+
+// ─── teardown ──────────────────────────────────────────────────────────────
+//
+// Sessions are EPHEMERAL (see agent-browser-session.ts): a session's process
+// lifetime equals its surface's lifetime, nothing is persisted, and therefore
+// any `wmux-` session with no live surface is garbage by construction. That
+// invariant is only worth anything if every exit path actually closes what it
+// opened, which is what this section is. The paths are:
+//
+//   • the pane going away        → `closeSessionFor` (ipc-handlers)
+//   • the window/renderer dying  → `closeSessionFor` (ipc-handlers, on
+//                                  webContents 'destroyed')
+//   • app quit                   → `teardownAgentBrowser` below
+//   • a CRASH, which reaches     → `reconcileOrphanSessions` below, at the
+//     none of the above            NEXT startup
+//
+// Issue #139 is the reason the last one exists at all: Windows reparents a
+// dead process's descendants instead of killing them, so a crashed wmux leaves
+// every Chrome it started resident, and a crash-loop multiplies them.
+
+/**
+ * How long one `close` may take before we stop waiting for it.
+ *
+ * Measured against agent-browser 0.35.0, a real `--session <n> close` returns
+ * in ~400ms including the "Browser closed" line, so this is ~7x headroom for a
+ * loaded machine — but it is not sized against the happy path. It is sized
+ * against the failure found in live testing: a session whose daemon was killed
+ * mid-start (`⚠ Daemon version mismatch detected, restarting...`) left `close`
+ * hanging INDEFINITELY while `session list` still reported the session. A
+ * teardown step that can hang forever is not teardown, so every close carries
+ * this deadline and moves on.
+ */
+export const SESSION_CLOSE_TIMEOUT_MS = 3_000;
+
+/** `session list` is a local socket query; it has no reason to be slow. */
+export const SESSION_LIST_TIMEOUT_MS = 5_000;
+
+/**
+ * Hard cap on how long quitting may wait for agent-browser.
+ *
+ * `dashboardDaemon.shutdown()` deliberately waits out an in-flight
+ * `dashboard start`, which can be a 30s Chrome download, and the closes above
+ * each carry their own deadline — so without an aggregate bound the worst case
+ * is a wmux the user cannot quit. Past this point the process exits regardless
+ * and whatever survived becomes the next startup's reconciliation problem,
+ * which is exactly what that pass is for.
+ */
+export const QUIT_TEARDOWN_BUDGET_MS = 5_000;
+
+/**
+ * Resolve `p`, or resolve `fallback` once `ms` has passed — whichever is first.
+ *
+ * The timer is always cleared, including on the fast path: an outstanding
+ * `setTimeout` keeps the event loop alive, and this runs at app quit.
+ */
+export function withDeadline<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const done = (v: T): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const timer = setTimeout(() => done(fallback), ms);
+    // A rejection is the same outcome as a timeout here: nothing was torn down
+    // and there is nothing further this layer can do about it.
+    p.then(done, () => done(fallback));
+  });
+}
+
+/** Everything teardown and reconciliation touch that is not pure. */
+export interface AgentBrowserTeardownDeps {
+  binary: () => string | null;
+  run: (binary: string, argv: string[], timeoutMs: number) => Promise<RunResult>;
+  /** Sessions this process believes it owns. Ground truth for QUIT, not for startup. */
+  listSessions: () => AgentSession[];
+  /** Drop a surface's session from the registry, so a second close is a no-op. */
+  forgetSession: (surfaceId: SurfaceId) => AgentSession | undefined;
+  /** Is this surface's session live right now? Guards reconciliation against a race. */
+  hasSession: (surfaceId: SurfaceId) => boolean;
+  shutdownDashboard: () => Promise<void>;
+  warn?: (message: string) => void;
+}
+
+/** `--session <name> close`. Named rather than surface-keyed, so reconciliation can use it too. */
+export function sessionCloseArgv(sessionName: string): string[] {
+  return ['--session', sessionName, 'close'];
+}
+
+/** `session list --json`. The only ground truth for what survived a crash. */
+export function sessionListArgv(): string[] {
+  return ['session', 'list', '--json'];
+}
+
+/**
+ * Close one session by name, bounded, never throwing.
+ *
+ * ── The hanging-`close` fallback, and why it is "reconcile and move on" ─────
+ * A `close` that never returns is a real, observed state, so the deadline here
+ * is mandatory. What is NOT done on expiry is kill a PID, and that is a
+ * deliberate refusal rather than an omission:
+ *
+ *   • agent-browser exposes no per-session PID. `session list` returns bare
+ *     names (verified against 0.35.0: `{"sessions":["wmux-surf-…"]}`), and
+ *     there is no pid file under its state directory. The only process-level
+ *     handle available is "everything named agent-browser", which would kill
+ *     sessions the user created by hand — the exact boundary the `wmux-`
+ *     prefix rule exists to protect.
+ *   • The daemon is SHARED. The live hang was triggered by a daemon version
+ *     mismatch restart, i.e. by the process that fronts several sessions at
+ *     once. Killing it to free one session takes the others with it.
+ *   • Because sessions are ephemeral, a survivor is not permanent damage: it
+ *     has no live surface, so the next launch's `reconcileOrphanSessions`
+ *     classifies it as garbage and closes it. The cost of waiting is one
+ *     leaked Chrome until then; the cost of guessing a PID is somebody else's
+ *     browser. Leaking is recoverable, killing the wrong process is not.
+ */
+export async function closeSessionByName(
+  sessionName: string,
+  deps: AgentBrowserTeardownDeps,
+  timeoutMs: number = SESSION_CLOSE_TIMEOUT_MS,
+): Promise<boolean> {
+  const binary = deps.binary();
+  if (!binary) return false;
+  // Two deadlines, not one. The inner `timeoutMs` is the CLI's own (it kills
+  // the child); `withDeadline` additionally bounds the PROMISE, so a `run`
+  // that never settles — a wedged pipe, a mocked seam, a future rewrite —
+  // still cannot hold teardown open.
+  const res = await withDeadline(
+    deps.run(binary, sessionCloseArgv(sessionName), timeoutMs).catch(() => null),
+    timeoutMs,
+    null,
+  );
+  if (res?.ok) return true;
+  deps.warn?.(`[wmux] agent-browser: could not close session ${sessionName}`);
+  return false;
+}
+
+/**
+ * Close the session belonging to one surface. Idempotent.
+ *
+ * The registry entry is dropped BEFORE the CLI call, not after. A close takes
+ * hundreds of milliseconds and this is invoked from event handlers that can
+ * fire twice for one surface (an unmount racing a window teardown); forgetting
+ * first makes the second call see no session and return immediately, instead of
+ * launching a second `close` against the same name.
+ */
+export async function closeSessionFor(
+  surfaceId: SurfaceId,
+  deps: AgentBrowserTeardownDeps,
+  timeoutMs: number = SESSION_CLOSE_TIMEOUT_MS,
+): Promise<boolean> {
+  const session = deps.forgetSession(surfaceId);
+  if (!session) return false;
+  return closeSessionByName(session.sessionName, deps, timeoutMs);
+}
+
+/**
+ * Close every session this process owns, then stop the dashboard. For quit.
+ *
+ * Closes run CONCURRENTLY and through `allSettled`: one wedged session must not
+ * decide whether the other nine get closed, and it must not cost the dashboard
+ * its shutdown either — which is why the daemon step is sequenced after the
+ * closes with its own share of the budget rather than being part of the same
+ * race. The registry is drained by `closeSessionFor` as it goes, so a second
+ * teardown (Electron re-emits `will-quit` after a `preventDefault`) finds
+ * nothing to do.
+ */
+export async function teardownAgentBrowser(
+  deps: AgentBrowserTeardownDeps,
+  budgetMs: number = QUIT_TEARDOWN_BUDGET_MS,
+  now: () => number = Date.now,
+): Promise<void> {
+  const deadline = now() + budgetMs;
+  const sessions = deps.listSessions();
+  if (sessions.length > 0) {
+    await withDeadline(
+      Promise.allSettled(
+        sessions.map((s) => closeSessionFor(s.surfaceId, deps, Math.min(SESSION_CLOSE_TIMEOUT_MS, budgetMs))),
+      ).then(() => undefined),
+      budgetMs,
+      undefined,
+    );
+  }
+  // Whatever the closes did, the dashboard still has to come down — it is a
+  // separate process with its own refcount, and quit is the last chance.
+  // `Math.max(…, 1)` so an already-exhausted budget still ATTEMPTS the stop
+  // rather than skipping it on a zero-length race.
+  const left = Math.max(deadline - now(), 1);
+  await withDeadline(deps.shutdownDashboard().catch(() => undefined), left, undefined);
+}
+
+/**
+ * Session names out of a `session list` result, whichever form it took.
+ *
+ * `--json` gives `{success, data:{sessions:[…]}}` (verified against 0.35.0);
+ * the bare form prints `Active sessions:` followed by one indented name per
+ * line, or `No active sessions`. Both are parsed because the argv is one
+ * `--json` away from changing and a parser that silently returns nothing would
+ * turn reconciliation into a no-op without failing anything.
+ *
+ * Everything returned here is UNTRUSTED input — a machine-global namespace any
+ * tool can write into — so this deliberately does no filtering of its own.
+ * Deciding what is wmux's to close is `isWmuxSessionName`'s single job.
+ */
+export function parseSessionList(res: Pick<RunResult, 'data' | 'stdout'>): string[] {
+  const payload = unwrapAgentData(res as RunResult) as { sessions?: unknown } | null;
+  const fromJson = payload?.sessions;
+  if (Array.isArray(fromJson)) return fromJson.filter((s): s is string => typeof s === 'string');
+  const names: string[] = [];
+  for (const line of (res.stdout ?? '').split(/\r?\n/)) {
+    // Only INDENTED lines are names; `Active sessions:` and `No active
+    // sessions` sit at column zero and must not be read as one.
+    if (!/^\s+\S/.test(line)) continue;
+    const name = line.trim();
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Close everything a previous wmux left behind. Runs at startup.
+ *
+ * Ground truth is `agent-browser session list`, never the registry: the
+ * registry is in-memory and starts EMPTY after a crash, so the sessions that
+ * actually survived are precisely the ones it cannot see. Every `wmux-` session
+ * found is garbage by the ephemeral invariant — a wmux session with no live
+ * surface cannot legitimately exist — and everything else is untouchable.
+ *
+ * The `hasSession` check is not redundant with "the registry starts empty":
+ * this runs unawaited alongside session restore, so a pane restored in agent
+ * mode can mint `wmux-surf-X` while the list is still in flight. Re-asking the
+ * registry immediately before each close is what keeps reconciliation from
+ * closing a session this run just created.
+ */
+export async function reconcileOrphanSessions(
+  deps: AgentBrowserTeardownDeps,
+): Promise<string[]> {
+  const binary = deps.binary();
+  // Nothing installed ⇒ nothing could have been started ⇒ nothing to reconcile.
+  // Checked first so a machine without agent-browser pays literally nothing.
+  if (!binary) return [];
+
+  const listed = await withDeadline(
+    deps.run(binary, sessionListArgv(), SESSION_LIST_TIMEOUT_MS).catch(() => null),
+    SESSION_LIST_TIMEOUT_MS,
+    null,
+  );
+  if (!listed?.ok) return [];
+
+  const closed: string[] = [];
+  for (const name of parseSessionList(listed)) {
+    // THE security boundary. A session without the wmux prefix belongs to a
+    // human or another tool and is never wmux's to close, whatever else is
+    // true about it.
+    if (!isWmuxSessionName(name)) continue;
+    const surfaceId = surfaceIdFromSessionName(name);
+    if (surfaceId && deps.hasSession(surfaceId)) continue; // this run's, not a leftover
+    if (await closeSessionByName(name, deps)) closed.push(name);
+  }
+  if (closed.length > 0) {
+    deps.warn?.(`[wmux] closed ${closed.length} agent-browser session(s) orphaned by a previous run (issue #139)`);
+  }
+  return closed;
+}
+
+/**
+ * The real machine behind `AgentBrowserTeardownDeps`.
+ *
+ * Lives here rather than in ipc-handlers.ts for the reason the whole module
+ * does: the registry and the daemon are singletons, and teardown is reached
+ * from BOTH ipc-handlers (surface close) and index.ts (quit, startup). A second
+ * copy of this object would be a second opinion about which sessions exist.
+ */
+export const agentBrowserTeardownDeps: AgentBrowserTeardownDeps = {
+  binary: () => agentBrowserPath(),
+  run: (binary, argv, timeoutMs) => runAgentBrowser(binary, argv, timeoutMs),
+  listSessions: () => sessionRegistry.all(),
+  forgetSession: (surfaceId) => sessionRegistry.release(surfaceId),
+  hasSession: (surfaceId) => sessionRegistry.get(surfaceId) !== undefined,
+  shutdownDashboard: () => dashboardDaemon.shutdown(),
+  warn: (message) => console.warn(message),
+};
+
+/**
+ * Is there anything for quit to tear down?
+ *
+ * Quit has to hand control to an async teardown to close sessions, which means
+ * `preventDefault()`ing `will-quit` and re-entering it. That is a real (if
+ * small) risk to take on every quit, and there is no reason to take it on the
+ * overwhelmingly common machine that has never opened an agent-mode pane: no
+ * sessions and no dashboard means teardown has literally nothing to do.
+ */
+export function agentBrowserNeedsTeardown(): boolean {
+  return sessionRegistry.size > 0 || dashboardDaemon.isAvailable;
+}
+
+/**
+ * A session for this surface whose stream port the OS agreed we could bind.
+ *
+ * The one production caller of `SessionRegistry.ensureBindable`; `v2-browser.ts`
+ * stays on the synchronous `ensure()` because it only needs a NAME to route a
+ * verb, while this is the path that actually launches a browser with
+ * `AGENT_BROWSER_STREAM_PORT` set and therefore the only one where the port has
+ * to be real.
+ */
+export function ensureBindableSession(surfaceId: SurfaceId): Promise<AgentSession> {
+  return sessionRegistry.ensureBindable(surfaceId, (port) => probeBindablePort(port));
 }

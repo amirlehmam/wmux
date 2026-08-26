@@ -97,6 +97,86 @@ export function resolveInputUrl(input: string): string {
 /** Agent-mode lifecycle, as far as this pane is concerned. */
 type AgentStatus = 'idle' | 'starting' | 'live' | 'setup' | 'no-dashboard';
 
+/**
+ * How often the address bar re-asks the session where Chrome actually is.
+ *
+ * In agent mode the bar can only otherwise show the last URL the PANE asked
+ * for, and the agent navigates on its own — so without a poll the bar reports a
+ * page nobody is on for as long as the pane is open.
+ *
+ * 3s, chosen against the two costs. Each poll is a real agent-browser
+ * invocation, measured at ~170ms against 0.35.0 for a `get url` on a live
+ * session, so 3s is a ~6% duty cycle for one visible agent pane — noticeable if
+ * it ran unconditionally, which is why it does not (see `shouldPollAgentUrl`:
+ * agent mode only, visible only, never overlapping itself). Going slower makes
+ * the bar visibly wrong after a click; going faster buys accuracy nobody reads,
+ * since this is a status readout and not a control.
+ *
+ * Issue #141 is the reason this is a constant and not a nice round 2000 pulled
+ * out of a hook: there, a 2s poll ran at RENDER speed because an unstable
+ * `useT()` identity invalidated its dependency array every commit. The effect
+ * driving this interval depends on primitives only — engine, status, surfaceId
+ * — and calls nothing it closes over from render.
+ */
+export const AGENT_URL_POLL_MS = 3_000;
+
+/**
+ * How long after the pane asks for a URL the poll stops being believed.
+ *
+ * `open` is asynchronous and Chrome takes a moment to commit the navigation, so
+ * a poll landing in that window reports the page the user just navigated AWAY
+ * from — and the bar would visibly snap back to it. Slightly longer than one
+ * poll interval would be wasteful; slightly less than one is enough, because
+ * the tick after that reads the real answer either way.
+ */
+export const AGENT_URL_POLL_SUPPRESS_MS = 2_000;
+
+/** Statuses in which a session exists and can be asked where it is. */
+const POLLABLE_STATUSES: ReadonlySet<string> = new Set(['live', 'no-dashboard']);
+
+/**
+ * Should this tick actually spend an agent-browser invocation?
+ *
+ * Pure, so every reason to skip is testable without a timer, a webview or a
+ * preload bridge — and so the list of reasons is readable in one place rather
+ * than spread across an effect body.
+ */
+export function shouldPollAgentUrl(s: {
+  engine: BrowserEngine;
+  status: string;
+  /** The whole window is minimised/backgrounded — nobody is reading anything. */
+  documentHidden: boolean;
+  /** This pane is a hidden keep-alive tab, or an overlaid one. */
+  paneHidden: boolean;
+  /** A previous poll has not answered yet; a second would just queue behind it. */
+  inFlight: boolean;
+  now: number;
+  suppressUntil: number;
+}): boolean {
+  if (s.engine !== 'agent') return false;
+  if (!POLLABLE_STATUSES.has(s.status)) return false;
+  if (s.documentHidden || s.paneHidden) return false;
+  if (s.inFlight) return false;
+  return s.now >= s.suppressUntil;
+}
+
+/**
+ * Is this element not being shown? Used to keep hidden tabs from polling.
+ *
+ * wmux's keep-alive tabs stay mounted and are hidden with `visibility`, which
+ * `offsetParent` does NOT report — hence `checkVisibility`, which does, with
+ * the older property as the fallback for environments that lack it (jsdom).
+ * A missing element answers "not hidden": that is the first-render case, and
+ * suppressing the first poll of a pane the user is looking at would be the
+ * wrong way to be wrong.
+ */
+export function elementHidden(el: HTMLElement | null | undefined): boolean {
+  if (!el) return false;
+  const check = (el as { checkVisibility?: (o?: unknown) => boolean }).checkVisibility;
+  if (typeof check === 'function') return !check.call(el, { visibilityProperty: true });
+  return el.offsetParent === null;
+}
+
 export default function BrowserPane({
   initialUrl = 'https://github.com/amirlehmam/wmux',
   surfaceId,
@@ -161,14 +241,37 @@ export default function BrowserPane({
     };
   }, []);
 
+  // Poll bookkeeping. Refs rather than state on purpose: neither value is
+  // rendered, and putting them in state would re-render the pane (and churn the
+  // interval effect's dependencies) on every tick — the shape of #141.
+  const pollInFlightRef = useRef(false);
+  const suppressPollUntilRef = useRef(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+
   /**
-   * Ask the agent-browser session to open a URL. `enable` is the sanctioned
-   * renderer-side way to do this — it runs `open <url>` against the session and
-   * is idempotent per surface — so the pane needs no second IPC surface for it.
+   * Ask the agent-browser session to open a URL.
+   *
+   * `open`, not `enable`. This used to reuse `enable` because it was the only
+   * verb the renderer had, but `enable` also acquires a dashboard reference and
+   * relaunches with the stream env — neither of which does anything for a
+   * session that is already live, since the stream port is read at browser
+   * launch and cannot be moved afterwards. `enable` stays as the FALLBACK for
+   * the one case `open` legitimately refuses: no session yet, because the user
+   * typed a URL while the flip into agent mode was still in flight.
    */
-  const openInAgent = useCallback((url: string) => {
+  const openInAgent = useCallback(async (url: string) => {
     setAgentUrl(url);
-    window.wmux?.agentBrowser?.enable(surfaceId, url)?.catch?.(() => {});
+    // The page is about to change; a poll that lands before Chrome commits
+    // would report where we came FROM and snap the bar back to it.
+    suppressPollUntilRef.current = Date.now() + AGENT_URL_POLL_SUPPRESS_MS;
+    const api = window.wmux?.agentBrowser;
+    try {
+      const res = await api?.open?.(surfaceId, url);
+      if (res?.ok) return;
+      await api?.enable?.(surfaceId, url);
+    } catch {
+      /* the bar already shows the intent; nothing here can recover a dead CLI */
+    }
   }, [surfaceId]);
 
   const navigate = useCallback((newUrl: string) => {
@@ -177,7 +280,7 @@ export default function BrowserPane({
     // stays on the dashboard; navigating it would throw away the viewer the
     // user just asked to watch.
     if (engineRef.current === 'agent') {
-      openInAgent(resolved);
+      openInAgent(resolved).catch(() => {});
       return;
     }
     // Single navigation. loadURL can still reject with ERR_ABORTED for genuine
@@ -404,6 +507,53 @@ export default function BrowserPane({
     else if (decision.action === 'disable') void leaveAgentMode();
   }, [engine, enterAgentMode, leaveAgentMode]);
 
+  // ── keeping the address bar honest ────────────────────────────────────────
+  //
+  // The agent drives a Chrome outside wmux, so the pane cannot observe its
+  // navigation the way it observes the webview's. Without this the bar shows
+  // the last URL the PANE asked for — which is a lie the moment the agent
+  // clicks anything.
+  //
+  // Dependencies are three primitives and nothing else. That is the #141
+  // lesson, stated as code: a poll whose effect depends on a callback or a hook
+  // result gets torn down and re-created on every commit, and a 3s interval
+  // that is re-armed at render speed is a render-speed poll.
+  useEffect(() => {
+    if (engine !== 'agent' || !POLLABLE_STATUSES.has(agentStatus)) return;
+    let cancelled = false;
+
+    const tick = async (): Promise<void> => {
+      const decide = shouldPollAgentUrl({
+        engine,
+        status: agentStatus,
+        documentHidden: typeof document !== 'undefined' && document.visibilityState === 'hidden',
+        paneHidden: elementHidden(rootRef.current),
+        inFlight: pollInFlightRef.current,
+        now: Date.now(),
+        suppressUntil: suppressPollUntilRef.current,
+      });
+      if (!decide) return;
+      pollInFlightRef.current = true;
+      try {
+        const res = await window.wmux?.agentBrowser?.currentUrl?.(surfaceId);
+        // A URL we could not read leaves the bar showing its last value. That
+        // is the honest degradation: the alternative is blanking the bar every
+        // time one invocation fails.
+        if (!cancelled && res?.url) setAgentUrl((prev) => (prev === res.url ? prev : res.url as string));
+      } catch {
+        /* see above */
+      } finally {
+        pollInFlightRef.current = false;
+      }
+    };
+
+    const timer = setInterval(() => { tick().catch(() => {}); }, AGENT_URL_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [engine, agentStatus, surfaceId]);
+
   // A pane that goes away in agent mode still owns a Chrome and a dashboard
   // refcount. `disable` is idempotent, so calling it for a pane that was never
   // enabled is a no-op rather than something to guard against.
@@ -428,7 +578,7 @@ export default function BrowserPane({
   const overlay = isAgent && (agentStatus === 'setup' || agentStatus === 'no-dashboard');
 
   return (
-    <div className="browser-pane" onMouseDownCapture={claimCdp}>
+    <div className="browser-pane" ref={rootRef} onMouseDownCapture={claimCdp}>
       <AddressBar
         url={isAgent ? agentUrl : currentUrl}
         isLoading={isLoading}

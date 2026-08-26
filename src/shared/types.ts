@@ -474,15 +474,26 @@ export const IPC_CHANNELS = {
    * agent-browser engine control for ONE browser surface (renderer → main).
    *
    * Distinct from the `browser.*`/CDP channels above, which run a verb against
-   * whichever engine a surface already has: these four change WHICH engine it
-   * has, plus the install flow that makes `agent` reachable at all. The renderer
+   * whichever engine a surface already has: these change WHICH engine it has,
+   * plus the install flow that makes `agent` reachable at all. The renderer
    * cannot do any of it itself — the binary, the session registry and the
    * dashboard refcount all live in main.
+   *
+   * `CURRENT_URL` and `OPEN` are the two exceptions to that framing, and they
+   * exist because the pane's address bar was lying. In agent mode the bar can
+   * only show the last URL the PANE asked for, while the agent navigates the
+   * real Chrome independently — so the two drift and the bar reports a page
+   * nobody is on. `CURRENT_URL` reads where the session actually is.
+   * `OPEN` is its counterpart: the pane used to reuse `ENABLE` to mean
+   * "navigate", which re-acquired the dashboard and re-bound the stream on
+   * every address-bar Enter.
    */
   AGENT_BROWSER_ENABLE: 'agent-browser:enable',
   AGENT_BROWSER_DISABLE: 'agent-browser:disable',
   AGENT_BROWSER_STATUS: 'agent-browser:status',
   AGENT_BROWSER_INSTALL: 'agent-browser:install',
+  AGENT_BROWSER_CURRENT_URL: 'agent-browser:current-url',
+  AGENT_BROWSER_OPEN: 'agent-browser:open',
   // Active workspace query (renderer → main)
   GET_ACTIVE_WORKSPACE: 'get-active-workspace',
   // Hook events (Claude Code hooks → main → renderer)

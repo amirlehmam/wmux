@@ -5,7 +5,11 @@ import {
   engineTransition,
   enableOutcome,
   disableTarget,
+  elementHidden,
   resolveInputUrl,
+  shouldPollAgentUrl,
+  AGENT_URL_POLL_MS,
+  AGENT_URL_POLL_SUPPRESS_MS,
 } from '../../src/renderer/components/Browser/BrowserPane';
 import { en } from '../../src/renderer/i18n/locales/en';
 import { fr } from '../../src/renderer/i18n/locales/fr';
@@ -480,5 +484,197 @@ describe('i18n coverage for the new UI', () => {
         expect(m[1].split(',').map((d) => d.trim())).not.toContain('t');
       }
     }
+  });
+});
+
+// ── the address bar, in agent mode, telling the truth ───────────────────────
+//
+// The pane shows agent-browser's dashboard while the actual page lives in a
+// Chrome outside wmux that the AGENT drives. So the bar cannot observe
+// navigation the way it observes the webview's: left alone it shows the last
+// URL the PANE asked for, which stops being true the moment the agent clicks
+// anything. These pin the poll that fixes it — and, just as importantly, the
+// conditions under which it refuses to run.
+
+const pollState = (over: Partial<Parameters<typeof shouldPollAgentUrl>[0]> = {}) => ({
+  engine: 'agent' as const,
+  status: 'live',
+  documentHidden: false,
+  paneHidden: false,
+  inFlight: false,
+  now: 10_000,
+  suppressUntil: 0,
+  ...over,
+});
+
+describe('shouldPollAgentUrl', () => {
+  it('polls a live, visible agent pane', () => {
+    expect(shouldPollAgentUrl(pollState())).toBe(true);
+  });
+
+  // Each poll is a real agent-browser invocation. A web pane has a webview
+  // whose URL it can simply read, so spending a child process there would be
+  // pure waste answering a question already answered.
+  it('never polls the web engine', () => {
+    expect(shouldPollAgentUrl(pollState({ engine: 'web' }))).toBe(false);
+  });
+
+  it('does not poll before a session exists', () => {
+    for (const status of ['idle', 'starting', 'setup']) {
+      expect(shouldPollAgentUrl(pollState({ status }))).toBe(false);
+    }
+  });
+
+  /**
+   * A dashboard that did not start is not a session that did not start —
+   * agent-browser drives Chrome perfectly well without its viewer, and the bar
+   * above that pane is exactly as capable of lying.
+   */
+  it('still polls when only the dashboard is missing', () => {
+    expect(shouldPollAgentUrl(pollState({ status: 'no-dashboard' }))).toBe(true);
+  });
+
+  it('does not poll a minimised window or a hidden keep-alive tab', () => {
+    expect(shouldPollAgentUrl(pollState({ documentHidden: true }))).toBe(false);
+    expect(shouldPollAgentUrl(pollState({ paneHidden: true }))).toBe(false);
+  });
+
+  // A second request would queue behind the first and buy nothing; if the CLI
+  // is slower than the interval, that is precisely when NOT to pile on.
+  it('does not overlap itself', () => {
+    expect(shouldPollAgentUrl(pollState({ inFlight: true }))).toBe(false);
+  });
+
+  /**
+   * `open` is asynchronous and Chrome takes a moment to commit, so a poll
+   * landing in that window reports the page the user just navigated AWAY from
+   * and the bar visibly snaps back to it.
+   */
+  it('is suppressed for a moment after the pane asks for a url', () => {
+    expect(shouldPollAgentUrl(pollState({ now: 10_000, suppressUntil: 11_000 }))).toBe(false);
+    expect(shouldPollAgentUrl(pollState({ now: 11_000, suppressUntil: 11_000 }))).toBe(true);
+  });
+
+  it('suppresses for less than a full interval, so no tick is lost outright', () => {
+    expect(AGENT_URL_POLL_SUPPRESS_MS).toBeLessThan(AGENT_URL_POLL_MS);
+  });
+
+  /**
+   * Issue #141 was a 2s poll that ran at RENDER speed because an unstable hook
+   * identity invalidated its dependency array. The interval here is a named
+   * constant so the number is reviewable, and deliberately not sub-second: this
+   * is a status readout, not a control.
+   */
+  it('polls on a human timescale, not a render timescale', () => {
+    expect(AGENT_URL_POLL_MS).toBeGreaterThanOrEqual(1_000);
+    expect(AGENT_URL_POLL_MS).toBeLessThanOrEqual(5_000);
+  });
+});
+
+describe('elementHidden', () => {
+  // wmux's keep-alive tabs stay MOUNTED and are hidden with `visibility`, which
+  // offsetParent does not report — hence checkVisibility, which does.
+  it('believes checkVisibility when the platform has it', () => {
+    expect(elementHidden({ checkVisibility: () => false } as unknown as HTMLElement)).toBe(true);
+    expect(elementHidden({ checkVisibility: () => true } as unknown as HTMLElement)).toBe(false);
+  });
+
+  it('asks about the visibility property, not just layout', () => {
+    let asked: unknown;
+    elementHidden({ checkVisibility: (o: unknown) => { asked = o; return true; } } as unknown as HTMLElement);
+    expect(asked).toEqual({ visibilityProperty: true });
+  });
+
+  it('falls back to offsetParent where checkVisibility is absent', () => {
+    expect(elementHidden({ offsetParent: null } as unknown as HTMLElement)).toBe(true);
+    expect(elementHidden({ offsetParent: {} } as unknown as HTMLElement)).toBe(false);
+  });
+
+  // First render, before the ref lands. Suppressing the first poll of a pane
+  // the user is looking at is the wrong way to be wrong.
+  it('treats a missing element as visible', () => {
+    expect(elementHidden(null)).toBe(false);
+    expect(elementHidden(undefined)).toBe(false);
+  });
+});
+
+describe('the url poll, as wired', () => {
+  /** The `useEffect(...)` block that owns the interval, up to its deps array. */
+  const pollEffect = (): string => {
+    const start = PANE.indexOf('const tick = async ()');
+    expect(start, 'the poll effect is not in this file any more').toBeGreaterThan(-1);
+    const end = PANE.indexOf('}, [', start);
+    expect(end, 'the poll effect has no dependency array').toBeGreaterThan(start);
+    return stripComments(PANE.slice(start, end + 40));
+  };
+
+  /**
+   * THE #141 guard, and the reason this test is source-level rather than
+   * behavioural: the bug was never in what the poll did, it was in how often
+   * the effect owning it was re-created. Every dependency here must be a
+   * primitive that changes only when the pane's situation really changes — no
+   * callbacks, no hook results, no objects.
+   */
+  it('depends on primitives only, so it is not re-armed every commit', () => {
+    expect(pollEffect()).toContain('}, [engine, agentStatus, surfaceId]');
+  });
+
+  it('names no callback among its dependencies', () => {
+    // A callback in the array is the exact shape of #141: `useCallback` is only
+    // as stable as ITS own deps, and one unstable link re-arms the interval.
+    const deps = /\}, \[([^\]]*)\]/.exec(pollEffect())?.[1] ?? '';
+    for (const name of ['navigate', 'openInAgent', 'enterAgentMode', 'leaveAgentMode', 't']) {
+      expect(deps.split(',').map((d) => d.trim())).not.toContain(name);
+    }
+  });
+
+  it('clears its interval on teardown, and ignores an answer that arrives after', () => {
+    const body = pollEffect();
+    expect(body).toContain('clearInterval(timer)');
+    expect(body).toContain('cancelled = true');
+    expect(body).toContain('if (!cancelled && res?.url)');
+  });
+
+  it('decides whether to spend an invocation through the pure helper', () => {
+    expect(pollEffect()).toContain('shouldPollAgentUrl({');
+    expect(pollEffect()).toContain('paneHidden: elementHidden(rootRef.current)');
+  });
+
+  it('leaves the last known url alone when a poll cannot answer', () => {
+    // No clearing branch: a failed invocation must not blank an address bar
+    // that was correct a moment ago.
+    expect(pollEffect()).not.toMatch(/setAgentUrl\(''\)|setAgentUrl\(undefined\)/);
+  });
+});
+
+describe('address-bar navigation in agent mode', () => {
+  /**
+   * The pane used to reuse `enable` to mean "navigate", which re-acquired the
+   * dashboard and re-launched with the stream env on every Enter — neither of
+   * which does anything for a session that is already live, since the stream
+   * port is read at browser LAUNCH and cannot be moved afterwards.
+   */
+  it('goes through the dedicated open verb', () => {
+    const body = callbackBody(PANE, 'openInAgent');
+    expect(body).toContain('api?.open?.(surfaceId, url)');
+    expect(body.indexOf('api?.open?.')).toBeLessThan(body.indexOf('api?.enable?.'));
+  });
+
+  // `open` requires an EXISTING session, and the user can type a URL while the
+  // flip into agent mode is still in flight. That is the one case where the
+  // heavier verb is the right answer rather than a wasteful one.
+  it('falls back to enable only when open refuses', () => {
+    const body = callbackBody(PANE, 'openInAgent');
+    expect(body).toMatch(/if \(res\?\.ok\) return;\s*await api\?\.enable\?\.\(surfaceId, url\);/);
+  });
+
+  it('suppresses the poll while the navigation commits', () => {
+    expect(callbackBody(PANE, 'openInAgent'))
+      .toContain('suppressPollUntilRef.current = Date.now() + AGENT_URL_POLL_SUPPRESS_MS');
+  });
+
+  it('shows the requested url immediately rather than waiting for a poll', () => {
+    const body = callbackBody(PANE, 'openInAgent');
+    expect(body.indexOf('setAgentUrl(url)')).toBeLessThan(body.indexOf('api?.open?.'));
   });
 });

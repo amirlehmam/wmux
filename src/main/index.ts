@@ -5,6 +5,13 @@ import { handleDetectionV2 } from './detection-rpc';
 import { isPtyCrashGuardInstalled } from './pty-manager';
 import { logDiagnostic } from './crash-diagnostics';
 import { handleBrowserV2 } from './v2-browser';
+import {
+  agentBrowserNeedsTeardown,
+  agentBrowserTeardownDeps,
+  QUIT_TEARDOWN_BUDGET_MS,
+  reconcileOrphanSessions,
+  teardownAgentBrowser,
+} from './agent-browser-runtime';
 import { handleBridgeV2 } from './v2-bridge';
 import { distributeAgents } from './agent-manager';
 import { PipeServer } from './pipe-server';
@@ -598,6 +605,23 @@ app.whenReady().then(() => {
   // PTYs about to be created, and the reap itself is async and unawaited so
   // startup never blocks on it.
   reapOrphanedPtys();
+
+  // The agent-browser half of the same problem. A crashed wmux leaves its
+  // sessions' Chromes resident for exactly the reason its PTY subtrees survive
+  // above, and the in-memory SessionRegistry starts empty, so those survivors
+  // are invisible to this process — ground truth is `agent-browser session
+  // list`. Sessions are ephemeral by design, so every `wmux-` session with no
+  // live surface is garbage; nothing without that prefix is ever touched.
+  //
+  // Unawaited, and it exits immediately when agent-browser is not installed, so
+  // a machine that has never used the feature pays one function call. Ordered
+  // before the restore below for the same tidiness reason the PTY reap is —
+  // and `reconcileOrphanSessions` re-checks the registry immediately before
+  // each close, so a pane restored into agent mode while the list is in flight
+  // cannot be swept up by it.
+  reconcileOrphanSessions(agentBrowserTeardownDeps).catch((err: Error) => {
+    console.warn('[wmux] agent-browser session reconcile failed:', err?.message);
+  });
 
   // Clear stale session data on version change (clean start for upgrades/fresh installs)
   handleVersionChange(app.getVersion());
@@ -1296,16 +1320,53 @@ app.on('browser-window-created', (_event, win) => {
   });
 });
 
-app.on('will-quit', () => {
+/**
+ * Whether the agent-browser teardown pass has already been started.
+ *
+ * `will-quit` is SYNCHRONOUS, and closing an agent-browser session is not: it
+ * is a child process per session plus a dashboard stop. The only way to do it
+ * at quit is to `preventDefault()` the first pass, run the async teardown, and
+ * call `app.quit()` again — so this flag is what keeps the second pass from
+ * preventing the quit it was asked to complete. Everything else in the handler
+ * is idempotent by inspection (`killAll` on an empty map; every `stop()` here
+ * nulls what it closed), so the second pass repeating them is a no-op.
+ */
+let agentBrowserTornDown = false;
+
+app.on('will-quit', (event) => {
   logDiagnostic('will-quit', { ptys: ptyManager.count(), guard: isPtyCrashGuardInstalled() });
   // Kill all PTYs before anything else tears down. Without this, node-pty's
   // libuv async handles (batons) are still pending when the process exits,
   // triggering the "Assertion failed: remove_pty_baton" MSVC runtime error.
+  //
+  // Deliberately still FIRST, ahead of the deferral below: #150 is about these
+  // callbacks firing while the environment is healthy, so nothing may push
+  // them later than they happen today.
   ptyManager.killAll();
   pipeServer.stop();
   cdpProxy.stop();
   portScanner.stop();
   sshDetector.stop();
+
+  // Sessions are ephemeral (agent-browser-session.ts): quit is the moment every
+  // one of them stops being legitimate. Not closing them here leaks a Chrome
+  // per agent pane — on Windows a dead parent does not take its descendants
+  // with it, which is the whole of issue #139.
+  if (agentBrowserTornDown || !agentBrowserNeedsTeardown()) return;
+  agentBrowserTornDown = true;
+  event.preventDefault();
+
+  // Bounded twice over. `teardownAgentBrowser` caps itself, and this timer caps
+  // IT — because the one outcome worse than leaking a browser is a wmux the
+  // user cannot quit. `app.exit()` rather than `app.quit()` on that path: quit
+  // would re-enter this handler and there is nothing left for it to do, since
+  // every step above has already run.
+  const forceQuit = setTimeout(() => app.exit(0), QUIT_TEARDOWN_BUDGET_MS + 2_000);
+  const finish = (): void => {
+    clearTimeout(forceQuit);
+    app.quit();
+  };
+  teardownAgentBrowser(agentBrowserTeardownDeps).then(finish, finish);
 });
 
 app.on('window-all-closed', () => {

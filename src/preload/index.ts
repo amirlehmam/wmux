@@ -344,6 +344,22 @@ contextBridge.exposeInMainWorld('wmux', {
     /** Close the session, returning where it was so `web` can pick up there. Safe to call twice. */
     disable: (surfaceId: string): Promise<{ url?: string }> =>
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_DISABLE, surfaceId),
+    /**
+     * Where the session's Chrome actually is. `{}` when it cannot be read.
+     *
+     * The pane polls this in agent mode because the agent navigates the real
+     * browser on its own, so the last URL the PANE asked for stops being true
+     * the moment it does — and the address bar would go on showing it.
+     */
+    currentUrl: (surfaceId: string): Promise<{ url?: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_CURRENT_URL, surfaceId),
+    /**
+     * Navigate an already-live session. Not `enable`: this neither re-acquires
+     * the dashboard nor re-binds the stream, both of which `enable` does and
+     * neither of which navigation needs.
+     */
+    open: (surfaceId: string, url: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_OPEN, surfaceId, url),
     /** Open a terminal pane running the install, so its output is readable. */
     install: (): Promise<{ started: boolean }> =>
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_INSTALL),
