@@ -1,6 +1,41 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as net from 'net';
 
+/** An ephemeral port with nothing on it — bind, read the number, release. */
+async function unusedPort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+  const { port } = probe.address() as net.AddressInfo;
+  await new Promise<void>((r) => probe.close(() => r()));
+  return port;
+}
+
+/**
+ * Bind the REAL dashboard port for the two tests that exercise the `start`
+ * hook, which probes 4848 internally and so cannot be pointed elsewhere.
+ *
+ * A developer actually using agent mode has a dashboard on 4848, and the bare
+ * failure is an unhandled `EADDRINUSE` with no hint of what to do about it.
+ * Turn that into a sentence that names the fix.
+ */
+async function listenOnDashboardPort(server: net.Server): Promise<void> {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(4848, '127.0.0.1', () => resolve());
+    });
+  } catch (err: any) {
+    if (err?.code === 'EADDRINUSE') {
+      throw new Error(
+        'Port 4848 is already in use, so this test cannot bind it. An agent-browser ' +
+        'dashboard is probably running — stop it with `agent-browser dashboard stop` ' +
+        'and re-run. (This test exercises the start hook, which probes 4848 directly.)',
+      );
+    }
+    throw err;
+  }
+}
+
 /**
  * The dashboard daemon is the real one, driven through a stubbed `acquire` /
  * `release` so these tests exercise the per-surface bookkeeping rather than
@@ -211,7 +246,7 @@ describe('the dashboard start hook', () => {
     env.runImpl = () => new Promise(() => {});
 
     const server = net.createServer();
-    await new Promise<void>((r) => server.listen(4848, '127.0.0.1', r));
+    await listenOnDashboardPort(server);
     try {
       const started = Date.now();
       expect(await startHook()()).toBe(true);
@@ -228,7 +263,9 @@ describe('the dashboard start hook', () => {
 
     const server = net.createServer();
     // The measured shape: process gone long before the socket is listening.
-    const listening = new Promise<void>((r) => setTimeout(() => server.listen(4848, '127.0.0.1', r), 600));
+    const listening = new Promise<void>((r) => {
+      setTimeout(() => { listenOnDashboardPort(server).then(r, r); }, 600);
+    });
     try {
       expect(await startHook()()).toBe(true);
     } finally {
@@ -240,8 +277,11 @@ describe('the dashboard start hook', () => {
   // Tested through `waitForDashboard` rather than the hook so the give-up path
   // costs milliseconds instead of making the suite sit out a real 8s deadline.
   it('gives up when the port never comes up', async () => {
+    // An ephemeral port nothing is listening on. Deliberately NOT 4848: a
+    // developer running agent mode has a real dashboard there, and this would
+    // then pass for the wrong reason.
     const started = Date.now();
-    expect(await waitForDashboard(250, 50)).toBe(false);
+    expect(await waitForDashboard(250, 50, await unusedPort())).toBe(false);
     const elapsed = Date.now() - started;
     expect(elapsed).toBeGreaterThanOrEqual(200); // it really did keep trying
     expect(elapsed).toBeLessThan(4000);
@@ -249,10 +289,11 @@ describe('the dashboard start hook', () => {
 
   it('answers true as soon as the port is up, without burning the deadline', async () => {
     const server = net.createServer();
-    await new Promise<void>((r) => server.listen(4848, '127.0.0.1', r));
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as net.AddressInfo;
     try {
       const started = Date.now();
-      expect(await waitForDashboard(10000, 200)).toBe(true);
+      expect(await waitForDashboard(10000, 200, port)).toBe(true);
       expect(Date.now() - started).toBeLessThan(2000);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));

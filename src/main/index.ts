@@ -5,6 +5,7 @@ import { handleDetectionV2 } from './detection-rpc';
 import { isPtyCrashGuardInstalled } from './pty-manager';
 import { logDiagnostic } from './crash-diagnostics';
 import { handleBrowserV2 } from './v2-browser';
+import { pickBrowserSurface } from './browser-engine-surface';
 import {
   agentBrowserNeedsTeardown,
   agentBrowserTeardownDeps,
@@ -92,8 +93,8 @@ async function resolveCallerBrowserSurface(caller: string): Promise<CallerBrowse
     const existing: string[] = await win.webContents.executeJavaScript(
       `window.__wmux_listBrowserSurfaces?.(${JSON.stringify(workspaceId)}) ?? []`,
     );
-    if (existing.length === 1) return { kind: 'found', surfaceId: existing[0] };
-    if (existing.length > 1) return { kind: 'ambiguous' };
+    const picked = pickBrowserSurface(caller, existing);
+    if (picked.kind !== 'none') return picked;
     return { kind: 'none', win, workspaceId };
   }
   return { kind: 'unresolved' };

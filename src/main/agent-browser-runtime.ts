@@ -98,14 +98,20 @@ export function probeDashboardPort(port: number = DASHBOARD_PORT, timeoutMs: num
  * Separate from the `start` hook, and parameterised, so the give-up path can be
  * tested in milliseconds instead of making the suite sit out a real 8s
  * deadline. Returns whether the dashboard is actually reachable.
+ *
+ * `port` is injectable for the same reason the timings are: without it the
+ * tests must bind the REAL 4848, so the suite fails with an opaque EADDRINUSE
+ * on any machine where a dashboard is already running — which, for anyone
+ * actually using agent mode, is the normal state. Tests pass an ephemeral port.
  */
 export async function waitForDashboard(
   readyMs: number = DASHBOARD_READY_MS,
   pollMs: number = DASHBOARD_POLL_MS,
+  port: number = DASHBOARD_PORT,
 ): Promise<boolean> {
   const deadline = Date.now() + readyMs;
   for (;;) {
-    if (await probeDashboardPort()) return true;
+    if (await probeDashboardPort(port)) return true;
     if (Date.now() >= deadline) return false;
     await new Promise((r) => setTimeout(r, pollMs));
   }
