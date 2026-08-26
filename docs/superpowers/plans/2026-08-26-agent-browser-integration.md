@@ -1501,10 +1501,11 @@ In `src/main/ipc-handlers.ts`:
 
 ```ts
 import { agentBrowserPath, runAgentBrowser } from './agent-browser-cli';
-import { SessionRegistry } from './agent-browser-session';
-import { dashboardDaemon } from './agent-browser-daemon-instance';
-
-export const sessionRegistry = new SessionRegistry();
+// SUPERSEDED during implementation: do NOT construct a registry here.
+// Task 7 created `src/main/agent-browser-runtime.ts` as the single home for
+// both singletons. Two registries would hand the same stream port to two
+// surfaces; two daemons would each stop the dashboard out from under the other.
+import { sessionRegistry, dashboardDaemon } from './agent-browser-runtime';
 
 ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_STATUS, async () => ({
   installed: agentBrowserPath() !== null,
@@ -1780,13 +1781,16 @@ git commit -m "feat(browser): engine toggle and agent-browser setup card"
 >    into agent mode must fall back to the setup card or to `web`, not hang.
 
 **Files:**
-- Create: `src/main/agent-browser-daemon-instance.ts`
+- ~~Create: `src/main/agent-browser-daemon-instance.ts`~~ — **already done as
+  `src/main/agent-browser-runtime.ts` in Task 7.** Import from it; do not create
+  a second module or a second singleton.
 - Modify: `src/main/ipc-handlers.ts` (the `AGENT_BROWSER_INSTALL` handler)
 - Modify: `src/main/index.ts` (quit teardown)
 
-- [ ] **Step 1: Create the singleton daemon wired to real processes**
+- [ ] ~~**Step 1: Create the singleton daemon wired to real processes**~~ — DONE
+      in Task 7. Kept below only as a record of what that module contains.
 
-Create `src/main/agent-browser-daemon-instance.ts`:
+Reference — the contents of `src/main/agent-browser-runtime.ts`:
 
 ```ts
 /**
@@ -2051,6 +2055,68 @@ Under **Fully implemented V2 methods**, extend the `browser.*` line:
 ```bash
 git add CLAUDE.md
 git commit -m "docs: agent-browser engine, CLI verb and V2 methods"
+```
+
+---
+
+## Findings from running the real binary (agent-browser 0.35.0, Node v24.13.0)
+
+Measured on this machine, not inferred. Four assumptions in the original plan were
+wrong; each would have been a silent runtime failure no unit test could catch.
+
+**1. `execFile` never returns — use `spawn` and resolve on `'exit'`.**
+
+Identical command, cold daemon:
+
+```
+execFile(exe, ['--session','X','open','example.com'])  → still hanging at 3 min
+spawn(exe, [...]) + resolve on 'exit'                   → 653 ms, exit 0, stdout intact
+```
+
+`execFile`'s callback fires on stdio **close**, not process exit. agent-browser's
+daemon inherits the stdout pipe and holds it open. Affects every command that
+starts a long-lived child: the first `open` of a session, `stream enable`,
+`dashboard start`. Impact had it shipped: flipping a tab to agent mode hangs the
+full 60 s timeout and is then reported as a failure, despite having succeeded.
+
+**2. The stream port comes from the environment, not `stream enable --port`.**
+
+Streaming is **already on by default**, on an OS-assigned port:
+
+```
+stream enable --port 9300 → exit 1, "Streaming is already enabled for this session"
+stream status             → "Streaming enabled on ws://127.0.0.1:59685"   ← not 9300
+```
+
+The documented mechanism works — launch the session with
+`AGENT_BROWSER_STREAM_PORT=<allocated>`:
+
+```
+stream status → "Streaming enabled on ws://127.0.0.1:9300, Connected: true"
+```
+
+**3. The snapshot envelope is not wmux's shape.** Real output:
+
+```json
+{"success":true,"data":{"origin":"https://example.com/",
+  "refs":{"e1":{"name":"Example Domain","role":"heading"},"e2":{...}},
+  "snapshot":"- heading \"Example Domain\" [level=1, ref=e1]\n- paragraph ..."}}
+```
+
+wmux's web engine returns `{ tree, refCount }`. Coerce to
+`{ tree: data.snapshot, refCount: Object.keys(data.refs ?? {}).length }`. Refs are
+already named `e1`/`e2`, matching wmux's convention.
+
+**4. `dashboard start` never exits.** The dashboard comes up (4848 accepts TCP,
+`GET /` → 200) but the command holds the foreground indefinitely. The daemon's
+`start` hook must fire it without awaiting and poll the port for readiness.
+
+**Confirmed correct:** `--session X --pin-tab open <url>` — flag placement before
+the subcommand works. And the deep link mechanism is verified end to end:
+
+```
+GET /api/sessions → [{"engine":"chrome","port":9300,"session":"wmux-envtest"}]
+GET /?port=9300   → 200, serves the SPA
 ```
 
 ---
