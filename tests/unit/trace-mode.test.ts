@@ -74,7 +74,11 @@ describe('default mode', () => {
   it('leaves a post-promotion classic choice alone', async () => {
     const { prefs, writes } = await loadWith({ uiMode: 'classic', uiModeDefaultRev: UI_MODE_DEFAULT_REV });
     expect(prefs.uiMode).toBe('classic');
-    expect(writes[APPEARANCE_KEY]).toBeUndefined();
+    // A write may still happen — this blob predates the 2.3.0 agent-office rev
+    // and is due THAT promotion (see hub-default.test.ts). What must hold is
+    // that a settled uiMode is never rewritten by somebody else's migration.
+    const written = writes[APPEARANCE_KEY] as { uiMode?: string } | undefined;
+    if (written) expect(written.uiMode).toBe('classic');
   });
 });
 
