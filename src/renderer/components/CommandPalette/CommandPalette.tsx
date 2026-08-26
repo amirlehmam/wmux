@@ -73,7 +73,10 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
 
     // Category: Actions — all shortcut actions
     const actionEntries = Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][];
+    const hubEnabled = useStore.getState().appearancePrefs.hubEnabled;
     for (const [action, binding] of actionEntries) {
+      // The agent-office easter egg stays out of the palette until enabled.
+      if (action === 'openHub' && !hubEnabled) continue;
       items.push({
         id: `action:${action}`,
         label: actionLabel(action, t),

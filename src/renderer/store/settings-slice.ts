@@ -271,8 +271,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // in Settings is one they will not have when they need it.
   jumpToBlocked:          { key: 'b', ctrl: true, shift: true },
   openAgentNavigator:     { key: 'a', ctrl: true, shift: true },
-  // Ctrl+Shift+O was unbound; shift-modified like the batch above so bare
-  // Ctrl+O keeps going to the terminal.
+  // Ctrl+Shift+O was unbound (bare Ctrl+O already opens a folder).
   openHub:                { key: 'o', ctrl: true, shift: true },
 };
 

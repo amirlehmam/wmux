@@ -31,6 +31,7 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
   const t = useT();
   const shortcuts = useStore((s) => s.shortcuts);
   const keyboardPrefs = useStore((s) => s.keyboardPrefs);
+  const hubEnabled = useStore((s) => s.appearancePrefs.hubEnabled);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -44,11 +45,15 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
 
   const grouped = useMemo(() => {
     const rows: Array<{ label: string; binding: string; category: string }> = [
-      ...(Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]).map(([action, binding]) => ({
-        label: actionLabel(action, t),
-        binding: formatBinding(binding),
-        category: CATEGORY[action] ?? 'Other',
-      })),
+      ...(Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][])
+        // The agent-office easter egg stays a secret (and its binding is inert)
+        // until the Settings toggle enables it.
+        .filter(([action]) => action !== 'openHub' || hubEnabled)
+        .map(([action, binding]) => ({
+          label: actionLabel(action, t),
+          binding: formatBinding(binding),
+          category: CATEGORY[action] ?? 'Other',
+        })),
       ...getIndexBindings(keyboardPrefs, t),
     ];
     const q = query.trim().toLowerCase();
@@ -64,7 +69,7 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
     return CATEGORY_ORDER
       .filter((c) => byCategory.has(c))
       .map((c) => ({ category: c, rows: byCategory.get(c)!.sort((a, b) => a.label.localeCompare(b.label)) }));
-  }, [shortcuts, keyboardPrefs, query, t]);
+  }, [shortcuts, keyboardPrefs, hubEnabled, query, t]);
 
   return (
     <div className="cheat-sheet-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>

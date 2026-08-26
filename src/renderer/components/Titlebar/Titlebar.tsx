@@ -10,7 +10,6 @@ import logoSrc from '../../../../resources/icons/icon.svg';
 import NotificationBell from './NotificationBell';
 import UpdateBadge from './UpdateBadge';
 import { IconHelp, IconCode, IconSettings, IconPixelAgent } from './icons';
-import { useStore } from '../../store';
 import WindowControls, { useIsFramelessWindow } from './WindowControls';
 import { NotificationInfo, WorkspaceId, PaneId, SurfaceId } from '../../../shared/types';
 import { useT } from '../../i18n';
@@ -22,6 +21,8 @@ interface TitlebarProps {
   onDevToolsClick?: () => void;
   onSettingsClick?: () => void;
   onHubClick?: () => void;
+  /** The agent-office easter egg (Settings, General). No pref, no button. */
+  hubEnabled?: boolean;
   notifications: NotificationInfo[];
   workspaceNames: Map<string, string>;
   notificationPanelOpen: boolean;
@@ -36,6 +37,7 @@ export default function Titlebar({
   onDevToolsClick,
   onSettingsClick,
   onHubClick,
+  hubEnabled,
   notifications,
   workspaceNames,
   notificationPanelOpen,
@@ -47,8 +49,6 @@ export default function Titlebar({
   // Clear-transparency windows are frameless and have no native caption
   // buttons, so this is where they come from.
   const frameless = useIsFramelessWindow();
-  // The agent-office easter egg (Settings → General). No pref, no button.
-  const hubEnabled = useStore((s) => s.appearancePrefs.hubEnabled);
   return (
     <div className="titlebar">
       <div className="titlebar__left">
