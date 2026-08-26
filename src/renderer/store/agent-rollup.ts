@@ -51,6 +51,20 @@ export interface DetectionSnapshot {
 }
 
 /**
+ * What the agent reported about itself (src/main/agent-state.ts,
+ * `AgentMetadata`). Main stamps `expiresAt` from the report's TTL; consumers
+ * must honor it — a token count is a claim with a shelf life.
+ */
+export interface DeclaredAgentMetadata {
+  model?: string;
+  tokens?: string;
+  /** 0-100. */
+  contextPct?: number;
+  /** Wall-clock ms; past this, render nothing rather than a stale value. */
+  expiresAt?: number;
+}
+
+/**
  * One AGENT_STATE payload as the renderer receives it (src/main/agent-state.ts,
  * `AgentStateSnapshot`). Only the fields the rollup needs are declared.
  */
@@ -67,6 +81,8 @@ export interface DeclaredAgentSnapshot {
    * otherwise look as though it had just started waiting.
    */
   blockedSince?: number | null;
+  /** Model / token / context claims, if the agent reported any. */
+  metadata?: DeclaredAgentMetadata;
 }
 
 export interface AgentRosterEntry {
@@ -99,6 +115,8 @@ export interface AgentRosterEntry {
   stateSource: 'declared' | 'detected' | null;
   /** What the screen said, independent of what the agent declared. */
   detectedState: AgentPresenceState | null;
+  /** The agent's live metadata claims, null when absent or expired. */
+  metadata: DeclaredAgentMetadata | null;
 }
 
 export interface AgentCounts {
@@ -220,7 +238,18 @@ function rosterEntryFor(
     identitySource: identity?.source ?? null,
     stateSource,
     detectedState,
+    metadata: liveMetadata(declared?.metadata, now),
   };
+}
+
+/** Metadata is a claim with a shelf life — render nothing rather than a stale token count. */
+function liveMetadata(
+  meta: DeclaredAgentMetadata | undefined,
+  now: number,
+): DeclaredAgentMetadata | null {
+  if (!meta) return null;
+  if (typeof meta.expiresAt === 'number' && meta.expiresAt <= now) return null;
+  return meta;
 }
 
 /**

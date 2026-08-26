@@ -394,3 +394,19 @@ describe('surfaceAgentState', () => {
     expect(direct!.source).toBe(out.roster[0].stateSource);
   });
 });
+
+describe('roster metadata passthrough', () => {
+  it('passes live metadata through to the roster entry', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'working', metadata: { model: 'opus', tokens: '12.3k', contextPct: 41 } }),
+    }, NOW);
+    expect(out.roster[0].metadata).toEqual({ model: 'opus', tokens: '12.3k', contextPct: 41 });
+  });
+
+  it('drops metadata past its expiresAt', () => {
+    const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
+      'surf-a': declared({ state: 'working', metadata: { model: 'opus', expiresAt: NOW - 1 } }),
+    }, NOW);
+    expect(out.roster[0].metadata).toBeNull();
+  });
+});
