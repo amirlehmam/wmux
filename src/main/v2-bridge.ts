@@ -201,6 +201,10 @@ const SPECS: Record<string, BridgeSpec> = {
     shape: (r) => ({ notifications: r || [] }),
     emptyOnNoWindow: { notifications: [] },
   },
+  'hub.open': {
+    // Open the agent office overlay (`wmux hub`) — a pure "poke the UI" method.
+    js: () => `window.__wmux_openHub?.()`,
+  },
 };
 
 function runBridge(spec: BridgeSpec, params: any, respond: Respond, respondError: RespondError): void {
