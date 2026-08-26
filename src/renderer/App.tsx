@@ -15,6 +15,7 @@ import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcu
 import SettingsWindow from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import AgentNavigator from './components/AgentNavigator/AgentNavigator';
+import HubView from './components/Hub/hub-view';
 import { focusAgentTarget } from './store/focus-agent';
 import { useAgentDetection } from './hooks/useAgentDetection';
 import { useBlockedAlert } from './hooks/useBlockedAlert';
@@ -441,6 +442,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [agentNavigatorOpen, setAgentNavigatorOpen] = useState(false);
+  const [hubOpen, setHubOpen] = useState(false);
+  const hubEnabled = useStore((s) => s.appearancePrefs.hubEnabled);
   // Screen detection for agents that report no state of their own. One loop for
   // the whole window; it skips every surface whose agent IS reporting.
   useAgentDetection(useStore((s) => s.workspacePrefs.detectAgentScreens));
@@ -1026,6 +1029,15 @@ export default function App() {
     return () => document.removeEventListener('wmux:open-agent-navigator', open);
   }, []);
 
+  // Agent office hub. The CustomEvent relay serves the keyboard shortcut
+  // (useKeyboardShortcuts cannot reach this component's state); the titlebar
+  // button sets the state directly via its prop.
+  useEffect(() => {
+    const open = () => setHubOpen(true);
+    document.addEventListener('wmux:open-hub', open);
+    return () => document.removeEventListener('wmux:open-hub', open);
+  }, []);
+
   const handleToggleNotifPanel = useCallback(() => {
     setNotifPanelOpen((o) => !o);
   }, []);
@@ -1160,6 +1172,8 @@ export default function App() {
         onHelpClick={() => setTutorialOpen(true)}
         onDevToolsClick={() => window.wmux?.system?.toggleDevTools?.()}
         onSettingsClick={() => setSettingsOpen(true)}
+        onHubClick={() => setHubOpen(true)}
+        hubEnabled={hubEnabled}
         notifications={notifications}
         workspaceNames={workspaceNames}
         notificationPanelOpen={notifPanelOpen}
@@ -1373,6 +1387,13 @@ export default function App() {
       {agentNavigatorOpen && (
         <AgentNavigator
           onClose={() => setAgentNavigatorOpen(false)}
+          onFocusAgent={focusAgent}
+        />
+      )}
+
+      {hubOpen && (
+        <HubView
+          onClose={() => setHubOpen(false)}
           onFocusAgent={focusAgent}
         />
       )}

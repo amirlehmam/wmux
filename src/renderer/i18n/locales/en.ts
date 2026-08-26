@@ -330,6 +330,7 @@ export const en = {
   'shortcutAction.jumpToUnread': 'Jump to unread',
   'shortcutAction.jumpToBlocked': 'Jump to agent needing you',
   'shortcutAction.openAgentNavigator': 'All agents',
+  'shortcutAction.openHub': 'Agent office',
   'shortcutAction.showNotifications': 'Show notifications',
   'shortcutAction.flashFocused': 'Flash focused pane',
   'shortcutAction.openBrowser': 'Open browser',
@@ -664,6 +665,22 @@ export const en = {
   'agentNavigator.silentProbed': 'detected — reports no state',
   'agentNavigator.hint': '↑↓ move · enter jump · a/b/w/i/u filter · esc close',
   'agentNavigator.workspacesWithAgents': 'workspaces',
+
+  // ─── Agent office hub ───
+  'titlebar.hub': 'Agent office',
+  'settings.general.easterEggSection': 'Easter eggs',
+  'settings.general.hubEnable': 'Agent office',
+  'settings.general.hubEnableHint': 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables {binding}.',
+  'hub.title': 'Agent office',
+  'hub.close': 'Close',
+  'hub.empty': 'No agents running. The office is quiet.',
+  'hub.needsYou': 'Needs your input',
+  'hub.goToPane': 'Go to pane',
+  'hub.model': 'model',
+  'hub.tokens': 'tokens',
+  'hub.context': 'context',
+  'hub.workingCount': '{count} working',
+  'hub.blockedCount': '{count} waiting for you',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

@@ -51,6 +51,26 @@ export function IconBell({ className, size = 16 }: IconProps) {
   );
 }
 
+/** Agent office (easter egg) — tiny pixel invader, drawn as filled squares so
+ *  it reads as "pixel art" at 16px where strokes would blur. */
+export function IconPixelAgent({ className, size = 16 }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+      <rect x="6" y="3" width="3" height="3" />
+      <rect x="15" y="3" width="3" height="3" />
+      <rect x="3" y="6" width="18" height="3" />
+      <rect x="3" y="9" width="3" height="3" />
+      <rect x="9" y="9" width="6" height="3" />
+      <rect x="18" y="9" width="3" height="3" />
+      <rect x="3" y="12" width="18" height="3" />
+      <rect x="6" y="15" width="3" height="3" />
+      <rect x="15" y="15" width="3" height="3" />
+      <rect x="3" y="18" width="3" height="3" />
+      <rect x="18" y="18" width="3" height="3" />
+    </svg>
+  );
+}
+
 /** Settings — 6-lobe rounded cog. Fewer, fatter teeth than the old 12-tooth
  *  filled gear, which is what makes it survive a 16px raster. */
 export function IconSettings({ className, size = 16 }: IconProps) {

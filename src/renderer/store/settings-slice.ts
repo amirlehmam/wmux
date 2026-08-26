@@ -156,6 +156,7 @@ export type ShortcutAction =
   | 'jumpToUnread'
   | 'jumpToBlocked'
   | 'openAgentNavigator'
+  | 'openHub'
   | 'showNotifications'
   | 'flashFocused'
   | 'openBrowser'
@@ -270,6 +271,8 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // in Settings is one they will not have when they need it.
   jumpToBlocked:          { key: 'b', ctrl: true, shift: true },
   openAgentNavigator:     { key: 'a', ctrl: true, shift: true },
+  // Ctrl+Shift+O was unbound (bare Ctrl+O already opens a folder).
+  openHub:                { key: 'o', ctrl: true, shift: true },
 };
 
 // ─── Sidebar settings ─────────────────────────────────────────────────────────
@@ -594,6 +597,12 @@ export interface AppearancePrefs {
    * against — see UI_MODE_DEFAULT_REV.
    */
   uiModeDefaultRev: number;
+  /**
+   * The agent office easter egg. Off by default and deliberately quiet: no
+   * titlebar button and an inert shortcut until the user finds the toggle in
+   * Settings → General.
+   */
+  hubEnabled: boolean;
 }
 
 /**
@@ -623,6 +632,7 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   windowMaterial: 'clear',
   uiMode: 'trace',
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
+  hubEnabled: false,
 };
 
 /**

@@ -9,7 +9,7 @@ import React from 'react';
 import logoSrc from '../../../../resources/icons/icon.svg';
 import NotificationBell from './NotificationBell';
 import UpdateBadge from './UpdateBadge';
-import { IconHelp, IconCode, IconSettings } from './icons';
+import { IconHelp, IconCode, IconSettings, IconPixelAgent } from './icons';
 import WindowControls, { useIsFramelessWindow } from './WindowControls';
 import { NotificationInfo, WorkspaceId, PaneId, SurfaceId } from '../../../shared/types';
 import { useT } from '../../i18n';
@@ -20,6 +20,9 @@ interface TitlebarProps {
   onHelpClick?: () => void;
   onDevToolsClick?: () => void;
   onSettingsClick?: () => void;
+  onHubClick?: () => void;
+  /** The agent-office easter egg (Settings, General). No pref, no button. */
+  hubEnabled?: boolean;
   notifications: NotificationInfo[];
   workspaceNames: Map<string, string>;
   notificationPanelOpen: boolean;
@@ -33,6 +36,8 @@ export default function Titlebar({
   onHelpClick,
   onDevToolsClick,
   onSettingsClick,
+  onHubClick,
+  hubEnabled,
   notifications,
   workspaceNames,
   notificationPanelOpen,
@@ -71,6 +76,15 @@ export default function Titlebar({
           onMarkAllRead={onMarkAllNotificationsRead}
         />
         <UpdateBadge />
+        {hubEnabled && (
+          <button
+            className="titlebar__btn"
+            onClick={onHubClick}
+            title={t('titlebar.hub', 'Agent office')}
+          >
+            <IconPixelAgent />
+          </button>
+        )}
         <button
           className="titlebar__btn"
           onClick={onSettingsClick}
