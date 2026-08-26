@@ -636,6 +636,18 @@ export const en = {
   'agentNavigator.silentProbed': 'detected — reports no state',
   'agentNavigator.hint': '↑↓ move · enter jump · a/b/w/i/u filter · esc close',
   'agentNavigator.workspacesWithAgents': 'workspaces',
+
+  // ─── Agent office hub ───
+  'hub.title': 'Agent office',
+  'hub.close': 'Close',
+  'hub.empty': 'No agents running — the office is quiet.',
+  'hub.needsYou': 'Needs your input',
+  'hub.goToPane': 'Go to pane',
+  'hub.model': 'model',
+  'hub.tokens': 'tokens',
+  'hub.context': 'context',
+  'hub.workingCount': '{count} working',
+  'hub.blockedCount': '{count} need you',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */
