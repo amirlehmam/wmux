@@ -401,6 +401,26 @@ const BROWSER_CMDS = {
     back: () => ({ method: 'browser.back', params: {}, timeoutMs: browserDeadline(0) }),
     forward: () => ({ method: 'browser.forward', params: {}, timeoutMs: browserDeadline(0) }),
     reload: () => ({ method: 'browser.reload', params: {}, timeoutMs: browserDeadline(0) }),
+    // `wmux browser engine [web|agent]` — get or flip which engine a browser
+    // surface runs on. Unlike every verb above, this is two distinct V2 methods
+    // (get vs set) rather than one passthrough shape, and the value is validated
+    // HERE rather than left to the server: rejecting a typo before a single byte
+    // reaches the pipe matches `checkFlags`'s reasoning elsewhere in this file
+    // (issue #143) and names both valid values in one place instead of two.
+    // `--surface`/`$WMUX_SURFACE_ID` reaches this like any other browser verb —
+    // via `caller`, merged in by `browserRequest` below — so the routing
+    // subtlety (a terminal surface is not a browser surface) is main's problem
+    // to resolve, not the CLI's; see `resolveCallerBrowserSurface` in index.ts.
+    engine: (args) => {
+        const value = args[2];
+        if (value === undefined) {
+            return { method: 'browser.get_engine', params: {}, timeoutMs: browserDeadline(0) };
+        }
+        if (value !== 'web' && value !== 'agent') {
+            throw new Error(`wmux browser engine: engine must be "web" or "agent" (got "${value}")`);
+        }
+        return { method: 'browser.set_engine', params: { engine: value }, timeoutMs: browserDeadline(0) };
+    },
 };
 /**
  * Resolve `wmux browser <verb> …` to the request it issues. Null for an unknown
@@ -1505,6 +1525,7 @@ const COMMAND_SPECS = {
             'wmux browser open <url> | snapshot | click <ref> | type <ref> <text> | fill <ref> <value>',
             'wmux browser screenshot [--full] | get-text [ref] | eval <js> | wait <ref> [ms]',
             'wmux browser back | forward | reload',
+            'wmux browser engine [web|agent]   # print, or switch, this surface\'s engine',
             `  [--surface <id>]   ${SURFACE_NOTE}`,
         ].join('\n'),
         passthrough: true,
@@ -1864,6 +1885,7 @@ Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-p
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
 Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>], trigger-flash
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
+            browser engine [web|agent]   (print, or switch, which engine drives this browser surface)
             browser <verb> [--surface <id>]   # which pane's browser to drive
 Agent:      agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-tab] | spawn-batch|status|list|kill
 Markdown:   markdown <file>   (open a file in a new markdown view)
