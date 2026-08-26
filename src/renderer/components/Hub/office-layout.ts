@@ -16,23 +16,27 @@
  *   that leave the corridors connected; wall dressing sits on wall tiles).
  */
 
+import { WorkspaceId } from '../../../shared/types';
+
 export interface Point {
   x: number;
   y: number;
 }
 
 export interface LayoutWorkspace {
-  id: string;
+  /** Branded on purpose — keeping the brand is what lets consumers call
+   *  selectWorkspace without a cast. */
+  id: WorkspaceId;
   title: string;
 }
 
 export interface LayoutAgent {
   surfaceId: string;
-  workspaceId: string;
+  workspaceId: WorkspaceId;
 }
 
 export interface TablePlacement {
-  workspaceId: string;
+  workspaceId: WorkspaceId;
   title: string;
   /** Tile rect of the FIRST desk row; further desk rows sit 2 tiles apart. */
   x: number;
@@ -195,6 +199,48 @@ export function buildLayout(workspaces: LayoutWorkspace[], agents: LayoutAgent[]
 export function isBlocked(layout: OfficeLayout, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= layout.cols || y >= layout.rows) return true;
   return layout.blocked[y * layout.cols + x] === 1;
+}
+
+/**
+ * Whether walking `waypoints` from `from` crosses any blocked tile in THIS
+ * layout. Paths are planned once against the layout of the tick they were
+ * created in; when the office regenerates underneath a walker, the sim uses
+ * this to decide a replan instead of letting the character stroll through a
+ * freshly placed desk.
+ */
+export function pathCrossesBlocked(layout: OfficeLayout, from: Point, waypoints: Point[]): boolean {
+  let cur = from;
+  for (const wp of waypoints) {
+    // Signs re-derived per step: `from` is a ROUNDED character position, which
+    // can sit off the path's axis, so a segment may need both axes to close.
+    while (cur.x !== wp.x || cur.y !== wp.y) {
+      cur = { x: cur.x + Math.sign(wp.x - cur.x), y: cur.y + Math.sign(wp.y - cur.y) };
+      if (isBlocked(layout, cur.x, cur.y)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Nearest walkable tile to `p` by Manhattan ring search, or null when the
+ * whole grid is blocked. Used to rescue a character whose tile became
+ * furniture after a layout change — BFS from a blocked start returns no path,
+ * so the character must be moved somewhere plannable first.
+ */
+export function nearestWalkable(layout: OfficeLayout, p: Point): Point | null {
+  if (!isBlocked(layout, p.x, p.y)) return p;
+  const maxRadius = layout.cols + layout.rows;
+  for (let r = 1; r <= maxRadius; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const dy = r - Math.abs(dx);
+      for (const candidate of dy === 0
+        ? [{ x: p.x + dx, y: p.y }]
+        : [{ x: p.x + dx, y: p.y + dy }, { x: p.x + dx, y: p.y - dy }]) {
+        if (!isBlocked(layout, candidate.x, candidate.y)) return candidate;
+      }
+    }
+  }
+  return null;
 }
 
 /**

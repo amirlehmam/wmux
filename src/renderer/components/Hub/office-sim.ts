@@ -11,7 +11,7 @@
  * just started, chats briefly, then heads to the break room. It is cosmetic —
  * wmux has no real handoff signal.
  */
-import { OfficeLayout, Point, isBlocked, planPath } from './office-layout';
+import { OfficeLayout, Point, isBlocked, nearestWalkable, pathCrossesBlocked, planPath } from './office-layout';
 
 export interface SimRosterEntry {
   surfaceId: string;
@@ -104,11 +104,16 @@ function samePoint(a: Point | null, b: Point | null): boolean {
   return !!a && !!b && a.x === b.x && a.y === b.y;
 }
 
-/** Send a character walking to its chair (or keep it seated if already there). */
+/**
+ * Send a character walking to its chair (or seat it if already there).
+ * Compared on the ROUNDED tile: a character interrupted mid-walk can sit at a
+ * fractional position on the chair's own tile, from which BFS plans an empty
+ * path — without the snap it would hover off-grid beside its seat forever.
+ */
 function toDesk(layout: OfficeLayout, ch: Character): Character {
   const chair = chairFor(layout, ch);
-  if (ch.x === chair.x && ch.y === chair.y) {
-    return { ...ch, phase: 'atDesk', path: [], facing: 'up', chatUntil: null, peerId: null };
+  if (Math.round(ch.x) === chair.x && Math.round(ch.y) === chair.y) {
+    return { ...ch, x: chair.x, y: chair.y, phase: 'atDesk', path: [], facing: 'up', chatUntil: null, peerId: null };
   }
   return { ...ch, phase: 'walkingToDesk', path: pathTo(layout, ch, chair), chatUntil: null, peerId: null };
 }
@@ -119,13 +124,19 @@ function toBreak(layout: OfficeLayout, ch: Character, rng: () => number): Charac
   const seatValid = !!seat && layout.breakSeats.some((s) => s.x === seat!.x && s.y === seat!.y);
   if (!seatValid) seat = pickBreakSeat(layout, rng);
   if (!seat) return { ...ch, phase: 'resting', path: [], chatUntil: null, peerId: null };
-  if (ch.x === seat.x && ch.y === seat.y) {
-    return { ...ch, phase: 'resting', path: [], breakSeat: seat, facing: 'down', chatUntil: null, peerId: null };
+  // Rounded-tile comparison + snap, same reasoning as toDesk.
+  if (Math.round(ch.x) === seat.x && Math.round(ch.y) === seat.y) {
+    return { ...ch, x: seat.x, y: seat.y, phase: 'resting', path: [], breakSeat: seat, facing: 'down', chatUntil: null, peerId: null };
   }
   return { ...ch, phase: 'walkingToBreak', path: pathTo(layout, ch, seat), breakSeat: seat, chatUntil: null, peerId: null };
 }
 
-/** Advance along the waypoint path; returns the moved character and arrival flag. */
+/**
+ * Advance along the waypoint path; returns the moved character and arrival
+ * flag. Moves one axis at a time (dominant first) and only consumes a
+ * waypoint once BOTH axes have arrived — a character that starts off-grid
+ * (mid-segment replan) walks the off-axis remainder instead of teleporting.
+ */
 function advance(ch: Character, dtMs: number): { ch: Character; arrived: boolean } {
   if (!ch.path.length) return { ch, arrived: true };
   let remaining = (SPEED_TILES_PER_SEC * dtMs) / 1000;
@@ -135,19 +146,22 @@ function advance(ch: Character, dtMs: number): { ch: Character; arrived: boolean
     const target = path[0];
     const dx = target.x - x;
     const dy = target.y - y;
-    // Segments are axis-aligned by construction; pick the dominant axis.
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
+      x = target.x;
+      y = target.y;
+      path.shift();
+      continue;
+    }
     if (Math.abs(dx) >= Math.abs(dy)) {
       facing = dx >= 0 ? 'right' : 'left';
       const step = Math.min(remaining, Math.abs(dx));
       x += Math.sign(dx) * step;
       remaining -= step;
-      if (Math.abs(target.x - x) < 1e-6) { x = target.x; y = target.y; path.shift(); }
     } else {
       facing = dy >= 0 ? 'down' : 'up';
       const step = Math.min(remaining, Math.abs(dy));
       y += Math.sign(dy) * step;
       remaining -= step;
-      if (Math.abs(target.y - y) < 1e-6) { x = target.x; y = target.y; path.shift(); }
     }
   }
   return { ch: { ...ch, x, y, facing, path }, arrived: path.length === 0 };
@@ -206,13 +220,39 @@ export function stepSim(
     if (existing.rosterState !== 'working' && entry.state === 'working') {
       starters.push({ id: entry.surfaceId, ws: entry.workspaceId, at: simTime });
     }
-    chars[entry.surfaceId] = { ...existing, rosterState: entry.state, dwellMs: entry.dwellMs };
+    // A leaver whose entry reappeared (one-tick roster flicker) is rescued
+    // rather than completing the walk-out and respawning from the door: reset
+    // to an empty-path desk walk and let the goal check route it properly.
+    chars[entry.surfaceId] = existing.phase === 'leaving'
+      ? { ...existing, rosterState: entry.state, dwellMs: entry.dwellMs, phase: 'walkingToDesk', path: [] }
+      : { ...existing, rosterState: entry.state, dwellMs: entry.dwellMs };
   }
   for (const [id, ch] of Object.entries(prev.characters)) {
     if (byId.has(id)) continue;
     chars[id] = ch.phase === 'leaving'
       ? { ...ch }
       : { ...ch, phase: 'leaving', path: pathTo(layout, ch, layout.door), chatUntil: null, peerId: null };
+  }
+
+  // ── Rescue + stale-path check: the layout can regenerate under a walker ────
+  // Paths are planned against the layout of the tick they were created in. A
+  // workspace growing can put a desk on a tile a planned path crosses, or on
+  // the tile a character is standing on (from which BFS can plan nothing).
+  for (const [id, ch] of Object.entries(chars)) {
+    const tile = { x: Math.round(ch.x), y: Math.round(ch.y) };
+    if (isBlocked(layout, tile.x, tile.y)) {
+      const safe = nearestWalkable(layout, tile);
+      if (safe) chars[id] = { ...ch, x: safe.x, y: safe.y, path: [] };
+    }
+  }
+  for (const [id, ch] of Object.entries(chars)) {
+    if (!ch.path.length) continue;
+    const start = { x: Math.round(ch.x), y: Math.round(ch.y) };
+    if (!pathCrossesBlocked(layout, start, ch.path)) continue;
+    if (ch.phase === 'walkingToDesk') chars[id] = toDesk(layout, ch);
+    else if (ch.phase === 'walkingToBreak') chars[id] = toBreak(layout, ch, rng);
+    else if (ch.phase === 'walkingToPeer') chars[id] = toBreak(layout, ch, rng); // cancel the handoff
+    else if (ch.phase === 'leaving') chars[id] = { ...ch, path: pathTo(layout, ch, layout.door) };
   }
 
   // ── Goal check: make each character's walk match its roster state ──────────
@@ -249,6 +289,13 @@ export function stepSim(
     if (best === -1) continue;
     const starter = starters[best];
     const chair = chairFor(layout, chars[starter.id]);
+    // Other agents' chairs are excluded — chatting while standing inside a
+    // seated colleague is a step too far even for a cosmetic heuristic.
+    const occupied = new Set(
+      Object.entries(layout.chairBySurface)
+        .filter(([sid]) => sid !== starter.id)
+        .map(([, p]) => `${p.x},${p.y}`),
+    );
     const neighbours: Point[] = [
       { x: chair.x, y: chair.y + 1 },
       { x: chair.x - 1, y: chair.y },
@@ -258,6 +305,7 @@ export function stepSim(
     let matched = false;
     for (const spot of neighbours) {
       if (isBlocked(layout, spot.x, spot.y)) continue;
+      if (occupied.has(`${spot.x},${spot.y}`)) continue;
       if (ch.x === spot.x && ch.y === spot.y) {
         chars[idler.id] = { ...ch, phase: 'chatting', path: [], peerId: starter.id, chatUntil: simTime + CHAT_DURATION_MS };
         matched = true;

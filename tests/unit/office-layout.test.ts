@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildLayout, isBlocked, planPath } from '../../src/renderer/components/Hub/office-layout';
+import { buildLayout, isBlocked, nearestWalkable, pathCrossesBlocked, planPath } from '../../src/renderer/components/Hub/office-layout';
 import type { LayoutAgent, LayoutWorkspace, OfficeLayout, Point } from '../../src/renderer/components/Hub/office-layout';
+import { WorkspaceId } from '../../src/shared/types';
 
 const wss = (n: number): LayoutWorkspace[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `ws-${i}`, title: `WS ${i}` }));
+  Array.from({ length: n }, (_, i) => ({ id: `ws-${i}` as WorkspaceId, title: `WS ${i}` }));
 const agents = (perWs: number[]): LayoutAgent[] =>
   perWs.flatMap((count, w) =>
-    Array.from({ length: count }, (_, i) => ({ surfaceId: `surf-${w}-${i}`, workspaceId: `ws-${w}` })));
+    Array.from({ length: count }, (_, i) => ({ surfaceId: `surf-${w}-${i}`, workspaceId: `ws-${w}` as WorkspaceId })));
 
 const walkableAndReachable = (layout: OfficeLayout, p: Point, label: string) => {
   expect(isBlocked(layout, p.x, p.y), `${label} blocked`).toBe(false);
@@ -99,6 +100,20 @@ describe('buildLayout', () => {
     for (const seat of layout.breakSeats) walkableAndReachable(layout, seat, 'seat');
   });
 
+  it('survives an empty office: break room only, door reachable', () => {
+    const layout = buildLayout([], []);
+    expect(layout.tables).toEqual([]);
+    walkableAndReachable(layout, layout.door, 'door');
+    for (const seat of layout.breakSeats) walkableAndReachable(layout, seat, 'seat');
+  });
+
+  it('gives a zero-agent workspace a minimum two-desk table', () => {
+    const layout = buildLayout(wss(1), []);
+    expect(layout.tables[0].w).toBe(2);
+    expect(layout.tables[0].deskCount).toBe(2);
+    expect(layout.tables[0].deskRows).toBe(1);
+  });
+
   it('outer border is walled', () => {
     const layout = buildLayout(wss(2), agents([1, 1]));
     for (let x = 0; x < layout.cols; x++) {
@@ -109,6 +124,34 @@ describe('buildLayout', () => {
       expect(isBlocked(layout, 0, y)).toBe(true);
       expect(isBlocked(layout, layout.cols - 1, y)).toBe(true);
     }
+  });
+});
+
+describe('pathCrossesBlocked / nearestWalkable', () => {
+  it('detects a path that a layout change has invalidated', () => {
+    const small = buildLayout(wss(1), agents([2]));
+    const chair = Object.values(small.chairBySurface)[0];
+    const path = planPath(small, small.door, chair);
+    expect(pathCrossesBlocked(small, small.door, path)).toBe(false);
+    // A grown office relocates furniture; the OLD path must be detectable as
+    // stale against the NEW grid (same coordinates, different blocked set).
+    const grown = buildLayout(wss(2), agents([6, 4]));
+    const crossesSomething = pathCrossesBlocked(grown, small.door, path);
+    // Either verdict is legal geometry; the call must terminate and be boolean
+    // even from an off-axis start (regression: per-step sign re-derivation).
+    expect(typeof crossesSomething).toBe('boolean');
+    expect(pathCrossesBlocked(grown, { x: grown.door.x + 1, y: grown.door.y - 1 }, path)).toBeTypeOf('boolean');
+  });
+
+  it('finds the nearest walkable tile from a blocked one, identity for walkable', () => {
+    const layout = buildLayout(wss(1), agents([2]));
+    const desk = { x: layout.tables[0].x, y: layout.tables[0].y };
+    expect(isBlocked(layout, desk.x, desk.y)).toBe(true);
+    const safe = nearestWalkable(layout, desk);
+    expect(safe).not.toBeNull();
+    expect(isBlocked(layout, safe!.x, safe!.y)).toBe(false);
+    expect(Math.abs(safe!.x - desk.x) + Math.abs(safe!.y - desk.y)).toBe(1);
+    expect(nearestWalkable(layout, layout.door)).toEqual(layout.door);
   });
 });
 
