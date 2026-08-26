@@ -1028,7 +1028,7 @@ export default function App() {
     return () => document.removeEventListener('wmux:open-agent-navigator', open);
   }, []);
 
-  // Agent office hub — same relay, fired by the shortcut and by `wmux hub`.
+  // Agent office hub — same relay, fired by the shortcut and titlebar button.
   useEffect(() => {
     const open = () => setHubOpen(true);
     document.addEventListener('wmux:open-hub', open);
@@ -1169,6 +1169,7 @@ export default function App() {
         onHelpClick={() => setTutorialOpen(true)}
         onDevToolsClick={() => window.wmux?.system?.toggleDevTools?.()}
         onSettingsClick={() => setSettingsOpen(true)}
+        onHubClick={() => setHubOpen(true)}
         notifications={notifications}
         workspaceNames={workspaceNames}
         notificationPanelOpen={notifPanelOpen}

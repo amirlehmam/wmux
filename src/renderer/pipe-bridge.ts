@@ -432,13 +432,6 @@ export function initPipeBridge(): void {
     return null;
   };
 
-  // Open the agent office overlay (CLI `wmux hub`). Same CustomEvent relay the
-  // agent navigator uses — App.tsx owns the overlay's open state.
-  w.__wmux_openHub = () => {
-    document.dispatchEvent(new CustomEvent('wmux:open-hub'));
-    return { ok: true };
-  };
-
   // ─── Notifications ──────────────────────────────────────────────────────────
 
   w.__wmux_listNotifications = () => {

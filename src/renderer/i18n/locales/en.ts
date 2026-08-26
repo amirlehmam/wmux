@@ -639,6 +639,10 @@ export const en = {
   'agentNavigator.workspacesWithAgents': 'workspaces',
 
   // ─── Agent office hub ───
+  'titlebar.hub': 'Agent office',
+  'settings.general.easterEggSection': 'Easter eggs',
+  'settings.general.hubEnable': 'Agent office',
+  'settings.general.hubEnableHint': 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables Ctrl+Shift+O.',
   'hub.title': 'Agent office',
   'hub.close': 'Close',
   'hub.empty': 'No agents running — the office is quiet.',

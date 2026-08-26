@@ -325,6 +325,22 @@ export default function GeneralSettings() {
       )}
 
       <AgentIntegrationSettings />
+
+      <h3 className="settings-section-title">{t('settings.general.easterEggSection', 'Easter eggs')}</h3>
+
+      <div className="settings-row">
+        <label className="settings-label">{t('settings.general.hubEnable', 'Agent office')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={appearancePrefs.hubEnabled}
+          onChange={(e) => setAppearancePrefs({ hubEnabled: e.target.checked })}
+        />
+      </div>
+
+      <p className="settings-hint">
+        {t('settings.general.hubEnableHint', 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables Ctrl+Shift+O.')}
+      </p>
     </div>
   );
 }

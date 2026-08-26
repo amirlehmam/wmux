@@ -583,6 +583,12 @@ export interface AppearancePrefs {
    * against — see UI_MODE_DEFAULT_REV.
    */
   uiModeDefaultRev: number;
+  /**
+   * The agent office easter egg. Off by default and deliberately quiet: no
+   * titlebar button and an inert shortcut until the user finds the toggle in
+   * Settings → General.
+   */
+  hubEnabled: boolean;
 }
 
 /**
@@ -612,6 +618,7 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   windowMaterial: 'clear',
   uiMode: 'trace',
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
+  hubEnabled: false,
 };
 
 /**

@@ -358,7 +358,8 @@ export function useKeyboardShortcuts(
       jumpToUnread,
       jumpToBlocked,
       openAgentNavigator: () => fire('wmux:open-agent-navigator'),
-      openHub: () => fire('wmux:open-hub'),
+      // Easter egg: inert until enabled in Settings → General.
+      openHub: () => { if (useStore.getState().appearancePrefs.hubEnabled) fire('wmux:open-hub'); },
       showNotifications: () => onToggleNotifications?.(),
       flashFocused: () => { if (focusedPaneId) fire('wmux:trigger-flash', { paneId: focusedPaneId }); },
       openBrowser: () => onToggleBrowser?.(),

@@ -1597,7 +1597,6 @@ const COMMAND_SPECS = {
   },
 
   diff: { usage: 'wmux diff [--file <path>]', value: ['--file'] },
-  hub: { usage: 'wmux hub   (open the agent office overlay)' },
   hook: {
     usage: 'wmux hook --event <type> --tool <name> [--agent <id>]',
     value: ['--event', '--tool', '--agent'],
@@ -1852,7 +1851,6 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
     const file = args.find((a, i) => args[i - 1] === '--file') || '';
     print(await sendV2('diff.refresh', { file }));
   },
-  hub: async () => print(await sendV2('hub.open')),
   hook: cmdHook,
   'agent-activity': cmdAgentActivity,
   // Devcontainer support (issue #19)
@@ -1931,7 +1929,6 @@ Agent:      agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-ta
 Markdown:   markdown <file>   (open a file in a new markdown view)
             markdown set <id> --content <text> | --file <path>
 Diff:       diff [--file <path>]
-Hub:        hub   (open the agent office overlay)
 Notify:     notify <text>, list-notifications, clear-notifications
 Sidebar:    set-status, set-progress, log, sidebar-state
 Hook:       hook --event <type> --tool <name> [--agent <id>]
