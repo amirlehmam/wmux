@@ -1010,6 +1010,15 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Read prefs at spawn time so changing the default later doesn't re-spawn live PTYs.
     const effectiveShell = shell || useStore.getState().workspacePrefs.defaultShell || '';
 
+    // Same rule for the directory (issue #205): the surface's own cwd wins —
+    // a split inheriting its parent, "Open in wmux", `--cwd`, a restored
+    // session — and the preference only fills the hole that was otherwise left
+    // to node-pty's default (wherever wmux.exe was launched from). Read at
+    // spawn time for the same reason as the shell: changing it must not
+    // re-spawn the PTYs already running. Left as the user typed it; `~` and
+    // `%VAR%` are expanded in the main process by resolveSpawnCwd.
+    const effectiveCwd = cwd || useStore.getState().workspacePrefs.defaultCwd || '';
+
     // Spawn the PTY at the already-measured terminal size. Otherwise it starts at
     // the 80x24 default and our follow-up resize triggers a window-size-change in
     // the shell, which makes PSReadLine/oh-my-posh redraw the prompt — the doubled
@@ -1040,7 +1049,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
             claudeSessionId: claudeSessionIdRef.current,
             enabled: useStore.getState().workspacePrefs.restoreClaudeSessions,
           });
-          window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {}, surfaceId, startupCommands: spawnCommands, cols: initialCols, rows: initialRows })
+          window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd, env: {}, surfaceId, startupCommands: spawnCommands, cols: initialCols, rows: initialRows })
             .then((created: { id: string; shell: string; startupCommandsConsumed?: boolean }) => {
               // PTY persists (keep-alive); a remount re-attaches via pty.has.
               if (disposed) return;
@@ -1053,7 +1062,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       });
     } else {
       // No surfaceId hint — always create new PTY
-      window.wmux.pty.create({ shell: effectiveShell, cwd: cwd ?? '', env: {}, startupCommands: startupCommandsRef.current, cols: initialCols, rows: initialRows })
+      window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd, env: {}, startupCommands: startupCommandsRef.current, cols: initialCols, rows: initialRows })
         .then((created: { id: string; shell: string; startupCommandsConsumed?: boolean }) => {
           if (disposed) return;
           setResolvedShellForSurface(surfaceId, created.shell);

@@ -464,6 +464,11 @@ export const en = {
   'settings.workspacePanel.shellSection': 'Shell',
   'settings.workspacePanel.defaultShell': 'Default shell',
   'settings.workspacePanel.shell.systemDefault': 'System default',
+  'settings.workspacePanel.defaultCwd': 'Starting directory',
+  'settings.workspacePanel.defaultCwdPlaceholder': 'Current directory (e.g. ~\\projects)',
+  'settings.workspacePanel.browse': 'Browse…',
+  'settings.workspacePanel.defaultCwdHint':
+    'Where a new terminal opens when nothing else decides. Splits, "Open in wmux", --cwd and restored sessions keep their own directory. ~ and %VARIABLES% are expanded; leave empty to keep the old behaviour.',
   'settings.workspacePanel.layoutsSection': 'Saved Layouts',
   'settings.workspacePanel.layoutsHint':
     'Arrange panes the way you like in a workspace — geometry, plus whatever shell or command each pane is already running — then save that arrangement here.',

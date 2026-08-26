@@ -5,7 +5,7 @@ import { execFileSync, spawn } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
 import { SurfaceId } from '../shared/types';
 import { getPipePath, readPipeToken } from '../shared/instance';
-import { isPosixPath } from '../shared/paths';
+import { isPosixPath, expandPathVars } from '../shared/paths';
 import { PtyLedger } from './pty-ledger';
 import { attachErrorSink, installPtyCrashGuard } from './pty-crash-guard';
 import { powerShellShimDir } from './powershell-shim';
@@ -314,7 +314,17 @@ export function resolveShellForCwd(shell: string, cwd: string | undefined): stri
 // that exists — otherwise CreateProcess fails with error 267 (ERROR_DIRECTORY)
 // and the pane dies with an opaque "Cannot create process, error code: 267".
 // Returns undefined (node-pty's own default) when there is nothing usable.
-export function resolveSpawnCwd(cwd: string | undefined): string | undefined {
+//
+// This is also the single place a HUMAN-typed path lands (the default starting
+// path setting, issue #205), so `~` and `%VAR%` are expanded here rather than in
+// the settings UI: every other entry point — session.json, `--cwd`, an
+// inherited split — passes through here too, and gets the same courtesy for
+// free. Expansion happens only for the SPAWN dir; resolveShellForCwd and
+// buildShellArgs above still see the raw string, which is what keeps `~` on a
+// wsl.exe pane meaning "the distro's home" (`--cd ~`) instead of a Win32 path
+// that distro cannot open.
+export function resolveSpawnCwd(raw: string | undefined): string | undefined {
+  const cwd = expandPathVars(raw ?? '', process.env);
   if (!cwd) return undefined;
 
   const fallback = process.env.USERPROFILE || 'C:\\';

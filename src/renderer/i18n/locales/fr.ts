@@ -418,6 +418,11 @@ export const fr: Translation = {
   'settings.workspacePanel.shellSection': 'Shell',
   'settings.workspacePanel.defaultShell': 'Shell par défaut',
   'settings.workspacePanel.shell.systemDefault': 'Par défaut du système',
+  'settings.workspacePanel.defaultCwd': 'Répertoire de démarrage',
+  'settings.workspacePanel.defaultCwdPlaceholder': 'Répertoire courant (ex. ~\\projets)',
+  'settings.workspacePanel.browse': 'Parcourir…',
+  'settings.workspacePanel.defaultCwdHint':
+    'Où s\'ouvre un nouveau terminal quand rien d\'autre ne le décide. Les divisions, « Ouvrir dans wmux », --cwd et les sessions restaurées gardent leur propre répertoire. ~ et %VARIABLES% sont développés ; laissez vide pour conserver le comportement précédent.',
   // Carte de repli ErrorBoundary
   'errorBoundary.labelFailed': 'Échec de {label}',
   'errorBoundary.somethingWrong': "Quelque chose s'est mal passé",

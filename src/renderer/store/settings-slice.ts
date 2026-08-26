@@ -302,6 +302,20 @@ export interface WorkspacePrefs {
   newWorkspacePlacement: 'afterCurrent' | 'top' | 'end';
   autoReorderOnNotification: boolean;
   defaultShell: string;
+  /**
+   * Directory new terminals start in when nothing else has said where (issue
+   * #205). A FALLBACK, never an override: a split inherits its parent's
+   * directory, "Open in wmux" and `--cwd` name one outright, and a restored
+   * session carries the one it was frozen at — all of those still win. This
+   * only fills the hole that was previously filled by wherever wmux.exe itself
+   * was launched from, which for a taskbar/Start-menu launch is
+   * C:\Windows\system32.
+   *
+   * Stored exactly as typed. `~` and `%VAR%` are expanded at spawn time by
+   * resolveSpawnCwd, so a path stays portable across machines instead of being
+   * frozen to whatever the picker resolved on the day it was set.
+   */
+  defaultCwd: string;
   /** Show the welcome/tutorial screen on first launch (issue #22). */
   showWelcomeScreen: boolean;
   /**
@@ -362,6 +376,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   newWorkspacePlacement: 'afterCurrent',
   autoReorderOnNotification: false,
   defaultShell: '',
+  defaultCwd: '',
   showWelcomeScreen: true,
   autoOpenDiffTab: true,
   confirmWorkspaceClose: false,

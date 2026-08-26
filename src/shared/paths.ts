@@ -18,6 +18,45 @@ export function isPosixPath(p: string): boolean {
 }
 
 /**
+ * A path as a HUMAN typed it, turned into one the OS can open (issue #205).
+ *
+ * Every other cwd wmux handles was produced by a machine — session.json, a
+ * `report_pwd`, `--cwd` from a script, a split inheriting its parent — and is
+ * already absolute. The default-starting-path setting is the one place a person
+ * types a directory into wmux, and people type `~` and `%USERPROFILE%\dev`.
+ * Neither is a thing CreateProcess understands: unexpanded, both die in
+ * resolveSpawnCwd's stat and silently land the pane in %USERPROFILE%.
+ *
+ * `~` is expanded FIRST and only in the leading position. Doing vars first
+ * would let a variable whose value happens to start with `~` become a home
+ * reference the user never wrote; and `C:\a~b` is a legal Windows directory
+ * name, so a global replace would corrupt real paths.
+ *
+ * An UNSET %VAR% is deliberately left literal rather than collapsed to nothing.
+ * `%PROJECTS%\wmux` with PROJECTS unset would otherwise become `\wmux` — a real
+ * directory on the current drive — and the pane would open somewhere plausible
+ * and wrong. Left as-is it fails the stat downstream, which falls back to the
+ * home directory AND logs the path it could not use.
+ */
+export function expandPathVars(p: string, env: Record<string, string | undefined>): string {
+  let out = p.trim();
+  if (!out) return '';
+
+  // USERPROFILE on Windows, HOME for the POSIX shells reached through wsl.exe.
+  const home = env.USERPROFILE || env.HOME;
+  if (home && (out === '~' || out.startsWith('~/') || out.startsWith('~\\'))) {
+    out = home + out.slice(1);
+  }
+
+  return out.replace(/%([A-Za-z_][A-Za-z0-9_()]*)%/g, (whole, name: string) => {
+    // Windows env lookup is case-insensitive; process.env on Windows already
+    // answers either case, but an injected env in a test may not.
+    const value = env[name] ?? env[name.toUpperCase()];
+    return value === undefined ? whole : value;
+  });
+}
+
+/**
  * Whether a shell command line opens a POSIX filesystem rather than a Win32 one.
  *
  * Deliberately the same substring test `getShellType` in pty-manager.ts uses, so
