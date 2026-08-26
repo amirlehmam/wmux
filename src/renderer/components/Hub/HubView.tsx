@@ -286,7 +286,6 @@ export default function HubView({ onClose, onFocusAgent }: {
 
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sprites]);
 
   /** Screen-position hit test against 1×1.5-tile character rects. */
