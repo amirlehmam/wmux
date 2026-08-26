@@ -70,7 +70,7 @@ vi.mock('electron', () => ({
 import { initPipeBridge } from '../../src/renderer/pipe-bridge';
 import {
   agentBrowserOpenArgv,
-  agentBrowserStreamArgv,
+  agentBrowserStreamEnv,
   disableAgentBrowser,
   enableAgentBrowser,
   readBackUrl,
@@ -169,6 +169,8 @@ interface Harness {
   deps: AgentBrowserDeps;
   /** Every argv actually spawned, in order. */
   calls: string[][];
+  /** The env override each spawn carried, positionally matching `calls`. */
+  envs: Array<NodeJS.ProcessEnv | undefined>;
   acquired: string[];
   released: string[];
   registry: SessionRegistry;
@@ -176,14 +178,16 @@ interface Harness {
 
 function harness(overrides: Partial<AgentBrowserDeps> = {}, run?: AgentBrowserDeps['run']): Harness {
   const calls: string[][] = [];
+  const envs: Array<NodeJS.ProcessEnv | undefined> = [];
   const acquired: string[] = [];
   const released: string[] = [];
   const registry = new SessionRegistry();
   const deps: AgentBrowserDeps = {
     binary: () => 'C:\\bin\\agent-browser.exe',
-    run: async (binary, argv) => {
+    run: async (binary, argv, env) => {
       calls.push(argv);
-      return run ? run(binary, argv) : okRun();
+      envs.push(env);
+      return run ? run(binary, argv, env) : okRun();
     },
     acquireDashboard: async (id) => { acquired.push(id); },
     releaseDashboard: async (id) => { released.push(id); },
@@ -192,7 +196,7 @@ function harness(overrides: Partial<AgentBrowserDeps> = {}, run?: AgentBrowserDe
     releaseSession: (id) => registry.release(id),
     ...overrides,
   };
-  return { deps, calls, acquired, released, registry };
+  return { deps, calls, envs, acquired, released, registry };
 }
 
 describe('enable argv', () => {
@@ -216,10 +220,17 @@ describe('enable argv', () => {
     ]);
   });
 
-  it('binds the stream to a given port', () => {
-    expect(agentBrowserStreamArgv('wmux-surf-a', 9301)).toEqual([
-      '--session', 'wmux-surf-a', 'stream', 'enable', '--port', '9301',
-    ]);
+  /**
+   * Measured against agent-browser 0.35.0: streaming is ALREADY enabled by the
+   * time a session opens, on an OS-assigned port, so `stream enable --port`
+   * exits 1 with "✗ Streaming is already enabled for this session" and the
+   * stream stays where it was (`ws://127.0.0.1:61379`). Launching with the
+   * documented env var instead puts it on the requested port
+   * (`ws://127.0.0.1:9300`, Connected: true), which is what the dashboard's
+   * `?port=` deep link needs.
+   */
+  it('pins the stream port through the environment, not a subcommand', () => {
+    expect(agentBrowserStreamEnv(9301)).toEqual({ AGENT_BROWSER_STREAM_PORT: '9301' });
   });
 });
 
@@ -254,10 +265,23 @@ describe('enableAgentBrowser', () => {
     await enableAgentBrowser(SURF, undefined, h.deps);
     const session = h.registry.get(SURF)!;
 
-    expect(h.calls[1]).toEqual([
-      '--session', session.sessionName, 'stream', 'enable', '--port', String(session.streamPort),
-    ]);
+    expect(h.envs[0]).toEqual({ AGENT_BROWSER_STREAM_PORT: String(session.streamPort) });
     expect(session.dashboardUrl).toContain(`?port=${session.streamPort}`);
+  });
+
+  /**
+   * The env var is read when the session's browser LAUNCHES, so it has to ride
+   * on the `open` — the one invocation that does the launching. A later call
+   * carrying it would be too late, and `stream enable --port` (which this
+   * replaced) is rejected outright because streaming is already on by then.
+   */
+  it('enables with exactly one invocation, and it is the open', async () => {
+    const h = harness();
+    await enableAgentBrowser(SURF, 'https://example.com', h.deps);
+
+    expect(h.calls).toHaveLength(1);
+    expect(h.calls[0]).toContain('open');
+    expect(h.calls.some((argv) => argv.includes('stream'))).toBe(false);
   });
 
   // The dashboard is observability; Chrome is the feature. Failing the whole
@@ -268,7 +292,7 @@ describe('enableAgentBrowser', () => {
     const h = harness({ acquireDashboard: async () => { throw new Error('port in use'); } });
     const res = await enableAgentBrowser(SURF, undefined, h.deps);
     expect(res.installed).toBe(true);
-    expect(h.calls).toHaveLength(2);
+    expect(h.calls).toHaveLength(1);
     warn.mockRestore();
   });
 });

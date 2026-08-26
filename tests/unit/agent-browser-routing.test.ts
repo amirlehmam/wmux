@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { engineOf } from '../../src/shared/types';
 import type { SurfaceRef } from '../../src/shared/types';
 
@@ -270,13 +273,86 @@ describe('the two engines are indistinguishable to a caller', () => {
     expect(runAgent).toHaveBeenCalledTimes(ALL_VERBS.length);
   });
 
-  it('returns the same result shape from both engines for snapshot', async () => {
+  /**
+   * Fixtures below are VERBATIM stdout from agent-browser 0.35.0 on this
+   * machine, not invented shapes — the previous versions of these tests
+   * asserted parity against a payload this file made up, which made them
+   * circular. `--json` wraps every verb in `{success, data, error}`; without it
+   * the same verbs print bare text. wmux's argv only passes `--json` for
+   * screenshot today, so BOTH forms are live and both are pinned here.
+   */
+  const REAL_TREE =
+    '- heading "Example Domain" [level=1, ref=e1]\n'
+    + '- paragraph\n'
+    + '  - StaticText "This domain is for use in documentation examples without needing permission. Avoid use in operations."\n'
+    + '- paragraph\n'
+    + '  - link "Learn more" [ref=e2]';
+
+  const REAL_SNAPSHOT_JSON = {
+    success: true,
+    data: {
+      lifecycle: { launched: false, reused: true },
+      origin: 'https://example.com/',
+      refs: { e1: { name: 'Example Domain', role: 'heading' }, e2: { name: 'Learn more', role: 'link' } },
+      snapshot: REAL_TREE,
+    },
+    error: null,
+  };
+
+  it('returns the same result shape from both engines for snapshot (bare stdout)', async () => {
     const bridge = makeBridge();
     const fromWeb = await runBrowserCommandForTarget('browser.snapshot', {}, web(), deps(bridge));
-    const fromAgent = await runBrowserCommandForTarget('browser.snapshot', {}, agent(), deps(bridge, vi.fn(async () => ok(SNAPSHOT))));
+    // No --json in wmux's argv, so this is what actually arrives.
+    const fromAgent = await runBrowserCommandForTarget(
+      'browser.snapshot', {}, agent(), deps(bridge, vi.fn(async () => ok(null, REAL_TREE))),
+    );
 
     expect(Object.keys(fromAgent).sort()).toEqual(Object.keys(fromWeb).sort());
-    expect(fromAgent).toEqual(SNAPSHOT);
+    expect(fromAgent).toEqual({ tree: REAL_TREE, refCount: 2 });
+  });
+
+  it('unwraps the --json envelope for snapshot and counts refs from the map', async () => {
+    const fromAgent = await runBrowserCommandForTarget(
+      'browser.snapshot', {}, agent(),
+      deps(makeBridge(), vi.fn(async () => ok(REAL_SNAPSHOT_JSON, JSON.stringify(REAL_SNAPSHOT_JSON)))),
+    );
+    expect(fromAgent).toEqual({ tree: REAL_TREE, refCount: 2 });
+  });
+
+  // The CLI prints a trailing newline that the --json payload does not carry,
+  // so the same snapshot arrived as two different strings depending on which
+  // form it came back in. Caught by diffing the two against the real binary.
+  it('yields a byte-identical tree whichever form the snapshot arrives in', async () => {
+    const bare = await runBrowserCommandForTarget(
+      'browser.snapshot', {}, agent(), deps(makeBridge(), vi.fn(async () => ok(null, `${REAL_TREE}\n`))),
+    );
+    const enveloped = await runBrowserCommandForTarget(
+      'browser.snapshot', {}, agent(), deps(makeBridge(), vi.fn(async () => ok(REAL_SNAPSHOT_JSON))),
+    );
+    expect(bare).toEqual(enveloped);
+  });
+
+  // The bug: the envelope was passed through verbatim, so an agent calling
+  // `wmux browser snapshot` got {success,data:{lifecycle,origin,refs,snapshot}}
+  // on one engine and {tree,refCount} on the other.
+  it('never hands the caller agent-browser\'s envelope for a snapshot', async () => {
+    const fromAgent: any = await runBrowserCommandForTarget(
+      'browser.snapshot', {}, agent(),
+      deps(makeBridge(), vi.fn(async () => ok(REAL_SNAPSHOT_JSON))),
+    );
+    expect(fromAgent).not.toHaveProperty('success');
+    expect(fromAgent).not.toHaveProperty('data');
+    expect(fromAgent).not.toHaveProperty('lifecycle');
+    expect(typeof fromAgent.tree).toBe('string');
+    expect(typeof fromAgent.refCount).toBe('number');
+  });
+
+  it('counts a ref mentioned twice in the tree only once', async () => {
+    const tree = '- link "a" [ref=e1]\n- note [ref=e1]\n- link "b" [ref=e2]';
+    const fromAgent = await runBrowserCommandForTarget(
+      'browser.snapshot', {}, agent(), deps(makeBridge(), vi.fn(async () => ok(null, tree))),
+    );
+    expect(fromAgent).toEqual({ tree, refCount: 2 });
   });
 
   it('returns the same result shape from both engines for get_text', async () => {
@@ -289,34 +365,101 @@ describe('the two engines are indistinguishable to a caller', () => {
     expect(fromAgent.text).toBe('hello page');
   });
 
-  it('returns the same result shape from both engines for screenshot', async () => {
+  it('reads get_text out of the envelope, from `text` or `content`', async () => {
+    // `get text @e1 --json` → data.text ; `read --json` → data.content
+    const getText = { success: true, data: { origin: 'https://example.com/', text: 'Example Domain' }, error: null };
+    const read = { success: true, data: { content: '# Example Domain', contentType: 'text/html' }, error: null };
+
+    expect(await runBrowserCommandForTarget('browser.get_text', { ref: 'e1' }, agent(),
+      deps(makeBridge(), vi.fn(async () => ok(getText))))).toEqual({ text: 'Example Domain' });
+    expect(await runBrowserCommandForTarget('browser.get_text', {}, agent(),
+      deps(makeBridge(), vi.fn(async () => ok(read))))).toEqual({ text: '# Example Domain' });
+  });
+
+  /**
+   * agent-browser's `screenshot` has no way to emit bytes: it WRITES A PNG and
+   * reports `data.path`. The web engine returns base64 straight from
+   * `Page.captureScreenshot`, so parity has to be bought by reading the file.
+   */
+  it('returns base64 from both engines for screenshot, reading the file agent-browser wrote', async () => {
     const bridge = makeBridge();
     const fromWeb = await runBrowserCommandForTarget('browser.screenshot', {}, web(), deps(bridge));
-    const fromAgent = await runBrowserCommandForTarget('browser.screenshot', {}, agent(), deps(bridge, vi.fn(async () => ok({ data: 'BASE64' }))));
-
     expect(fromWeb).toEqual({ data: 'BASE64' });
-    expect(Object.keys(fromAgent)).toEqual(Object.keys(fromWeb));
-    expect(fromAgent.data).toBe('BASE64');
+
+    const png = path.join(os.tmpdir(), `wmux-shot-${process.pid}.png`);
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02]);
+    fs.writeFileSync(png, bytes);
+    try {
+      const envelope = { success: true, data: { lifecycle: { reused: true }, path: png }, error: null };
+      const fromAgent = await runBrowserCommandForTarget(
+        'browser.screenshot', {}, agent(), deps(bridge, vi.fn(async () => ok(envelope))),
+      );
+      expect(Object.keys(fromAgent)).toEqual(Object.keys(fromWeb));
+      expect(fromAgent.data).toBe(bytes.toString('base64'));
+    } finally {
+      fs.unlinkSync(png);
+    }
+  });
+
+  it('does not fail the command when the screenshot file cannot be read', async () => {
+    const envelope = { success: true, data: { path: path.join(os.tmpdir(), 'wmux-no-such-shot.png') }, error: null };
+    const fromAgent = await runBrowserCommandForTarget(
+      'browser.screenshot', {}, agent(), deps(makeBridge(), vi.fn(async () => ok(envelope, ''))),
+    );
+    expect(fromAgent).toEqual({ data: '' });
   });
 
   it('returns the same result shape from both engines for eval', async () => {
     const bridge = makeBridge();
     const fromWeb = await runBrowserCommandForTarget('browser.eval', { js: '1+1' }, web(), deps(bridge));
-    const fromAgent = await runBrowserCommandForTarget('browser.eval', { js: '1+1' }, agent(), deps(bridge, vi.fn(async () => ok({ result: 42 }))));
+    const envelope = { success: true, data: { origin: 'https://example.com/', result: 42 }, error: null };
+    const fromAgent = await runBrowserCommandForTarget('browser.eval', { js: '1+1' }, agent(), deps(bridge, vi.fn(async () => ok(envelope))));
 
     expect(fromWeb).toEqual({ result: 42 });
     expect(Object.keys(fromAgent)).toEqual(Object.keys(fromWeb));
     expect(fromAgent.result).toBe(42);
   });
 
+  // `eval 1+1` bare-prints `2`. The web engine returns the NUMBER 2, so the
+  // engines would disagree on type if stdout were handed back as a string.
+  it('recovers the value, not the digits, from a bare eval', async () => {
+    const fromAgent = await runBrowserCommandForTarget(
+      'browser.eval', { js: '1+1' }, agent(), deps(makeBridge(), vi.fn(async () => ok(null, '2\n'))),
+    );
+    expect(fromAgent).toEqual({ result: 2 });
+    expect(typeof (fromAgent as any).result).toBe('number');
+  });
+
+  it('leaves a non-JSON eval result as text', async () => {
+    const fromAgent = await runBrowserCommandForTarget(
+      'browser.eval', { js: 'document.title' }, agent(), deps(makeBridge(), vi.fn(async () => ok(null, 'Example Domain\n'))),
+    );
+    expect(fromAgent).toEqual({ result: 'Example Domain' });
+  });
+
   // A falsy-but-present result must survive the coercion: `?? `-chained
   // fallbacks would quietly replace `false`/`0`/`''` with the raw stdout.
   it('preserves a falsy eval result rather than falling through to stdout', async () => {
+    const envelope = { success: true, data: { result: false }, error: null };
     const fromAgent = await runBrowserCommandForTarget(
       'browser.eval', { js: 'false' }, agent(),
-      deps(makeBridge(), vi.fn(async () => ok({ result: false }, 'ignored'))),
+      deps(makeBridge(), vi.fn(async () => ok(envelope, 'ignored'))),
     );
     expect(fromAgent).toEqual({ result: false });
+  });
+
+  // `{"success":false,"data":null,"error":"Unknown ref: e1"}` with exit 1 is
+  // what a --json verb answers for a bad ref; the reason belongs in front of
+  // the agent without the `✗ ` decoration stderr adds.
+  it('reports the envelope\'s error field when a --json verb fails', async () => {
+    const envelope = { success: false, data: null, error: 'Unknown ref: e1' };
+    const runAgent = vi.fn(async () => ({
+      ok: false, spawnFailed: false, data: envelope,
+      stdout: JSON.stringify(envelope), stderr: '',
+    }));
+    await expect(
+      runBrowserCommandForTarget('browser.click', { ref: 'e1' }, agent(), deps(makeBridge(), runAgent as any)),
+    ).rejects.toThrow('Unknown ref: e1');
   });
 
   it('answers ok:true for the action verbs on all engines', async () => {

@@ -11,11 +11,18 @@ const env = vi.hoisted(() => ({
   acquires: 0,
   releases: 0,
   acquireFails: false,
+  binary: null as string | null,
+  ran: [] as string[][],
+  runImpl: async (_argv: string[]): Promise<any> =>
+    ({ ok: false, spawnFailed: true, data: null, stdout: '', stderr: '' }),
 }));
 
 vi.mock('../../src/main/agent-browser-cli', () => ({
-  agentBrowserPath: () => null,
-  runAgentBrowser: async () => ({ ok: false, spawnFailed: true, data: null, stdout: '', stderr: '' }),
+  agentBrowserPath: () => env.binary,
+  runAgentBrowser: (_bin: string, argv: string[]) => {
+    env.ran.push(argv);
+    return env.runImpl(argv);
+  },
 }));
 
 import {
@@ -25,12 +32,16 @@ import {
   probeDashboardPort,
   releaseDashboardFor,
   resetDashboardRefs,
+  waitForDashboard,
 } from '../../src/main/agent-browser-runtime';
 
 beforeEach(() => {
   env.acquires = 0;
   env.releases = 0;
   env.acquireFails = false;
+  env.binary = null;
+  env.ran = [];
+  env.runImpl = async () => ({ ok: false, spawnFailed: true, data: null, stdout: '', stderr: '' });
   resetDashboardRefs();
   vi.spyOn(dashboardDaemon, 'acquire').mockImplementation(async () => {
     env.acquires++;
@@ -169,6 +180,83 @@ describe('a failed dashboard start is not retried on the very next command', () 
     // A different surface must not be suppressed by the long-gone failure.
     await acquireDashboardFor('surf-b', clock);
     expect(env.acquires).toBe(3);
+  });
+});
+
+/**
+ * The daemon's `start` hook must decide readiness from the PORT, never from the
+ * process exiting.
+ *
+ * Measured against agent-browser 0.35.0, cold: `dashboard start` exits at 58ms
+ * having daemonised, but :4848 does not accept a connection until ~500ms later
+ * — so treating the exit as success reports a dashboard that cannot yet serve
+ * the pane. And in configurations where the command instead runs the server in
+ * the foreground and never exits, awaiting it reports FAILURE for a dashboard
+ * that is running perfectly well, tripping the retry cooldown on a healthy
+ * install. Polling the port is the one signal correct under both.
+ */
+describe('the dashboard start hook', () => {
+  // `dashboardDaemon.acquire` is spied out above; reach the real hook directly.
+  const startHook = () => (dashboardDaemon as any).hooks.start as () => Promise<boolean>;
+
+  it('reports failure without spawning anything when nothing is installed', async () => {
+    env.binary = null;
+    expect(await startHook()()).toBe(false);
+    expect(env.ran).toEqual([]);
+  });
+
+  it('asks the port, not the process, and does not wait for the command to exit', async () => {
+    env.binary = 'C:/bin/agent-browser.exe';
+    // Reproduce the foreground-server shape: the invocation never settles.
+    env.runImpl = () => new Promise(() => {});
+
+    const server = net.createServer();
+    await new Promise<void>((r) => server.listen(4848, '127.0.0.1', r));
+    try {
+      const started = Date.now();
+      expect(await startHook()()).toBe(true);
+      expect(Date.now() - started).toBeLessThan(3000);
+      expect(env.ran).toEqual([['dashboard', 'start']]);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('waits for a port that comes up after the command has already exited', async () => {
+    env.binary = 'C:/bin/agent-browser.exe';
+    env.runImpl = async () => ({ ok: true, spawnFailed: false, data: null, stdout: '', stderr: '' });
+
+    const server = net.createServer();
+    // The measured shape: process gone long before the socket is listening.
+    const listening = new Promise<void>((r) => setTimeout(() => server.listen(4848, '127.0.0.1', r), 600));
+    try {
+      expect(await startHook()()).toBe(true);
+    } finally {
+      await listening;
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  // Tested through `waitForDashboard` rather than the hook so the give-up path
+  // costs milliseconds instead of making the suite sit out a real 8s deadline.
+  it('gives up when the port never comes up', async () => {
+    const started = Date.now();
+    expect(await waitForDashboard(250, 50)).toBe(false);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(200); // it really did keep trying
+    expect(elapsed).toBeLessThan(4000);
+  });
+
+  it('answers true as soon as the port is up, without burning the deadline', async () => {
+    const server = net.createServer();
+    await new Promise<void>((r) => server.listen(4848, '127.0.0.1', r));
+    try {
+      const started = Date.now();
+      expect(await waitForDashboard(10000, 200)).toBe(true);
+      expect(Date.now() - started).toBeLessThan(2000);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });
 

@@ -6,6 +6,7 @@ import {
   agentBrowserPath,
   resetAgentBrowserCache,
   runAgentBrowser,
+  unwrapAgentData,
 } from '../../src/main/agent-browser-cli';
 
 /** A fake filesystem probe: only the listed absolute paths "exist". */
@@ -176,7 +177,7 @@ describe('agentBrowserPath (memoisation)', () => {
 
 describe('runAgentBrowser', () => {
   // Real spawns rather than a mocked `child_process`, so these pin actual
-  // execFile semantics rather than assumptions about them.
+  // child_process semantics rather than assumptions about them.
   it('a non-zero exit is ok:false, spawnFailed:false, with stderr populated', async () => {
     const result = await runAgentBrowser(process.execPath, ['-e', 'process.stderr.write("boom"); process.exit(1)']);
     expect(result.ok).toBe(false);
@@ -188,5 +189,98 @@ describe('runAgentBrowser', () => {
     const result = await runAgentBrowser('C:/definitely/does/not/exist/agent-browser-win32-x64.exe', ['status']);
     expect(result.ok).toBe(false);
     expect(result.spawnFailed).toBe(true);
+  });
+
+  it('a zero exit is ok:true with stdout captured', async () => {
+    const result = await runAgentBrowser(process.execPath, ['-e', 'process.stdout.write("hello")']);
+    expect(result.ok).toBe(true);
+    expect(result.spawnFailed).toBe(false);
+    expect(result.stdout).toBe('hello');
+  });
+
+  it('parses JSON stdout into data, and leaves data null when it is not JSON', async () => {
+    const json = await runAgentBrowser(process.execPath, ['-e', 'process.stdout.write(JSON.stringify({a:1}))']);
+    expect(json.data).toEqual({ a: 1 });
+    const text = await runAgentBrowser(process.execPath, ['-e', 'process.stdout.write("not json")']);
+    expect(text.data).toBeNull();
+  });
+
+  /**
+   * THE reason this uses `spawn` and resolves on `'exit'` rather than
+   * `execFile`. Measured against agent-browser 0.35.0, the first `open` of a
+   * session (which starts the daemon):
+   *
+   *     execFile → callback never fired; still hanging when killed at 3 min
+   *     spawn    → 'exit' at 787 ms, code 0, full stdout captured
+   *
+   * `execFile` completes on stdio CLOSE, and the daemon inherits the stdout
+   * pipe and holds it open for its whole life. The command succeeds, the
+   * callback never runs, and the verb is reported as a failure after burning
+   * its entire timeout.
+   *
+   * This reproduces the shape without agent-browser: a child that leaves a
+   * grandchild holding stdout, then exits. The pipe stays open; the run must
+   * still resolve promptly, ok:true, with the parent's output intact.
+   */
+  it('resolves on exit even when a grandchild keeps the stdout pipe open', async () => {
+    const script = [
+      'const { spawn } = require("child_process");',
+      // A grandchild that inherits stdout and outlives us.
+      'spawn(process.execPath, ["-e", "setTimeout(()=>{}, 10000)"], { stdio: ["ignore", "inherit", "inherit"], detached: true }).unref();',
+      'process.stdout.write("parent done");',
+      'process.exit(0);',
+    ].join('\n');
+
+    const started = Date.now();
+    const result = await runAgentBrowser(process.execPath, ['-e', script], 8000);
+    const elapsed = Date.now() - started;
+
+    expect(result.ok).toBe(true);
+    expect(result.spawnFailed).toBe(false);
+    expect(result.stdout).toContain('parent done');
+    // The old execFile implementation sat here for the full 8s timeout and
+    // then reported ok:false.
+    expect(elapsed).toBeLessThan(4000);
+  });
+
+  it('kills and reports a child that outlives its timeout, rather than hanging', async () => {
+    const started = Date.now();
+    const result = await runAgentBrowser(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], 700);
+    expect(result.ok).toBe(false);
+    expect(result.spawnFailed).toBe(false); // it ran; it just took too long
+    expect(result.stderr).toMatch(/timed out/);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('merges an env override over the inherited environment', async () => {
+    const result = await runAgentBrowser(
+      process.execPath,
+      ['-e', 'process.stdout.write(JSON.stringify({ port: process.env.AGENT_BROWSER_STREAM_PORT, hasPath: !!(process.env.PATH || process.env.Path) }))'],
+      10000,
+      { AGENT_BROWSER_STREAM_PORT: '9300' },
+    );
+    // The child still needs the inherited environment to find its own runtime,
+    // so the override must MERGE rather than replace.
+    expect(result.data).toEqual({ port: '9300', hasPath: true });
+  });
+});
+
+describe('unwrapAgentData', () => {
+  // Verbatim shapes from agent-browser 0.35.0.
+  it('strips the --json envelope', () => {
+    const enveloped = { success: true, data: { url: 'https://example.com/' }, error: null };
+    expect(unwrapAgentData({ data: enveloped })).toEqual({ url: 'https://example.com/' });
+  });
+
+  it('strips the envelope of a failure too, exposing its null payload', () => {
+    expect(unwrapAgentData({ data: { success: false, data: null, error: 'Unknown ref: e1' } })).toBeNull();
+  });
+
+  it('leaves a bare payload alone', () => {
+    expect(unwrapAgentData({ data: { url: 'https://example.com/' } })).toEqual({ url: 'https://example.com/' });
+  });
+
+  it('leaves non-JSON stdout (data === null) alone', () => {
+    expect(unwrapAgentData({ data: null })).toBeNull();
   });
 });

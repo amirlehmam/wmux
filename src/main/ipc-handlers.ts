@@ -43,7 +43,7 @@ import {
   MD_DIALOG_EXTENSIONS,
 } from './markdown-file';
 import { grantMarkdownPath, isMarkdownPathGranted } from './markdown-grants';
-import { agentBrowserPath, runAgentBrowser, type RunResult } from './agent-browser-cli';
+import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
 // The process-wide singletons. Constructing a second SessionRegistry or
 // DashboardDaemon here would hand the same stream port to two surfaces and let
 // either daemon stop the dashboard out from under the other — see the header of
@@ -169,16 +169,28 @@ export function agentBrowserOpenArgv(sessionName: string, currentUrl?: string): 
 }
 
 /**
- * Bind the session's stream to the port wmux allocated for it.
+ * The environment that pins a session's stream to the port wmux allocated.
  *
- * Load-bearing for the pane, not optional telemetry: the dashboard deep-link
- * in `AgentSession.dashboardUrl` is `?port=<streamPort>`, so a session whose
- * stream is not on that exact port renders an empty dashboard. wmux picks the
- * port itself precisely so this can be stated up front instead of discovered
- * after the webview has already loaded.
+ * Load-bearing for the pane, not optional telemetry: the dashboard deep-link in
+ * `AgentSession.dashboardUrl` is `?port=<streamPort>`, so a session streaming
+ * anywhere else renders an empty dashboard.
+ *
+ * This has to be an ENV VAR on the launching `open`, and there is no second
+ * option. Streaming is already enabled by the time a session opens, on an
+ * OS-assigned port, so the obvious `stream enable --port` is rejected outright
+ * — measured against 0.35.0:
+ *
+ *     stream enable --port 9300 → exit 1, "✗ Streaming is already enabled"
+ *     stream status             → "Streaming enabled on ws://127.0.0.1:61379"
+ *
+ * whereas launching the session with the documented variable set gives
+ * "Streaming enabled on ws://127.0.0.1:9300, Connected: true", and the
+ * dashboard's own /api/sessions then reports `{"port":9300,...}` for it. The
+ * variable is only read when the session's browser is LAUNCHED, which is why it
+ * belongs on the `open` call and not on any later invocation.
  */
-export function agentBrowserStreamArgv(sessionName: string, streamPort: number): string[] {
-  return ['--session', sessionName, 'stream', 'enable', '--port', String(streamPort)];
+export function agentBrowserStreamEnv(streamPort: number): NodeJS.ProcessEnv {
+  return { AGENT_BROWSER_STREAM_PORT: String(streamPort) };
 }
 
 /** Read the page back before closing, so flipping to `web` lands where the agent was. */
@@ -204,13 +216,18 @@ const READBACK_SCHEMES = /^(https?|file|about):/i;
 /**
  * The url from a `get url` invocation, or undefined.
  *
- * Prefers parsed JSON over stdout because not every agent-browser verb emits
- * JSON (see `agentResultShape` in v2-browser.ts, which makes the same choice).
+ * Reads through `unwrapAgentData` rather than off `res.data` directly. The argv
+ * wmux sends carries no `--json`, so what arrives today is the bare line
+ * `https://example.com/` and stdout is the whole answer — but with `--json` the
+ * url sits at `data.url` INSIDE a `{success, data, error}` envelope, where a
+ * direct `res.data.url` finds nothing and the stdout fallback then hands the
+ * scheme test an entire JSON blob. Unwrapping first makes both forms work, so
+ * adding `--json` later cannot silently break the web handoff.
  */
 export function readBackUrl(res: RunResult): string | undefined {
   if (!res.ok) return undefined;
-  const fromJson = (res.data as { url?: unknown } | null)?.url;
-  const raw = (typeof fromJson === 'string' ? fromJson : res.stdout).trim();
+  const payload = unwrapAgentData(res) as { url?: unknown } | null;
+  const raw = (typeof payload?.url === 'string' ? payload.url : res.stdout).trim();
   return raw && READBACK_SCHEMES.test(raw) ? raw : undefined;
 }
 
@@ -235,7 +252,7 @@ export interface AgentBrowserDisableResult {
  */
 export interface AgentBrowserDeps {
   binary: () => string | null;
-  run: (binary: string, argv: string[]) => Promise<RunResult>;
+  run: (binary: string, argv: string[], env?: NodeJS.ProcessEnv) => Promise<RunResult>;
   acquireDashboard: (surfaceId: SurfaceId) => Promise<void>;
   releaseDashboard: (surfaceId: SurfaceId) => Promise<void>;
   ensureSession: (surfaceId: SurfaceId) => AgentSession;
@@ -264,8 +281,16 @@ export async function enableAgentBrowser(
   }
 
   const session = deps.ensureSession(surfaceId);
-  await deps.run(binary, agentBrowserOpenArgv(session.sessionName, currentUrl));
-  await deps.run(binary, agentBrowserStreamArgv(session.sessionName, session.streamPort));
+  // ONE invocation, carrying the stream port in its environment. There is
+  // deliberately no follow-up `stream enable --port`: streaming is already on
+  // by the time this returns, so that call fails outright, and the port it
+  // would have tried to set is decided when the browser LAUNCHES — i.e. here.
+  // See `agentBrowserStreamEnv`.
+  await deps.run(
+    binary,
+    agentBrowserOpenArgv(session.sessionName, currentUrl),
+    agentBrowserStreamEnv(session.streamPort),
+  );
   return { installed: true, dashboardUrl: session.dashboardUrl, sessionName: session.sessionName };
 }
 
@@ -312,7 +337,7 @@ export async function disableAgentBrowser(
  */
 const agentBrowserDeps: AgentBrowserDeps = {
   binary: () => agentBrowserPath(),
-  run: (binary, argv) => runAgentBrowser(binary, argv),
+  run: (binary, argv, env) => runAgentBrowser(binary, argv, undefined, env),
   acquireDashboard: (surfaceId) => acquireDashboardFor(surfaceId),
   releaseDashboard: (surfaceId) => releaseDashboardFor(surfaceId),
   ensureSession: (surfaceId) => sessionRegistry.ensure(surfaceId),

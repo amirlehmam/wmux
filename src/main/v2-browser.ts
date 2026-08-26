@@ -19,9 +19,10 @@
  * indistinguishable to a caller in everything it can observe — verb names,
  * result shapes, and the error for a verb neither supports.
  */
+import * as fs from 'fs';
 import { BrowserWindow } from 'electron';
 import { cdpBridge } from './ipc-handlers';
-import { agentBrowserPath, runAgentBrowser, type RunResult } from './agent-browser-cli';
+import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
 import { acquireDashboardFor, sessionRegistry } from './agent-browser-runtime';
 import type { AgentSession } from './agent-browser-session';
 import { toAgentBrowserArgv } from './agent-browser-verbs';
@@ -249,6 +250,22 @@ function hasField(data: unknown, key: string): boolean {
   return !!data && typeof data === 'object' && key in (data as Record<string, unknown>);
 }
 
+const field = (data: unknown, key: string): any =>
+  hasField(data, key) ? (data as Record<string, unknown>)[key] : undefined;
+
+/**
+ * How many refs a snapshot tree exposes, counted from the tree itself.
+ *
+ * The `--json` payload carries a `refs` map and this is unnecessary — but the
+ * argv wmux sends for `snapshot` does not pass `--json`, so what actually
+ * arrives is the bare tree text, in which every ref appears as `[ref=e1]` /
+ * `[level=1, ref=e2]`. Counting DISTINCT ids rather than matches, because a
+ * ref can legitimately be mentioned more than once.
+ */
+function countRefs(tree: string): number {
+  return new Set([...tree.matchAll(/\bref=(e\d+)/g)].map((m) => m[1])).size;
+}
+
 /**
  * Coerce an agent-browser result into the shape the WEB engine returns for the
  * same verb, so a caller written against one engine keeps working against the
@@ -257,23 +274,76 @@ function hasField(data: unknown, key: string): boolean {
  * the two must be read together, and a shape changed on one side without the
  * other is the bug this function exists to make obvious.
  *
- * `stdout` is the fallback throughout because not every agent-browser verb
- * emits JSON — `read` in particular prints agent-readable text directly.
+ * Every branch handles BOTH forms agent-browser can answer in, because which
+ * one arrives depends on whether the verb's argv carries `--json` (only
+ * `screenshot`'s does today). With it, the payload is wrapped in
+ * `{success, data, error}` — `unwrapAgentData` strips that. Without it, the
+ * verb prints bare text and `stdout` is the whole answer. Field names below are
+ * from actual 0.35.0 output, not from the docs:
+ *
+ *     snapshot   → data.snapshot (tree) + data.refs (map keyed e1/e2)
+ *     get text   → data.text  ·  read → data.content
+ *     eval       → data.result
+ *     screenshot → data.path — a PNG on disk, NOT base64
  */
-function agentResultShape(method: string, res: RunResult): any {
+async function agentResultShape(method: string, res: RunResult): Promise<any> {
+  const data = unwrapAgentData(res);
   switch (method) {
-    case 'browser.snapshot':
-      return res.data ?? { tree: res.stdout, refCount: 0 };
+    case 'browser.snapshot': {
+      // The web engine answers {tree, refCount}. Passing agent-browser's
+      // payload through verbatim — which is what this used to do — handed the
+      // agent a completely different object depending on the engine.
+      // `res.stdout` carries the trailing newline the CLI printed; the `--json`
+      // payload does not. Trim so the two forms of the SAME snapshot are
+      // byte-identical — an engine-parity bug small enough to be invisible
+      // until something diffs two trees and finds them different.
+      const tree: string = field(data, 'snapshot') ?? res.stdout.trimEnd();
+      const refs = field(data, 'refs');
+      return { tree, refCount: refs ? Object.keys(refs).length : countRefs(tree) };
+    }
     case 'browser.get_text':
-      return { text: hasField(res.data, 'text') ? (res.data as any).text : res.stdout };
+      return { text: field(data, 'text') ?? field(data, 'content') ?? res.stdout };
     case 'browser.screenshot':
-      return { data: (res.data as any)?.data ?? (res.data as any)?.base64 ?? res.stdout.trim() };
+      return { data: await screenshotBase64(data, res) };
     case 'browser.eval':
-      if (hasField(res.data, 'result')) return { result: (res.data as any).result };
-      return { result: res.data ?? res.stdout.trim() };
+      if (hasField(data, 'result')) return { result: field(data, 'result') };
+      // Bare stdout is text: `eval 1+1` prints `2`, where the web engine
+      // returns the number 2. Recover the value when it round-trips as JSON so
+      // the two engines agree on the TYPE, not merely on the digits.
+      return { result: jsonOrText(res.stdout) };
     default:
       return { ok: true };
   }
+}
+
+/** Parse stdout as JSON when it is JSON, else hand back the trimmed text. */
+function jsonOrText(stdout: string): unknown {
+  const raw = stdout.trim();
+  try { return JSON.parse(raw); } catch { return raw; }
+}
+
+/**
+ * Base64 PNG, the way the web engine answers `browser.screenshot`.
+ *
+ * `cdpBridge.screenshot` returns `Page.captureScreenshot`'s base64 `data`
+ * directly. agent-browser has no equivalent: `screenshot [selector] [path]`
+ * always WRITES A FILE and reports its path (`data.path`), with no flag to emit
+ * bytes on stdout. So parity has to be bought by reading the file back.
+ *
+ * A failed read falls through to whatever else the payload offered rather than
+ * throwing: a screenshot that cannot be encoded is worth reporting as an empty
+ * result, not worth failing the agent's whole command over.
+ */
+async function screenshotBase64(data: unknown, res: RunResult): Promise<string> {
+  const filePath = field(data, 'path');
+  if (typeof filePath === 'string' && filePath) {
+    try {
+      return (await fs.promises.readFile(filePath)).toString('base64');
+    } catch {
+      /* fall through to the shapes below */
+    }
+  }
+  return field(data, 'data') ?? field(data, 'base64') ?? res.stdout.trim();
 }
 
 /**
@@ -299,8 +369,14 @@ function agentFailure(method: string, res: RunResult): Error {
       { spawnFailed: true },
     );
   }
+  // A `--json` failure carries the reason in the envelope's `error` field
+  // (`{"success":false,"data":null,"error":"Unknown ref: e1"}`) and prints the
+  // same thing to stderr as `✗ Unknown ref: e1`. Prefer the structured field —
+  // it is the message without the decoration — and fall back to the streams.
+  const enveloped = res.data as { error?: unknown } | null;
+  const structured = typeof enveloped?.error === 'string' ? enveloped.error.trim() : '';
   return Object.assign(
-    new Error(res.stderr.trim() || res.stdout.trim() || `agent-browser ${method} failed`),
+    new Error(structured || res.stderr.trim() || res.stdout.trim() || `agent-browser ${method} failed`),
     { spawnFailed: false },
   );
 }
@@ -324,7 +400,7 @@ export async function runBrowserCommandForTarget(
     const argv = toAgentBrowserArgv(method, params, target.session.sessionName);
     const res = await deps.runAgent(argv, agentTimeoutFor(method, params));
     if (!res.ok) throw agentFailure(method, res);
-    return agentResultShape(method, res);
+    return await agentResultShape(method, res);
   }
 
   const { wcId } = target;

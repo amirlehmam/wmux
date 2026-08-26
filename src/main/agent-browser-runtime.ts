@@ -33,6 +33,26 @@ const PROBE_TIMEOUT_MS = 500;
 /** Starting a dashboard can mean downloading/launching a Chrome — be patient. */
 const DASHBOARD_START_TIMEOUT_MS = 30_000;
 
+/**
+ * How long to wait for the dashboard's PORT to come up after asking it to start.
+ *
+ * The process exit is not the readiness signal. Measured against agent-browser
+ * 0.35.0 on a cold start: `dashboard start` exits at 58ms having daemonised,
+ * but :4848 does not accept a connection until ~500ms later. Waiting on the
+ * exit would report success before the dashboard could serve anything, and the
+ * pane — which loads the dashboard url in a webview — would race it and lose.
+ *
+ * Polling the port is also the only thing that stays correct if the command
+ * does NOT exit promptly: `dashboard start` runs a foreground server in some
+ * configurations, in which case waiting for its exit reports failure for a
+ * dashboard that is running perfectly well, and would trip the retry cooldown
+ * on a healthy install.
+ */
+const DASHBOARD_READY_MS = 8_000;
+
+/** Gap between readiness polls. Short — this is a loopback connect. */
+const DASHBOARD_POLL_MS = 200;
+
 /** Stopping is a signal to an already-running process; it should be quick. */
 const DASHBOARD_STOP_TIMEOUT_MS = 10_000;
 
@@ -63,6 +83,25 @@ export function probeDashboardPort(port: number = DASHBOARD_PORT, timeoutMs: num
     socket.once('connect', () => done(true));
     socket.once('error', () => done(false));
   });
+}
+
+/**
+ * Poll the dashboard port until it answers, or the deadline passes.
+ *
+ * Separate from the `start` hook, and parameterised, so the give-up path can be
+ * tested in milliseconds instead of making the suite sit out a real 8s
+ * deadline. Returns whether the dashboard is actually reachable.
+ */
+export async function waitForDashboard(
+  readyMs: number = DASHBOARD_READY_MS,
+  pollMs: number = DASHBOARD_POLL_MS,
+): Promise<boolean> {
+  const deadline = Date.now() + readyMs;
+  for (;;) {
+    if (await probeDashboardPort()) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
 }
 
 /**
@@ -98,8 +137,11 @@ export const dashboardDaemon = new DashboardDaemon({
   start: async () => {
     const binary = agentBrowserPath();
     if (!binary) return false;
-    const res = await runAgentBrowser(binary, ['dashboard', 'start'], DASHBOARD_START_TIMEOUT_MS);
-    return res.ok;
+    // Fire it, then ask the PORT whether it worked — see DASHBOARD_READY_MS.
+    // The invocation is deliberately not awaited, and whether it succeeds is
+    // not the answer to "is the dashboard up"; `waitForDashboard` is.
+    runAgentBrowser(binary, ['dashboard', 'start'], DASHBOARD_START_TIMEOUT_MS).catch(() => {});
+    return waitForDashboard();
   },
   stop: async () => {
     const binary = agentBrowserPath();

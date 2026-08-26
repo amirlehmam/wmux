@@ -21,7 +21,7 @@
  * filesystem, and memoised at the module boundary because it is read on the
  * pane-render path (#176: `where` cost 2x pty.spawn).
  */
-import { execFile, ExecException } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -240,32 +240,131 @@ export interface RunResult {
   stderr: string;
 }
 
-/** A spawn-level failure sets `err.code` to an errno STRING (e.g. `ENOENT`); a
- *  non-zero exit sets it to the exit code NUMBER instead — that is how Node's
- *  own `child_process` docs distinguish the two, and the only reliable seam. */
-function isSpawnFailure(err: ExecException | null): boolean {
-  return !!err && typeof err.code === 'string';
-}
+/** Hard cap on captured output, mirroring the `maxBuffer` execFile used to apply. */
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+/**
+ * How long to keep reading stdout after the child has already exited.
+ *
+ * See `runAgentBrowser`: we resolve on `'exit'` rather than `'close'`, and
+ * `'exit'` makes no promise that everything the child wrote has been delivered
+ * to us yet. In practice it has — but a truncated snapshot would be a silent,
+ * data-dependent corruption, so we give the pipe a moment to drain. If the
+ * stream closes on its own first (nothing is holding it open) we finish
+ * immediately and pay nothing, so this is only ever spent on the daemon-
+ * spawning commands that cannot close their pipe at all.
+ */
+const STDIO_DRAIN_MS = 50;
 
 /**
  * Run one agent-browser invocation.
  *
- * Spawned via execFile with an argv ARRAY — never a shell string — so a URL or
- * a snippet of JS passed to `eval` cannot break out into the shell. This is a
- * security boundary: the argv comes from a pipe command an agent controls.
+ * ── Why `spawn`, and why `'exit'` rather than `'close'` ────────────────────
+ * This used `execFile`, and it hung forever on the commands that matter most.
+ * Measured against agent-browser 0.35.0, `open`ing a session cold:
+ *
+ *     execFile → callback never fires (killed at 3 min)
+ *     spawn    → 'exit' at 787 ms, code 0, full stdout captured
+ *
+ * `execFile`'s callback fires on stdio CLOSE, not on process exit. Any
+ * agent-browser command that starts a long-lived background process — the
+ * first `open` of a session (starts the daemon), `dashboard start` — leaves
+ * that daemon holding the inherited stdout pipe open for as long as it lives.
+ * The child exits; the pipe does not close; the callback never runs. The verb
+ * would burn its whole timeout and then be reported as a FAILURE despite
+ * having succeeded, which is the worst of both outcomes.
+ *
+ * So: `spawn`, and resolve on `'exit'` — the event that actually means "this
+ * process is done". `'error'` is where a spawn-level failure surfaces under
+ * `spawn` (there is no callback `err` to inspect), which is what now drives
+ * `spawnFailed`. The timeout is reimplemented here because `spawn` has no
+ * `timeout` option with `execFile`'s semantics.
+ *
+ * Argv stays an ARRAY and `shell` is deliberately never set. Resolution above
+ * only ever returns a real executable (a native `.exe`/extensionless binary,
+ * never a `.cmd`/`.bat` shim), so no shell is needed — and `shell: true` would
+ * route argv (which can carry agent-controlled URLs and `eval` JS) through the
+ * platform shell's parser, undoing the whole point of resolving past the shim.
+ *
+ * `env` is merged over `process.env` rather than replacing it: the child still
+ * needs PATH, APPDATA and the rest to find its own runtime. It exists for
+ * `AGENT_BROWSER_STREAM_PORT`, which is the only supported way to pin a
+ * session's stream port (see `enableAgentBrowser`).
  */
-export function runAgentBrowser(binary: string, argv: string[], timeoutMs = 60_000): Promise<RunResult> {
+export function runAgentBrowser(
+  binary: string,
+  argv: string[],
+  timeoutMs = 60_000,
+  env?: NodeJS.ProcessEnv,
+): Promise<RunResult> {
   return new Promise((resolve) => {
-    // `shell` is deliberately never set. Resolution above only ever returns a
-    // real executable (a native `.exe`/extensionless binary, never a
-    // `.cmd`/`.bat` shim), so no shell is needed to launch it — and adding
-    // `shell: true` here would route argv (which can carry agent-controlled
-    // URLs and `eval` JS) through the platform shell's parser, undoing the
-    // whole point of resolving past the shim in the first place.
-    execFile(binary, argv, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let drainTimer: NodeJS.Timeout | undefined;
+
+    const child = spawn(binary, argv, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: env ? { ...process.env, ...env } : process.env,
+    });
+
+    const finish = (result: Omit<RunResult, 'data'>): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(drainTimer);
       let data: unknown = null;
-      try { data = JSON.parse(stdout); } catch { /* not every verb emits JSON */ }
-      resolve({ ok: !err, spawnFailed: isSpawnFailure(err), data, stdout: stdout ?? '', stderr: stderr ?? '' });
+      try { data = JSON.parse(result.stdout); } catch { /* not every verb emits JSON */ }
+      resolve({ ...result, data });
+    };
+
+    const timer = setTimeout(() => {
+      child.kill();
+      finish({
+        ok: false,
+        spawnFailed: false,
+        stdout,
+        stderr: stderr || `agent-browser timed out after ${timeoutMs}ms`,
+      });
+    }, timeoutMs);
+
+    const capture = (stream: NodeJS.ReadableStream | null, onChunk: (s: string) => void): void => {
+      stream?.on('data', (chunk: Buffer) => onChunk(chunk.toString()));
+    };
+    capture(child.stdout, (s) => { if (stdout.length < MAX_OUTPUT_BYTES) stdout += s; });
+    capture(child.stderr, (s) => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += s; });
+
+    // A spawn-level failure (ENOENT on a stale path, EACCES, the .cmd EINVAL
+    // trap this file exists to avoid) arrives here and nowhere else.
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      finish({ ok: false, spawnFailed: true, stdout, stderr: stderr || err.message });
+    });
+
+    child.on('exit', (code) => {
+      const done = (): void => finish({ ok: code === 0, spawnFailed: false, stdout, stderr });
+      // If nothing is holding the pipe open, 'close' lands right behind 'exit'
+      // and we finish with no delay at all.
+      child.once('close', done);
+      drainTimer = setTimeout(done, STDIO_DRAIN_MS);
     });
   });
+}
+
+/**
+ * The payload out of an agent-browser result, with its envelope removed.
+ *
+ * `--json` wraps every verb's payload in `{success, data, error}` — verified
+ * against 0.35.0 for snapshot, screenshot, eval, read, get url and get text,
+ * including the failure form `{success:false, data:null, error:"Unknown ref: e1"}`.
+ * Without `--json` the same verbs print bare text and there is no envelope at
+ * all. Both forms reach us depending on the verb, so unwrapping happens in ONE
+ * place and every consumer reads the inner payload without caring which it got.
+ */
+export function unwrapAgentData(res: Pick<RunResult, 'data'>): unknown {
+  const d = res.data;
+  if (d && typeof d === 'object' && 'success' in d && 'data' in d) {
+    return (d as { data: unknown }).data;
+  }
+  return d;
 }
