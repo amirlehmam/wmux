@@ -9,7 +9,17 @@ export type SplitNode =
   | { type: 'leaf'; paneId: PaneId; surfaces: SurfaceRef[]; activeSurfaceIndex: number }
   | { type: 'branch'; direction: 'horizontal' | 'vertical'; ratio: number; children: [SplitNode, SplitNode] };
 
-export type SurfaceType = 'terminal' | 'browser' | 'markdown' | 'diff';
+/**
+ * `prompts` is the prompt outline (issue #207) as a pane rather than an overlay.
+ *
+ * The overlay it joins is not replaced: an overlay is right for a glance and
+ * wrong for a panel you keep open, because it floats over the terminal it is
+ * describing and takes rows away from it. As a surface it splits, resizes and
+ * persists like anything else, which is what "keep it open next to the terminal"
+ * actually requires. Both drive the same per-surface prompt log, so neither is a
+ * second implementation of anything.
+ */
+export type SurfaceType = 'terminal' | 'browser' | 'markdown' | 'diff' | 'prompts';
 
 /**
  * Which engine backs a `browser` surface.

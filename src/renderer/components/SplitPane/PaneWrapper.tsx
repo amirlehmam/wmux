@@ -6,6 +6,7 @@ import TerminalPane from '../Terminal/TerminalPane';
 import BrowserPane from '../Browser/BrowserPane';
 import MarkdownPane from '../Markdown/MarkdownPane';
 import DiffPane from '../Diff/DiffPane';
+import PromptsPane from '../Terminal/PromptsPane';
 import NotificationRing from '../Terminal/NotificationRing';
 import SurfaceTabBar from './SurfaceTabBar';
 import { useStore } from '../../store';
@@ -331,6 +332,7 @@ export default function PaneWrapper({
             />
           )}
           {surface.type === 'diff' && <DiffPane surfaceId={surface.id} cwd={workspace?.cwd} />}
+          {surface.type === 'prompts' && <PromptsPane surfaceId={surface.id} />}
         </div>
       );
     });
@@ -341,7 +343,7 @@ export default function PaneWrapper({
     }
   };
 
-  const handleNewSurfaceTyped = (type: 'terminal' | 'browser' | 'markdown') => {
+  const handleNewSurfaceTyped = (type: 'terminal' | 'browser' | 'markdown' | 'prompts') => {
     if (activeWorkspaceId) {
       addSurface(activeWorkspaceId, paneId, type);
     }

@@ -234,13 +234,106 @@ export interface HighlightOptions {
 const MAX_HIGHLIGHT_ROWS = 24;
 
 /**
+ * How much of the user's colour goes into the row tint.
+ *
+ * Only meaningful because the tint is now composited UNDER the glyphs (see
+ * `applyHighlight`). The DOM overlay this replaced had to sit at 0.12 or it
+ * washed the text out — and at 0.12 over a terminal background every hue
+ * collapses to the same grey, which is the whole bug.
+ */
+const TINT_ALPHA = 0.26;
+
+/** `#rgb` / `#rrggbb` / `#rrggbbaa` / `rgb()` / `rgba()` as channels, else null. */
+function parseColor(color: string): [number, number, number] | null {
+  const value = (color || '').trim();
+  const hex = /^#([0-9a-fA-F]{3,8})$/.exec(value);
+  if (hex) {
+    const digits = hex[1];
+    // 3 and 4 digit forms are shorthand; the 4th/8th digits are alpha, which is
+    // deliberately dropped — see the note on the translucent case below.
+    if (digits.length === 3 || digits.length === 4) {
+      return [0, 1, 2].map((i) => parseInt(digits[i] + digits[i], 16)) as [number, number, number];
+    }
+    if (digits.length === 6 || digits.length === 8) {
+      return [0, 2, 4].map((i) => parseInt(digits.slice(i, i + 2), 16)) as [number, number, number];
+    }
+    return null;
+  }
+  // Split rather than match the whole `rgb()` form. A pattern with `\s*` on both
+  // sides of a separator that can ITSELF be a space is ambiguous, and an
+  // ambiguous pattern over attacker-shaped input is the super-linear-backtracking
+  // trap sonarjs/slow-regex exists to catch. One character class with `+` cannot
+  // backtrack against itself.
+  const open = value.indexOf('(');
+  const close = value.indexOf(')', open + 1);
+  const head = open > 0 ? value.slice(0, open).trim().toLowerCase() : '';
+  if ((head !== 'rgb' && head !== 'rgba') || close < 0) return null;
+  const parts = value.slice(open + 1, close).split(/[\s,/]+/).filter(Boolean);
+  if (parts.length < 3) return null;
+  const channels = parts.slice(0, 3).map((p) => Math.round(Number(p)));
+  if (channels.some((c) => !Number.isFinite(c) || c < 0 || c > 255)) return null;
+  return channels as [number, number, number];
+}
+
+/** The terminal's own background, which the tint is mixed into. */
+function backgroundOf(terminal: Terminal): string {
+  try {
+    return terminal.options?.theme?.background ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The user's colour mixed into the terminal background, as an opaque `#rrggbb`.
+ *
+ * Opaque because it has to be: xterm's renderers read a decoration's
+ * `backgroundColor` and composite it into the CELL background themselves, and
+ * they IGNORE its alpha channel — `#ff2d5540` and `#ff2d55` paint identically on
+ * both the WebGL and the DOM renderer. So the blend has to happen here, where we
+ * still know what it is being mixed into.
+ *
+ * Null when either colour is unparseable, which is the caller's cue to fall back
+ * to the CSS tint rather than guess at a background.
+ *
+ * On a TRANSLUCENT terminal (issue #89, where the background arrives as
+ * `rgba(...)`) the alpha is dropped and the mix is against the RGB alone, so a
+ * prompt's rows become an opaque band over the window backdrop. That is a
+ * deliberate trade: the alternative is the tint the user configured being
+ * invisible, which is the bug this replaced.
+ */
+function blendOverBackground(color: string, background: string): string | null {
+  const fg = parseColor(color);
+  const bg = parseColor(background);
+  if (!fg || !bg) return null;
+  const mix = (i: number) => Math.round(fg[i] * TINT_ALPHA + bg[i] * (1 - TINT_ALPHA));
+  return `#${[0, 1, 2].map((i) => mix(i).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
  * Tint the prompt's rows and draw a rail down their left edge (idea 1).
  *
- * `layer: 'bottom'` puts the tint UNDER the glyphs — on top it would wash out
- * the text it is meant to point at. The colour reaches CSS as a custom property
- * rather than as `backgroundColor`, so one rule in prompt-marks.css owns how a
- * highlight looks (rail width, tint alpha, light/dark) and the preference only
- * has to carry a hue.
+ * ─── Why the tint is a decoration OPTION and not a CSS rule ──────────────────
+ *
+ * It used to be CSS: a `::before` on the decoration's DOM element at `opacity:
+ * .12`, with `layer: 'bottom'` believed to put it under the glyphs. It does not,
+ * and cannot. xterm gives its decoration container `z-index: 6` while the
+ * renderer's canvas is `z-index: 2`, so a DOM decoration ALWAYS paints over the
+ * text; `layer` only orders decorations against each other. The 0.12 was there
+ * to stop the tint washing out the text it sat on — and at 0.12 over a terminal
+ * background every hue collapses to the same near-neutral grey. Users reported
+ * exactly that: "the rail is always the default grey, whatever colour I pick."
+ * The colour was being applied perfectly; it just could not be seen.
+ *
+ * So the tint is handed to the RENDERER instead, via `backgroundColor`, which
+ * both the WebGL and DOM renderers composite into the cell background before
+ * drawing glyphs on top. That is the layer the CSS was only pretending to be on,
+ * and being genuinely underneath is what lets the tint be strong enough to carry
+ * a hue while the text stays crisp.
+ *
+ * The rail stays in CSS, where it is the one thing showing the user's colour at
+ * full saturation, and the custom property still carries it so `prompt-marks.css`
+ * owns the width.
  */
 export function applyHighlight(
   terminal: Terminal,
@@ -253,6 +346,7 @@ export function applyHighlight(
   clearHighlight(surfaceId, entryId);
 
   const height = Math.max(1, Math.min(MAX_HIGHLIGHT_ROWS, Math.floor(options.rows) || 1));
+  const tint = blendOverBackground(options.color, backgroundOf(terminal));
   try {
     const decoration = terminal.registerDecoration({
       marker: record.marker,
@@ -260,6 +354,7 @@ export function applyHighlight(
       width: terminal.cols,
       height,
       layer: 'bottom',
+      ...(tint ? { backgroundColor: tint } : {}),
       ...(options.ruler
         ? { overviewRulerOptions: { color: options.color, position: 'left' as const } }
         : {}),
@@ -271,6 +366,10 @@ export function applyHighlight(
       // property both are.
       element.classList.add('wmux-prompt-mark');
       element.style.setProperty('--wmux-prompt-color', options.color);
+      // Only when the blend could not be computed — an unparseable theme
+      // background — does the old over-the-glyphs tint come back, because a
+      // washed-out hint still beats a rail with nothing beside it.
+      element.classList.toggle('wmux-prompt-mark--css-tint', !tint);
     });
     record.decorations.push(decoration);
   } catch {

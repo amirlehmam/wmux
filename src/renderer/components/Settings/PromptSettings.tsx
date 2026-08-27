@@ -193,11 +193,33 @@ export default function PromptSettings() {
         />
 
         <div className="settings-row">
+          <label className="settings-label">{t('settings.prompt.outlineMode', 'Open the outline as')}</label>
+          <select
+            className="settings-select"
+            value={promptPrefs.outlineMode}
+            disabled={off || !promptPrefs.outline}
+            onChange={(e) => setPromptPrefs({ outlineMode: e.target.value as 'overlay' | 'pane' })}
+          >
+            <option value="overlay">{t('settings.prompt.outlineMode.overlay', 'An overlay on the pane')}</option>
+            <option value="pane">{t('settings.prompt.outlineMode.pane', 'A pane of its own')}</option>
+          </select>
+        </div>
+        <p className="settings-hint">
+          {t(
+            'settings.prompt.outlineModeHint',
+            'An overlay floats over the terminal and covers part of it — right for a glance. A pane sits in the layout like any other, so you can split and resize it and keep it open next to the terminal permanently.',
+          )}
+        </p>
+
+        <div className="settings-row">
           <label className="settings-label">{t('settings.prompt.outlineSide', 'Outline side')}</label>
           <select
             className="settings-select"
             value={promptPrefs.outlineSide}
-            disabled={off}
+            // Meaningless for a pane: the split tree decides where that goes,
+            // and a live control that cannot affect anything is worse than a
+            // greyed one.
+            disabled={off || promptPrefs.outlineMode === 'pane'}
             onChange={(e) => setPromptPrefs({ outlineSide: e.target.value as 'right' | 'left' })}
           >
             <option value="right">{t('settings.prompt.outlineSide.right', 'Right')}</option>
@@ -205,7 +227,7 @@ export default function PromptSettings() {
           </select>
         </div>
         <p className="settings-hint">
-          {t('settings.prompt.outlineSideHint', 'Which edge of the pane the outline opens against.')}
+          {t('settings.prompt.outlineSideHint', 'Which edge of the pane the overlay opens against.')}
         </p>
       </div>
     </div>

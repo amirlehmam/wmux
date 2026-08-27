@@ -53,6 +53,8 @@ export function getSurfaceLabel(
     }
     case 'diff':
       return t('surfaceLabel.diff', 'Diff');
+    case 'prompts':
+      return t('surfaceLabel.prompts', 'Prompts');
     default:
       return t('surfaceLabel.tab', 'Tab');
   }

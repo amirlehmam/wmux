@@ -388,7 +388,13 @@ export function useKeyboardShortcuts(
       resetTerminal: resetFocusedTerminal,
       // Issue #207. The bodies live in store/prompt-actions.ts so the command
       // palette runs the same code — see the note there.
-      togglePromptOutline: () => togglePromptOutlineFor(focusedTerminalSurfaceId()),
+      // The pane context is what lets `outlineMode: 'pane'` put the outline in
+      // the split tree instead of over the terminal; without it the action
+      // silently falls back to the overlay.
+      togglePromptOutline: () => togglePromptOutlineFor(
+        focusedTerminalSurfaceId(),
+        activeWorkspaceId && focusedPaneId ? { workspaceId: activeWorkspaceId, paneId: focusedPaneId } : null,
+      ),
       togglePinnedPrompt: () => togglePinnedPromptFor(focusedTerminalSurfaceId()),
       followOutput: () => followOutputFor(focusedTerminalSurfaceId()),
       fontSizeIncrease: () => adjustFontSize((s) => Math.min(32, s + 1)),

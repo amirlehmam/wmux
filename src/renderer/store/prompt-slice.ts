@@ -120,6 +120,33 @@ export interface PromptSlice {
    * between a pin and a header.
    */
   pinnedPrompts: Record<string, PromptEntry | null>;
+  /**
+   * The terminal surface a `prompts` PANE lists.
+   *
+   * A pane, unlike the overlay, is not attached to the terminal it describes —
+   * it sits somewhere else in the split tree — so it has to be told which one to
+   * follow. This is the last terminal surface to hold focus, written by App.tsx.
+   *
+   * The load-bearing rule is what it does NOT track: focus landing on anything
+   * that is not a terminal leaves this alone. Otherwise clicking into the
+   * prompts pane itself — to scroll it, to filter it, to click a row — would
+   * immediately blank the thing the user just clicked on.
+   */
+  promptSourceSurface: string | null;
+  /**
+   * paneSurfaceId → the terminal surface that pane has been PINNED to.
+   *
+   * Following focus is right for one terminal and wrong for two: watching pane A
+   * while typing in pane B is exactly when an outline is worth having, and
+   * follow-focus makes that the one thing it cannot do. An entry here opts a
+   * single panel out.
+   *
+   * Deliberately not persisted and not on the SurfaceRef. A lock is a statement
+   * about the CURRENT arrangement of panes, and restoring one whose target
+   * surface no longer exists gives a panel that is stuck on nothing and offers
+   * no clue why. Restarting into follow-focus is the recoverable default.
+   */
+  promptPaneLocks: Record<string, string>;
 
   recordPrompt(entry: PromptEntry): void;
   /** Fill in fields learned after the entry was opened (text, line, rows). */
@@ -127,6 +154,9 @@ export interface PromptSlice {
   clearPromptsForSurface(surfaceId: string): void;
   setPromptOutlineSurface(surfaceId: string | null): void;
   setPinnedPrompt(surfaceId: string, entry: PromptEntry | null): void;
+  setPromptSourceSurface(surfaceId: string | null): void;
+  /** Pin a prompts pane to one terminal, or pass null to follow focus again. */
+  setPromptPaneLock(paneSurfaceId: string, sourceSurfaceId: string | null): void;
 }
 
 /** Next sequence number for a surface. */
@@ -158,6 +188,8 @@ export const createPromptSlice: StateCreator<PromptSlice, [], [], PromptSlice> =
   prompts: {},
   promptOutlineSurface: null,
   pinnedPrompts: {},
+  promptSourceSurface: null,
+  promptPaneLocks: {},
 
   recordPrompt(entry: PromptEntry): void {
     set((state) => {
@@ -199,19 +231,32 @@ export const createPromptSlice: StateCreator<PromptSlice, [], [], PromptSlice> =
 
   clearPromptsForSurface(surfaceId: string): void {
     set((state) => {
+      // A lock is dropped from BOTH sides: the pane that holds it may be the
+      // surface going away, and so may the terminal it points at. A lock left
+      // pointing at a dead terminal is a panel permanently showing nothing, with
+      // its own "following" label insisting otherwise.
+      const lockedKeys = Object.keys(state.promptPaneLocks)
+        .filter((pane) => pane === surfaceId || state.promptPaneLocks[pane] === surfaceId);
+
       if (!(surfaceId in state.prompts)
         && !(surfaceId in state.pinnedPrompts)
-        && state.promptOutlineSurface !== surfaceId) {
+        && state.promptOutlineSurface !== surfaceId
+        && state.promptSourceSurface !== surfaceId
+        && lockedKeys.length === 0) {
         return {};
       }
       const prompts = { ...state.prompts };
       delete prompts[surfaceId];
       const pinnedPrompts = { ...state.pinnedPrompts };
       delete pinnedPrompts[surfaceId];
+      const promptPaneLocks = { ...state.promptPaneLocks };
+      for (const pane of lockedKeys) delete promptPaneLocks[pane];
       return {
         prompts,
         pinnedPrompts,
+        promptPaneLocks,
         promptOutlineSurface: state.promptOutlineSurface === surfaceId ? null : state.promptOutlineSurface,
+        promptSourceSurface: state.promptSourceSurface === surfaceId ? null : state.promptSourceSurface,
       };
     });
   },
@@ -222,5 +267,21 @@ export const createPromptSlice: StateCreator<PromptSlice, [], [], PromptSlice> =
 
   setPinnedPrompt(surfaceId: string, entry: PromptEntry | null): void {
     set((state) => ({ pinnedPrompts: { ...state.pinnedPrompts, [surfaceId]: entry } }));
+  },
+
+  setPromptSourceSurface(surfaceId: string | null): void {
+    // Guarded because the caller is a focus effect that re-runs on every split
+    // tree change: writing an unchanged value re-renders every prompts pane in
+    // the window, which is the over-invalidation shape of issue #141.
+    set((state) => (state.promptSourceSurface === surfaceId ? {} : { promptSourceSurface: surfaceId }));
+  },
+
+  setPromptPaneLock(paneSurfaceId: string, sourceSurfaceId: string | null): void {
+    set((state) => {
+      const promptPaneLocks = { ...state.promptPaneLocks };
+      if (sourceSurfaceId) promptPaneLocks[paneSurfaceId] = sourceSurfaceId;
+      else delete promptPaneLocks[paneSurfaceId];
+      return { promptPaneLocks };
+    });
   },
 });

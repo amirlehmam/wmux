@@ -560,6 +560,22 @@ export interface PromptPrefs {
    */
   outline: boolean;
   outlineSide: 'right' | 'left';
+  /**
+   * What the outline command opens.
+   *
+   * `'overlay'` — the docked panel that floats over the terminal it lists.
+   * `'pane'`    — a `prompts` SURFACE beside it, which splits and resizes like
+   *               any other pane and takes no rows off the terminal.
+   *
+   * One preference rather than two commands because they are two answers to the
+   * same request, and a user wants one of them habitually — an overlay for a
+   * glance, a panel to keep open. Both remain reachable regardless: the tab
+   * bar's + menu and `wmux new-surface --type prompts` always make a pane.
+   *
+   * `outlineSide` only means anything to the overlay; a pane is placed by the
+   * split tree, which the user already controls.
+   */
+  outlineMode: 'overlay' | 'pane';
   /** Which generation of these defaults this blob has been reconciled against. */
   promptDefaultRev: number;
 }
@@ -612,6 +628,10 @@ export const DEFAULT_PROMPT_PREFS: PromptPrefs = {
   anchorScope: 'agent',
   outline: true,
   outlineSide: 'right',
+  // The overlay is what 2.4.0 shipped and what the shortcut has always done, so
+  // it stays the default: a preference that silently changes what an existing
+  // key does is a bug report, not a feature.
+  outlineMode: 'overlay',
   promptDefaultRev: PROMPT_DEFAULT_REV,
 };
 

@@ -139,6 +139,7 @@ export const fr: Translation = {
   'surfaceLabel.browser': 'Navigateur',
   'surfaceLabel.markdown': 'Markdown',
   'surfaceLabel.diff': 'Diff',
+  'surfaceLabel.prompts': 'Invites',
   'surfaceLabel.tab': 'Onglet',
   // SplitPane — aperçu de division par glisser-déposer
   'splitPreview.dropHere': 'Déposer ici',
@@ -645,6 +646,11 @@ export const fr: Translation = {
   'settings.prompt.outline': 'Sommaire des invites',
   'settings.prompt.outlineHint':
     'La liste de toutes les invites du panneau ; cliquez-en une pour y revenir. Il reste fermé tant que vous ne le demandez pas — {binding} l’ouvre et le ferme.',
+  'settings.prompt.outlineMode': 'Ouvrir le sommaire en',
+  'settings.prompt.outlineMode.overlay': 'Superposition sur le panneau',
+  'settings.prompt.outlineMode.pane': 'Panneau à part entière',
+  'settings.prompt.outlineModeHint':
+    'Une superposition flotte au-dessus du terminal et en masque une partie — pratique pour un coup d’œil. Un panneau prend sa place dans la disposition comme n’importe quel autre : on le divise, on le redimensionne, et on le garde ouvert en permanence à côté du terminal.',
   'settings.prompt.outlineSide': 'Côté du sommaire',
   'settings.prompt.outlineSide.right': 'Droite',
   'settings.prompt.outlineSide.left': 'Gauche',
@@ -670,4 +676,9 @@ export const fr: Translation = {
   'prompt.outlineJump': 'Clic pour y aller, double-clic pour y aller et fermer',
   'prompt.outlineNoMatch': 'Aucune invite ne correspond à ce filtre.',
   'prompt.outlineEmpty': 'Aucune invite enregistrée pour l’instant — wmux les apprend via les hooks de Claude Code ou l’intégration shell.',
+  'prompt.paneJump': 'Amener le terminal à cette invite',
+  'prompt.paneLock': 'Suit le panneau actif — cliquez pour figer la liste sur celui-ci',
+  'prompt.paneUnlock': 'Figé sur un panneau — cliquez pour suivre à nouveau le panneau actif',
+  'prompt.paneNoSource': 'Activez un panneau terminal et ce volet listera ses invites.',
+  'prompt.paneDisabled': 'Le suivi des invites est désactivé. Activez-le dans Réglages → Invites.',
 };

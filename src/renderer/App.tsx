@@ -933,6 +933,30 @@ export default function App() {
     }
   }, [activeWorkspace?.id, activeWorkspace?.splitTree]);
 
+  /**
+   * Tell every `prompts` PANE which terminal it is listing (issue #207 follow-up).
+   *
+   * A prompts pane is not attached to the terminal it describes — it lives
+   * somewhere else in the split tree — so the focused terminal has to be pushed
+   * to it. Computed here because this is where focus lives; `focusedPaneId` is
+   * component state, not store state.
+   *
+   * The `if` is the whole rule. Focus landing on ANYTHING that is not a terminal
+   * leaves the last value standing, so clicking into the prompts pane itself —
+   * to filter it, to scroll it, to click a row — does not blank the list the
+   * user just reached for. `setPromptSourceSurface` no-ops on an unchanged
+   * value, which matters because this runs on every split-tree edit.
+   */
+  useEffect(() => {
+    const leaf = activeWorkspace && focusedPaneId
+      ? findLeaf(activeWorkspace.splitTree, focusedPaneId)
+      : undefined;
+    const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+    if (surface?.type === 'terminal') {
+      useStore.getState().setPromptSourceSurface(surface.id);
+    }
+  }, [activeWorkspace?.splitTree, focusedPaneId]);
+
   const handleRatioChange = useCallback(
     (leftPaneId: PaneId, rightPaneId: PaneId, ratio: number) => {
       if (!activeWorkspace) return;
@@ -1033,7 +1057,10 @@ export default function App() {
         document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: terminalSurfaceId } }));
       }
     } else if (action === 'togglePromptOutline') {
-      togglePromptOutlineFor(terminalSurfaceId);
+      togglePromptOutlineFor(
+        terminalSurfaceId,
+        activeWorkspaceId && focusedPaneId ? { workspaceId: activeWorkspaceId, paneId: focusedPaneId } : null,
+      );
     } else if (action === 'togglePinnedPrompt') {
       togglePinnedPromptFor(terminalSurfaceId);
     } else if (action === 'followOutput') {

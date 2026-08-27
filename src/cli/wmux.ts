@@ -1603,7 +1603,7 @@ const COMMAND_SPECS = {
 
   // Surface
   'new-surface': {
-    usage: 'wmux new-surface [--type terminal|browser|markdown] [--color-scheme NAME]',
+    usage: 'wmux new-surface [--type terminal|browser|markdown|prompts] [--color-scheme NAME]',
     value: ['--type', '--color-scheme'],
   },
   'close-surface': { usage: 'wmux close-surface [surfaceId]' },
@@ -1628,7 +1628,7 @@ const COMMAND_SPECS = {
 
   // Pane
   split: {
-    usage: 'wmux split [--down] [--type terminal|browser|markdown] [--color-scheme NAME]',
+    usage: 'wmux split [--down] [--type terminal|browser|markdown|prompts] [--color-scheme NAME]',
     value: ['--type', '--color-scheme'],
     bool: ['--down'],
   },

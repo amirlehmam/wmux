@@ -173,6 +173,7 @@ export const en = {
   'surfaceLabel.browser': 'Browser',
   'surfaceLabel.markdown': 'Markdown',
   'surfaceLabel.diff': 'Diff',
+  'surfaceLabel.prompts': 'Prompts',
   'surfaceLabel.tab': 'Tab',
   // SplitPane — drag-to-split preview overlay
   'splitPreview.dropHere': 'Drop here',
@@ -723,6 +724,11 @@ export const en = {
   'settings.prompt.outline': 'Prompt outline',
   'settings.prompt.outlineHint':
     'A list of every prompt in the pane, click one to jump back to it. It stays closed until you ask for it — {binding} opens and closes it.',
+  'settings.prompt.outlineMode': 'Open the outline as',
+  'settings.prompt.outlineMode.overlay': 'An overlay on the pane',
+  'settings.prompt.outlineMode.pane': 'A pane of its own',
+  'settings.prompt.outlineModeHint':
+    'An overlay floats over the terminal and covers part of it — right for a glance. A pane sits in the layout like any other, so you can split and resize it and keep it open next to the terminal permanently.',
   'settings.prompt.outlineSide': 'Outline side',
   'settings.prompt.outlineSide.right': 'Right',
   'settings.prompt.outlineSide.left': 'Left',
@@ -751,6 +757,11 @@ export const en = {
   'prompt.outlineJump': 'Click to jump, double-click to jump and close',
   'prompt.outlineNoMatch': 'No prompt matches this filter.',
   'prompt.outlineEmpty': 'No prompts recorded yet — wmux learns them from Claude Code’s hooks or from shell integration.',
+  'prompt.paneJump': 'Jump the terminal to this prompt',
+  'prompt.paneLock': 'Following the focused pane — click to pin this list to it',
+  'prompt.paneUnlock': 'Following a fixed pane — click to follow the focused pane again',
+  'prompt.paneNoSource': 'Focus a terminal pane and this panel will list its prompts.',
+  'prompt.paneDisabled': 'Prompt tracking is off. Turn it on in Settings → Prompts.',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

@@ -1,6 +1,8 @@
 import { useStore } from './index';
 import { release as releaseAnchor } from '../utils/prompt-anchor';
 import { surfaceTerminalRegistry } from '../hooks/useTerminal';
+import { findLeaf } from './split-utils';
+import type { PaneId, WorkspaceId } from '../../shared/types';
 import type { PromptEntry } from './prompt-slice';
 
 /**
@@ -19,14 +21,56 @@ import type { PromptEntry } from './prompt-slice';
  * appears in the palette, is selectable, and silently does nothing.
  */
 
-/** Open the outline on this surface, or close it if it is already open here. */
-export function togglePromptOutlineFor(surfaceId: string | null): void {
+/**
+ * Open the outline on this surface, or close it if it is already open here.
+ *
+ * `promptPrefs.outlineMode` decides WHICH outline. The overlay is the default
+ * and what 2.4.0 shipped; `'pane'` gives the same list as a surface in the split
+ * tree instead, for the user who wants it open permanently rather than for a
+ * glance. `paneContext` is how the caller says where a pane would go — the
+ * keyboard and the palette resolve the focused pane differently, and neither of
+ * them belongs in here.
+ */
+export function togglePromptOutlineFor(
+  surfaceId: string | null,
+  paneContext?: { workspaceId: WorkspaceId; paneId: PaneId } | null,
+): void {
   if (!surfaceId) return;
   const state = useStore.getState();
   if (!state.promptPrefs.enabled || !state.promptPrefs.outline) return;
+  if (state.promptPrefs.outlineMode === 'pane' && paneContext) {
+    togglePromptsSurface(paneContext.workspaceId, paneContext.paneId);
+    return;
+  }
   // Opening on a second pane closes the first: two open outlines would both
   // answer Escape and the arrow keys, and there is one keyboard.
   state.setPromptOutlineSurface(state.promptOutlineSurface === surfaceId ? null : surfaceId);
+}
+
+/**
+ * Focus this pane's prompts tab, or make one.
+ *
+ * Focus-or-create, exactly like the diff panel, and for the same reason: the
+ * panel is a single view over one prompt log, so a second tab of it in the same
+ * pane is never what the user meant — they pressed the key again because they
+ * could not see the first one.
+ *
+ * Toggling rather than only opening, because this is bound to a key: a command
+ * that opens but cannot close leaves the user hunting for the tab's ✕.
+ */
+export function togglePromptsSurface(workspaceId: WorkspaceId, paneId: PaneId): void {
+  const state = useStore.getState();
+  const ws = state.workspaces.find((w) => w.id === workspaceId);
+  const leaf = ws ? findLeaf(ws.splitTree, paneId) : null;
+  if (!leaf) return;
+  const existing = leaf.surfaces.findIndex((s) => s.type === 'prompts');
+  if (existing >= 0) {
+    // Already the visible tab → the user is asking for it to go away.
+    if (existing === leaf.activeSurfaceIndex) state.closeSurface(workspaceId, paneId, leaf.surfaces[existing].id);
+    else state.selectSurface(workspaceId, paneId, existing);
+    return;
+  }
+  state.addSurface(workspaceId, paneId, 'prompts');
 }
 
 /**

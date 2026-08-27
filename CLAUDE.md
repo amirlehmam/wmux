@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 2.4.0
+**Version**: 2.5.0
 
 ---
 
@@ -96,7 +96,7 @@ docs/             Planning docs
 
 **Components** (in `components/`):
 - `SplitPane/` — PaneWrapper, SplitContainer, SplitDivider, SurfaceTabBar
-- `Terminal/` — TerminalPane, FindBar, CopyMode, NotificationRing, PinnedPrompt, PromptOutline, NewOutputPill (the three prompt-log views, #207 — all `position: absolute` over the xterm container, never flow siblings: a flow sibling is pushed out of the container's `height:100%` box WITHOUT firing the ResizeObserver, so the PTY keeps its old row count and the bottom rows hide underneath, which is issue #82)
+- `Terminal/` — TerminalPane, FindBar, CopyMode, NotificationRing, PinnedPrompt, PromptOutline, NewOutputPill (the three prompt-log OVERLAYS, #207 — all `position: absolute` over the xterm container, never flow siblings: a flow sibling is pushed out of the container's `height:100%` box WITHOUT firing the ResizeObserver, so the PTY keeps its old row count and the bottom rows hide underneath, which is issue #82). Also `PromptsPane` — the outline as a `prompts` SURFACE rather than an overlay, and the one file here the #82 warning does NOT apply to, because it owns its whole box instead of floating over somebody else's. It is the same prompt log seen from elsewhere in the split tree, so unlike the overlay it has to be TOLD which terminal it lists: `promptSourceSurface` (the last terminal to hold focus, written by App.tsx) unless a `promptPaneLocks` entry pins it. Focus landing on a non-terminal deliberately does not update that, or clicking into the panel would blank the list the user just clicked on
 - `Browser/` — BrowserPane, AddressBar, AgentBrowserSetup (the `not-installed` vs `no-dashboard` cards — two genuinely different situations, never one card: the second means the agent browser works fine and only its optional viewer is missing)
 - `Sidebar/` — Sidebar, WorkspaceRow, SessionMenu, SidebarResizeHandle
 - `Titlebar/` — Titlebar, NotificationBell, NotificationPanel
@@ -212,8 +212,24 @@ source present the log stays empty and every view is inert. That is the honest o
 a mis-detected boundary pins the wrong text and anchors the view to the wrong line, and
 the user has no way to tell it happened.
 
-Three things about this are easy to get wrong and expensive to rediscover:
+Four things about this are easy to get wrong and expensive to rediscover:
 
+- **`layer: 'bottom'` does NOT put a decoration under the glyphs, and cannot.** xterm
+  gives its decoration container `z-index: 6` while the renderer's canvas is `z-index: 2`,
+  so a decoration's DOM element always paints OVER the text; `layer` orders decorations
+  against each other and nothing else. 2.4.0 tinted the prompt rows with a CSS
+  `::before` on that element, which therefore had to sit at `opacity: .12` or it washed
+  out the text it was pointing at — and at 12% over a terminal background every hue
+  collapses to the same near-neutral grey. The colour picker in Settings → Prompts
+  worked perfectly and looked completely broken; users reported it as "the rail is
+  always grey whatever colour I pick". The tint is now the decoration's
+  `backgroundColor`, which both renderers composite into the CELL background before
+  drawing glyphs — the layer the CSS was only pretending to be on. Two consequences:
+  the alpha must be **pre-blended in JS** against `terminal.options.theme.background`
+  (xterm IGNORES the alpha channel there — `#ff2d5540` and `#ff2d55` paint identically),
+  and the rail stays in CSS as the one element carrying the user's colour at full
+  saturation. If you are ever tempted to style a decoration's background in CSS again,
+  this is why it does not work.
 - **The prompt text is read out of the BUFFER for a shell**, never sent over the pipe.
   Main already refuses to broadcast `report_command` to a renderer because a command
   line is where a credential reliably shows up (`index.ts`, the `report_command`
@@ -238,7 +254,21 @@ silently holding `npm run build` back from streaming reads as a freeze rather th
 feature. `'all'` opts shell command lines in.
 
 Governed by `promptDefaultRev` — changing any of them later needs a rev bump plus a
-`PROMPT_PROMOTIONS` entry, or it reaches nobody (prefs persist as whole blocks).
+`PROMPT_PROMOTIONS` entry, or it reaches nobody (prefs persist as whole blocks). Adding
+a NEW field is free (`{...DEFAULTS, ...stored}` fills it in); only changing an existing
+default needs the rev.
+
+**The outline has two presentations, and `outlineMode` picks which one the command
+opens.** `'overlay'` is the docked panel from 2.4.0 — it floats over the terminal it
+lists, which is right for a glance and wrong for anything you keep open, because it
+covers the output it is describing. `'pane'` opens a `prompts` SURFACE instead, which
+lives in the split tree and so splits, resizes and persists like any other pane.
+`'overlay'` stays the default: a preference that silently changes what an existing key
+does is a bug report. Both are always reachable — the tab bar's `+` menu and
+`wmux new-surface --type prompts` make a pane regardless of the setting, and
+`outlineSide` is greyed out under `'pane'` because the split tree already decides that.
+Neither is a second implementation: both read the same per-surface prompt log and jump
+through the same marks.
 
 **Anchoring is armed before it is engaged, and the distinction is the whole design.**
 A prompt is submitted at the BOTTOM of the buffer, so its line is `>= ydisp`.
@@ -299,7 +329,9 @@ npx asar pack .asar-staging build-out/app.asar --unpack-dir "node_modules/node-p
 # 5. Verify native modules are unpacked
 ls build-out/app.asar.unpacked/node_modules/node-pty/prebuilds/win32-x64/
 # Must contain: conpty.node, conpty_console_list.node, pty.node
-# Sanity: ASAR should be ~24M (natives unpacked). 80M+ means natives weren't
+# Sanity: compare against the PREVIOUS release's app.asar, not a fixed number —
+# it was ~24M at 0.7.x and ~34M at 2.4.0, so a stale constant here reads as a
+# packaging failure on a healthy build. What actually matters: natives unpacked
 # moved out; 180M+ means staging got polluted (see step 3 warning).
 
 # 5b. Verify the PRs/fixes you intended to ship are actually inside the ASAR.
@@ -402,7 +434,7 @@ rm -rf .asar-staging build-out /tmp/asar-verify ../wmux-release-staging
 - [ ] `npx vite build` succeeds
 - [ ] Compiled code verified (grep for key changes in dist/)
 - [ ] ASAR packed with `--unpack-dir node_modules/node-pty/prebuilds` (NOT `--unpack` glob)
-- [ ] ASAR size is ~24M (natives unpacked). 80M+ ⇒ unpack didn't take. 180M+ ⇒ staging polluted.
+- [ ] ASAR size within ~10% of the previous release's app.asar (34M at 2.4.0; the old "~24M" constant is stale). A sudden 2x+ ⇒ unpack didn't take. 180M+ ⇒ staging polluted.
 - [ ] node-pty native modules present in `app.asar.unpacked/node_modules/node-pty/prebuilds/win32-x64/`
 - [ ] PR-specific markers grep-confirmed inside the packed ASAR (extracted to /tmp)
 - [ ] wmux-orchestrator plugin copied to release staging
@@ -505,11 +537,20 @@ wmux markdown <file> | markdown set <id> --content <text> [--title T] | --file <
 wmux markdown get <id>                                 # read a surface's buffer back out
 
 # Surfaces (tabs within a pane)
-wmux new-surface [--type terminal|browser|markdown]
+wmux new-surface [--type terminal|browser|markdown|prompts]
+                                       # `prompts` is the prompt outline as a PANE
+                                       # (#207): it lists whichever terminal last had
+                                       # focus, so it needs no --surface, and its 🔓
+                                       # button pins it to one when following focus is
+                                       # the wrong behaviour (two terminals, watching
+                                       # one while typing in the other)
 wmux close-surface | focus-surface | rename-surface | list-surfaces
 
 # Panes
 wmux split [--down] [--type T] | close-pane | focus-pane | zoom-pane | list-panes | tree
+                                       # --type takes the same set as new-surface, so
+                                       # `wmux split --type prompts` puts the outline
+                                       # beside the terminal in one command
 
 # Terminal I/O
 wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]

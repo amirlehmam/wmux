@@ -27,28 +27,32 @@
 
 /* ── The highlight itself (idea 1) ───────────────────────────────────────────
  *
- * `applyHighlight` puts this class on an xterm decoration created with
- * `layer: 'bottom'`, so it renders UNDER the glyphs. Two consequences are
- * load-bearing:
+ * `applyHighlight` puts this class on an xterm decoration element. That element
+ * is NOT under the glyphs and cannot be: xterm's decoration container is
+ * `z-index: 6` and the renderer's canvas is `z-index: 2`, so anything styled
+ * here paints on top of the text. `layer: 'bottom'` only orders decorations
+ * against each other.
  *
- *   • The tint must stay low-alpha. It exists to point AT the text, and a solid
- *     fill under a terminal's own background colour washes out the thing it is
- *     pointing at.
- *   • It must not take pointer events. The decoration covers whole rows, and a
- *     hit-testable overlay there would swallow the drag that selects them.
+ * That is why the row tint no longer lives here. It is passed to xterm as the
+ * decoration's `backgroundColor` and composited into the cell background by the
+ * renderer, genuinely beneath the glyphs — see the block comment on
+ * `applyHighlight`. What is left here is the RAIL, which is the one element
+ * carrying the user's colour at full saturation, and which has to be wide enough
+ * to read as a deliberate marker rather than as a rendering artefact.
  *
- * The colour arrives as an inline custom property (the preference carries a hue
- * and nothing else), so rail width, alpha and theme all live here.
+ * It must not take pointer events: the decoration covers whole rows, and a
+ * hit-testable overlay there would swallow the drag that selects them.
  */
 .wmux-prompt-mark {
   pointer-events: none;
-  box-shadow: inset 2px 0 0 0 var(--wmux-prompt-color, var(--ui-accent));
+  box-shadow: inset 4px 0 0 0 var(--wmux-prompt-color, var(--ui-accent));
 }
 
-/* Tint as a pseudo-element rather than a background, so the alpha is ours and
-   the preference can hand us any colour syntax it likes. xterm already absolutely
-   positions the decoration, so it is its own containing block. */
-.wmux-prompt-mark::before {
+/* The fallback, and ONLY the fallback: an unparseable terminal background means
+   `applyHighlight` could not pre-blend a tint, so the old over-the-glyphs
+   version comes back. Kept deliberately weak — it sits on top of the text — and
+   never applied alongside the renderer tint, which would double it. */
+.wmux-prompt-mark--css-tint::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -57,7 +61,7 @@
 }
 
 /* A light terminal background swallows the same alpha, so it gets a little more. */
-:root[data-ui-theme='light'] .wmux-prompt-mark::before {
+:root[data-ui-theme='light'] .wmux-prompt-mark--css-tint::before {
   opacity: 0.16;
 }
 
@@ -354,6 +358,100 @@
   color: var(--ui-text-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* ── Prompt outline as a PANE ────────────────────────────────────────────────
+ *
+ * The one place in this file that is NOT an overlay, and deliberately so. A
+ * surface owns its whole box, so this is a plain flex column with no absolute
+ * positioning and no z-index: the warning at the top of this file is about
+ * floating things over a terminal inside `.terminal-pane`, and none of it
+ * applies to a pane that IS the surface.
+ */
+
+.prompts-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ui-bg-1);
+  color: var(--ui-text-primary);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.prompts-pane__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--ui-border);
+  flex-shrink: 0;
+}
+
+.prompts-pane__lock {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.prompts-pane__lock:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+}
+
+.prompts-pane__lock:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* Pinned to one terminal rather than following focus — accent-tinted so it reads
+   as a mode the user turned on, not as a hover state. */
+.prompts-pane__lock[data-locked='true'],
+.prompts-pane__lock[data-locked='true']:hover {
+  opacity: 1;
+  background: rgba(var(--ui-accent-rgb), 0.22);
+  box-shadow: inset 0 0 0 1px rgba(var(--ui-accent-rgb), 0.45);
+}
+
+.prompts-pane__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+/* Wraps, unlike the overlay's single ellipsised line. A panel is given its width
+   by the user, so the reason to truncate — a fixed 300px dock — is gone, and two
+   readable lines beat one clipped one. */
+.prompts-pane__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  color: var(--ui-text-secondary);
+}
+
+/* Which source the prompt came from (agent | shell). Only shown here: the
+   overlay is read at a glance beside its own terminal, where the answer is never
+   in doubt, but a panel lists a pane that may be somewhere else entirely. */
+.prompt-outline__source {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+  opacity: 0.75;
 }
 
 /* ── New-output pill (idea 3) ────────────────────────────────────────────── */
