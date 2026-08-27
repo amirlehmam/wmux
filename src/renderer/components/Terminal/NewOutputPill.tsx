@@ -2,8 +2,21 @@ import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { surfaceTerminalRegistry } from '../../hooks/useTerminal';
-import { ANCHOR_EVENT, anchorFor, release, type AnchorEventDetail } from '../../utils/prompt-anchor';
+import { ANCHOR_EVENT, anchorFor, isEngaged, release, type AnchorEventDetail } from '../../utils/prompt-anchor';
 import '../../styles/prompt-marks.css';
+
+/**
+ * The pill's starting state, for an anchor that predates this component.
+ *
+ * Gated on ENGAGED, not merely on an anchor existing. An anchor is armed the
+ * moment a prompt lands, but until the buffer has grown past it nothing is
+ * hidden and the terminal is following output normally — showing "Following
+ * paused" over a pane that is not paused is exactly the artefact the
+ * armed/engaged split exists to prevent (#207 review).
+ */
+function seedPending(surfaceId: string): number | null {
+  return isEngaged(surfaceId) ? anchorFor(surfaceId)?.pending ?? 0 : null;
+}
 
 /**
  * The "you are not at the bottom" pill — the visible half of idea 3 in issue
@@ -28,10 +41,10 @@ export default function NewOutputPill({ surfaceId }: { surfaceId: string }) {
    * state because the anchor is set the moment a prompt lands and may well
    * predate this component, in which case its opening event is already spent.
    */
-  const [pending, setPending] = useState<number | null>(() => anchorFor(surfaceId)?.pending ?? null);
+  const [pending, setPending] = useState<number | null>(() => seedPending(surfaceId));
 
   useEffect(() => {
-    setPending(anchorFor(surfaceId)?.pending ?? null);
+    setPending(seedPending(surfaceId));
     const onAnchor = (event: Event) => {
       const detail = (event as CustomEvent<AnchorEventDetail>).detail;
       if (!detail || detail.surfaceId !== surfaceId) return;
