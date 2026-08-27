@@ -70,6 +70,9 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   markWorkspaceRead: 'Mark workspace read',
   toggleShortcutCheatSheet: 'Shortcut cheat-sheet',
   resetTerminal: 'Reset terminal state',
+  togglePromptOutline: 'Prompt outline',
+  togglePinnedPrompt: 'Pin / unpin prompt',
+  followOutput: 'Follow output',
 };
 
 /** Translated label for an action, falling back to the English `ACTION_LABELS` map. */
@@ -107,6 +110,10 @@ export const CATEGORY: Partial<Record<ShortcutAction, string>> = {
   find: 'Terminal', findNext: 'Terminal', findPrevious: 'Terminal', copyMode: 'Terminal',
   copy: 'Terminal', paste: 'Terminal', fontSizeIncrease: 'Terminal', fontSizeDecrease: 'Terminal',
   fontSizeReset: 'Terminal', resetTerminal: 'Terminal',
+  // Issue #207. Terminal rather than View: all three act on one pane's
+  // scrollback — where its prompts are, which one is pinned above it, and
+  // whether the viewport chases its output — not on the window's chrome.
+  togglePromptOutline: 'Terminal', togglePinnedPrompt: 'Terminal', followOutput: 'Terminal',
   toggleSidebar: 'View', showNotifications: 'View', flashFocused: 'View', openBrowser: 'View',
   browserDevTools: 'View', browserConsole: 'View', openSettings: 'View', commandPalette: 'View',
   toggleShortcutCheatSheet: 'View',

@@ -932,6 +932,112 @@ async function cmdSendKey(args: string[]): Promise<void> {
   print(await sendV2('surface.send_key', payload));
 }
 
+/** One prompt line: `#<seq>  <hh:mm>  <summary>`. */
+function promptLine(entry: any): string {
+  const at = new Date(Number(entry?.at) || 0);
+  const hh = String(at.getHours()).padStart(2, '0');
+  const mm = String(at.getMinutes()).padStart(2, '0');
+  const tag = `#${entry?.seq ?? '?'}`.padEnd(4);
+  // `summary` is empty by design until the boundary knows the text — a shell
+  // entry between its B and C marks, or an agent hook that carried no payload.
+  // Say so rather than printing a line that trails off into nothing.
+  return `${tag}  ${hh}:${mm}  ${entry?.summary || '(no text yet)'}`;
+}
+
+/**
+ * What an empty list means, said out loud.
+ *
+ * There is nothing to print in this case, so the line IS the whole answer, and
+ * "No prompts recorded" was the same answer to two different questions: a log
+ * that is switched off records nothing by design, and telling the user to wait
+ * for prompts that can never arrive is the one unhelpful thing this command
+ * could do. (The third case — an id that names no surface — never reaches here:
+ * the server rejects it and `main` prints `Error: ...` and exits 1.)
+ */
+export function emptyPromptNote(enabled: boolean, scope: string): string {
+  return enabled
+    ? `No prompts recorded${scope}`
+    : `The prompt log is off (Settings → Prompts), so nothing is being recorded${scope}.`;
+}
+
+/**
+ * Say when the reply was capped.
+ *
+ * The untargeted form now defaults to a per-pane cap (the server picks it, and
+ * echoes it back rather than making the CLI hardcode a second copy of the
+ * number), so silence here would read as "that is all there is" for a pane that
+ * has ten times more.
+ */
+export function promptTruncationNote(result: any, perSurface: boolean): string | null {
+  if (!result?.truncated) return null;
+  const cap = Number(result?.limit);
+  const scope = perSurface && Number.isFinite(cap) ? ` (${cap} per pane)` : '';
+  return `… older prompts omitted${scope} — raise it with --limit N`;
+}
+
+function printPromptTruncation(result: any, perSurface: boolean): void {
+  const note = promptTruncationNote(result, perSurface);
+  if (note) console.log(note);
+}
+
+/** The targeted form: one pane's prompts, oldest first. */
+function printSurfacePrompts(surfaceId: string, result: any): void {
+  const prompts: any[] = result?.prompts ?? [];
+  if (prompts.length === 0) { console.log(emptyPromptNote(result?.enabled !== false, ` for ${surfaceId}`)); return; }
+  for (const entry of prompts) console.log(promptLine(entry));
+  printPromptTruncation(result, false);
+}
+
+/** The untargeted form: every tracked pane, its id as a heading. */
+function printAllPrompts(result: any): void {
+  const surfaces: Record<string, any[]> = result?.surfaces ?? {};
+  const ids = Object.keys(surfaces);
+  if (ids.length === 0) { console.log(emptyPromptNote(result?.enabled !== false, '')); return; }
+  for (const id of ids) {
+    console.log(id);
+    for (const entry of surfaces[id]) console.log(`  ${promptLine(entry)}`);
+  }
+  printPromptTruncation(result, true);
+}
+
+/**
+ * What has this pane been asked to do? (issue #207)
+ *
+ * The prompt log is the one thing `read-screen` cannot recover: an agent TUI
+ * repaints over its own scrollback, so by the time anyone asks, the prompt text
+ * is no longer on screen to be read. Defaults to $WMUX_SURFACE_ID like send and
+ * read-screen, so an agent inside a pane needs no id; run outside a pane with no
+ * --surface it reports every tracked pane, which is the only useful answer there.
+ *
+ * Human output is one line per prompt because that is what makes it skimmable;
+ * --json is the scripting contract and carries the fields the line drops — the
+ * full text, the source, and the buffer `line` (null when not jumpable).
+ *
+ * --json prints the WHOLE reply, not just the entries, for the same reason the
+ * human form grew two extra lines: `enabled` and `truncated` are the difference
+ * between "nothing yet", "this feature is off" and "there is more than this",
+ * and a script that only ever saw the array had to guess between them. An
+ * unrecognised surface is not in the reply at all — the server rejects it, and
+ * `main` turns that into `Error: ...` and a non-zero exit, which is what every
+ * other command does with a bad id.
+ */
+async function cmdPrompts(args: string[]): Promise<void> {
+  const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
+  const rawLimit = getFlag(args, '--limit');
+  const limit = rawLimit === undefined ? 0 : Number(rawLimit);
+  if (rawLimit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+    console.error('prompts: --limit must be a positive integer');
+    process.exit(1);
+  }
+  const result = await sendV2('surface.list_prompts', {
+    ...(surfaceId ? { surfaceId } : {}),
+    ...(limit ? { limit } : {}),
+  });
+  if (args.includes('--json')) { print(result); return; }
+  if (surfaceId) printSurfacePrompts(surfaceId, result);
+  else printAllPrompts(result);
+}
+
 async function cmdNotify(args: string[]): Promise<void> {
   const titleIdx = args.indexOf('--title');
   const bodyIdx = args.indexOf('--body');
@@ -1557,6 +1663,19 @@ const COMMAND_SPECS = {
     usage: `wmux read-screen [--lines N] [--surface <id>]   ${SURFACE_NOTE}`,
     value: ['--lines', '--surface'],
   },
+  prompts: {
+    usage: [
+      `wmux prompts [--surface <id>] [--limit N] [--json]   ${SURFACE_NOTE}`,
+      '  The prompts this pane has been given, oldest first: "#<seq>  <hh:mm>  <summary>".',
+      '  --limit N keeps only the N most recent; no --surface reports every tracked pane,',
+      '  20 per pane by default (the targeted form is uncapped). Says so when it truncates.',
+      '  --json prints the whole reply — the entries (full text, source, and buffer line,',
+      '  null = not jumpable) plus `enabled` and `truncated`, so "nothing yet", "the log',
+      '  is off" and "there is more" stay distinguishable. An unknown --surface is an error.',
+    ].join('\n'),
+    value: ['--surface', '--limit'],
+    bool: ['--json'],
+  },
   'trigger-flash': { usage: 'wmux trigger-flash [surfaceId]' },
 
   // Browser (free-form text for type/fill/eval)
@@ -1824,6 +1943,7 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
       lines: lines ? parseInt(lines) : 50,
     }));
   },
+  prompts: cmdPrompts,
   'trigger-flash': async (args) => print(await sendV2('surface.trigger_flash', { id: args[1] })),
 
   // Browser
@@ -1944,6 +2064,9 @@ Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-p
             pane new|close|focus|list   (verb form, mirrors issue #4 example)
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
 Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>], trigger-flash
+            prompts [--surface <id>] [--limit N] [--json]
+            (the prompts this pane was given — the one thing read-screen cannot
+             recover, since an agent TUI repaints over its own scrollback)
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
             browser engine [web|agent]   (print, or switch, which engine drives this browser surface)
             browser <verb> [--surface <id>]   # which pane's browser to drive

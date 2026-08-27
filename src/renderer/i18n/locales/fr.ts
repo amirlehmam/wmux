@@ -10,6 +10,7 @@ export const fr: Translation = {
   'settings.tab.sidebar': 'Barre latérale',
   'settings.tab.workspace': 'Espace de travail',
   'settings.tab.terminal': 'Terminal',
+  'settings.tab.prompts': 'Invites',
   'settings.tab.notifications': 'Notifications',
   'settings.tab.browser': 'Navigateur',
   'settings.tab.profiles': 'Profils',
@@ -324,6 +325,9 @@ export const fr: Translation = {
   'shortcutAction.markWorkspaceRead': "Marquer l'espace de travail comme lu",
   'shortcutAction.toggleShortcutCheatSheet': 'Aide-mémoire des raccourcis',
   'shortcutAction.resetTerminal': "Réinitialiser l'état du terminal",
+  'shortcutAction.togglePromptOutline': 'Sommaire des invites',
+  'shortcutAction.togglePinnedPrompt': "Épingler/détacher l'invite",
+  'shortcutAction.followOutput': 'Suivre la sortie',
   // Paramètres — Panneau des profils de lancement rapide
   'settings.quickLaunch.title': 'Profils de lancement rapide',
   'settings.quickLaunch.hintPart1': "Préréglages d'onglet en un clic affichés dans le menu ",
@@ -603,4 +607,67 @@ export const fr: Translation = {
   'agentNavigator.silentProbed': 'détecté — ne déclare aucun état',
   'agentNavigator.hint': '↑↓ naviguer · entrée aller · a/b/w/i/u filtrer · échap fermer',
   'agentNavigator.workspacesWithAgents': 'espaces',
+
+  // ─── Paramètres — Panneau des invites (issue #207) ───
+  // {binding} est remplacé par le raccourci RÉEL de l'utilisateur : garder le
+  // marqueur tel quel et ne jamais écrire une combinaison de touches en dur.
+  'settings.prompt.title': 'Invites',
+  'settings.prompt.enabled': 'Suivre les invites',
+  'settings.prompt.enabledHint':
+    'Retient ce que vous avez tapé dans chaque panneau, pour donner aux options ci-dessous quelque chose à désigner. Désactivé, aucune d’elles ne tourne et rien n’est enregistré.',
+  'settings.prompt.highlightSection': 'Surlignage',
+  'settings.prompt.highlight': 'Surligner les lignes d’invite',
+  'settings.prompt.highlightHint':
+    'Teinte les lignes qu’occupe votre invite, pour qu’elle reste visible face à la réponse qui la suit.',
+  'settings.prompt.highlightColor': 'Couleur du surlignage',
+  'settings.prompt.highlightColorHint':
+    'Choisissez une couleur que votre thème n’affiche jamais, pour qu’une ligne surlignée ne puisse pas passer pour de la sortie.',
+  'settings.prompt.ruler': 'Marquer les invites sur la barre de défilement',
+  'settings.prompt.rulerHint':
+    'Ajoute un repère par invite sur la barre de défilement : vous voyez où elles se trouvent dans un long historique sans avoir à le parcourir.',
+  'settings.prompt.pinSection': 'En-tête épinglé',
+  'settings.prompt.pin': 'Épingler la dernière invite',
+  'settings.prompt.pinHint':
+    'Garde la dernière invite dans un en-tête au-dessus du panneau, pour relire votre demande pendant que la réponse défile. Cela coûte quelques lignes, d’où la désactivation par défaut. {binding} épingle ou détache une invite à la main.',
+  'settings.prompt.pinLines': 'Hauteur de l’en-tête (lignes)',
+  'settings.prompt.pinLinesHint':
+    'Combien de lignes de l’invite l’en-tête affiche avant de la tronquer. Entre 1 et 5 — ces lignes sont prises sur le terminal.',
+  'settings.prompt.anchorSection': 'Ancrage de la réponse',
+  'settings.prompt.anchor': 'Rester au début de la réponse',
+  'settings.prompt.anchorHint':
+    'Quand une réponse démarre, garde sa première ligne en vue au lieu de suivre la sortie vers le bas. {binding} revient au suivi de la sortie.',
+  'settings.prompt.anchorScope': 'Appliquer à',
+  'settings.prompt.anchorScope.agent': 'Réponses des agents uniquement',
+  'settings.prompt.anchorScope.all': 'Réponses des agents et commandes du shell',
+  'settings.prompt.anchorScopeHint':
+    'Par défaut, les commandes du shell suivent leur sortie, comme dans n’importe quel terminal. Choisissez la seconde option pour figer aussi la vue pendant les compilations et les suites de tests un peu longues.',
+  'settings.prompt.outlineSection': 'Sommaire',
+  'settings.prompt.outline': 'Sommaire des invites',
+  'settings.prompt.outlineHint':
+    'La liste de toutes les invites du panneau ; cliquez-en une pour y revenir. Il reste fermé tant que vous ne le demandez pas — {binding} l’ouvre et le ferme.',
+  'settings.prompt.outlineSide': 'Côté du sommaire',
+  'settings.prompt.outlineSide.right': 'Droite',
+  'settings.prompt.outlineSide.left': 'Gauche',
+  'settings.prompt.outlineSideHint': 'Contre quel bord du panneau le sommaire s’ouvre.',
+
+  // ─── Interface des invites dans le panneau (issue #207) ───
+  'prompt.pillLine': 'nouvelle ligne',
+  'prompt.pillLines': 'nouvelles lignes',
+  'prompt.pillPaused': 'Suivi en pause',
+  'prompt.pillHint': 'Aller à la sortie la plus récente et la suivre de nouveau',
+  'prompt.sourceAgent': 'agent',
+  'prompt.sourceShell': 'shell',
+  'prompt.pinJump': 'Aller à cette invite',
+  'prompt.pinUnreachable': 'Cette invite est sortie de l’historique du terminal',
+  'prompt.pinnedByHand': 'Épinglée à la main',
+  'prompt.noText': '(texte de l’invite non capturé)',
+  'prompt.unpin': 'Détacher — réafficher la dernière invite',
+  'prompt.pinDisable': 'Masquer l’en-tête d’invite — désactive l’option pour tous les panneaux',
+  'prompt.pinThis': 'Épingler cette invite en haut du panneau',
+  'prompt.unpinThis': 'Détacher cette invite',
+  'prompt.outlineFilter': 'Filtrer les invites...',
+  'prompt.outlineClose': 'Fermer (Échap)',
+  'prompt.outlineJump': 'Clic pour y aller, double-clic pour y aller et fermer',
+  'prompt.outlineNoMatch': 'Aucune invite ne correspond à ce filtre.',
+  'prompt.outlineEmpty': 'Aucune invite enregistrée pour l’instant — wmux les apprend via les hooks de Claude Code ou l’intégration shell.',
 };

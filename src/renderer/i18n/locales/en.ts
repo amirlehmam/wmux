@@ -14,6 +14,7 @@ export const en = {
   'settings.tab.sidebar': 'Sidebar',
   'settings.tab.workspace': 'Workspace',
   'settings.tab.terminal': 'Terminal',
+  'settings.tab.prompts': 'Prompts',
   'settings.tab.notifications': 'Notifications',
   'settings.tab.browser': 'Browser',
   'settings.tab.profiles': 'Profiles',
@@ -360,6 +361,9 @@ export const en = {
   'shortcutAction.markWorkspaceRead': 'Mark workspace read',
   'shortcutAction.toggleShortcutCheatSheet': 'Shortcut cheat-sheet',
   'shortcutAction.resetTerminal': 'Reset terminal state',
+  'shortcutAction.togglePromptOutline': 'Prompt outline',
+  'shortcutAction.togglePinnedPrompt': 'Pin / unpin prompt',
+  'shortcutAction.followOutput': 'Follow output',
   // Settings — Quick-launch profiles panel
   'settings.quickLaunch.title': 'Quick-launch profiles',
   'settings.quickLaunch.hintPart1': 'One-click tab presets shown in the ',
@@ -681,6 +685,72 @@ export const en = {
   'hub.context': 'context',
   'hub.workingCount': '{count} working',
   'hub.blockedCount': '{count} waiting for you',
+
+  // ─── Settings — Prompts panel (issue #207) ───
+  // {binding} is replaced with the user's LIVE key binding, so keep the
+  // placeholder verbatim when translating and never spell a combo out.
+  'settings.prompt.title': 'Prompts',
+  'settings.prompt.enabled': 'Track prompts',
+  'settings.prompt.enabledHint':
+    'Remembers what you typed in each pane so the features below have something to point at. Turned off, none of them run and nothing is recorded.',
+  'settings.prompt.highlightSection': 'Highlight',
+  'settings.prompt.highlight': 'Highlight prompt lines',
+  'settings.prompt.highlightHint':
+    'Tints the rows your prompt occupies so it stays visible against the answer that follows it.',
+  'settings.prompt.highlightColor': 'Highlight color',
+  'settings.prompt.highlightColorHint':
+    'Pick a color your color scheme never prints, so a highlighted row can never be mistaken for output.',
+  'settings.prompt.ruler': 'Mark prompts on the scrollbar',
+  'settings.prompt.rulerHint':
+    'Adds a tick per prompt to the scrollbar, so you can see where they sit in a long scrollback without scrolling through it.',
+  'settings.prompt.pinSection': 'Sticky header',
+  'settings.prompt.pin': 'Pin the last prompt',
+  'settings.prompt.pinHint':
+    'Keeps the last prompt in a header above the pane so you can still read what you asked while the answer scrolls. Costs a couple of rows, which is why it is off by default. {binding} pins or releases one by hand.',
+  'settings.prompt.pinLines': 'Header height (lines)',
+  'settings.prompt.pinLinesHint':
+    'How many lines of the prompt the header shows before it is cut short. Between 1 and 5 — the header takes those rows away from the terminal.',
+  'settings.prompt.anchorSection': 'Answer anchor',
+  'settings.prompt.anchor': 'Hold the view at the start of the answer',
+  'settings.prompt.anchorHint':
+    'When an answer starts, keep the first line in view instead of chasing the output downwards. {binding} goes back to following the output.',
+  'settings.prompt.anchorScope': 'Apply it to',
+  'settings.prompt.anchorScope.agent': 'Agent answers only',
+  'settings.prompt.anchorScope.all': 'Agent answers and shell commands',
+  'settings.prompt.anchorScopeHint':
+    'Shell commands follow their output by default, the way every terminal does. Switch to the second option to hold the view for long builds and test runs too.',
+  'settings.prompt.outlineSection': 'Outline',
+  'settings.prompt.outline': 'Prompt outline',
+  'settings.prompt.outlineHint':
+    'A list of every prompt in the pane, click one to jump back to it. It stays closed until you ask for it — {binding} opens and closes it.',
+  'settings.prompt.outlineSide': 'Outline side',
+  'settings.prompt.outlineSide.right': 'Right',
+  'settings.prompt.outlineSide.left': 'Left',
+  'settings.prompt.outlineSideHint': 'Which edge of the pane the outline opens against.',
+
+  // ─── In-pane prompt UI (issue #207) ───
+  // The pinned header, the prompt outline and the "new output" pill. Their
+  // components pass the same strings as fallbacks; these are what make the keys
+  // exist, so the two must be kept in step.
+  'prompt.pillLine': 'new line',
+  'prompt.pillLines': 'new lines',
+  'prompt.pillPaused': 'Following paused',
+  'prompt.pillHint': 'Jump to the newest output and follow it again',
+  'prompt.sourceAgent': 'agent',
+  'prompt.sourceShell': 'shell',
+  'prompt.pinJump': 'Jump to this prompt',
+  'prompt.pinUnreachable': 'This prompt has scrolled out of the terminal history',
+  'prompt.pinnedByHand': 'Pinned by hand',
+  'prompt.noText': '(prompt text was not captured)',
+  'prompt.unpin': 'Unpin — show the latest prompt again',
+  'prompt.pinDisable': 'Hide the prompt header — turns the setting off for every pane',
+  'prompt.pinThis': 'Pin this prompt to the top of the pane',
+  'prompt.unpinThis': 'Unpin this prompt',
+  'prompt.outlineFilter': 'Filter prompts...',
+  'prompt.outlineClose': 'Close (Esc)',
+  'prompt.outlineJump': 'Click to jump, double-click to jump and close',
+  'prompt.outlineNoMatch': 'No prompt matches this filter.',
+  'prompt.outlineEmpty': 'No prompts recorded yet — wmux learns them from Claude Code’s hooks or from shell integration.',
 } as const;
 
 /** Every key the UI may ask for — derived from English, the source of truth. */

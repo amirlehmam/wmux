@@ -6,12 +6,13 @@ import TerminalSettings from './TerminalSettings';
 import NotificationSettings from './NotificationSettings';
 import BrowserSettings from './BrowserSettings';
 import KeyboardSettings from './KeyboardSettings';
+import PromptSettings from './PromptSettings';
 import QuickLaunchSettings from './QuickLaunchSettings';
 import HelpSettings from './HelpSettings';
 import { useT, type TranslationKey } from '../../i18n';
 import '../../styles/settings.css';
 
-const TABS = ['General', 'Sidebar', 'Workspace', 'Terminal', 'Notifications', 'Browser', 'Profiles', 'Shortcuts', 'Help'] as const;
+const TABS = ['General', 'Sidebar', 'Workspace', 'Terminal', 'Prompts', 'Notifications', 'Browser', 'Profiles', 'Shortcuts', 'Help'] as const;
 
 // Map each tab to its i18n key (issue #56). Typed as TranslationKey, not
 // string: the lookup is what reaches t(), so the keys are checked here.
@@ -20,6 +21,7 @@ const TAB_LABEL_KEYS: Record<typeof TABS[number], TranslationKey> = {
   Sidebar: 'settings.tab.sidebar',
   Workspace: 'settings.tab.workspace',
   Terminal: 'settings.tab.terminal',
+  Prompts: 'settings.tab.prompts',
   Notifications: 'settings.tab.notifications',
   Browser: 'settings.tab.browser',
   Profiles: 'settings.tab.profiles',
@@ -66,6 +68,7 @@ export default function SettingsWindow({ onClose }: SettingsWindowProps) {
             {activeTab === 'Sidebar' && <SidebarSettings />}
             {activeTab === 'Workspace' && <WorkspaceSettings />}
             {activeTab === 'Terminal' && <TerminalSettings />}
+            {activeTab === 'Prompts' && <PromptSettings />}
             {activeTab === 'Notifications' && <NotificationSettings />}
             {activeTab === 'Browser' && <BrowserSettings />}
             {activeTab === 'Profiles' && <QuickLaunchSettings />}

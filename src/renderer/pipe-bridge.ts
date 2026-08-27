@@ -6,12 +6,43 @@ import { useStore } from './store';
 import { splitNode, getAllPaneIds, findLeaf, buildGridLayout } from './store/split-utils';
 import { surfaceTerminalRegistry } from './hooks/useTerminal';
 import { PaneId, SurfaceId, WorkspaceId, SurfaceType, engineOf, type BrowserEngine } from '../shared/types';
+import { promptSummary, type PromptEntry, type PromptSource } from './store/prompt-slice';
 import { v4 as uuid } from 'uuid';
 import { translate, type TranslationKey } from './i18n/core';
 
 /** Non-hook context (bridges the main process to the store) — reads the current language directly. */
 const bridgeT = (key: TranslationKey, fallback?: string): string =>
   translate(useStore.getState().language, key, fallback);
+
+/**
+ * A prompt log entry as everything outside the renderer sees it (issue #207).
+ *
+ * Deliberately not `PromptEntry`: `id` is a React key and `surfaceId` is either
+ * the argument the caller passed or the map key it is filed under, so both are
+ * noise on the wire. `summary` is added instead of left to the caller, so a CLI
+ * does not reimplement promptSummary's "first non-empty line" rule and then
+ * drift from what the outline overlay shows for the same prompt.
+ */
+interface PublicPrompt {
+  seq: number;
+  at: number;
+  source: PromptSource;
+  /** Absolute buffer line, or null when the prompt is not jumpable — never 0. */
+  line: number | null;
+  rows: number;
+  text: string;
+  summary: string;
+}
+
+const publicPrompt = (entry: PromptEntry): PublicPrompt => ({
+  seq: entry.seq,
+  at: entry.at,
+  source: entry.source,
+  line: entry.line,
+  rows: entry.rows,
+  text: entry.text,
+  summary: promptSummary(entry.text),
+});
 
 export function initPipeBridge(): void {
   const w = window as any;
@@ -451,6 +482,35 @@ export function initPipeBridge(): void {
     }
     while (out.length && out[out.length - 1] === '') out.pop();
     return { text: out.join('\n'), lines: out.length, surfaceId: id };
+  };
+
+  /**
+   * The prompt log a surface has recorded (issue #207) — backs `wmux prompts`.
+   *
+   * This is the only way an agent can ask what its own pane was asked to do.
+   * `__wmux_readScreen` cannot answer it: an agent TUI repaints over its own
+   * scrollback, and once it has, the prompt text is gone from the buffer for
+   * good — which is exactly why the log records the text at the boundary rather
+   * than scraping it back later.
+   *
+   * With a surfaceId it answers that surface's list; without one it answers the
+   * whole map, because "which panes have prompts" is a question that only makes
+   * sense from OUTSIDE a pane and there is no sensible default surface there.
+   *
+   * The result crosses out of the renderer through `executeJavaScript`, so both
+   * halves of that contract are load-bearing: it returns only plain data (a
+   * class instance or an undefined-valued key would come back mangled or throw
+   * a clone error in main), and it cannot throw — a rejected script surfaces in
+   * main as an opaque failure with no surface id in it. Hence the `?? []`: a
+   * surface with nothing recorded has no key at all, and that is an empty log,
+   * not an error.
+   */
+  w.__wmux_listPrompts = (surfaceId?: string) => {
+    const { prompts } = useStore.getState();
+    if (surfaceId) return (prompts[surfaceId] ?? []).map(publicPrompt);
+    const all: Record<string, PublicPrompt[]> = {};
+    for (const [id, list] of Object.entries(prompts)) all[id] = list.map(publicPrompt);
+    return all;
   };
 
   // ─── Markdown ───────────────────────────────────────────────────────────────

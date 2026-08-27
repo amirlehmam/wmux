@@ -40,6 +40,7 @@ import { readMarkdownFile } from './markdown-file';
 import { grantMarkdownPath, clearMarkdownGrants } from './markdown-grants';
 import { directoryFromArgv } from './shell-context-menu';
 import { ensurePowerShellShim } from './powershell-shim';
+import { loadSettings } from './settings-store';
 import fs from 'fs';
 import path from 'path';
 
@@ -448,6 +449,152 @@ async function resolvePtySurface(
     };
   }
   return { ok: true, id: branded };
+}
+
+// ─── Prompt log (issue #207) ─────────────────────────────────────────────────
+// The log lives in the renderer's store, so `surface.list_prompts` delegates the
+// way `surface.read_text` does — but the multi-window rule is NOT the same one,
+// which is why these are two named functions rather than one inline loop.
+//
+// read_text can tell "this window does not own that terminal" from "the screen
+// is blank", so it takes the first window that answers without an error. A
+// prompt log cannot: a surface with nothing recorded and a surface owned by
+// another window both answer with an empty list, and both are honestly "no
+// prompts". So the targeted query takes the first NON-EMPTY answer — the surface
+// may well be in window 2 (issue #143), and asking only the focused window is
+// how that bug ends up describing panes the caller has never seen.
+
+/**
+ * Default cap on the UNTARGETED form, per surface.
+ *
+ * The targeted form stays unlimited: the caller named one pane, and that pane's
+ * log is bounded by the store itself (MAX_PROMPTS_PER_SURFACE = 200). The
+ * untargeted form multiplies that by every tracked surface, and 64 surfaces x
+ * 200 entries x 4000 characters is ~51 MB that has to be serialised out of
+ * `executeJavaScript`, merged in main, pushed down the named pipe and then
+ * printed by a CLI that gives each entry a line. `surface.read_text` faced the
+ * same question and answered it the same way — 50 lines by default rather than
+ * the whole scrollback — so an untargeted list with no cap at all was the
+ * outlier, not the convention.
+ *
+ * 20 rather than read_text's 50 because this budget is PER SURFACE and the
+ * untargeted caller is asking "which panes have prompts, and what are they
+ * working on" — reading one pane's history back is what the targeted form is
+ * for. 20 is comfortably more than an orchestration wave puts into a pane, so
+ * the common case is not truncated at all, and the worst case lands near 5 MB
+ * and ~1300 printed lines instead of 51 MB and ~12800. `--limit` raises it, and
+ * the reply says when it bit, because a silent cap reads as "that is all there
+ * is".
+ */
+const DEFAULT_ALL_PROMPTS_LIMIT = 20;
+
+/**
+ * The renderer's prompt-preference key, spelled here because main cannot import
+ * it: STORAGE_KEYS lives in src/renderer/store/settings-slice.ts, a zustand
+ * module. The FILE is shared though — the renderer persists through main into
+ * %APPDATA%\wmux\settings.json — so reading it back here is reading the same
+ * bytes the renderer wrote, not a second copy of the state.
+ */
+const PROMPT_PREFS_KEY = 'wmux-prompt-prefs';
+
+/**
+ * Is the prompt log switched on at all? (issue #207)
+ *
+ * With `promptPrefs.enabled` off nothing subscribes to the log, so every
+ * surface answers with an empty list — indistinguishable, from the caller's
+ * side, from a pane that simply has not been asked anything yet. That is the
+ * difference between "this feature is off, go turn it on" and "wait a moment",
+ * and an agent cannot act on either without being told which one it is.
+ *
+ * Absent means on, matching DEFAULT_PROMPT_PREFS: the block only exists on disk
+ * once the user has touched the settings panel, so treating a missing blob as
+ * "disabled" would report the feature off for everyone who never opened it.
+ * Only an explicit `false` counts.
+ *
+ * Read off disk per call rather than cached. This is a CLI-driven path that
+ * runs at human frequency, and the alternative is a cached copy that goes stale
+ * the moment the user flips the toggle — which is precisely when the answer
+ * matters.
+ */
+function promptLogEnabled(): boolean {
+  const prefs = loadSettings()[PROMPT_PREFS_KEY];
+  return !(prefs && typeof prefs === 'object' && (prefs as Record<string, unknown>).enabled === false);
+}
+
+/** Most recent `limit` entries, and whether keeping only those dropped any. */
+function tailOf(list: any[], limit: number): { entries: any[]; truncated: boolean } {
+  if (limit > 0 && list.length > limit) return { entries: list.slice(-limit), truncated: true };
+  return { entries: list, truncated: false };
+}
+
+function liveWindows(): BrowserWindow[] {
+  return BrowserWindow.getAllWindows().filter(w => !w.isDestroyed());
+}
+
+/**
+ * A surface's prompts, or null when NO window had anything for it.
+ *
+ * Null is not "empty" — it is "nobody answered", which is the point at which
+ * the caller still has three possibilities open and has to go and narrow them
+ * down (see the case handler). Returning `[]` here is what collapsed them.
+ */
+async function promptsForSurface(surfaceId: string, limit: number): Promise<{ prompts: any[]; truncated: boolean } | null> {
+  const script = `window.__wmux_listPrompts?.(${JSON.stringify(surfaceId)})`;
+  for (const win of liveWindows()) {
+    const answer = await win.webContents.executeJavaScript(script);
+    if (Array.isArray(answer) && answer.length > 0) {
+      const { entries, truncated } = tailOf(answer, limit);
+      return { prompts: entries, truncated };
+    }
+  }
+  return null;
+}
+
+/**
+ * Does this surface exist in any window at all?
+ *
+ * Asked ONLY after every window has answered the prompt query with nothing, so
+ * the happy path still costs one `executeJavaScript` per window and this is
+ * paid exclusively by the case that is about to be reported as empty. Ordering
+ * it that way also settles a race in the caller's favour: a surface that has
+ * prompts is answered from its prompts, even if it is being torn down as we
+ * ask, rather than being declared missing.
+ *
+ * `__wmux_locateSurface` and not the prompt store: a closed surface's log is
+ * deleted with it, so "no entry in the log" and "no such surface" have to be
+ * distinguished by something that outlives neither — the split tree.
+ */
+async function surfaceExists(surfaceId: string): Promise<boolean> {
+  const script = `!!window.__wmux_locateSurface?.(${JSON.stringify(surfaceId)})`;
+  for (const win of liveWindows()) {
+    if (await win.webContents.executeJavaScript(script) === true) return true;
+  }
+  return false;
+}
+
+/**
+ * Every tracked surface, MERGED across windows rather than read off the first
+ * one that replies: with no surfaceId the caller is asking a question about the
+ * app ("which panes have prompts?"), and each window keeps its own store.
+ *
+ * `truncated` is one flag for the whole reply rather than one per surface. The
+ * question it answers is "is there more than this?", which the CLI turns into a
+ * single footer line; a per-surface breakdown would be more precise about
+ * something no caller has to act on differently.
+ */
+async function promptsForAllSurfaces(limit: number): Promise<{ surfaces: Record<string, any[]>; truncated: boolean }> {
+  const surfaces: Record<string, any[]> = {};
+  let truncated = false;
+  for (const win of liveWindows()) {
+    const answer = await win.webContents.executeJavaScript('window.__wmux_listPrompts?.()');
+    for (const [id, list] of Object.entries(answer ?? {})) {
+      if (!Array.isArray(list) || list.length === 0) continue;
+      const tail = tailOf(list, limit);
+      surfaces[id] = tail.entries;
+      truncated = truncated || tail.truncated;
+    }
+  }
+  return { surfaces, truncated };
 }
 
 // Named-key → raw PTY input translation. Fallback rules:
@@ -1216,6 +1363,54 @@ app.whenReady().then(() => {
             if (!result) { respondError(-32000, 'No window'); return; }
             if (result.error) { respondError(-32000, result.error); return; }
             respond(result);
+          } catch (err: any) { respondError(-32000, err.message); }
+        })();
+        break;
+      }
+      case 'surface.list_prompts': {
+        // What has this pane been asked to do? (issue #207) The answer an agent
+        // cannot get any other way: `surface.read_text` returns whatever the TUI
+        // is painting now, and a repaint destroys the prompt text permanently.
+        //
+        // No PTY check and no active-surface fallback, unlike read_text: an
+        // empty log is a legitimate answer here, so refusing a surface that has
+        // no terminal would turn "nothing recorded" into an error, and guessing
+        // at the focused surface would answer about a pane the caller never
+        // named. Without a surfaceId the caller gets every tracked pane instead.
+        //
+        // "Empty" used to be three different situations wearing one answer: the
+        // prompt log switched off, a surface id that names nothing, and a pane
+        // that genuinely has not been asked anything yet. Each wants a different
+        // next move from the caller — turn the feature on, fix the id, wait —
+        // and each is now reported as its own thing, following what the sibling
+        // methods already do rather than inventing a fourth convention. An
+        // unknown surface is a -32000 error the way `surface.read_text` and
+        // `workspace.current` report one; `enabled: false` rides along with the
+        // (still empty, still same-shaped) result, because a disabled log is a
+        // successful answer to the question and not a failure.
+        (async () => {
+          try {
+            const surfaceId: string = request.params?.surfaceId || request.params?.id || '';
+            const rawLimit = Number(request.params?.limit);
+            const limit = Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.floor(rawLimit) : 0;
+            if (liveWindows().length === 0) { respondError(-32000, 'No window'); return; }
+            const enabled = promptLogEnabled();
+            if (surfaceId) {
+              const hit = await promptsForSurface(surfaceId, limit);
+              if (hit) { respond({ surfaceId, prompts: hit.prompts, truncated: hit.truncated, enabled }); return; }
+              if (!(await surfaceExists(surfaceId))) {
+                respondError(-32000, `surface ${surfaceId} not found (closed, or never existed). Pass an id from \`wmux list-surfaces\`.`);
+                return;
+              }
+              respond({ surfaceId, prompts: [], truncated: false, enabled });
+              return;
+            }
+            // Only the untargeted form gets a default cap — see
+            // DEFAULT_ALL_PROMPTS_LIMIT. `limit` is echoed back so the caller
+            // knows which number produced the reply without having to know ours.
+            const effective = limit || DEFAULT_ALL_PROMPTS_LIMIT;
+            const all = await promptsForAllSurfaces(effective);
+            respond({ surfaces: all.surfaces, truncated: all.truncated, limit: effective, enabled });
           } catch (err: any) { respondError(-32000, err.message); }
         })();
         break;

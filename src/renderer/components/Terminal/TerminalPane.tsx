@@ -2,7 +2,11 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTerminal } from '../../hooks/useTerminal';
 import FindBar from './FindBar';
 import CopyMode from './CopyMode';
+import PinnedPrompt from './PinnedPrompt';
+import PromptOutline from './PromptOutline';
+import NewOutputPill from './NewOutputPill';
 import '../../styles/terminal.css';
+import '../../styles/prompt-marks.css';
 
 interface TerminalPaneProps {
   surfaceId?: string;
@@ -94,6 +98,20 @@ export default function TerminalPane({
   return (
     <div className={`terminal-pane ${focused ? 'terminal-pane--focused' : ''}`}>
       <div ref={terminalRef} className="terminal-pane__container" />
+      {/* Prompt-log views (issue #207). All three are absolutely positioned over
+          the container, never flow siblings of it: a flow sibling would be
+          pushed out of the container's height:100% box WITHOUT firing the
+          ResizeObserver, so the PTY would keep its old row count and the bottom
+          lines would hide underneath (issue #82).
+
+          Gated on `visible`, not on `focused`: every tab in a pane stays mounted
+          (visibility:hidden unmounts nothing), so without the gate a hidden tab
+          would render its own sticky header on top of the tab the user is
+          actually looking at. The outline additionally needs `focused` — it
+          takes keyboard focus, and only one pane may. */}
+      {visible && surfaceId && <PinnedPrompt surfaceId={surfaceId} />}
+      {visible && surfaceId && <NewOutputPill surfaceId={surfaceId} />}
+      {visible && focused && surfaceId && <PromptOutline surfaceId={surfaceId} />}
       {showFindBar && (
         <FindBar
           onSearch={handleSearch}

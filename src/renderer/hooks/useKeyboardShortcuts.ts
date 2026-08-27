@@ -8,6 +8,7 @@ import { PaneId, SplitNode } from '../../shared/types';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { GLOBAL_IN_EDITOR, isEditableTarget } from './shortcut-target';
 import { matchIndexShortcut, resolveIndexTarget } from '../utils/index-shortcuts';
+import { followOutputFor, togglePinnedPromptFor, togglePromptOutlineFor } from '../store/prompt-actions';
 import { v4 as uuid } from 'uuid';
 import { useT } from '../i18n';
 
@@ -291,6 +292,23 @@ export function useKeyboardShortcuts(
       }
     };
 
+    /**
+     * The terminal surface the user is looking at, or null.
+     *
+     * The prompt-log actions below act on the store and on the xterm instance
+     * directly rather than through a CustomEvent like paste/reset do: what they
+     * change is per-SURFACE state the store already owns, so there is nothing
+     * that only the mounted component could do. Only `followOutput` needs the
+     * emulator, and the registry hands it over without a round trip.
+     */
+    const focusedTerminalSurfaceId = (): string | null => {
+      if (!focusedPaneId || !activeWorkspaceId) return null;
+      const ws = activeWs();
+      const leaf = ws ? findLeaf(ws.splitTree, focusedPaneId) : undefined;
+      const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+      return surface?.type === 'terminal' ? surface.id : null;
+    };
+
     const adjustFontSize = (next: (size: number) => number) => {
       const prefs = useStore.getState().terminalPrefs;
       useStore.getState().setTerminalPrefs({ fontSize: next(prefs.fontSize) });
@@ -368,6 +386,11 @@ export function useKeyboardShortcuts(
       copy: copySelection,
       paste: pasteIntoFocusedTerminal,
       resetTerminal: resetFocusedTerminal,
+      // Issue #207. The bodies live in store/prompt-actions.ts so the command
+      // palette runs the same code — see the note there.
+      togglePromptOutline: () => togglePromptOutlineFor(focusedTerminalSurfaceId()),
+      togglePinnedPrompt: () => togglePinnedPromptFor(focusedTerminalSurfaceId()),
+      followOutput: () => followOutputFor(focusedTerminalSurfaceId()),
       fontSizeIncrease: () => adjustFontSize((s) => Math.min(32, s + 1)),
       fontSizeDecrease: () => adjustFontSize((s) => Math.max(8, s - 1)),
       fontSizeReset: () => useStore.getState().setTerminalPrefs({ fontSize: 13 }),

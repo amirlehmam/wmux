@@ -34,6 +34,7 @@ const STORAGE_KEYS = {
   language:          'wmux-language',
   appearancePrefs:   'wmux-appearance-prefs',
   keyboardPrefs:     'wmux-keyboard-prefs',
+  promptPrefs:       'wmux-prompt-prefs',
 } as const;
 
 // Read the whole settings file once at module load (synchronous IPC). The
@@ -188,7 +189,11 @@ export type ShortcutAction =
   // ─── issue #116 ───────────────────────────────────────────────────────────
   | 'toggleMarkdownSource'
   // ─── issue #175 ───────────────────────────────────────────────────────────
-  | 'resetTerminal';
+  | 'resetTerminal'
+  // ─── issue #207: the prompt log and its four consumers ────────────────────
+  | 'togglePromptOutline'
+  | 'togglePinnedPrompt'
+  | 'followOutput';
 
 // ─── Default shortcuts ────────────────────────────────────────────────────────
 
@@ -273,6 +278,26 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   openAgentNavigator:     { key: 'a', ctrl: true, shift: true },
   // Ctrl+Shift+O was unbound (bare Ctrl+O already opens a folder).
   openHub:                { key: 'o', ctrl: true, shift: true },
+  // ─── issue #207 ─────────────────────────────────────────────────────────────
+  // Collision-checked against every binding above and against the two
+  // number-row families in KeyboardPrefs: Ctrl+Shift+L, Ctrl+Shift+K and
+  // Ctrl+Shift+End were all free. Ctrl+Shift+O was NOT — it is `openHub` — so
+  // the outline took L (as in "list"), not O.
+  //
+  // Shift-modified like every batch above, which is what keeps the bare Ctrl
+  // combos the terminal actually wants: Ctrl+L (clear screen in every shell
+  // wmux spawns), Ctrl+K (kill-to-end-of-line in readline) and Ctrl+End
+  // (scroll-to-bottom in xterm) all still reach the pane untouched, so
+  // isSafeToIntercept needs no SAFE_CTRL_KEYS edit.
+  //
+  // Bound by default rather than left blank for the same reason as the agent
+  // roster: these are "get back to what you asked for" gestures, wanted at the
+  // moment you are already lost in output, which is the worst moment to go
+  // discover a keystroke in Settings. The panel's hints read the LIVE binding
+  // so a rebind stays honest.
+  togglePromptOutline:    { key: 'l', ctrl: true, shift: true },
+  togglePinnedPrompt:     { key: 'k', ctrl: true, shift: true },
+  followOutput:           { key: 'End', ctrl: true, shift: true },
 };
 
 // ─── Sidebar settings ─────────────────────────────────────────────────────────
@@ -475,6 +500,191 @@ export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
   openOnStartup: true,
   openLinksExternally: false,
 };
+
+// ─── Prompt settings (issue #207) ─────────────────────────────────────────────
+
+/**
+ * "Pin and highlight the original prompt in a pane" — four features, one
+ * per-surface prompt log behind them, and therefore one preference block.
+ *
+ * They are separate toggles rather than one switch because they cost different
+ * things. Highlighting and the outline are free until you look at them; the
+ * sticky header permanently eats rows off a pane, and anchoring changes where
+ * the viewport sits while output is still arriving — which is exactly the
+ * behaviour a user who did NOT ask for it would call a scrolling bug. Hence the
+ * defaults below: everything on except `pin`.
+ *
+ * `enabled` is the master switch and the one that matters for cost: with it off
+ * nothing subscribes to the prompt log at all, so a user who wants none of this
+ * pays nothing for it.
+ */
+export interface PromptPrefs {
+  /** Master switch. With this off, none of the four consumers run. */
+  enabled: boolean;
+  /** Tint the rows the user's own prompt occupies, so it stands out of the scrollback. */
+  highlight: boolean;
+  /** '#rrggbb'. Fed to an `<input type="color">`, which emits nothing else. */
+  highlightColor: string;
+  /** Also mark each prompt on the scrollbar's overview ruler. */
+  ruler: boolean;
+  /** Keep the last prompt visible as a sticky header above the pane. */
+  pin: boolean;
+  /**
+   * How many rows of prompt text the sticky header shows. Clamped to 1..5 in
+   * `setPromptPrefs` — settings.json is hand-editable and a header taller than
+   * the pane is not a preference, it is a broken pane.
+   */
+  pinLines: number;
+  /** Hold the view at the start of an answer instead of following the output. */
+  anchor: boolean;
+  /**
+   * Which prompts anchoring applies to.
+   *
+   * `'agent'` — only prompts an in-pane agent reported. `'all'` — shell command
+   * lines as well.
+   *
+   * This one exists because the two cases are not the same request, even though
+   * they share a mechanism. Issue #207 asks for anchoring so the START OF AN
+   * AGENT'S ANSWER can be read while the agent is still writing; a terminal that
+   * follows its output is not a problem there, it is the problem. A SHELL that
+   * follows its output is not a problem at all — it is what every terminal has
+   * done for forty years, and silently stopping `npm run build` from streaming
+   * reads as a freeze, not as a feature.
+   *
+   * So the default is the narrow one. Anyone who wants it everywhere says so.
+   */
+  anchorScope: 'agent' | 'all';
+  /**
+   * Whether the prompt outline is AVAILABLE. It is inert until opened, so this
+   * gates the shortcut and the command, not a always-on panel.
+   */
+  outline: boolean;
+  outlineSide: 'right' | 'left';
+  /** Which generation of these defaults this blob has been reconciled against. */
+  promptDefaultRev: number;
+}
+
+/**
+ * Bumped whenever we change what a user who never opened this panel gets.
+ *
+ * The mechanism exists from day one rather than being retrofitted, because
+ * retrofitting it does not work: `setPromptPrefs` persists the WHOLE merged
+ * object, so the moment a user flips any one of these toggles every other field
+ * is on disk too, and `{ ...DEFAULTS, ...stored }` lets the stored value win
+ * forever. A later default change would then reach only users who had never
+ * touched the panel at all — which is to say, almost nobody who cares. Starting
+ * the counter at 0 costs nothing and means the first real default change is a
+ * bump plus an entry in PROMPT_PROMOTIONS instead of a migration written under
+ * pressure.
+ *
+ * 0 — 2.4.0, as shipped. No promotion has ever run.
+ */
+export const PROMPT_DEFAULT_REV = 0;
+
+export const DEFAULT_PROMPT_PREFS: PromptPrefs = {
+  enabled: true,
+  highlight: true,
+  // A wmux blue, but deliberately NOT the accent (#0091ff / --ui-accent), for
+  // two reasons that happen to agree.
+  //
+  // Design: the accent already means "focused" in this app — the pane ring, the
+  // active tab, the active workspace rail. A prompt highlight means "this is
+  // what you asked", which is a different claim, and painting the two the same
+  // colour makes a scrolled-back prompt read as the focused pane.
+  //
+  // Mechanical: tests/unit/accent-token.test.ts pins the accent literal to
+  // theme-vars.css alone. It exists because the accent once lived in 53
+  // hardcoded copies and the light palette shipped a 2.6:1 contrast bug as a
+  // result. This value cannot come from the token either — it is fed to an
+  // `<input type="color">` and handed to xterm's overview ruler, neither of
+  // which accepts `var(...)` — so a literal it is, and it must be its own.
+  //
+  // Not a terminal-palette colour either: the highlight has to read as chrome
+  // the terminal did not print, on every bundled colour scheme.
+  highlightColor: '#6ea8ff',
+  ruler: true,
+  // The only one off by default — see the block comment on PromptPrefs.
+  pin: false,
+  pinLines: 2,
+  anchor: true,
+  // Agent prompts only — the narrow reading of issue #207, and the one that
+  // leaves every existing shell behaving exactly as it always has.
+  anchorScope: 'agent',
+  outline: true,
+  outlineSide: 'right',
+  promptDefaultRev: PROMPT_DEFAULT_REV,
+};
+
+/**
+ * One entry per default we have changed under existing users, exactly as
+ * APPEARANCE_PROMOTIONS above. Empty today because no default has changed since
+ * 2.4.0 shipped.
+ *
+ * Add to it when — and only when — you change a value in DEFAULT_PROMPT_PREFS
+ * and want the change to reach users who already have a `wmux-prompt-prefs`
+ * blob on disk. An entry bumps PROMPT_DEFAULT_REV, sets the field AND stamps
+ * the new rev in the same closure, so "promoted the value but forgot the rev"
+ * — which re-promotes on every launch, overriding the user's own choice
+ * forever — cannot be written.
+ */
+interface PromptPromotion {
+  rev: 'promptDefaultRev';
+  current: number;
+  apply: (prefs: PromptPrefs) => void;
+}
+
+const PROMPT_PROMOTIONS: ReadonlyArray<PromptPromotion> = [];
+
+/**
+ * Which promotions a stored blob has not seen yet.
+ *
+ * Takes the list as an argument rather than closing over PROMPT_PROMOTIONS so
+ * the rule itself can be exercised with a non-empty list — the list ships empty,
+ * and a predicate that has never once run on real input is a migration nobody
+ * can trust the first time it matters.
+ *
+ * `stored` is the RAW blob, never the merged one: the defaults carry the
+ * current rev, so merging first makes every legacy blob look already-migrated
+ * and no promotion ever fires. That is the bug to look for if a migration seems
+ * to do nothing.
+ */
+function duePromptPromotions(
+  stored: Partial<PromptPrefs>,
+  promotions: ReadonlyArray<PromptPromotion>,
+): PromptPromotion[] {
+  return promotions.filter((p) => (stored[p.rev] ?? 0) < p.current);
+}
+
+export function loadPromptPrefs(): PromptPrefs {
+  const stored = loadPersisted<PromptPrefs>(STORAGE_KEYS.promptPrefs);
+  // Clamped on load as well as on write, for the same reason keyboardPrefs is
+  // reconciled on load: settings.json is hand-editable, and a `pinLines: 400`
+  // would bury the pane under its own header long before anyone reached
+  // Settings to correct it.
+  const merged = { ...DEFAULT_PROMPT_PREFS, ...stored, pinLines: clampPinLines(stored.pinLines ?? DEFAULT_PROMPT_PREFS.pinLines) };
+
+  const due = duePromptPromotions(stored, PROMPT_PROMOTIONS);
+  if (due.length === 0) return merged;
+
+  const promoted: PromptPrefs = { ...merged };
+  for (const p of due) p.apply(promoted);
+  // Written back now rather than at the next settings edit: the rev has to be
+  // on disk for this to stay a ONE-time promotion. Without the write, a user
+  // who switches the field back and never opens Settings again is re-promoted
+  // on every launch — worse than never changing the default.
+  persist(STORAGE_KEYS.promptPrefs, promoted);
+  return promoted;
+}
+
+/**
+ * The sticky header's height, kept sane. `Number()` on an emptied number input
+ * yields NaN and a hand-edited settings.json can hold anything at all, so the
+ * non-finite case falls back to the default rather than propagating.
+ */
+function clampPinLines(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_PROMPT_PREFS.pinLines;
+  return Math.min(5, Math.max(1, Math.round(value)));
+}
 
 // ─── Keyboard settings (issue #202) ───────────────────────────────────────────
 
@@ -737,6 +947,8 @@ export interface SettingsSlice {
   keyboardPrefs: KeyboardPrefs;
   /** App UI theme — sidebar/tabbar/titlebar/pane chrome (issue #67). */
   appearancePrefs: AppearancePrefs;
+  /** Prompt highlight / pin / anchor / outline (issue #207). */
+  promptPrefs: PromptPrefs;
   /** Global quick-launch profiles surfaced in the `+` caret dropdown (issue #32). */
   quickLaunchProfiles: QuickLaunchProfile[];
   savedLayouts: SavedLayout[];
@@ -786,6 +998,7 @@ export interface SettingsSlice {
   setBrowserPrefs(prefs: Partial<BrowserPrefs>): void;
   setKeyboardPrefs(prefs: Partial<KeyboardPrefs>): void;
   setAppearancePrefs(prefs: Partial<AppearancePrefs>): void;
+  setPromptPrefs(prefs: Partial<PromptPrefs>): void;
   setQuickLaunchProfiles(profiles: QuickLaunchProfile[]): void;
   setSavedLayouts(layouts: SavedLayout[]): void;
   setLanguage(language: Language): void;
@@ -831,6 +1044,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   // two families holding the same combo would leave one of them dead.
   keyboardPrefs:     loadKeyboardPrefs(),
   appearancePrefs:   loadAppearancePrefs(),
+  promptPrefs:       loadPromptPrefs(),
   quickLaunchProfiles: loadPersistedArray<QuickLaunchProfile>(STORAGE_KEYS.quickLaunchProfiles),
   savedLayouts:      loadPersistedArray<SavedLayout>(STORAGE_KEYS.savedLayouts),
   language:          loadPersistedLanguage(),
@@ -910,6 +1124,17 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
       const merged = { ...state.appearancePrefs, ...prefs };
       persist(STORAGE_KEYS.appearancePrefs, merged);
       return { appearancePrefs: merged };
+    });
+  },
+
+  setPromptPrefs(prefs: Partial<PromptPrefs>): void {
+    set((state) => {
+      const candidate = { ...state.promptPrefs, ...prefs };
+      // Clamped here rather than in the panel: the number input is not the only
+      // writer — a settings.json edit and any future CLI both land here too.
+      const merged = { ...candidate, pinLines: clampPinLines(candidate.pinLines) };
+      persist(STORAGE_KEYS.promptPrefs, merged);
+      return { promptPrefs: merged };
     });
   },
 

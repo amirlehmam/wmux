@@ -24,6 +24,10 @@ export const GLOBAL_IN_EDITOR: ReadonlySet<ShortcutAction> = new Set<ShortcutAct
   'toggleSidebar',
   'toggleShortcutCheatSheet',
   'showNotifications',
+  // The prompt outline's own filter box is a text field (issue #207), so
+  // without this its toggle stops working the moment the panel it opened takes
+  // focus — the one place a user is most likely to press it again.
+  'togglePromptOutline',
 ]);
 
 /** The subset of an event target this guard needs; keeps the tests DOM-free. */

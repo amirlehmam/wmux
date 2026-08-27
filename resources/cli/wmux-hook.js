@@ -17,6 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
  *   - PostToolUse Edit/Write → extracts tool_input.file_path
  *   - Notification           → extracts the `message` (what the agent is waiting for)
  *   - PreToolUse             → extracts `tool_name` (registered matcher-less)
+ *   - UserPromptSubmit       → extracts `prompt` (the prompt log, issue #207)
  * WMUX_SURFACE_ID (set by wmux in each pane's shell) ties the event to its pane.
  */
 const net_1 = __importDefault(require("net"));
@@ -68,7 +69,31 @@ const remote = (() => {
 const token = (remote ? process.env.WMUX_REMOTE_TOKEN : process.env.WMUX_PIPE_TOKEN) || '';
 let stdinData = '';
 let sent = false;
-const MAX_STDIN = 64 * 1024; // 64KB cap
+/**
+ * Ceiling on the hook payload this process will hold, in characters.
+ *
+ * It was 64 KB, set when the only things read out of stdin were short — a file
+ * path, a notification message — so a payload that hit the cap lost nothing
+ * anyone would miss. The prompt log (issue #207) changed that: stdin now
+ * carries whatever the user typed, and a user who pastes a file into a prompt
+ * reaches 64 KB routinely rather than never.
+ *
+ * The damage is not confined to the prompt, which is the reason this number
+ * moved rather than being left alone. Cutting the payload off mid-string leaves
+ * INVALID JSON, so `JSON.parse` throws for the whole object and every field
+ * goes with it — including `session_id`, which is what makes `claude --resume`
+ * work on a workspace restore (issue #186). Losing a prompt too large to
+ * forward is tolerable; silently disabling session resume because of it is not.
+ *
+ * 10 MB, and still a cap rather than unbounded: stdin is a pipe of a length
+ * this process does not control, so an unbounded accumulator is memory
+ * exhaustion in a process the user cannot see. The size costs nothing — this
+ * process reads stdin, writes one frame and exits inside ~100 ms, so the string
+ * is transient next to the tens of MB a bare node process maps before running a
+ * line of our code — and it is ~2500x the 4000 characters of prompt actually
+ * forwarded, so any paste a human could plausibly make still parses.
+ */
+const MAX_STDIN = 10 * 1024 * 1024;
 /**
  * Backstop ceiling on this process's lifetime once it starts talking to the
  * pipe. Every other way out of here is event-driven; this is the one that does
@@ -101,8 +126,57 @@ let stdinTimer = null;
  * function is about — every new field extracted here used to add another branch
  * to a function that also owns socket setup, the deadline and process exit.
  */
+/**
+ * Longest prompt forwarded, in characters.
+ *
+ * The prompt is the first payload BODY this helper has ever sent beyond a
+ * Notification's message, so it gets a limit of its own rather than relying on
+ * the stdin cap above — which is now 10 MB and exists to keep this process from
+ * eating memory, not to bound what travels the pipe. Two reasons, both: the value
+ * lands in a renderer (a web context) and is held there per pane, and a pasted
+ * 60 KB file would otherwise travel the pipe on every submission to be shown as
+ * one truncated line. The renderer clamps again on arrival — this end cannot
+ * assume the version at the other end agrees, since wmux-hook.js is written to
+ * the user's ~/.claude and an old copy can outlive an upgrade.
+ */
+const MAX_PROMPT = 4000;
+/**
+ * How far into a payload that would not parse the salvage below looks, in
+ * characters.
+ *
+ * Bounding the scan is what makes the salvage safe as well as cheap. Every
+ * Claude Code hook payload puts its top-level scalar fields — `session_id`
+ * first among them — in the first few hundred bytes, well ahead of `prompt`,
+ * so 4 KB is an order of magnitude of headroom for the field we want. It is
+ * also a wall: a user can paste a document that itself contains the characters
+ * `"session_id": "..."`, and a scan of the whole payload would happily resume
+ * whatever session that text names. Refusing to look past the head means the
+ * only thing reachable is a real top-level key.
+ *
+ * If a payload ever puts `prompt` first and pushes `session_id` past 4 KB, this
+ * finds nothing and we are back to today's behaviour — an empty field. Missing
+ * a session id costs a `--resume`; salvaging the wrong one resumes a
+ * conversation the user never asked for, so a miss is the outcome to prefer.
+ */
+const SESSION_ID_SCAN_CHARS = 4096;
+/**
+ * `"session_id": "<id>"`, and deliberately nothing else.
+ *
+ * NOT a hand-rolled JSON parser and not the start of one: a truncated payload
+ * has no recoverable object in it, and the ONE field worth rescuing from the
+ * wreckage is short, well delimited and shaped like an identifier. The value
+ * class matches `CLAUDE_SESSION_ID_RE` in src/main/claude-resume.ts (which
+ * re-validates it before it ever reaches a `claude --resume` command line, so
+ * this end is a filter and not the security boundary), and it excludes the
+ * closing quote — so the quantifier has exactly one way to stop and the match
+ * is linear in the length of the window, with nothing to backtrack over.
+ */
+const SESSION_ID_RE = /"session_id"\s*:\s*"([A-Za-z0-9_-]{8,128})"/;
+function salvageSessionId(raw) {
+    return SESSION_ID_RE.exec(raw.slice(0, SESSION_ID_SCAN_CHARS))?.[1] ?? '';
+}
 function parsePayload(raw) {
-    const out = { file: '', message: '', sessionId: '', toolName: '' };
+    const out = { file: '', message: '', sessionId: '', toolName: '', prompt: '' };
     if (!raw.trim())
         return out;
     let data;
@@ -110,7 +184,13 @@ function parsePayload(raw) {
         data = JSON.parse(raw);
     }
     catch {
-        return out; // stdin wasn't valid JSON — that's fine.
+        // Truncated at MAX_STDIN, or simply not JSON at all. Either way there is no
+        // object to read fields off — but degrade instead of failing whole: a
+        // payload whose only real problem is an oversized PROMPT (issue #207) must
+        // not also cost the user `claude --resume` on their next restore (issue
+        // #186), and `session_id` survives in the raw text where the rest does not.
+        out.sessionId = salvageSessionId(raw);
+        return out;
     }
     // Claude Code provides tool_input with file_path for Edit/Write.
     out.file = data.tool_input?.file_path || data.tool_input?.path || data.input?.file_path || '';
@@ -127,6 +207,18 @@ function parsePayload(raw) {
     // Forwarding it is what makes `claude --resume` possible on restore.
     if (typeof data.session_id === 'string')
         out.sessionId = data.session_id;
+    // UserPromptSubmit carries what the user actually typed, and wmux threw it
+    // away — which is why the prompt-log features in issue #207 had no source of
+    // truth for an agent pane. It cannot be recovered from the screen: an agent
+    // TUI repaints over its own input box, so by the time anything looks, the
+    // prompt is gone or reflowed.
+    //
+    // Read ONLY for that event. Every other hook payload may carry unrelated
+    // fields under names that could collide, and this helper's whitelist is the
+    // boundary that keeps a transcript out of the pipe.
+    if (event === 'UserPromptSubmit' && typeof data.prompt === 'string') {
+        out.prompt = data.prompt.slice(0, MAX_PROMPT);
+    }
     return out;
 }
 function sendHook() {
@@ -141,7 +233,7 @@ function sendHook() {
     // caller opened it and never closes it, exiting would otherwise wait on a
     // stream nobody is going to end.
     process.stdin.pause();
-    const { file, message, sessionId, toolName } = parsePayload(stdinData);
+    const { file, message, sessionId, toolName, prompt } = parsePayload(stdinData);
     if (!tool && toolName)
         tool = toolName;
     const params = { at: firedAt };
@@ -155,6 +247,8 @@ function sendHook() {
         params.message = message;
     if (sessionId)
         params.sessionId = sessionId;
+    if (prompt)
+        params.prompt = prompt;
     if (surfaceId)
         params.surfaceId = surfaceId;
     const client = net_1.default.connect(remote ? { host: remote.host, port: remote.port } : { path: pipePath }, () => {
@@ -183,6 +277,9 @@ function sendHook() {
 }
 // Read stdin (Claude Code pipes the hook payload as JSON).
 process.stdin.setEncoding('utf8');
+// Stop appending at the cap rather than truncating mid-chunk: what is kept is
+// then a prefix of the payload, which is what the session_id salvage below
+// depends on. It is still not valid JSON, and it is not meant to be.
 process.stdin.on('data', (chunk) => { if (stdinData.length < MAX_STDIN)
     stdinData += chunk; });
 process.stdin.on('end', sendHook);

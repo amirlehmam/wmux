@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 2.0.0
+**Version**: 2.4.0
 
 ---
 
@@ -96,7 +96,7 @@ docs/             Planning docs
 
 **Components** (in `components/`):
 - `SplitPane/` — PaneWrapper, SplitContainer, SplitDivider, SurfaceTabBar
-- `Terminal/` — TerminalPane, FindBar, CopyMode, NotificationRing
+- `Terminal/` — TerminalPane, FindBar, CopyMode, NotificationRing, PinnedPrompt, PromptOutline, NewOutputPill (the three prompt-log views, #207 — all `position: absolute` over the xterm container, never flow siblings: a flow sibling is pushed out of the container's `height:100%` box WITHOUT firing the ResizeObserver, so the PTY keeps its old row count and the bottom rows hide underneath, which is issue #82)
 - `Browser/` — BrowserPane, AddressBar, AgentBrowserSetup (the `not-installed` vs `no-dashboard` cards — two genuinely different situations, never one card: the second means the agent browser works fine and only its optional viewer is missing)
 - `Sidebar/` — Sidebar, WorkspaceRow, SessionMenu, SidebarResizeHandle
 - `Titlebar/` — Titlebar, NotificationBell, NotificationPanel
@@ -106,8 +106,8 @@ docs/             Planning docs
 - `Tutorial/` — Tutorial
 
 **Hooks** (in `hooks/`):
-- `useTerminal.ts` — xterm.js lifecycle, PTY connection, OSC notifications, WebGL renderer
-- `useKeyboardShortcuts.ts` — 51+ shortcut actions, safe interception
+- `useTerminal.ts` — xterm.js lifecycle, PTY connection, OSC notifications, WebGL renderer, OSC 133 prompt marks (#207)
+- `useKeyboardShortcuts.ts` — 54+ shortcut actions, safe interception
 
 **Pipe Bridge** (`pipe-bridge.ts`):
 - Exposes Zustand store operations as `window.__wmux_*` globals
@@ -123,6 +123,8 @@ docs/             Planning docs
 - `settings-slice.ts` — Shortcuts, sidebar prefs, theme
 - `notification-slice.ts` — Notification lifecycle (max 200)
 - `agent-slice.ts` — Agent metadata tracking
+- `prompt-slice.ts` — Per-surface prompt log (#207). Bounded twice: 200 prompts per surface, 64 surfaces. **Only the facts** — a marker is a live emulator object and lives in `utils/prompt-marks.ts` instead. `line: null` means "not jumpable"; a view must never read it as line 0
+- `prompt-actions.ts` — The three prompt commands as functions of a surface id, because there are two callers (the shortcut table and the command palette) and they were about to disagree. The palette hands every action it does not recognise to a `console.log`, so an action wired only into the keyboard table appears in the palette, is selectable, and silently does nothing
 - `split-utils.ts` — Immutable split tree helpers
 
 ### Preload API (`window.wmux`)
@@ -189,6 +191,73 @@ The `surfaceId` is passed to `pty.create()` so PTY ID = Surface ID (enables reli
 ### Split Tree
 Pane layouts use an immutable binary tree (`SplitNode`). Each leaf = one pane with N surfaces (tabs).
 Mutations go through `splitNode()`, `removeLeaf()`, `findLeaf()`, `getAllPaneIds()` in `split-utils.ts`.
+
+### Prompt Boundaries — One Producer, Four Views (issue #207)
+
+Highlighting a prompt, pinning it, anchoring the view at the start of an answer and
+listing prompts as jump marks are four consumers of ONE fact: where a user prompt
+starts. So there is one producer (`utils/prompt-log.ts`) and four independent,
+individually-toggleable views — not four detectors.
+
+Two sources feed it, **ranked and never merged**, the shape `ssh-detect.ts` uses:
+
+| Source | Carries | Where |
+|--------|---------|-------|
+| `agent` | The prompt TEXT, verbatim | Claude Code's `UserPromptSubmit` hook → `wmux-hook.js` → pipe → `App.tsx` |
+| `shell` | A boundary, no text | OSC 133 (FinalTerm) from the shell integration → the xterm parser |
+
+There is deliberately **no heuristic third source**. wmux stopped guessing agent state
+from screen scraping in 0.39.0 (#128) and this does not reintroduce it: with neither
+source present the log stays empty and every view is inert. That is the honest outcome —
+a mis-detected boundary pins the wrong text and anchors the view to the wrong line, and
+the user has no way to tell it happened.
+
+Three things about this are easy to get wrong and expensive to rediscover:
+
+- **The prompt text is read out of the BUFFER for a shell**, never sent over the pipe.
+  Main already refuses to broadcast `report_command` to a renderer because a command
+  line is where a credential reliably shows up (`index.ts`, the `report_command`
+  hard-stop). The renderer is already displaying those bytes, so lifting them from the
+  buffer adds no new crossing. Only the agent source sends text, and only because an
+  agent TUI repaints over its own input box — nothing that reads the screen afterwards
+  can recover it.
+- **Markers do not survive a split-tree restructure.** A remount replays the buffer as
+  serialized TEXT (`snapshotSurfaceBuffer`), which carries no markers. Those prompts stay
+  in the outline with `line: null` and a disabled jump, rather than scrolling the user
+  somewhere arbitrary.
+- **The anchor's pending-line count is NOT in the store.** It changes on every PTY chunk;
+  a store write there re-renders every subscriber at PTY speed, which is the shape of
+  #141. It lives in a module map like `surfaceMouseModes`, and the pill subscribes to a
+  throttled DOM event.
+
+Defaults: `highlight` and `anchor` ON, `pin` OFF (it costs vertical space), `outline`
+available but closed, and `anchorScope: 'agent'` — anchoring applies to AGENT answers
+only. That last one is the load-bearing default: a shell following its own output is
+not the problem #207 describes, it is what every terminal has done for forty years, and
+silently holding `npm run build` back from streaming reads as a freeze rather than as a
+feature. `'all'` opts shell command lines in.
+
+Governed by `promptDefaultRev` — changing any of them later needs a rev bump plus a
+`PROMPT_PROMOTIONS` entry, or it reaches nobody (prefs persist as whole blocks).
+
+**Anchoring is armed before it is engaged, and the distinction is the whole design.**
+A prompt is submitted at the BOTTOM of the buffer, so its line is `>= ydisp`.
+`scrollToLine` on such a line takes xterm's "already at the bottom" branch: it sets
+`isUserScrolling = false`, clamps, and does not move. The next write then scrolls, and
+`BufferService` does `if (!isUserScrolling) ydisp = ybase` before firing `onScroll` — so
+a naive listener sees `viewportY === baseY`, reads it as "the user caught up", and
+releases. Every time, on the first line of output. The first implementation did exactly
+that and the feature held nothing; the tests missed it because the fake terminal let
+`scrollToLine` move the viewport anywhere. So: **armed** = recorded but the prompt is
+still on the last screen and nothing is hidden; **engaged** = the buffer has grown past
+it and the viewport is genuinely held. The release-on-bottom rule applies only while
+engaged. `tests/unit/prompt-anchor.test.ts` models xterm's real clamp and its
+fill-the-screen-then-grow-baseY behaviour, and pins this.
+
+The anchor holds a **resolver**, not a line number: an absolute buffer line stops meaning
+the same row once the scrollback fills and lines are trimmed off the top. The prompt's
+xterm marker tracks that; a snapshot does not. A resolver answering null (the marker
+died) is the anchor's cue to let go rather than hold a row that no longer exists.
 
 ---
 
@@ -368,6 +437,7 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 - `pane.split`, `pane.close`, `pane.focus`, `pane.zoom`, `pane.list`
 - `surface.create`, `surface.close`, `surface.focus`, `surface.rename`, `surface.list`
 - `surface.send_text`, `surface.send_key`, `surface.read_text`, `surface.trigger_flash`
+- `surface.list_prompts` — the prompt log (#207). Diverges from `surface.read_text` on the multi-window lookup, deliberately: `read_text` can tell "this window does not own that terminal" from "the screen is blank" and so takes the first window that answers without an error, but a prompt log cannot — an unowned surface and a surface with nothing recorded both answer `[]`. So the targeted form takes the first NON-EMPTY answer, and the untargeted form MERGES across windows rather than reading the first reply, since "every tracked surface" is a fact about the app and each window keeps its own store
 - `markdown.set_content`, `markdown.load_file`, `markdown.get_content`
 - `notification.list`, `notification.clear`
 - `sidebar.set_status`, `sidebar.set_progress`, `sidebar.log`, `sidebar.get_state`
@@ -444,6 +514,15 @@ wmux split [--down] [--type T] | close-pane | focus-pane | zoom-pane | list-pane
 # Terminal I/O
 wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]
 wmux read-screen [--lines N] [--surface <id>] | trigger-flash
+wmux prompts [--surface <id>] [--limit N] [--json]     # the prompt log (issue #207)
+                                       # What this pane has been asked, oldest first:
+                                       # "#<seq>  <hh:mm>  <summary>". Surface defaults
+                                       # to $WMUX_SURFACE_ID, so an agent inside a pane
+                                       # needs no id; with no --surface at all it reports
+                                       # every tracked pane. --json adds the full text,
+                                       # the source (agent|shell) and the buffer line —
+                                       # where `null` means the prompt has scrolled out
+                                       # of history and is no longer jumpable.
 
 # Browser — the same verbs on either engine, so agents need no re-education
 wmux browser open <url> | snapshot | click eN | type eN <text>
@@ -536,9 +615,36 @@ Scripts in `src/shell-integration/` (deployed to `resources/shell-integration/`)
 
 | Script | Reports |
 |--------|---------|
-| `wmux-powershell-integration.ps1` | cwd, git branch/dirty, shell state, PR polling (45s) |
-| `wmux-bash-integration.sh` | cwd, git branch/dirty, shell state, ports |
-| `wmux-cmd-integration.cmd` | Basic OSC 9 escape sequences |
+| `wmux-powershell-integration.ps1` | cwd, git branch/dirty, shell state, PR polling (45s), OSC 133 A/B/C/D |
+| `wmux-bash-integration.sh` | cwd, git branch/dirty, shell state, ports, OSC 133 A/B/C/D (bash + zsh) |
+| `wmux-cmd-integration.cmd` | Basic OSC 9 escape sequences, OSC 133 A/B (no C/D — cmd has no preexec seam, so they are not representable and are deliberately not faked) |
+
+`resources/shell-integration/` is a checked-in **byte-identical mirror**, enforced by
+`tests/unit/resources-sync.test.ts` (#168/#169) — editing a script without copying it
+there fails `npm test` AND ships the old file.
+
+**OSC 133 (#207)** carries the prompt boundaries the prompt log needs in-band, which a
+pipe message arriving milliseconds later cannot: the consumer is the xterm parser, and it
+needs the boundary at an exact byte offset in the stream. Two traps, both load-bearing:
+
+- **bash needs a DOUBLED backslash for the ST terminator inside `\[ \]`.** bash decodes
+  the contents of the ignore region, so ST's trailing `\` pairs with the `\` of the
+  closing `\]`: the end marker is destroyed, a stray `]` leaks into the visible prompt,
+  readline mis-measures the prompt width and long command lines wrap wrong. Verify with
+  `printf '%s' "${PS1@P}" | od -c`, never by reading. zsh's `%{ %}` expansion is
+  `%`-based and passes backslashes through, so there the plain form is the correct one.
+- **PowerShell: `$?` decides, `$LASTEXITCODE` only refines.** They answer different
+  questions — `$LASTEXITCODE` is the last *native* process's code, says nothing about a
+  failed cmdlet, and is sticky. Using it alone reports every failed cmdlet as a success.
+  Both must be captured as the first two statements of `prompt`; almost anything clobbers
+  them, which is how the `interrupted` shell state sat dead for years (`Report-GitBranch`
+  ran `git` before the check read `$LASTEXITCODE`).
+
+`B`/`C` come from `PSConsoleHostReadLine`, not the PSReadLine Enter handler: that handler
+runs *before* `AcceptLine` echoes the newline, so a `C` there lands on the input row and
+every consumer is one row out. It also keeps the marks out of the prompt string, so
+PSReadLine never has to width-count escapes — the PowerShell analogue of the `\[ \]`
+problem, sidestepped rather than solved.
 
 Env vars set by wmux in spawned shells: `WMUX=1`, `WMUX_SURFACE_ID`, `WMUX_PIPE`, `WMUX_CLI`,
 `WMUX_NODE` (+ `WMUX_NODE_ELECTRON` when it is wmux's own binary — issue #187).

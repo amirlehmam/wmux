@@ -298,6 +298,79 @@ function Report-Command {
     Send-WmuxMessage "report_command $surfaceId $sequence $flat"
 }
 
+# ---------------------------------------------------------------------------
+# OSC 133 — semantic prompt marks (issue #207)
+#
+# Everything above this point reports out of band, over the named pipe, and that
+# is the right shape for facts wmux only has to learn eventually. Prompt
+# boundaries are not one of those. Their consumer is xterm's parser, which has
+# to know where the prompt ended at the exact byte offset in the stream; a pipe
+# message that lands a few milliseconds later can no longer say which row that
+# was, because rows keep arriving in between.
+#
+# The spelling is FinalTerm's — the same marks iTerm2, VS Code, WezTerm, kitty
+# and Windows Terminal emit — so a pane running somebody else's integration
+# feeds wmux exactly the boundaries this file does.
+# ---------------------------------------------------------------------------
+
+# Whether a C has gone out with no D behind it yet. D only means anything as the
+# other half of a C: an empty Enter runs no command but does run the prompt, so
+# an unconditional D would report a command that never existed, carrying the
+# PREVIOUS command's exit status.
+$global:_wmux_command_open = $false
+
+# The mark bytes themselves, as a string. An empty string when this shell is not
+# in a wmux pane, so callers can splice the result in unconditionally.
+#
+# ST is ESC \ and not BEL. Both close an OSC string, but BEL is a bell on every
+# terminal that takes it at face value, and a prompt that dings once per command
+# is not a feature.
+#
+# [char]0x1b rather than PowerShell 7's `e escape: wmux spawns whichever
+# PowerShell the user configured, and Windows PowerShell 5.1 renders `e as a
+# literal "e".
+function Get-WmuxPromptMark {
+    param([string]$Payload)
+    if (-not $env:WMUX_SURFACE_ID) { return '' }
+    $esc = [char]0x1b
+    return "$esc]133;$Payload" + $esc + '\'
+}
+
+# C and D go to the console directly. They mark points in the OUTPUT stream, not
+# points in a prompt, so there is no string for them to travel inside — and
+# writing them through the success stream from anywhere reachable by `prompt`
+# would concatenate them into what the host draws.
+function Write-WmuxPromptMark {
+    param([string]$Payload)
+    $mark = Get-WmuxPromptMark $Payload
+    if ($mark) { [Console]::Write($mark) }
+}
+
+# Which of PowerShell's two "did that work" answers ends up in D.
+#
+# They are different questions, and only one of them is always answerable.
+# $LASTEXITCODE is the process exit code of the last NATIVE executable: it says
+# nothing at all about `Get-Item nope` failing, and it is sticky — it keeps
+# whatever the last native command left there, so reading it after a failed
+# cmdlet reports a number git produced ten commands ago. $? is the only signal
+# that covers native commands and cmdlets alike, but it is just a boolean.
+#
+# So $? decides success or failure, and $LASTEXITCODE is consulted only to put a
+# more useful number on a failure it can plausibly explain. A failed cmdlet with
+# a stale non-zero $LASTEXITCODE therefore reports that stale code — still a
+# failure, which is the part every consumer acts on — and a failed cmdlet with a
+# clean $LASTEXITCODE reports 1. Reporting $LASTEXITCODE alone would have been
+# the one unacceptable outcome: it calls every failed cmdlet a success.
+function Get-WmuxExitStatus {
+    param(
+        [bool]$Succeeded,
+        $NativeExitCode
+    )
+    if ($Succeeded) { return 0 }
+    if ($NativeExitCode -is [int] -and $NativeExitCode -ne 0) { return $NativeExitCode }
+    return 1
+}
+
 # Report "running" when user executes a command (pre-execution hook)
 if (Get-Module -Name PSReadLine -ErrorAction SilentlyContinue) {
     Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
@@ -310,25 +383,132 @@ if (Get-Module -Name PSReadLine -ErrorAction SilentlyContinue) {
     }
 }
 
-# Override prompt (fires AFTER command completes)
-$_wmux_original_prompt = $function:prompt
-function prompt {
-    Report-Cwd
-    Update-WmuxCwdFile
-    Report-GitBranch
-    # Detect if last command was interrupted (Ctrl+C → exit code -1073741510 on Windows)
-    if ($LASTEXITCODE -eq -1073741510 -or $LASTEXITCODE -eq 130) {
-        Report-ShellState "interrupted"
-    } else {
-        Report-ShellState "idle"
+# C is the only mark that comes from the read-line hook, and it has to.
+#
+# C means "the line was submitted, output starts here". Emitting it from the
+# Enter handler above would put it BEFORE AcceptLine echoes the newline, so the
+# mark would land on the input row instead of the first output row and every
+# consumer anchored on it would be one row out. Here the original read-line has
+# already returned, so the cursor is where the output is about to appear.
+#
+# B used to be emitted here too, on the reasoning that PSConsoleHostReadLine is
+# the seam between the prompt being drawn and the first keystroke. It is — but
+# only for prompts that are followed by a read-line. PSReadLine's ClearScreen
+# (Ctrl+L, a routine keystroke) does not end the read-line it is in the middle
+# of: it calls InvokePrompt(), which re-runs `prompt` ALONE and never re-enters
+# this function. So A came out once per prompt while B came out once per
+# submitted line, and every Ctrl+L left an A with no B behind it — enough for
+# the #207 consumers to discard the command typed next, which gets no outline
+# entry, no highlight and no anchor. B now travels inside the prompt string,
+# where it is emitted by whatever draws the prompt; see the prompt function.
+#
+# Re-sourcing this file (a nested shell, a re-read profile) must not wrap the
+# wrapper: the second copy's "original" would be the first copy, which calls the
+# name about to be redefined — infinite recursion on the next keystroke, not
+# merely a duplicated mark. Guarded with a global flag, the way the PR job is.
+# The capture lives INSIDE the guard for the same reason: doing it outside would
+# re-point the "original" at our own wrapper even with the redefinition skipped.
+if (-not $global:_wmux_readline_hooked -and
+    (Get-Command -Name PSConsoleHostReadLine -CommandType Function -ErrorAction SilentlyContinue)) {
+    $global:_wmux_readline_hooked = $true
+    $_wmux_original_readline = $function:PSConsoleHostReadLine
+    function PSConsoleHostReadLine {
+        $line = & $_wmux_original_readline
+        # A blank line is submitted without running anything, so it opens no
+        # command and must not claim one.
+        if (-not [string]::IsNullOrWhiteSpace($line)) {
+            $global:_wmux_command_open = $true
+            Write-WmuxPromptMark 'C'
+        }
+        $line
     }
-    Send-WmuxMessage "ports_kick $env:WMUX_SURFACE_ID"
+}
 
-    # Call original prompt or default
-    if ($_wmux_original_prompt) {
-        & $_wmux_original_prompt
-    } else {
-        "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) "
+# Override prompt (fires AFTER command completes)
+#
+# Guarded for the same reason the read-line hook above is: a second wrapper would
+# capture the first as its "original", and calling it would call the name being
+# redefined — infinite recursion on the very next prompt.
+if (-not $global:_wmux_prompt_hooked) {
+    $global:_wmux_prompt_hooked = $true
+    $_wmux_original_prompt = $function:prompt
+    function prompt {
+        # Both of these answer for the command the user just ran, and both are
+        # about to be destroyed — so they are read before anything else in this
+        # function, including the reporting below.
+        #
+        # $? is overwritten by the very next statement, whatever it is.
+        # $LASTEXITCODE needs the same treatment for a less obvious reason:
+        # Report-GitBranch runs git, which sets it, so anything reading it
+        # further down is reading git's exit code and calling it the user's.
+        # That is a live bug in the interrupted check below, which is why that
+        # check now reads the captured value too.
+        $_wmux_ok = $global:?
+        $_wmux_native_exit = $LASTEXITCODE
+
+        if ($global:_wmux_command_open) {
+            $global:_wmux_command_open = $false
+            $_wmux_status = Get-WmuxExitStatus -Succeeded $_wmux_ok -NativeExitCode $_wmux_native_exit
+            Write-WmuxPromptMark "D;$_wmux_status"
+        }
+
+        Report-Cwd
+        Update-WmuxCwdFile
+        Report-GitBranch
+        # Detect if last command was interrupted (Ctrl+C → exit code -1073741510 on Windows)
+        if ($_wmux_native_exit -eq -1073741510 -or $_wmux_native_exit -eq 130) {
+            Report-ShellState "interrupted"
+        } else {
+            Report-ShellState "idle"
+        }
+        Send-WmuxMessage "ports_kick $env:WMUX_SURFACE_ID"
+
+        # A and B are RETURNED, wrapped around the prompt, rather than written to
+        # the console from in here. That placement is the fix for the Ctrl+L
+        # defect in #207, and it fixes two things at once.
+        #
+        # Reliability: PSReadLine's ClearScreen re-runs this function alone,
+        # through InvokePrompt(), without ending the read-line it is inside — so
+        # a B that came from the read-line wrapper never arrived for that prompt.
+        # Anything that draws the prompt now draws B with it, because B is part
+        # of what "the prompt" is.
+        #
+        # Position: InvokePrompt evaluates `prompt` FIRST and homes the cursor
+        # only afterwards, so a console write put A on whichever row the cursor
+        # happened to be on before the screen was cleared. The host writes the
+        # returned string after positioning, so the marks travel with the prompt
+        # they describe.
+        #
+        # This is the arrangement the earlier code avoided, for fear of handing
+        # PSReadLine a prompt whose escape bytes it would have to recognise as
+        # zero-width — the bug `\[ \]` exists to prevent in bash. That fear does
+        # not apply here: PSReadLine takes its initial coordinates from the
+        # console cursor AFTER the host has written the prompt, and an OSC string
+        # moves the cursor nowhere. Checked, not assumed — a wrapping command
+        # line driven through a real pwsh under a pty produced a byte-for-byte
+        # identical stream of PSReadLine cursor movements with the marks in the
+        # prompt and with no marks at all.
+        #
+        # C is deliberately NOT here: it means "output starts here", and only the
+        # read-line wrapper runs at a point where AcceptLine has already echoed
+        # the newline.
+        #
+        # The wrapping survives oh-my-posh, Starship and PSReadLine because of
+        # WHERE this file runs, not because of anything it does about them: all
+        # three install their own `prompt` from the profile, and PowerShell reads
+        # the profile before the -Command that dot-sources this file, so the
+        # function captured above is already theirs. A prompt installed AFTER
+        # this file — a hand-run `oh-my-posh init pwsh | iex` — replaces this
+        # wrapper wholesale and takes the pipe reporting above with it; the marks
+        # are no worse off than the rest of the integration.
+        $_wmux_body = if ($_wmux_original_prompt) {
+            & $_wmux_original_prompt
+        } else {
+            "PS $($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1)) "
+        }
+        # A prompt function is free to emit more than one object. The marks have
+        # to sit outside all of them, so flatten before wrapping.
+        "$(Get-WmuxPromptMark 'A')$($_wmux_body -join '')$(Get-WmuxPromptMark 'B')"
     }
 }
 

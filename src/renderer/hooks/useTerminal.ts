@@ -28,6 +28,13 @@ import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
 import { isConEmuSubcommand } from './osc9';
+import { forgetSurface as forgetPromptLog, handlePromptMark, refreshHighlights } from '../utils/prompt-log';
+import {
+  handleScroll as handleAnchorScroll,
+  noteOutput as notePromptOutput,
+  release as releaseAnchor,
+  releaseAll as releaseAllAnchors,
+} from '../utils/prompt-anchor';
 import { withClaudeResume } from './claude-resume-command';
 import '@xterm/xterm/css/xterm.css';
 
@@ -310,6 +317,27 @@ export const surfaceTerminalRegistry = new Map<string, Terminal>();
 export const surfaceOutputSeq = new Map<string, number>();
 
 /**
+ * Width of the overview-ruler gutter, in CSS pixels, when prompt ticks are on.
+ *
+ * Also becomes the vertical scrollbar's width (xterm's Viewport derives one from
+ * the other), so it is picked to look like a scrollbar rather than to be the
+ * thinnest mark that renders.
+ */
+const PROMPT_RULER_WIDTH = 10;
+
+/**
+ * Resolve a surface's live terminal, for the modules that must NOT hold one.
+ *
+ * prompt-anchor.ts corrects a viewport a frame after the write that moved it,
+ * by which time the pane may have been closed or remounted. Handing it this
+ * lookup instead of a Terminal means it can never be the thing keeping a
+ * disposed emulator alive — the same reason this registry exists at all.
+ */
+function resolveSurfaceTerminal(surfaceId: string): Terminal | undefined {
+  return surfaceTerminalRegistry.get(surfaceId);
+}
+
+/**
  * surfaceId → the last OSC 0/2 title the pane set.
  *
  * xterm parses these and, until now, wmux threw every one away —
@@ -342,6 +370,42 @@ function recordTitleChanges(terminal: Terminal, surfaceId: string | undefined) {
     if (trimmed) surfaceTitle.set(surfaceId, trimmed);
     else surfaceTitle.delete(surfaceId);
   });
+}
+
+/**
+ * Wire a terminal up to the prompt log (issue #207): OSC 133 in, scroll out.
+ *
+ * Module-level, like `recordTitleChanges` above, for the same two reasons — the
+ * mount effect is already at its complexity ceiling, and this is the piece a
+ * reader looking for "where do prompt boundaries come from" needs to find
+ * without reading 600 lines of terminal setup.
+ *
+ * Returns a disposable for the scroll listener, or null for a surface with no
+ * id. The OSC handler needs no disposal: it belongs to the parser, which is
+ * disposed with the terminal.
+ */
+function registerPromptMarks(terminal: Terminal, surfaceId: string | undefined) {
+  if (!surfaceId) return null;
+
+  // OSC 133 is the FinalTerm convention, as implemented by iTerm2, VS Code,
+  // WezTerm and Windows Terminal. wmux's own shell integration emits it, and so
+  // do bash-preexec, Starship and oh-my-posh — so a user who already had prompt
+  // marks configured gets the prompt log with no wmux-specific setup at all.
+  terminal.parser.registerOscHandler(133, (data) => {
+    try {
+      return handlePromptMark(terminal, surfaceId, data);
+    } catch {
+      // This runs inside the parser, on every byte the pane's program writes.
+      // A malformed mark from whatever the user ran must cost that sequence,
+      // never the pane.
+      return false;
+    }
+  });
+
+  // Declining an unrecognised subtype (iTerm2 and kitty both define vendor
+  // extensions on this code) passes it on down xterm's handler chain — the same
+  // rule the OSC 9 handler documents, for the same reason.
+  return terminal.onScroll(() => handleAnchorScroll(terminal, surfaceId));
 }
 
 // Convert a wheel delta to a line count (sign preserved, magnitude ≥ 1).
@@ -520,6 +584,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   // Gated on there being a backdrop on purpose — alpha with nothing behind it
   // just reveals the opaque app chrome, which reads as a rendering bug.
   const appearance = useStore((s) => s.appearancePrefs);
+  /** Prompt-log preferences (issue #207) — read here so highlights stay reactive. */
+  const promptPrefs = useStore((s) => s.promptPrefs);
   // Not just the pref: while a restart is pending the window is still opaque,
   // so alpha here would reveal its flat backgroundColor instead of the desktop.
   const transparencyPending = useStore((s) => s.transparencyNeedsRestart);
@@ -835,6 +901,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       });
     });
 
+    // Prompt boundaries from a plain shell, and the scroll listener that lets
+    // an anchored viewport go (issue #207). See registerPromptMarks.
+    const promptMarkDisposable = registerPromptMarks(terminal, surfaceId);
+
     // OSC 52: clipboard write — emitted by tmux when text is copied (set-clipboard on).
     // navigator.clipboard.writeText() requires a user-gesture context which PTY data
     // callbacks don't have, so we go through Electron's clipboard module via IPC.
@@ -940,6 +1010,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // detection loop compares it against what it last scanned.
         surfaceOutputSeq.set(id, (surfaceOutputSeq.get(id) ?? 0) + 1);
         terminal.write(data);
+        // Hold an anchored viewport against the scroll this write just caused
+        // (issue #207). Returns immediately for the surfaces that are not
+        // anchored, which is nearly all of them nearly all of the time; the
+        // correction itself is coalesced into one animation frame, so a PTY
+        // writing at full speed costs at most 60 corrections a second.
+        notePromptOutput(id, resolveSurfaceTerminal);
       });
 
       // Wire PTY exit → inform user; also auto-heal a stuck "Running" badge
@@ -968,6 +1044,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // emulator have to be cleared together or a remount re-asserts the
         // modes we just dropped.
         surfaceMouseModes.delete(id);
+        // A dead process cannot produce the output an anchor is holding back,
+        // so holding the viewport off the bottom would hide the "[process
+        // exited]" line this handler just wrote — the one thing the user most
+        // needs to see. The prompt LOG survives (the outline is still worth
+        // reading over a finished session); only the anchor is released.
+        releaseAnchor(id, terminal);
       });
 
       cleanupFnsRef.current.push(unsubData, unsubExit);
@@ -1132,6 +1214,18 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       dataDisposable.dispose();
       titleDisposable?.dispose();
+      promptMarkDisposable?.dispose();
+
+      // Release every marker this terminal owned (issue #207).
+      //
+      // Markers belong to the emulator being disposed below and cannot outlive
+      // it — but note what this does NOT do: the prompt entries stay in the
+      // store, now with stale `line` values. That is deliberate and it is the
+      // honest half of the trade. A remount replays the buffer as serialized
+      // TEXT (see snapshotSurfaceBuffer), which carries no markers, so those
+      // prompts are genuinely no longer jumpable; the outline keeps listing
+      // them and disables the jump rather than scrolling somewhere arbitrary.
+      if (surfaceId) forgetPromptLog(surfaceId);
 
       // Run all IPC unsubscribe functions
       for (const fn of cleanupFnsRef.current) {
@@ -1240,6 +1334,45 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     return () => document.removeEventListener('wmux:reset-terminal', handler);
   }, [surfaceId]);
 
+  // Re-apply prompt highlights when their preferences change (issue #207).
+  //
+  // A decoration is built once, at the moment its prompt was recorded, from the
+  // preferences as they were then — so without this, switching the highlight on
+  // did nothing visible until the user's NEXT prompt, which reads as a dead
+  // toggle rather than as a delayed one. Depends on the individual fields
+  // rather than on the prefs object: the object identity changes on every
+  // unrelated preference edit, and rebuilding every decoration in the window
+  // because someone moved a colour picker in another section is exactly the
+  // over-invalidation issue #141 was about.
+  useEffect(() => {
+    const term = xtermRef.current;
+    if (!term || !surfaceId) return;
+    // A decoration's overview-ruler tick is only painted when the TERMINAL has a
+    // ruler width — xterm sizes that canvas from `options.overviewRuler.width`
+    // and its own typings say "This must be set in order to see the overview
+    // ruler". Without it the `ruler` preference was a switch that drew nothing.
+    // Set before the decorations are rebuilt below, so the first repaint already
+    // has somewhere to paint.
+    term.options.overviewRuler = promptPrefs.enabled && promptPrefs.ruler
+      ? { width: PROMPT_RULER_WIDTH }
+      : undefined;
+    refreshHighlights(term, surfaceId);
+  }, [surfaceId, promptPrefs.enabled, promptPrefs.highlight, promptPrefs.highlightColor, promptPrefs.ruler]);
+
+  // Let go of every held viewport when the feature — or anchoring alone — is
+  // switched off (issue #207 review).
+  //
+  // Turning the producer off only stops NEW anchors. A pane that was already
+  // held stayed held, with the pill still on it, and nothing in the Settings
+  // panel the user had just used explained why. Global rather than per-surface
+  // because the preference is global and every pane must come back at once;
+  // running it from each pane's copy of this effect would be harmless but N
+  // times redundant, so it is guarded on there being anything to release.
+  useEffect(() => {
+    if (promptPrefs.enabled && promptPrefs.anchor) return;
+    releaseAllAnchors(resolveSurfaceTerminal);
+  }, [promptPrefs.enabled, promptPrefs.anchor]);
+
   // Apply theme + font whenever the resolved scheme or prefs change.
   // Keeps terminals reactive: changing the global theme in Settings, or
   // assigning a per-pane `--color-scheme`, repaints without recreation.
@@ -1320,7 +1453,16 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
             window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
           }
           try { term.refresh(0, term.rows - 1); } catch { /* no-op */ }
-          if (focused) {
+          // Refocusing the pane must not take the caret away from an overlay
+          // that owns it (issue #207). Child effects commit before parent ones,
+          // so the prompt outline focuses its filter box first and this — two
+          // frames later — always won, leaving a visibly open panel where
+          // Escape, the arrows and Enter went to the shell instead. Gated here
+          // rather than by having the overlay re-grab focus, because two
+          // components racing for the caret is the bug, not the fix.
+          const outlineOwnsFocus = !!surfaceId
+            && useStore.getState().promptOutlineSurface === surfaceId;
+          if (focused && !outlineOwnsFocus) {
             try { term.focus(); } catch { /* no-op */ }
           }
         });
