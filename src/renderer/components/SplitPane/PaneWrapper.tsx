@@ -6,6 +6,7 @@ import TerminalPane from '../Terminal/TerminalPane';
 import BrowserPane from '../Browser/BrowserPane';
 import MarkdownPane from '../Markdown/MarkdownPane';
 import DiffPane from '../Diff/DiffPane';
+import CodePane from '../Code/CodePane';
 import PromptsPane from '../Terminal/PromptsPane';
 import NotificationRing from '../Terminal/NotificationRing';
 import SurfaceTabBar from './SurfaceTabBar';
@@ -332,6 +333,7 @@ export default function PaneWrapper({
             />
           )}
           {surface.type === 'diff' && <DiffPane surfaceId={surface.id} cwd={workspace?.cwd} />}
+          {surface.type === 'code' && <CodePane surfaceId={surface.id} />}
           {surface.type === 'prompts' && <PromptsPane surfaceId={surface.id} />}
         </div>
       );

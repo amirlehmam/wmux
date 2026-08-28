@@ -52,6 +52,7 @@ function surfaceIcon(type: string, isAgent: boolean): string {
     case 'browser': return '◎';
     case 'markdown': return '¶';
     case 'diff': return '±';
+    case 'code': return '{}';
     case 'prompts': return '❯';
     default: return '○';
   }
@@ -402,7 +403,9 @@ export default function SurfaceTabBar({
                   placeholder={getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t)}
                 />
               ) : (
-                <span className="surface-tab__label">{getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t)}</span>
+                <span className={`surface-tab__label${surface.ephemeral ? ' surface-tab__label--ephemeral' : ''}`}>
+                  {getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t)}
+                </span>
               )}
               {surfaces.length > 1 && !isRenaming && (
                 <button

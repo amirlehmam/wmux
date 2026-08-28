@@ -140,6 +140,24 @@ Split any pane right or down. Resize dividers by dragging. Zoom a pane to full s
 </tr>
 <tr>
 <td width="40%" valign="middle">
+<h3>File explorer</h3>
+<code>Ctrl+Shift+X</code> opens a file tree rooted at the focused pane's live working directory — the pane's terminal cwd, so a pane showing a markdown tab still belongs to the folder its shell is in. Single-click opens a file into a preview tab that the next click reuses in place; editing promotes it to a real tab. Markdown opens in the markdown surface. Full keyboard navigation, and panel width and expansion state persist per root.
+</td>
+<td width="60%">
+<img src="./docs/assets/wmux-explorer.png" alt="File explorer panel beside a markdown preview" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>Read-only code view</h3>
+Anything that isn't markdown opens in a <code>code</code> surface with a line-numbered gutter, alongside the terminal it came from. Reads are jailed in the main process against the pane's root, so the renderer only ever sends a relative path. Binary files are filtered out of the tree rather than opened as mojibake.
+</td>
+<td width="60%">
+<img src="./docs/assets/wmux-code.png" alt="Read-only code surface with a line-numbered gutter" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
 <h3>Saved sessions</h3>
 Save your entire workspace layout (splits, working directories, browser URL, shell type) and restore it with one click. Click the save icon in the sidebar footer to name a session, the folder icon to load. On startup, wmux auto-loads your last session — no more manual <code>cd</code> and re-splitting every time.
 </td>
@@ -309,6 +327,17 @@ holds swaps them, so trading `Ctrl+1–9` and `Ctrl+Alt+1–9` is a single click
 | Ctrl+Alt+Arrow | Focus pane directionally |
 | Ctrl+Shift+Enter | Toggle pane zoom |
 | Ctrl+Shift+H | Flash focused panel |
+
+### File Explorer
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+Shift+X | Toggle the file explorer panel |
+| Up / Down | Move through the tree |
+| Left / Right | Collapse / expand a folder |
+| Enter | Open the selected file, or expand/collapse a folder |
+| Home / End | Jump to the first / last row |
+| Esc | Return focus to the terminal |
 
 ### Browser
 

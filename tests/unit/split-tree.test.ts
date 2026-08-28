@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout, replaceSoleTerminalSurface, freezeSurfaceCwds, instantiateLayout, buildDefaultSplitTree, patchLeafPrimarySurface, mergeStartupCommands } from '../../src/renderer/store/split-utils';
+import { createLeaf, splitNode, removeLeaf, findLeaf, updateRatio, getAllPaneIds, buildGridLayout, replaceSoleTerminalSurface, freezeSurfaceCwds, instantiateLayout, buildDefaultSplitTree, patchLeafPrimarySurface, mergeStartupCommands, dropEphemeralSurfaces } from '../../src/renderer/store/split-utils';
 
 describe('split-tree', () => {
   it('creates a leaf node', () => {
@@ -413,5 +413,126 @@ describe('instantiateLayout', () => {
     const b = instantiateLayout(template) as any;
     expect(a.paneId).not.toBe(b.paneId);
     expect(a.surfaces[0].id).not.toBe(b.surfaces[0].id);
+  });
+
+  // A `code` surface is the one surface that REFERS to another surface's id.
+  // Minting a fresh id for the terminal while leaving the reference pointing at
+  // the old one is not a cosmetic mismatch: CodePane reads through that id, and
+  // main answers only for a live owned surface, so the tab comes back blank in
+  // every workspace ever made from the layout.
+  it('remaps a code tab root to the terminal it was minted alongside', () => {
+    const template = createLeaf('pane-tpl' as any, 'terminal') as any;
+    const terminalId = template.surfaces[0].id;
+    template.surfaces.push({
+      id: 'surf-code-tpl',
+      type: 'code',
+      title: 'main.ts',
+      codeRelPath: 'src/main.ts',
+      codeFilePath: 'C:\\proj\\src\\main.ts',
+      codeRootSurfaceId: terminalId,
+    });
+
+    const result = instantiateLayout(template) as any;
+    const [terminal, code] = result.surfaces;
+    expect(terminal.id).not.toBe(terminalId);
+    expect(code.id).not.toBe('surf-code-tpl');
+    expect(code.codeRootSurfaceId).toBe(terminal.id);
+    // The path fields are what the tab re-reads from — they must survive.
+    expect(code.codeRelPath).toBe('src/main.ts');
+    expect(code.codeFilePath).toBe('C:\\proj\\src\\main.ts');
+  });
+
+  it('resolves a code tab root that lives in a different pane of the template', () => {
+    let template: any = createLeaf('pane-a' as any, 'terminal');
+    template = splitNode(template, 'pane-a' as any, 'pane-b' as any, 'terminal', 'vertical');
+    const terminalId = template.children[0].surfaces[0].id;
+    template.children[1].surfaces.push({
+      id: 'surf-code-tpl',
+      type: 'code',
+      title: 'main.ts',
+      codeRelPath: 'src/main.ts',
+      codeRootSurfaceId: terminalId,
+    });
+
+    const result = instantiateLayout(template) as any;
+    const newTerminalId = result.children[0].surfaces[0].id;
+    const code = result.children[1].surfaces[1];
+    expect(newTerminalId).not.toBe(terminalId);
+    expect(code.codeRootSurfaceId).toBe(newTerminalId);
+  });
+
+  it('drops a code tab root the template never contained', () => {
+    const template = createLeaf('pane-tpl' as any, 'terminal') as any;
+    template.surfaces.push({
+      id: 'surf-code-tpl',
+      type: 'code',
+      title: 'main.ts',
+      codeRelPath: 'src/main.ts',
+      codeRootSurfaceId: 'surf-from-another-workspace',
+    });
+
+    const result = instantiateLayout(template) as any;
+    const code = result.surfaces[1];
+    // Absent, not carried through as a dead id: CodePane reports invalid_path
+    // rather than reading against a surface that was never in this tree.
+    expect('codeRootSurfaceId' in code).toBe(false);
+    expect(code.codeRootSurfaceId).toBeUndefined();
+  });
+});
+
+describe('dropEphemeralSurfaces', () => {
+  const leaf = (surfaces: any[]): any => ({
+    type: 'leaf', paneId: 'pane-1', surfaces, activeSurfaceIndex: surfaces.length - 1,
+  });
+
+  it('removes a clean ephemeral surface', () => {
+    const out: any = dropEphemeralSurfaces(leaf([
+      { id: 'surf-1', type: 'terminal' },
+      { id: 'surf-2', type: 'markdown', ephemeral: true },
+    ]));
+    expect(out.surfaces.map((s: any) => s.id)).toEqual(['surf-1']);
+    expect(out.activeSurfaceIndex).toBe(0);
+  });
+
+  it('keeps a DIRTY ephemeral surface but strips the flag', () => {
+    const out: any = dropEphemeralSurfaces(leaf([
+      { id: 'surf-1', type: 'markdown', ephemeral: true, markdownDirty: true, markdownContent: 'edited' },
+    ]));
+    expect(out.surfaces).toHaveLength(1);
+    expect(out.surfaces[0].ephemeral).toBeUndefined();
+    expect(out.surfaces[0].markdownDirty).toBe(true);
+    expect(out.surfaces[0].markdownContent).toBe('edited');
+  });
+
+  it('promotes a sole ephemeral surface instead of leaving an empty leaf', () => {
+    const out: any = dropEphemeralSurfaces(leaf([
+      { id: 'surf-1', type: 'markdown', ephemeral: true },
+    ]));
+    expect(out.surfaces).toHaveLength(1);
+    expect(out.surfaces[0].id).toBe('surf-1');
+    expect(out.surfaces[0].ephemeral).toBeFalsy();
+  });
+
+  it('still drops the ephemeral surface when a normal one remains', () => {
+    const out: any = dropEphemeralSurfaces(leaf([
+      { id: 'surf-1', type: 'terminal' },
+      { id: 'surf-2', type: 'markdown', ephemeral: true },
+    ]));
+    expect(out.surfaces.map((s: any) => s.id)).toEqual(['surf-1']);
+  });
+
+  it('recurses into split nodes', () => {
+    const out: any = dropEphemeralSurfaces({
+      type: 'split', direction: 'horizontal', ratio: 0.5,
+      children: [
+        // Two surfaces here (not one) so this exercises the ordinary drop
+        // rather than the sole-ephemeral promotion case, which has its own
+        // dedicated tests above.
+        leaf([{ id: 'a', type: 'terminal' }, { id: 'a2', type: 'markdown', ephemeral: true }]),
+        leaf([{ id: 'b', type: 'terminal' }]),
+      ],
+    } as any);
+    expect(out.children[0].surfaces).toHaveLength(1);
+    expect(out.children[1].surfaces).toHaveLength(1);
   });
 });
