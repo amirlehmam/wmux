@@ -172,6 +172,7 @@ html.wmux-transparent .split-divider--horizontal {
 .surface-tab:hover { background: var(--ui-bg-5); color: var(--ui-text-secondary); }
 .surface-tab--active { background: var(--ui-border); color: var(--ui-text-primary); }
 .surface-tab__label { pointer-events: none; }
+.surface-tab__label--ephemeral { font-style: italic; }
 .surface-tab__rename-input {
   background: rgba(var(--ui-overlay-rgb), 0.1);
   border: 1px solid rgba(var(--ui-accent-rgb), 0.5);

@@ -23,8 +23,10 @@ import * as path from 'path';
 // dropped when the window goes away.
 const grants = new Map<number, Set<string>>();
 
-/** Case-insensitive on Windows, where the same file has many spellings. */
-function canonical(filePath: string): string {
+/** Case-insensitive on Windows, where the same file has many spellings.
+ *  Exported for explorer-fs.ts's jail — a second copy of this rule is exactly
+ *  the drift markdown-file.ts was extracted to prevent. */
+export function canonical(filePath: string): string {
   const resolved = path.resolve(filePath);
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }

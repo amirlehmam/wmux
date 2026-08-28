@@ -3,7 +3,7 @@ import { useStore } from './store';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
 import SplitContainer from './components/SplitPane/SplitContainer';
-import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds, buildDefaultSplitTree } from './store/split-utils';
+import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, buildDefaultSplitTree } from './store/split-utils';
 import { resolveDefaultSplitTree } from './store/workspace-slice';
 import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
 import { aggregateProgress } from './store/progress-slice';
@@ -24,9 +24,14 @@ import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
 import ConfirmCloseDialog from './components/ConfirmCloseDialog';
 import ConfirmCloseSurfaceDialog from './components/ConfirmCloseSurfaceDialog';
 import BrowserPane from './components/Browser/BrowserPane';
+import { ExplorerPanel } from './components/Explorer/ExplorerPanel';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
 import { initPipeBridge } from './pipe-bridge';
+import {
+  TERMINAL_MIN_WIDTH, PANEL_HANDLE_WIDTH, EXPLORER_MIN_WIDTH, BROWSER_MIN_WIDTH,
+  panelReservedWidth, clampPanelWidth,
+} from './panel-layout';
 import { setKeyRemaps } from './key-remaps';
 import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
@@ -512,6 +517,9 @@ export default function App() {
   const [browserOpen, setBrowserOpen] = useState(() => useStore.getState().browserPrefs.openOnStartup);
   const [browserWidth, setBrowserWidth] = useState(420);
   const [isResizingBrowser, setIsResizingBrowser] = useState(false);
+  const [explorerOpen, setExplorerOpen] = useState(false);
+  const [explorerWidth, setExplorerWidth] = useState(260);
+  const [isResizingExplorer, setIsResizingExplorer] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   // Per-workspace hook activity: workspaceId → { lastTool, toolCount, lastSeen }
@@ -549,6 +557,19 @@ export default function App() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [shortcuts, commandPaletteOpen]);
+  // Viewport width as state, not a bare window.innerWidth read: the panel
+  // clamps below are render-time, and a resize (or a monitor change on a
+  // restored session) has to re-run them. Nothing else re-renders on resize.
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    // Read once on mount too: the first paint can precede the window settling
+    // into its restored bounds, and no resize event follows if it doesn't.
+    onResize();
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   // Session writes read the width through this ref, not the state value.
   // As a dependency, `sidebarWidth` re-subscribed the auto-save listener and
@@ -908,9 +929,12 @@ export default function App() {
             // Per-tab directories, frozen at save time (issue #134): ws.cwd above
             // is a single value for the whole workspace, so on its own it sends
             // every restored terminal to the same place.
-            splitTree: freezeSurfaceCwds(ws.splitTree),
+            splitTree: dropCodeContent(dropEphemeralSurfaces(freezeSurfaceCwds(ws.splitTree))),
             browserUrl: ws.browserUrl,
             browserWidth: ws.browserWidth,
+            explorerOpen: ws.explorerOpen,
+            explorerWidth: ws.explorerWidth,
+            explorerExpanded: ws.explorerExpanded,
           })),
         }],
       };
@@ -923,7 +947,54 @@ export default function App() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   // During drag use live browserWidth state; otherwise use the persisted value from the
   // workspace (falls back to browserWidth for workspaces that have never been resized).
-  const displayBrowserWidth = isResizingBrowser ? browserWidth : (activeWorkspace?.browserWidth ?? browserWidth);
+  //
+  // A persisted width is clamped AGAIN here, against the window as it is right
+  // now. The drag clamp only ever saw the monitor the drag happened on: a width
+  // chosen at 3840px comes back verbatim at 1366px, flexShrink:0, with a second
+  // unclamped panel next to it — and restore is the one path where the user did
+  // not choose the bad width. Same reservation arithmetic as the drag (see
+  // panel-layout.ts), so the two can never disagree.
+  const rawBrowserWidth = activeWorkspace?.browserWidth ?? browserWidth;
+  const rawExplorerWidth = activeWorkspace?.explorerWidth ?? explorerWidth;
+  const displayBrowserWidth = isResizingBrowser ? browserWidth : clampPanelWidth(rawBrowserWidth, {
+    reserved: panelReservedWidth({
+      sidebarWidth: sidebarVisible ? sidebarWidth : 0,
+      otherPanelOpen: explorerOpen,
+      otherPanelWidth: rawExplorerWidth,
+    }),
+    min: BROWSER_MIN_WIDTH,
+    viewportWidth,
+  });
+  const displayExplorerWidth = isResizingExplorer ? explorerWidth : clampPanelWidth(rawExplorerWidth, {
+    reserved: panelReservedWidth({
+      sidebarWidth: sidebarVisible ? sidebarWidth : 0,
+      otherPanelOpen: browserOpen,
+      otherPanelWidth: rawBrowserWidth,
+    }),
+    min: EXPLORER_MIN_WIDTH,
+    viewportWidth,
+  });
+
+  // Open/closed is per-workspace and persisted, so the toggle writes both.
+  // The store write is deliberately OUTSIDE the setState updater: an updater
+  // must be pure, and StrictMode double-invokes it — which made one toggle
+  // write the workspace twice.
+  const handleToggleExplorer = useCallback((next?: boolean) => {
+    const value = next ?? !explorerOpen;
+    setExplorerOpen(value);
+    if (activeWorkspaceId) {
+      updateWorkspaceMetadata(activeWorkspaceId, { explorerOpen: value });
+    }
+  }, [explorerOpen, activeWorkspaceId, updateWorkspaceMetadata]);
+
+  // Restore per-workspace on switch. Deps include explorerOpen itself, not just
+  // the id: session restore can set activeWorkspaceId before (or in a separate
+  // commit from) the workspace object landing in `workspaces`, so an id-only
+  // dep would sample `undefined` once and never re-fire since the id didn't
+  // change again.
+  useEffect(() => {
+    setExplorerOpen(!!activeWorkspace?.explorerOpen);
+  }, [activeWorkspaceId, activeWorkspace?.explorerOpen]);
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -1002,9 +1073,12 @@ export default function App() {
         // See the auto-save path below — a named session is the case #134
         // reported, where losing a worktree's drive makes the session
         // unidentifiable after a restore.
-        splitTree: freezeSurfaceCwds(ws.splitTree),
+        splitTree: dropCodeContent(dropEphemeralSurfaces(freezeSurfaceCwds(ws.splitTree))),
         browserUrl: ws.browserUrl || '',
         browserWidth: ws.browserWidth,
+        explorerOpen: ws.explorerOpen,
+        explorerWidth: ws.explorerWidth,
+        explorerExpanded: ws.explorerExpanded,
       })),
       sidebarWidth: sidebarWidthRef.current,
       terminalPrefs: { ...state.terminalPrefs },
@@ -1065,11 +1139,13 @@ export default function App() {
       togglePinnedPromptFor(terminalSurfaceId);
     } else if (action === 'followOutput') {
       followOutputFor(terminalSurfaceId);
+    } else if (action === 'toggleExplorer') {
+      handleToggleExplorer();
     } else {
       console.log(`[wmux] Command palette action: ${action}`);
     }
     setCommandPaletteOpen(false);
-  }, [workspaces, activeWorkspaceId, focusedPaneId]);
+  }, [workspaces, activeWorkspaceId, focusedPaneId, handleToggleExplorer]);
 
   const workspaceNames = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -1255,7 +1331,7 @@ export default function App() {
     if (!paneIds.includes(zoomedPaneId)) setZoomedPaneId(null);
   }, [zoomedPaneId, activeWorkspace]);
 
-  useKeyboardShortcuts(focusedPaneId, setSettingsOpen, () => setBrowserOpen(o => !o), handleToggleNotifPanel, setFocusedPaneId, handleToggleZoom);
+  useKeyboardShortcuts(focusedPaneId, setSettingsOpen, () => setBrowserOpen(o => !o), handleToggleNotifPanel, setFocusedPaneId, handleToggleZoom, () => handleToggleExplorer());
 
   // Derive a title for the titlebar: active workspace title or blank
   const titlebarText = activeWorkspace?.title ?? '';
@@ -1337,7 +1413,7 @@ export default function App() {
 
         {/* Middle: terminals — ALL workspaces stay mounted, only active is visible */}
         {/* This keeps PTYs alive when switching sessions (Claude Code etc. keep running) */}
-        <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: 0 }}>
+        <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: TERMINAL_MIN_WIDTH }}>
           {customBgActive && (
             <div
               aria-hidden
@@ -1389,13 +1465,67 @@ export default function App() {
           ))}
         </div>
 
+        {/* Right: file explorer panel — before the browser so the order is
+            terminals │ explorer │ browser. The explorer sits adjacent to the
+            terminals because that is what it acts on. */}
+        {explorerOpen && (
+          <>
+            <div
+              className="explorer-resize-handle"
+              style={{ width: PANEL_HANDLE_WIDTH, cursor: 'col-resize', flexShrink: 0, position: 'relative' }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsResizingExplorer(true);
+                const startX = e.clientX;
+                const startWidth = activeWorkspace?.explorerWidth ?? explorerWidth;
+                setExplorerWidth(startWidth);
+                let finalWidth = startWidth;
+                const onMove = (ev: MouseEvent) => {
+                  const delta = startX - ev.clientX;
+                  // Reserve the terminal floor, the sidebar (if visible), and
+                  // the browser panel + its handle (if open) — a bare 400px
+                  // ignored both and let this drag alone crush the terminal.
+                  // Shared with the render clamp above via panel-layout.ts.
+                  const reserved = panelReservedWidth({
+                    sidebarWidth: sidebarVisible ? sidebarWidth : 0,
+                    otherPanelOpen: browserOpen,
+                    otherPanelWidth: activeWorkspace?.browserWidth ?? browserWidth,
+                  });
+                  finalWidth = clampPanelWidth(startWidth + delta, {
+                    reserved, min: EXPLORER_MIN_WIDTH, viewportWidth: window.innerWidth,
+                  });
+                  setExplorerWidth(finalWidth);
+                };
+                const onUp = () => {
+                  setIsResizingExplorer(false);
+                  document.removeEventListener('mousemove', onMove);
+                  document.removeEventListener('mouseup', onUp);
+                  // Commit on mouse-up only — a store write per mousemove is
+                  // what browserWidth avoids the same way.
+                  if (activeWorkspaceId) {
+                    updateWorkspaceMetadata(activeWorkspaceId, { explorerWidth: finalWidth });
+                  }
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+              }}
+            />
+            <div style={{ width: displayExplorerWidth, flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+              {isResizingExplorer && (
+                <div style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'col-resize', background: 'transparent' }} />
+              )}
+              <ExplorerPanel onClose={() => handleToggleExplorer(false)} focusedPaneId={focusedPaneId} />
+            </div>
+          </>
+        )}
+
         {/* Right: browser panel */}
         {browserOpen && (
           <>
             <div
               className="browser-resize-handle"
               style={{
-                width: 4,
+                width: PANEL_HANDLE_WIDTH,
                 cursor: 'col-resize',
                 flexShrink: 0,
                 position: 'relative',
@@ -1409,7 +1539,17 @@ export default function App() {
                 let finalWidth = startWidth;
                 const onMove = (ev: MouseEvent) => {
                   const delta = startX - ev.clientX;
-                  finalWidth = Math.max(250, Math.min(window.innerWidth - 400, startWidth + delta));
+                  // Same reservation as the explorer handle, mirrored: the
+                  // terminal floor, the sidebar (if visible), and the
+                  // explorer panel + its handle (if open).
+                  const reserved = panelReservedWidth({
+                    sidebarWidth: sidebarVisible ? sidebarWidth : 0,
+                    otherPanelOpen: explorerOpen,
+                    otherPanelWidth: activeWorkspace?.explorerWidth ?? explorerWidth,
+                  });
+                  finalWidth = clampPanelWidth(startWidth + delta, {
+                    reserved, min: BROWSER_MIN_WIDTH, viewportWidth: window.innerWidth,
+                  });
                   setBrowserWidth(finalWidth);
                 };
                 const onUp = () => {

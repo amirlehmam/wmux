@@ -1,0 +1,134 @@
+/* File explorer panel. Sits adjacent to the terminals, before the browser
+   panel in DOM order — see App.tsx's mount comment. */
+
+.explorer-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--ui-bg-2);
+}
+
+.explorer-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  min-height: 34px;
+  background: var(--ui-bg-3);
+  flex-shrink: 0;
+}
+
+.explorer-panel__root {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(var(--ui-overlay-rgb),0.8);
+}
+
+.explorer-panel__action {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: rgba(var(--ui-overlay-rgb),0.6);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.explorer-panel__action:hover {
+  background: rgba(var(--ui-overlay-rgb),0.08);
+  color: rgba(var(--ui-overlay-rgb),0.9);
+}
+
+.explorer-panel__body {
+  flex: 1;
+  overflow: auto;
+}
+
+.explorer-panel__message {
+  padding: 12px;
+  font-size: 12px;
+  color: rgba(var(--ui-overlay-rgb),0.5);
+}
+
+.explorer-tree {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-right: 8px;
+  font-size: 12px;
+  color: rgba(var(--ui-overlay-rgb),0.85);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.explorer-row:hover {
+  background: rgba(var(--ui-overlay-rgb),0.06);
+}
+
+.explorer-row--selected {
+  background: rgba(var(--ui-overlay-rgb),0.12);
+}
+
+.explorer-row--dimmed { opacity: 0.45; }
+.explorer-row--link   { font-style: italic; }
+
+/* Keyboard focus (roving tabIndex) is a different state from selection —
+   selection is a background fill, focus is an inset outline so both can be
+   visible on the same row at once (e.g. Home/End landing on the selected row). */
+.explorer-row--focused {
+  outline: 1px solid var(--ui-accent, rgba(var(--ui-overlay-rgb),0.6));
+  outline-offset: -1px;
+}
+
+.explorer-row__chevron {
+  width: 12px;
+  flex-shrink: 0;
+  text-align: center;
+  color: rgba(var(--ui-overlay-rgb),0.5);
+  font-size: 10px;
+}
+
+.explorer-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.explorer-resize-handle {
+  background: transparent;
+}
+
+/* Explorer's own context menu reuses the sidebar's .ctx-menu chrome (see
+   sidebar.css) — only the disabled state and the not-viewable hint are
+   specific to this panel. */
+.ctx-menu__item--disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.explorer-panel__ctx-hint {
+  padding: 6px 12px 4px;
+  max-width: 220px;
+  font-size: 11px;
+  color: rgba(var(--ui-overlay-rgb),0.5);
+  white-space: normal;
+}

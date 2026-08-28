@@ -361,4 +361,36 @@ describe('surface-slice', () => {
       expect(isDiffTabDismissed(workspaceId)).toBe(false);
     });
   });
+
+  describe('explorer preview tab (ephemeral)', () => {
+    it('setMarkdownContent with dirty:true promotes an ephemeral surface (real markdownContentPatch path)', () => {
+      // Through addSurface, not a hand-built object — matches how open-preview.ts creates it.
+      const id = useStore.getState().addSurface(workspaceId, paneId, 'markdown', { ephemeral: true })!;
+      expect(currentLeaf().surfaces.find((s) => s.id === id)!.ephemeral).toBe(true);
+
+      // The real path: setMarkdownContent → markdownContentPatch, not a direct
+      // updateSurface patch. This is what an editor keystroke or an agent's
+      // `markdown.set_content` actually calls.
+      useStore.getState().setMarkdownContent(id, 'edited content', { dirty: true });
+
+      expect(currentLeaf().surfaces.find((s) => s.id === id)!.ephemeral).toBeFalsy();
+    });
+
+    it('does not put a closed ephemeral surface back on the reopen stack (Ctrl+Shift+T)', () => {
+      // The reopen stack is LIFO, so if the preview tab's close were pushed
+      // like any other, it would come back FIRST — ahead of the terminal
+      // closed earlier. Deterministic proof the skip fired: after closing
+      // both, Ctrl+Shift+T must restore the terminal, not the preview.
+      const terminalId = useStore.getState().addSurface(workspaceId, paneId, 'terminal')!;
+      useStore.getState().closeSurface(workspaceId, paneId, terminalId);
+
+      const previewId = useStore.getState().addSurface(workspaceId, paneId, 'markdown', { ephemeral: true })!;
+      useStore.getState().closeSurface(workspaceId, paneId, previewId);
+
+      const reopened = useStore.getState().reopenClosedSurface(workspaceId, paneId);
+      expect(reopened).not.toBeNull();
+      const restored = currentLeaf().surfaces.find((s) => s.id === reopened)!;
+      expect(restored.type).toBe('terminal');
+    });
+  });
 });

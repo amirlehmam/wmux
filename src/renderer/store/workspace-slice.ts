@@ -2,7 +2,7 @@ import { StateCreator } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { WorkspaceId, WorkspaceInfo, SplitNode, SavedLayout } from '../../shared/types';
 import { isPosixPath } from '../../shared/paths';
-import { createLeaf, instantiateLayout, freezeSurfaceCwds, mergeStartupCommands } from './split-utils';
+import { createLeaf, instantiateLayout, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, mergeStartupCommands } from './split-utils';
 import { killTreeTerminalPtys } from './pty-teardown';
 import type { TranslationKey } from '../i18n/core';
 
@@ -235,6 +235,9 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       posixCwd: config.posixCwd ?? (config.cwd && isPosixPath(config.cwd) ? config.cwd : undefined),
       browserUrl: config.browserUrl,
       browserWidth: config.browserWidth,
+      explorerOpen: config.explorerOpen,
+      explorerWidth: config.explorerWidth,
+      explorerExpanded: config.explorerExpanded,
     }));
 
     // IDs are regenerated above, so a saved activeWorkspaceId is meaningless —
@@ -264,7 +267,14 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       // Same live-field sanitizer named-session save uses (App.tsx's
       // handleSaveSession) — strips nothing but the spawn `cwd`/`currentCwd`
       // reconciliation, keeps shell/startupCommands/colorScheme as-is.
-      splitTree: freezeSurfaceCwds(active.splitTree),
+      //
+      // dropEphemeralSurfaces is part of that sanitizer, not an extra: a saved
+      // layout is a TEMPLATE, and instantiateLayout spreads every surface field
+      // through, so an explorer preview tab left in here would be reborn — flag,
+      // previewed file and all — in every workspace made from this layout,
+      // forever. That is worse than leaking one into a session, which is why
+      // SurfaceRef.ephemeral says "never persisted" without qualification.
+      splitTree: dropCodeContent(dropEphemeralSurfaces(freezeSurfaceCwds(active.splitTree))),
       createdAt: Date.now(),
     };
     settings.setSavedLayouts([...(settings.savedLayouts ?? []), layout]);
@@ -280,7 +290,12 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
     const existing = settings.savedLayouts?.find((l) => l.id === id);
     if (!settings.setSavedLayouts || !existing) return false;
 
-    const frozen = mergeStartupCommands(freezeSurfaceCwds(active.splitTree), existing.splitTree);
+    // Same pair as saveCurrentLayoutAsPreset above — see the note there for why
+    // an ephemeral surface must never reach a saved layout.
+    const frozen = mergeStartupCommands(
+      dropCodeContent(dropEphemeralSurfaces(freezeSurfaceCwds(active.splitTree))),
+      existing.splitTree,
+    );
     settings.setSavedLayouts(settings.savedLayouts!.map((l) => (l.id === id ? { ...l, splitTree: frozen } : l)));
     return true;
   },

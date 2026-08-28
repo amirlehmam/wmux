@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme } from 'electron';
 import * as path from 'path';
-import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type InsertionResult } from '../shared/types';
+import { promises as fsp } from 'fs';
+import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type InsertionResult, type ExplorerListError } from '../shared/types';
 import { observePtyData, clearActivity } from './claude-observer';
 import { clearAgentState, noteHumanInput, listAgentStates } from './agent-state';
 import { PtyManager } from './pty-manager';
@@ -30,6 +31,9 @@ import { CDPBridge } from './cdp-bridge';
 import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
+import { listDir, resolveInRoot, isExecutablePath } from './explorer-fs';
+import { readCodeFile } from './code-file';
+import { getExplorerRoot, forgetExplorerRoot } from './explorer-roots';
 import { sessionWindows, toRestorePayload, restoreAnswerFor } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
 import { readConsent, updateConsent } from './agent-integration';
@@ -110,6 +114,7 @@ function forgetSurface(surfaceId: SurfaceId): void {
   surfaceOwners.delete(surfaceId);
   insertionQueue.cancel(surfaceId);
   sshDetector.forget(surfaceId);
+  forgetExplorerRoot(surfaceId);
   agentIdentity.forget(surfaceId);
   forgetDetection(surfaceId);
   // Same teardown moment, same reasoning as clearing the ssh/agent state above:
@@ -1132,6 +1137,151 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(IPC_CHANNELS.MARKDOWN_STAT_FILE, async (_event, filePath: string) => {
     return statMarkdownFile(filePath);
   });
+
+  // ─── File explorer and code viewer ─────────────────────────────────────────
+  // Every one of these takes a surfaceId and a RELATIVE path; main owns the
+  // root. A renderer-supplied root would not be a jail at all — a compromised
+  // renderer would simply pass 'C:\'.
+  //
+  // The gate below is written once and shared by all five handlers rather than
+  // pasted into each: it is the security boundary, and five copies of a
+  // boundary is five chances for one of them to drift.
+  const explorerRootFor = (
+    surfaceId: unknown,
+    sender: Electron.WebContents,
+  ): { realRoot: string } | ExplorerListError => {
+    // The ownership gate every other surface-addressed handler in this file
+    // uses: a window may only ask about a live surface it owns. `no_root` is
+    // the reply on purpose — it is the honest, already-translated "nothing to
+    // show for this pane", and it leaks nothing about whether the surface
+    // exists in another window.
+    if (!ownsLiveSurface(surfaceId, sender)) {
+      return { error: 'No working directory reported for this pane', code: 'no_root' };
+    }
+    const root = getExplorerRoot(surfaceId);
+    if (!root) return { error: 'No working directory reported for this pane', code: 'no_root' };
+    // A pane inside ssh reports a cwd on the OTHER machine. Acting on it
+    // locally would touch whatever coincidentally exists at that path on
+    // Windows. detect() and not refresh(): refresh() runs a Win32_Process
+    // sweep, and this runs on the pane-switch path.
+    //
+    // detect() returns null (i.e. "local") in two states where the pane is
+    // actually remote or ambiguous: the nested-ssh disagreement between a
+    // managed and a reported destination, and probe-only evidence with no
+    // authoritative source. Neither is exploitable today ONLY because no
+    // remote shell runs wmux's report_pwd integration, so no remote cwd ever
+    // reaches explorer-roots' map in the first place — that is a property of
+    // today's report_pwd sources, not of this gate. If a future cwd source
+    // ever feeds a remote path in here, this check would need to widen past
+    // detect()'s null to catch that too.
+    if (sshDetector.detect(surfaceId)) {
+      return { error: 'This pane is inside an SSH session', code: 'remote' };
+    }
+    // realRoot, never cwd: cwd is what the shell reported and is display-only.
+    // realRoot is the realpath'd value the jail is defined in terms of.
+    return { realRoot: root.realRoot };
+  };
+
+  /** Gate + jail in one step: the absolute path, or the error to hand back. */
+  const resolveExplorerPath = async (
+    surfaceId: unknown,
+    relPath: unknown,
+    sender: Electron.WebContents,
+    leaf: 'dir' | 'file' | 'any',
+  ): Promise<{ abs: string } | ExplorerListError> => {
+    const root = explorerRootFor(surfaceId, sender);
+    if ('error' in root) return root;
+    return resolveInRoot(root.realRoot, typeof relPath === 'string' ? relPath : '', leaf);
+  };
+
+  ipcMain.handle(
+    IPC_CHANNELS.EXPLORER_LIST_DIR,
+    async (event, surfaceId: unknown, relPath: unknown, opts?: { showHidden?: boolean }) => {
+      const root = explorerRootFor(surfaceId, event.sender);
+      if ('error' in root) return root;
+      return listDir(root.realRoot, typeof relPath === 'string' ? relPath : '', {
+        showHidden: !!opts?.showHidden,
+      });
+    },
+  );
+
+  // Code viewer. This handler is where the code viewer's security boundary
+  // actually lives — code-file.ts's deny-list is a UX filter, and resolveInRoot
+  // is what keeps a renderer-supplied path inside the pane's folder.
+  ipcMain.handle(
+    IPC_CHANNELS.CODE_READ_FILE,
+    async (event, surfaceId: unknown, relPath: unknown) => {
+      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
+      if ('error' in resolved) return resolved;
+      return readCodeFile(resolved.abs);
+    },
+  );
+
+  // NO explorer-specific markdown READ handler, and that is a decision rather
+  // than an omission — it was written, then removed on review.
+  //
+  // A .md opened from the tree goes through MARKDOWN_READ_FILE like every other
+  // renderer-supplied read, which means it is read-only until the user picks a
+  // destination in Save As. That looks like a gap ("I opened it in wmux, why
+  // can't I save it?") and the tempting fix is a jailed read that mints a grant
+  // because it is jailed. It must not exist: markdown-grants.ts states that a
+  // renderer-supplied path is never a grant source, since a renderer that can
+  // mint its own grants makes the whole set meaningless — and "jailed to a pane
+  // root" is not consent, it is just a smaller blast radius. The pane root is
+  // where the user's actual work lives, which is the worst place to hand out
+  // unattended write access.
+  //
+  // The native Save As dialog IS the consent. Leave it that way.
+
+  // Reveal in File Explorer. Every listed entry qualifies, folders and binaries
+  // included: showItemInFolder only selects the item, it executes nothing.
+  // Gating this on the markdown extension whitelist (which is what the tree
+  // used to call) made it a silent no-op for every ordinary source file.
+  ipcMain.handle(
+    IPC_CHANNELS.EXPLORER_REVEAL,
+    async (event, surfaceId: unknown, relPath: unknown) => {
+      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'any');
+      if ('error' in resolved) return resolved;
+      shell.showItemInFolder(resolved.abs);
+      return { ok: true };
+    },
+  );
+
+  // Open in the default app. Unlike reveal, this one RUNS things — for an
+  // .exe or a .ps1 the "default app" is the file itself or an interpreter — so
+  // the jail is not sufficient on its own and EXEC_EXT refuses those outright.
+  ipcMain.handle(
+    IPC_CHANNELS.EXPLORER_OPEN_IN_APP,
+    async (event, surfaceId: unknown, relPath: unknown) => {
+      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'any');
+      if ('error' in resolved) return resolved;
+      // FILES only. The deny-list reads an extension off a basename, and a
+      // DIRECTORY may perfectly well be called `tools.exe` or `scripts.py` —
+      // opening one just shows it in Explorer and runs nothing, so refusing it
+      // would be the same wrong-predicate mistake `viewable` made on this menu.
+      // The lstat cannot be skipped by trusting the tree's `kind`: that came
+      // from the renderer, and this is the branch that decides whether a path
+      // reaches the shell.
+      let isDir: boolean;
+      try {
+        isDir = (await fsp.lstat(resolved.abs)).isDirectory();
+      } catch {
+        return { error: 'File not found', code: 'not_found' };
+      }
+      if (!isDir && isExecutablePath(resolved.abs)) {
+        return { error: 'Refusing to launch an executable', code: 'executable' };
+      }
+      const failure = await shell.openPath(resolved.abs);
+      // openPath resolves with a MESSAGE on failure and '' on success — it does
+      // not reject, so an unchecked call reports success for a file no app can
+      // open. The message is path-bearing, so it is logged, never returned.
+      if (failure) {
+        console.error('[explorer] openPath failed:', failure);
+        return { error: 'Failed to open file', code: 'read_failed' };
+      }
+      return { ok: true };
+    },
+  );
 
   // Save in place. The path comes from the renderer's store, so it is only
   // honoured if it is in this window's grant set — see ./markdown-grants for

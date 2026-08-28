@@ -87,6 +87,9 @@ docs/             Planning docs
 | `system32.ts` | Absolute paths to Windows-owned tools. `opensshPath()` prefers Program Files OpenSSH over System32 (#193): Git for Windows puts an MSYS2 ssh ahead of System32 on PATH, and it cannot talk to the Windows named-pipe ssh-agent — so a bare `ssh` spec died on "Permission denied (publickey)" wherever keys live only in an agent |
 | `shell-context-menu.ts` | "Open in wmux" Explorer verb — HKCU shell keys for Directory/Directory\Background/Drive, plus `directoryFromArgv` for the launch path. Win11 places it under "Show more options"; the modern menu needs a signed MSIX, which unsigned wmux cannot ship |
 | `theme-loader.ts` | Theme loading |
+| `explorer-fs.ts` | The file explorer's jailed directory enumeration, and the path policy every explorer and code read goes through. `resolveInRoot` is the security boundary: the renderer sends a surfaceId and a RELATIVE path and NEVER an absolute one, because a renderer-supplied root would not be a jail — a compromised renderer would simply pass `C:\`. Containment is `path.relative`, plus a Windows-spelling prefix check beside it (the root is realpath'd on the way in, so 8.3 short names and junction aliases are already gone). Two traps live here: `rel.startsWith('..')` also rejects a legitimately-named `..foo`, which the user sees as a folder that silently refuses to open; and a drive root ALREADY ends in a separator, so appending one unconditionally spells `c:\\` and locks a pane at `C:\` out of every folder below it. The walk lstats EVERY segment rather than only the leaf — `root\link\sub` follows `link` before a leaf-only lstat ever runs, and libuv maps reparse points onto symlinks so `mklink /J` junctions are covered by the same check |
+| `explorer-roots.ts` | surfaceId → the explorer root for that pane. The root is the pane's TERMINAL cwd, not its active surface's — a pane showing a markdown tab still belongs to the folder its shell is in — and it is normalized through `trustedWindowsCwd`, so a Git Bash `/c/Users/...` report and a PowerShell junction alias both land on the same spelling main can jail against |
+| `code-file.ts` | Which files the code viewer will read, and how. Sibling to `markdown-file.ts`, and it deliberately neither imports from it nor changes it: markdown's extension whitelist stays exactly as narrow as it is, for exactly the callers it already has. The threat model is INVERTED — markdown names its whitelist as the thing stopping a renderer bug from reading `~/.ssh/id_rsa` into a visible pane, and this module has no whitelist at all because the whole point is to read the files that whitelist rejects. What replaces it is `explorer-fs.ts`'s path jail, applied by the `code:read-file` handler before anything here runs. `BINARY_EXT` and the content sniff are a UX filter — they keep `.png` out of the tree and mojibake out of the pane — and a future reader who treats them as the boundary will draw the wrong conclusion about what may be relaxed |
 | `config-loader.ts` | WT/Ghostty config import. Reachable from Settings → Terminal → Import. WT spells opacity two ways — modern `opacity` (0-100, independent of `useAcrylic`) and pre-1.12 `acrylicOpacity` (0-1, only with `useAcrylic`) |
 | `shell-detector.ts` | Available shells detection |
 | `updater.ts` | Auto-update. Routes by install layout: NSIS → `electron-updater`, portable zip → `zip-updater.ts` (#184). `initAutoUpdater()` returns before registering `NsisUpdater` on a zip extract, so a portable install can never enter the #96 "update ready" loop |
@@ -104,6 +107,8 @@ docs/             Planning docs
 - `CommandPalette/` — CommandPalette
 - `Markdown/` — MarkdownPane
 - `Tutorial/` — Tutorial
+- `Explorer/` — ExplorerPanel, ExplorerTree, plus the pure halves kept out of the component so they are testable without a DOM: `explorer-state.ts` (tree/expansion/per-root cache), `explorer-keynav.ts`, `explorer-errors.ts` and `open-preview.ts` (the preview-tab state machine)
+- `Code/` — CodePane, the read-only file view with a line-numbered gutter
 
 **Hooks** (in `hooks/`):
 - `useTerminal.ts` — xterm.js lifecycle, PTY connection, OSC notifications, WebGL renderer, OSC 133 prompt marks (#207)
@@ -164,6 +169,9 @@ claudeActivity: onUpdate
 agentState: onUpdate   # declared blocked/working/idle (issue #128)
 session:  save, load, list, delete
 cdp:      attach, detach
+explorer: listDir, reveal, openInApp   # a surfaceId and a RELATIVE path,
+code:     readFile                     # never an absolute one — main derives
+                                       # the root itself, or it is not a jail
 window:   create, close, focus, list, minimize, maximize, isMaximized, setProgress,
           setBackdrop, supportsBackdrop,    # window transparency (clear/acrylic/mica)
           closeSelf, isFrameless, relaunch  # clear mode is frameless: own caption
@@ -646,6 +654,7 @@ CDP:     cdp:attach/detach
 AgentBr: agent-browser:enable/disable/status/install/current-url/open   # engine control
 Session: session:save-named/load-named/list-named/delete-named
 Meta:    metadata:update, hook:event, claude:activity, agent:state
+Explorer: explorer:list-dir/reveal/open-in-app, code:read-file
 ```
 
 ---

@@ -38,7 +38,7 @@ export default function TerminalPane({
   onFindBarClose,
   copyModeActive = false,
 }: TerminalPaneProps) {
-  const { terminalRef, searchAddonRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, colorScheme, startupCommands, claudeSessionId });
+  const { terminalRef, searchAddonRef, xtermRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, colorScheme, startupCommands, claudeSessionId });
 
   const [_lastQuery, setLastQuery] = useState('');
 
@@ -66,6 +66,19 @@ export default function TerminalPane({
       document.removeEventListener('wmux:find-prev', onPrev);
     };
   }, [searchAddonRef]);
+
+  // Explorer Escape (issue: file-explorer keyboard nav) hands DOM focus back
+  // to whichever terminal is currently the focused, visible one — same
+  // activeRef gate F3 cycling above uses, since "there's exactly one at a
+  // time" applies here too.
+  useEffect(() => {
+    const onFocusTerminal = () => {
+      if (!activeRef.current) return;
+      try { xtermRef.current?.focus(); } catch { /* no-op */ }
+    };
+    document.addEventListener('wmux:focus-terminal', onFocusTerminal);
+    return () => document.removeEventListener('wmux:focus-terminal', onFocusTerminal);
+  }, [xtermRef]);
 
   const handleSearch = useCallback((query: string) => {
     setLastQuery(query);

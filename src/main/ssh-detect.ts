@@ -87,8 +87,14 @@ export interface SurfaceProcessSource {
   liveSurfaceIds(): string[];
 }
 
-/** Parse a command line into an ssh session, or null when it is not one. */
-function trustedWindowsCwd(cwd: string | undefined): string | undefined {
+/**
+ * Normalize a shell-reported cwd into a trusted Windows path, or undefined
+ * when it isn't one. Exported so other consumers of the same report_pwd
+ * signal (explorer-roots.ts) cannot drift from this logic by reimplementing
+ * it — Git Bash `/c/foo` and WSL's deliberately-unresolved `/mnt/c/foo` must
+ * mean the same thing everywhere this repo reasons about a reported cwd.
+ */
+export function trustedWindowsCwd(cwd: string | undefined): string | undefined {
   if (!cwd) return undefined;
   const trimmed = cwd.trim();
   // Git Bash's `pwd` uses /c/foo. WSL's /mnt/c/foo deliberately does not match.

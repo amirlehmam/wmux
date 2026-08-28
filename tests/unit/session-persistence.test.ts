@@ -265,3 +265,75 @@ describe('handleVersionChange (issue #35)', () => {
     }
   });
 });
+
+// Issue #145 already shipped once as "backupAutoSession copies a subset of
+// fields": browserUrl/browserWidth/pinned were silently dropped. The explorer
+// fields (#Task 4) are the same lifecycle risk, so they get the same coverage.
+describe('explorer panel state persistence', () => {
+  const APPDATA_OVERRIDE = path.join(os.tmpdir(), 'wmux-explorer-test-' + process.pid);
+  let mod: typeof import('../../src/main/session-persistence');
+  let savedAppData: string | undefined;
+  const leaf = { type: 'leaf', paneId: 'pane-1', surfaces: [], activeSurfaceIndex: 0 };
+
+  beforeEach(async () => {
+    savedAppData = process.env.APPDATA;
+    process.env.APPDATA = APPDATA_OVERRIDE;
+    delete process.env.WMUX_INSTANCE;
+    vi.resetModules();
+    mod = await import('../../src/main/session-persistence');
+    mod.ensureDirectories();
+  });
+
+  afterEach(() => {
+    if (savedAppData === undefined) delete process.env.APPDATA;
+    else process.env.APPDATA = savedAppData;
+    fs.rmSync(APPDATA_OVERRIDE, { recursive: true, force: true });
+  });
+
+  it('round-trips explorerOpen, explorerWidth and explorerExpanded', () => {
+    const data: any = {
+      version: 1,
+      windows: [{
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        sidebarWidth: 260,
+        activeWorkspaceId: null,
+        workspaces: [{
+          id: 'ws-1', title: 'ws', pinned: false, shell: 'pwsh', cwd: 'C:\\repo', splitTree: leaf,
+          browserWidth: 420,
+          explorerOpen: true,
+          explorerWidth: 280,
+          explorerExpanded: { 'C:/repo': ['docs', 'docs/nested'] },
+        }],
+      }],
+    };
+    mod.saveSession(data);
+    const ws: any = mod.loadSession()!.windows[0].workspaces[0];
+    expect(ws.explorerOpen).toBe(true);
+    expect(ws.explorerWidth).toBe(280);
+    expect(ws.explorerExpanded).toEqual({ 'C:/repo': ['docs', 'docs/nested'] });
+  });
+
+  it('carries the explorer fields through the version-change auto-backup', () => {
+    mod.handleVersionChange('1.13.0'); // establish the version marker
+    mod.saveSession({
+      version: 1,
+      windows: [{
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        sidebarWidth: 260,
+        activeWorkspaceId: null,
+        workspaces: [{
+          id: 'ws-1', title: 'ws', pinned: false, shell: 'pwsh', cwd: 'C:\\repo', splitTree: leaf,
+          explorerOpen: true, explorerWidth: 280, explorerExpanded: { 'C:/repo': ['docs'] },
+        }],
+      }],
+    } as any);
+
+    mod.handleVersionChange('1.14.0'); // triggers backupAutoSession internally
+
+    const name = mod.listNamedSessions().map(s => s.name).find((n) => n.startsWith('Auto-backup'))!;
+    const ws: any = mod.loadNamedSession(name)!.workspaces[0];
+    expect(ws.explorerOpen).toBe(true);
+    expect(ws.explorerWidth).toBe(280);
+    expect(ws.explorerExpanded).toEqual({ 'C:/repo': ['docs'] });
+  });
+});

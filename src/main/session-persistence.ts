@@ -32,6 +32,11 @@ export interface SessionData {
       // is what let backupAutoSession drop them without tsc noticing (#145).
       browserUrl?: string;
       browserWidth?: number;
+      // Same lifecycle as browserWidth: written by the renderer, and dropped
+      // by backupAutoSession until the interface named it (#145).
+      explorerOpen?: boolean;
+      explorerWidth?: number;
+      explorerExpanded?: Record<string, string[]>;
     }>;
   }>;
 }
@@ -123,6 +128,9 @@ function backupAutoSession(previousVersion: string): void {
         splitTree: w.splitTree,
         browserUrl: w.browserUrl || '',
         browserWidth: w.browserWidth,
+        explorerOpen: w.explorerOpen,
+        explorerWidth: w.explorerWidth,
+        explorerExpanded: w.explorerExpanded,
       })),
       sidebarWidth: windows[0]?.sidebarWidth ?? 260,
     };
