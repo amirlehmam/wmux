@@ -51,7 +51,8 @@ async function drain(): Promise<void> {
   }
 }
 
-let getChangedFiles: (cwd: string) => Promise<Array<{ path: string }>>;
+interface Changed { path: string; status: string; additions: number; deletions: number }
+let getChangedFiles: (cwd: string) => Promise<Changed[]>;
 let resetDiffCaches: () => void;
 
 beforeEach(async () => {
@@ -100,5 +101,36 @@ describe('getChangedFiles — git path concurrency', () => {
     await getChangedFiles('/repo');
     await getChangedFiles('/repo');
     expect(countMatching('rev-parse')).toBe(1);
+  });
+});
+
+/**
+ * `git status --porcelain` emits `XY PATH`, where X is the INDEX column and Y
+ * the WORKTREE one. For the most common state of all — modified, not staged —
+ * X is a SPACE, so the leading space is data and not padding.
+ *
+ * Trimming the whole output therefore shifts the FIRST line one character left,
+ * and only the first: `trim()` touches the ends of a string, so every interior
+ * row keeps its space. The result was a path missing its initial letter, which
+ * then failed to match the same file's key in `git diff HEAD --numstat` — and
+ * because that join falls back to `?? 0`, the failure surfaced as a file that
+ * genuinely had no changes rather than as an error. Live since v0.5.2, invisible
+ * until 2.7 started rendering the numbers per row.
+ */
+describe('getChangedFiles — porcelain parsing', () => {
+  it('keeps the leading space of the first line, so the path is intact', async () => {
+    const [file] = await getChangedFiles('/repo');
+    expect(file.path).toBe('src/a.ts');
+  });
+
+  it('joins the numstat counts onto that path', async () => {
+    const [file] = await getChangedFiles('/repo');
+    expect(file.additions).toBe(3);
+    expect(file.deletions).toBe(1);
+  });
+
+  it('reads the status off the correct two columns', async () => {
+    const [file] = await getChangedFiles('/repo');
+    expect(file.status).toBe('modified');
   });
 });

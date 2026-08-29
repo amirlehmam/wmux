@@ -23,6 +23,24 @@
   <img src="https://wmux.org/assets/wmux-screen.png" alt="wmux — split terminal panes with the agent session sidebar" width="900" />
 </p>
 
+## New in 2.7 - the folder your agent is working in, beside the terminal it's working in
+
+`Ctrl+Shift+X` docks a file tree on the **right of the window**, rooted at the focused pane's live working directory. Not the workspace's, and not the active tab's — the pane's *terminal* cwd, so a pane showing a markdown or browser tab still belongs to the folder its shell is in.
+
+After an agent has been running for ten minutes, three questions follow in order. 2.6 and 2.7 answer all three without leaving wmux:
+
+**1. What's in here?** The tree lists the folder, lazily, with full keyboard navigation (`↑↓` to move, `←→` to collapse/expand, `Enter` to open, `Esc` back to the terminal). Single-click opens a file into a *preview* tab that the next single-click reuses in place, so browsing ten files doesn't leave ten tabs behind — start editing and it promotes to a real tab. Panel width and expansion state persist per root.
+
+**2. What changed?** Every row carries a `+55/-22` column, rolled up so a collapsed `src/` shows the sum of everything beneath it — **including folders you never expanded**, because a rollup that could only count loaded rows would quietly report the part of the tree you happened to have open. In a git repo the numbers mean everything uncommitted; outside one, everything since the session started. The panel header says which — a column of numbers that silently means one or the other can't be acted on. Files an agent touched get a dot, read from the hook stream wmux already receives, so its edits are distinguishable from yours at a glance.
+
+**3. Can I just fix that line myself?** Anything that isn't markdown opens in a `code` surface with a line-numbered gutter, beside the terminal it came from. Hit **Edit**, change the line, `Ctrl+S`.
+
+Three things that are deliberately **not** clever about this:
+
+- **The tree is a jail, not a file browser.** The renderer sends a pane id and a *relative* path, never an absolute one — main derives the root itself, so a folder above the pane's cwd isn't reachable even by a renderer that asks for it. Symlinks and junctions are resolved on every path segment, not just the last one.
+- **A save can only land on a file you opened in a pane, in this window, in this session** — and it carries the timestamp the buffer was read at. If an agent rewrote the file while you were typing, the save is **refused** rather than quietly picking a winner. CRLF line endings and UTF-16/BOM encodings survive the round trip instead of being normalised into a whole-file rewrite in your next commit.
+- **With no hooks configured there are simply no agent dots**, and every number still works. Same rule the prompt log follows: degrade to honest silence, never to a guess.
+
 ## New in 2.0 - wmux sees every agent, not just Claude Code
 
 Until now wmux could only tell you what an agent was doing if that agent **told it**. That meant Claude Code (hooks), OpenCode (plugin) and Kiro. Codex, Gemini, Aider, Amp, Cursor and Copilot ran in panes wmux could display and could not read.
@@ -141,7 +159,7 @@ Split any pane right or down. Resize dividers by dragging. Zoom a pane to full s
 <tr>
 <td width="40%" valign="middle">
 <h3>File explorer</h3>
-<code>Ctrl+Shift+X</code> opens a file tree rooted at the focused pane's live working directory — the pane's terminal cwd, so a pane showing a markdown tab still belongs to the folder its shell is in. Single-click opens a file into a preview tab that the next click reuses in place; editing promotes it to a real tab. Markdown opens in the markdown surface. Full keyboard navigation, and panel width and expansion state persist per root.
+<code>Ctrl+Shift+X</code> docks a file tree on the right of the window, rooted at the focused pane's live working directory — the pane's terminal cwd, so a pane showing a markdown tab still belongs to the folder its shell is in. Single-click opens a file into a preview tab that the next click reuses in place; editing promotes it to a real tab. Markdown opens in the markdown surface. Full keyboard navigation, and panel width and expansion state persist per root.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-explorer.png" alt="File explorer panel beside a markdown preview" width="100%" />
@@ -161,7 +179,7 @@ The tree carries a <code>+55/-22</code> column, rolled up so a collapsed <code>s
 Anything that isn't markdown opens in a <code>code</code> surface with a line-numbered gutter, alongside the terminal it came from. Hit <b>Edit</b>, change a line, <code>Ctrl+S</code>. Saves are jailed to the pane's folder and only ever land on a file you opened in a pane — and they carry the timestamp the buffer was read at, so if an agent rewrote the file while you were typing the save is <em>refused</em> rather than quietly picking a winner. CRLF endings and UTF-16/BOM encodings survive the round trip.
 </td>
 <td width="60%">
-<img src="./docs/assets/wmux-code.png" alt="Read-only code surface with a line-numbered gutter" width="100%" />
+<img src="./docs/assets/wmux-code.png" alt="Code surface with a line-numbered gutter, open beside its terminal" width="100%" />
 </td>
 </tr>
 <tr>

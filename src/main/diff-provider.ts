@@ -416,8 +416,21 @@ function parseNumstat(numstat: string): Map<string, { additions: number; deletio
   return stats;
 }
 
+/**
+ * `XY PATH`, where X is the INDEX column and Y the WORKTREE one.
+ *
+ * The leading character is DATA, not padding: for the most common state there
+ * is — modified but not staged — X is a space, and git emits ` M README.md`.
+ * So the output may only be split, never trimmed. A `statusOut.trim()` here
+ * shifted the FIRST line one character left (and only the first, since trim
+ * touches the ends of a string while every interior row keeps its space),
+ * yielding `EADME.md`. That path then failed to match the same file's key in
+ * `git diff HEAD --numstat`, and since that join falls back to `?? 0`, a
+ * mangled name surfaced as a file with no changes rather than as an error.
+ * Live since v0.5.2 and invisible until 2.7 rendered the counts per row.
+ */
 function parsePorcelainStatus(statusOut: string): Array<{ path: string; status: ChangedFile['status'] }> {
-  return statusOut.trim().split('\n').map(line => {
+  return statusOut.split('\n').filter(line => line.trim() !== '').map(line => {
     const xy = line.substring(0, 2);
     const filePath = line.substring(3).trim().replace(/^"(.*)"$/, '$1');
     let status: ChangedFile['status'] = 'modified';
@@ -428,6 +441,29 @@ function parsePorcelainStatus(statusOut: string): Array<{ path: string; status: 
   });
 }
 
+/**
+ * Lines in an untracked file, counted the way `git diff --numstat` counts them.
+ *
+ * A trailing newline TERMINATES the last line rather than starting a new one,
+ * so `'a\nb\nc\n'` is three lines and not four. `untrackedFileDiff` below pops
+ * the same empty tail for the same reason. The snapshot backend's `added` path
+ * does not, but nothing there sits beside a numstat number in one column —
+ * here they do, and a new file reading one line longer than the diff that
+ * opens underneath it is a number the user cannot trust.
+ *
+ * Everything that can go wrong returns 0 rather than throwing, because every
+ * one of them is ordinary: `readCurrentFile` answers null for a path outside
+ * the repo, a file over the size cap, a binary, an unreadable file, and for
+ * the EISDIR that a collapsed `vendor/` entry produces.
+ */
+async function countUntrackedAdditions(cwd: string, rel: string): Promise<number> {
+  const content = await readCurrentFile(cwd, rel);
+  if (content === null) return 0;
+  const lines = content.split('\n');
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  return lines.length;
+}
+
 async function getGitChangedFiles(cwd: string): Promise<ChangedFile[]> {
   const statusOut = await git(cwd, ['status', '--porcelain', '-unormal']).catch(() => '');
   if (!statusOut.trim()) return [];
@@ -435,11 +471,26 @@ async function getGitChangedFiles(cwd: string): Promise<ChangedFile[]> {
   const entries = parsePorcelainStatus(statusOut);
   const stats = parseNumstat(await git(cwd, ['diff', 'HEAD', '--numstat']).catch(() => ''));
 
-  return entries.map(e => ({
-    ...e,
-    additions: stats.get(e.path)?.additions ?? 0,
-    deletions: stats.get(e.path)?.deletions ?? 0,
-  }));
+  // `git diff HEAD --numstat` covers TRACKED files only, so an untracked file
+  // falls through the join and lands on +0/-0 — which the explorer's column
+  // renders identically to a file that did not change. Read those and count
+  // them, matching what the snapshot backend has always reported for an added
+  // file, so the same column means the same thing in a repo and outside one.
+  //
+  // Sequential on purpose. This runs on the poll path in the process that also
+  // relays every keystroke (issue #141), and a Promise.all over a repo with a
+  // few thousand loose untracked files is an EMFILE waiting to happen. The
+  // loop is short in practice because `-unormal` collapses an untracked
+  // DIRECTORY into one `name/` entry: an unignored node_modules arrives here
+  // as a single row that costs one failed read, not as 30 000 rows.
+  const out: ChangedFile[] = [];
+  for (const e of entries) {
+    const stat = stats.get(e.path);
+    if (stat) { out.push({ ...e, ...stat }); continue; }
+    const additions = e.status === 'added' ? await countUntrackedAdditions(cwd, e.path) : 0;
+    out.push({ ...e, additions, deletions: 0 });
+  }
+  return out;
 }
 
 /** Render an untracked file as an all-additions diff. */
