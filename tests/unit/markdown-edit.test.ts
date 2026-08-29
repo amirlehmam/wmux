@@ -4,11 +4,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { writeMarkdownFile, statMarkdownFile } from '../../src/main/markdown-file';
 import {
-  grantMarkdownPath,
-  isMarkdownPathGranted,
-  clearMarkdownGrants,
-  resetMarkdownGrants,
-} from '../../src/main/markdown-grants';
+  grantFilePath,
+  isFilePathGranted,
+  clearFileGrants,
+  resetFileGrants,
+} from '../../src/main/file-grants';
 import {
   EDIT_INDENT,
   continuationPrefix,
@@ -93,36 +93,36 @@ describe('writeMarkdownFile (issue #116, F3)', () => {
 // ─── Grant set ────────────────────────────────────────────────────────────────
 
 describe('markdown write grants', () => {
-  beforeEach(() => resetMarkdownGrants());
+  beforeEach(() => resetFileGrants());
 
   // The point of the whole mechanism: the renderer holds the path and hands it
   // back on save, so a renderer-side bug must not be able to name a target the
   // user never opened.
   it('refuses a path the user never opened', () => {
-    expect(isMarkdownPathGranted(1, 'C:/Users/me/.ssh/authorized_keys')).toBe(false);
+    expect(isFilePathGranted(1, 'C:/Users/me/.ssh/authorized_keys')).toBe(false);
   });
 
   it('allows a path a dialog or authenticated pipe client opened', () => {
-    grantMarkdownPath(1, 'C:/docs/plan.md');
-    expect(isMarkdownPathGranted(1, 'C:/docs/plan.md')).toBe(true);
+    grantFilePath(1, 'C:/docs/plan.md');
+    expect(isFilePathGranted(1, 'C:/docs/plan.md')).toBe(true);
   });
 
   it('does not leak grants between windows', () => {
-    grantMarkdownPath(1, 'C:/docs/plan.md');
-    expect(isMarkdownPathGranted(2, 'C:/docs/plan.md')).toBe(false);
+    grantFilePath(1, 'C:/docs/plan.md');
+    expect(isFilePathGranted(2, 'C:/docs/plan.md')).toBe(false);
   });
 
   it('forgets a window\'s grants when it is destroyed', () => {
-    grantMarkdownPath(1, 'C:/docs/plan.md');
-    clearMarkdownGrants(1);
-    expect(isMarkdownPathGranted(1, 'C:/docs/plan.md')).toBe(false);
+    grantFilePath(1, 'C:/docs/plan.md');
+    clearFileGrants(1);
+    expect(isFilePathGranted(1, 'C:/docs/plan.md')).toBe(false);
   });
 
   it('treats the many spellings of one Windows path as the same file', () => {
-    grantMarkdownPath(1, 'C:\\docs\\plan.md');
+    grantFilePath(1, 'C:\\docs\\plan.md');
     // Same file, different separators and case — must not need a second grant.
-    expect(isMarkdownPathGranted(1, 'C:\\Docs\\Plan.md')).toBe(process.platform === 'win32');
-    expect(isMarkdownPathGranted(1, 'C:\\docs\\plan.md')).toBe(true);
+    expect(isFilePathGranted(1, 'C:\\Docs\\Plan.md')).toBe(process.platform === 'win32');
+    expect(isFilePathGranted(1, 'C:\\docs\\plan.md')).toBe(true);
   });
 });
 

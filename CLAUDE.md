@@ -89,7 +89,8 @@ docs/             Planning docs
 | `theme-loader.ts` | Theme loading |
 | `explorer-fs.ts` | The file explorer's jailed directory enumeration, and the path policy every explorer and code read goes through. `resolveInRoot` is the security boundary: the renderer sends a surfaceId and a RELATIVE path and NEVER an absolute one, because a renderer-supplied root would not be a jail — a compromised renderer would simply pass `C:\`. Containment is `path.relative`, plus a Windows-spelling prefix check beside it (the root is realpath'd on the way in, so 8.3 short names and junction aliases are already gone). Two traps live here: `rel.startsWith('..')` also rejects a legitimately-named `..foo`, which the user sees as a folder that silently refuses to open; and a drive root ALREADY ends in a separator, so appending one unconditionally spells `c:\\` and locks a pane at `C:\` out of every folder below it. The walk lstats EVERY segment rather than only the leaf — `root\link\sub` follows `link` before a leaf-only lstat ever runs, and libuv maps reparse points onto symlinks so `mklink /J` junctions are covered by the same check |
 | `explorer-roots.ts` | surfaceId → the explorer root for that pane. The root is the pane's TERMINAL cwd, not its active surface's — a pane showing a markdown tab still belongs to the folder its shell is in — and it is normalized through `trustedWindowsCwd`, so a Git Bash `/c/Users/...` report and a PowerShell junction alias both land on the same spelling main can jail against |
-| `code-file.ts` | Which files the code viewer will read, and how. Sibling to `markdown-file.ts`, and it deliberately neither imports from it nor changes it: markdown's extension whitelist stays exactly as narrow as it is, for exactly the callers it already has. The threat model is INVERTED — markdown names its whitelist as the thing stopping a renderer bug from reading `~/.ssh/id_rsa` into a visible pane, and this module has no whitelist at all because the whole point is to read the files that whitelist rejects. What replaces it is `explorer-fs.ts`'s path jail, applied by the `code:read-file` handler before anything here runs. `BINARY_EXT` and the content sniff are a UX filter — they keep `.png` out of the tree and mojibake out of the pane — and a future reader who treats them as the boundary will draw the wrong conclusion about what may be relaxed |
+| `code-file.ts` | Which files the code viewer will read **and write**, and how. Sibling to `markdown-file.ts`, and it deliberately neither imports from it nor changes it: markdown's extension whitelist stays exactly as narrow as it is, for exactly the callers it already has. The threat model is INVERTED — markdown names its whitelist as the thing stopping a renderer bug from reading `~/.ssh/id_rsa` into a visible pane, and this module has no whitelist at all because the whole point is to read the files that whitelist rejects. What replaces it is `explorer-fs.ts`'s path jail, applied by the `code:read-file` handler before anything here runs. `BINARY_EXT` and the content sniff are a UX filter — they keep `.png` out of the tree and mojibake out of the pane — and a future reader who treats them as the boundary will draw the wrong conclusion about what may be relaxed. `writeCodeFile` adds two things a naive save gets wrong and that both show up as a whole-file rewrite in the next commit: a `<textarea>` normalizes its value to **LF**, so a CRLF file's endings are restored from what is on disk, and the file's **encoding** (UTF-8, UTF-8+BOM, UTF-16LE) is probed from the preamble of the file being overwritten rather than round-tripped through the renderer. The size cap is measured on the ENCODED buffer — UTF-16 doubles most source text, so a string check lets a file through at twice the limit the read side then refuses to reopen |
+| `file-grants.ts` | Which paths a renderer may write to — the single gate for every renderer→disk write, checked by both `markdown:save-file` and `code:write-file`. Was `markdown-grants.ts`; renamed when the code surface became editable, because it was always a generic `Map<webContentsId, Set<path>>` and two grant sets would be two answers to "may this be written", whose drift shows up as a silent write to a file one of them would have refused. **Records a partial reversal of #210**, deliberately: that PR refused a jailed read that mints a grant on the grounds that "jailed to a pane root" is not consent, which was right while the pane was read-only. The editor's transaction is different — the user clicks a row, types, presses Ctrl+S — so the rule is now "a write lands only on a path opened into a live pane in THIS window, in this session, through the jail, and only if it has not changed on disk since". Still not a grant source: `markdown:read-file`, which takes a renderer-supplied ABSOLUTE path; a renderer that can mint its own grants makes the set meaningless. That is why the jailed markdown read had to be a separate channel rather than a flag on the existing one |
 | `config-loader.ts` | WT/Ghostty config import. Reachable from Settings → Terminal → Import. WT spells opacity two ways — modern `opacity` (0-100, independent of `useAcrylic`) and pre-1.12 `acrylicOpacity` (0-1, only with `useAcrylic`) |
 | `shell-detector.ts` | Available shells detection |
 | `updater.ts` | Auto-update. Routes by install layout: NSIS → `electron-updater`, portable zip → `zip-updater.ts` (#184). `initAutoUpdater()` returns before registering `NsisUpdater` on a zip extract, so a portable install can never enter the #96 "update ready" loop |
@@ -107,8 +108,8 @@ docs/             Planning docs
 - `CommandPalette/` — CommandPalette
 - `Markdown/` — MarkdownPane
 - `Tutorial/` — Tutorial
-- `Explorer/` — ExplorerPanel, ExplorerTree, plus the pure halves kept out of the component so they are testable without a DOM: `explorer-state.ts` (tree/expansion/per-root cache), `explorer-keynav.ts`, `explorer-errors.ts` and `open-preview.ts` (the preview-tab state machine)
-- `Code/` — CodePane, the read-only file view with a line-numbered gutter
+- `Explorer/` — ExplorerPanel, ExplorerTree, plus the pure halves kept out of the component so they are testable without a DOM: `explorer-state.ts` (tree/expansion/per-root cache), `explorer-keynav.ts`, `explorer-errors.ts`, `open-preview.ts` (the preview-tab state machine) and `explorer-diff.ts` (the `+N/-N` rollup and agent attribution). `use-explorer-diff.ts` is the impure half of that last one — fetching, the poll and the hook subscription. The rollup is a FLAT map keyed on POSIX rel-paths covering every changed file **and every ancestor directory**, precisely because the tree lists directories lazily: a rollup that could only see loaded rows would report `src/ +12/-3` because that is the part the user happened to have expanded. The poll runs only while the panel is open AND the window is focused, and hook events (not the timer) are the primary freshness signal — `diff-provider` coalesces per-cwd, but coalescing bounds the damage of a fast poll rather than making one correct (#141)
+- `Code/` — CodePane, the file view with a line-numbered gutter, editable since 2.7.0. Its header used to say read-only was a property of the component's SHAPE rather than a flag; that is rewritten rather than left to mislead. The editor is a plain `<textarea>` — **not** CodeMirror or Monaco, which roughly doubles a renderer bundle already at ~1.8 MB to serve "edit a thing or two". `draft === null` IS the read-only mode, rather than a boolean beside the text that can disagree with it. Edit mode drops the line-number gutter on purpose: keeping numbers aligned against a textarea means matching its font metrics, padding, scroll position and wrapping exactly, and any drift points the numbers at the wrong lines
 
 **Hooks** (in `hooks/`):
 - `useTerminal.ts` — xterm.js lifecycle, PTY connection, OSC notifications, WebGL renderer, OSC 133 prompt marks (#207)
@@ -169,9 +170,20 @@ claudeActivity: onUpdate
 agentState: onUpdate   # declared blocked/working/idle (issue #128)
 session:  save, load, list, delete
 cdp:      attach, detach
-explorer: listDir, reveal, openInApp   # a surfaceId and a RELATIVE path,
-code:     readFile                     # never an absolute one — main derives
-                                       # the root itself, or it is not a jail
+explorer: listDir, reveal, openInApp,  # a surfaceId and a RELATIVE path,
+          diffStats, readMarkdown      # never an absolute one — main derives
+code:     readFile, writeFile          # the root itself, or it is not a jail.
+                                       # diffStats takes ONLY a surfaceId (the
+                                       # pre-#210 `diff:get-files` takes a cwd
+                                       # and is deliberately not reused).
+                                       # readMarkdown is the JAILED markdown
+                                       # read and mints a save grant;
+                                       # markdown.readFile is the unjailed one
+                                       # and mints nothing. writeFile carries
+                                       # the mtime the buffer was READ at —
+                                       # omitting it doesn't force the write,
+                                       # it removes the only thing standing
+                                       # between two writers and silent loss
 window:   create, close, focus, list, minimize, maximize, isMaximized, setProgress,
           setBackdrop, supportsBackdrop,    # window transparency (clear/acrylic/mica)
           closeSelf, isFrameless, relaunch  # clear mode is frameless: own caption
@@ -654,7 +666,8 @@ CDP:     cdp:attach/detach
 AgentBr: agent-browser:enable/disable/status/install/current-url/open   # engine control
 Session: session:save-named/load-named/list-named/delete-named
 Meta:    metadata:update, hook:event, claude:activity, agent:state
-Explorer: explorer:list-dir/reveal/open-in-app, code:read-file
+Explorer: explorer:list-dir/reveal/open-in-app/diff-stats/read-markdown
+          code:read-file, code:write-file
 ```
 
 ---

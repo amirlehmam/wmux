@@ -100,7 +100,15 @@ export interface SurfaceRef {
   markdownFileMtime?: number;
   /** Buffer differs from what is on disk (F3). Shown as a `•` on the tab and
    *  confirmed before closing. Persisted with the content, so an unsaved edit
-   *  survives a restart — and comes back still marked unsaved. */
+   *  survives a restart — and comes back still marked unsaved.
+   *
+   *  Read by the CODE surface too, despite the name. It is the one flag meaning
+   *  "this surface has unsaved edits", and three places already act on it: the
+   *  tab's `•`, the close confirmation, and the preview-tab recycler, which
+   *  refuses to reuse a dirty tab for the next file. A second `codeDirty` would
+   *  have had to be added to all three, and the one that got missed would have
+   *  been the recycler — silently discarding the user's edits on their next
+   *  click in the tree. */
   markdownDirty?: boolean;
 
   // ─── Code viewer surface ───────────────────────────────────────────────────
@@ -212,13 +220,50 @@ export type ExplorerErrorCode =
   | 'executable'      // a shell action refused to launch a program or script
   | 'too_large'       // exceeds MAX_CODE_BYTES
   | 'denied'          // EACCES/EPERM
-  | 'read_failed';
+  | 'read_failed'
+  // ─── Write-side codes ──────────────────────────────────────────────────────
+  | 'not_granted'     // never opened into a live pane in this window — see file-grants.ts
+  | 'conflict'        // changed on disk since it was read; the save was REFUSED, not merged
+  | 'write_failed';
 
 /** `error` stays English for main-process callers; `code` is what the renderer
  *  maps to a translation key. Same split as MarkdownReadError (commit 82a779f). */
 export interface ExplorerListError { error: string; code: ExplorerErrorCode }
 
 export type ExplorerListResult = ExplorerListOk | ExplorerListError;
+
+/**
+ * One changed file, as the explorer's +N/-N column consumes it.
+ *
+ * Structurally the `ChangedFile` main/diff-provider.ts already produces — named
+ * separately here only because `shared/` may not import from `main/`. The two
+ * are pinned together by a test rather than by a comment, so a field added on
+ * one side cannot silently go missing on the other.
+ *
+ * `path` is POSIX-separated and relative to the root, matching both git's own
+ * output and what `listDir` puts on the wire. Every consumer keys on that one
+ * spelling; nothing downstream re-derives it with `path.sep`.
+ */
+export interface ExplorerDiffEntry {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'renamed';
+  additions: number;
+  deletions: number;
+}
+
+export interface ExplorerDiffOk {
+  root: string;
+  files: ExplorerDiffEntry[];
+  /**
+   * Which baseline produced these numbers, so the panel can say so rather than
+   * leaving the user to guess whether `+55` means "since my last commit" or
+   * "since I opened wmux". They are genuinely different questions and the
+   * provider picks between them on its own.
+   */
+  baseline: 'git' | 'snapshot';
+}
+
+export type ExplorerDiffResult = ExplorerDiffOk | ExplorerListError;
 
 /**
  * A user-saved pane layout: geometry plus whatever each pane's surface was
@@ -664,8 +709,21 @@ export const IPC_CHANNELS = {
   MARKDOWN_STAT_FILE: 'markdown:stat-file',
   // File explorer: directory enumeration, jailed to the surface's root in main.
   EXPLORER_LIST_DIR: 'explorer:list-dir',
+  // Per-file change counts for the tree's +N/-N column. Takes a surfaceId and
+  // NOT a cwd: `diff:get-files` above answers the same question from an
+  // absolute path the renderer supplies, which predates the explorer's jail and
+  // is exactly the pattern it exists to reject. Both call the same
+  // diff-provider, so the two views can never disagree about what changed.
+  EXPLORER_DIFF_STATS: 'explorer:diff-stats',
   // Code viewer: read one text file, jailed to the same root list-dir uses.
   CODE_READ_FILE: 'code:read-file',
+  // Write it back. Jail + grant set + mtime guard — see main/file-grants.ts for
+  // why a jail alone is not the whole answer.
+  CODE_WRITE_FILE: 'code:write-file',
+  // A markdown read that goes THROUGH the jail, and therefore mints a grant.
+  // Distinct from MARKDOWN_READ_FILE, which takes a renderer-supplied absolute
+  // path and mints nothing.
+  EXPLORER_READ_MARKDOWN: 'explorer:read-markdown',
   // Shell actions on a listed entry, jailed the same way. Their own channels
   // rather than the markdown ones, whose extension whitelist silently rejects
   // every ordinary source file the tree now offers.

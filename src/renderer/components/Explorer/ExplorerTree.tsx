@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ExplorerRow } from './explorer-state';
 import { computeKeyNavOutcome } from './explorer-keynav';
+import { statFor, isTouched, type DiffStatMap } from './explorer-diff';
 
 interface ExplorerTreeProps {
   rows: ExplorerRow[];
@@ -11,10 +12,62 @@ interface ExplorerTreeProps {
    *  Ctrl+click) from a plain preview click. */
   onActivate: (row: ExplorerRow, opts: { keep: boolean }) => void;
   onContextMenu: (row: ExplorerRow, event: React.MouseEvent) => void;
+  /** +N/-N per row, folders included. Empty map = the column is simply absent. */
+  diffStats: DiffStatMap;
+  /** Paths an agent's Edit/Write touched this session. Empty = no dots. */
+  touched: ReadonlySet<string>;
+}
+
+/**
+ * The +N/-N cell.
+ *
+ * A zero side is omitted rather than rendered as `+0`, so the eye lands only on
+ * what actually moved — a row reading `-22` alone is a pure deletion, and one
+ * reading nothing at all did not change. The whole cell is absent for an
+ * unchanged row, which is what keeps a tree of 200 files from becoming a wall
+ * of zeroes.
+ */
+function DiffCell({ stat }: { stat: { additions: number; deletions: number } | null }):
+React.JSX.Element | null {
+  if (!stat || (stat.additions === 0 && stat.deletions === 0)) return null;
+  return (
+    <span className="explorer-row__diff">
+      {stat.additions > 0 && (
+        <span className="explorer-row__diff-add">+{stat.additions}</span>
+      )}
+      {stat.deletions > 0 && (
+        <span className="explorer-row__diff-del">-{stat.deletions}</span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The row's name plus whatever the visual affordances say, as words — used for
+ * both the tooltip and the accessible name.
+ *
+ * Deliberately NOT translated. Every other string in this panel goes through
+ * `t()`, but these two fragments are `+N`/`-N` arithmetic and the word an agent
+ * is called; inventing eighteen translations of "12 added, 3 removed" for a
+ * tooltip is churn on every locale for no gain, and the numbers themselves are
+ * already language-neutral where the user actually reads them.
+ */
+function describeRow(
+  name: string,
+  stat: { additions: number; deletions: number } | null,
+  agentTouched: boolean,
+): string {
+  const parts = [name];
+  if (stat && (stat.additions > 0 || stat.deletions > 0)) {
+    parts.push(`+${stat.additions}/-${stat.deletions}`);
+  }
+  if (agentTouched) parts.push('(agent)');
+  return parts.join('  ');
 }
 
 export function ExplorerTree({
   rows, selectedRelPath, onToggleDir, onSelect, onActivate, onContextMenu,
+  diffStats, touched,
 }: ExplorerTreeProps): React.JSX.Element {
   // Roving tabIndex (ARIA tree pattern): exactly one row is a tab stop at a
   // time, everything else is -1. This is deliberately separate from
@@ -111,6 +164,12 @@ export function ExplorerTree({
         const isLink = row.entry.kind === 'symlink';
         const dimmed = !isDir && !row.entry.viewable;
         const isFocused = index === focusedIndex;
+        const stat = statFor(diffStats, row.relPath);
+        // A folder's dot means "something under here was touched", which is what
+        // makes a collapsed tree still tell you where the agent has been.
+        const agentTouched = isTouched(touched, row.relPath);
+        let chevron = '';
+        if (isDir) chevron = row.expanded ? '▾' : '▸';
         return (
           <div
             key={row.relPath}
@@ -126,9 +185,14 @@ export function ExplorerTree({
               isFocused ? 'explorer-row--focused' : '',
               dimmed ? 'explorer-row--dimmed' : '',
               isLink ? 'explorer-row--link' : '',
+              stat ? 'explorer-row--changed' : '',
             ].filter(Boolean).join(' ')}
             style={{ paddingLeft: 8 + row.depth * 14 }}
-            title={row.entry.name}
+            title={describeRow(row.entry.name, stat, agentTouched)}
+            // The dot and the +N/-N cell are both purely visual. Screen readers
+            // get the same two facts as words here instead, which is why the
+            // dot itself is aria-hidden rather than given a label of its own.
+            aria-label={describeRow(row.entry.name, stat, agentTouched)}
             // A plain click on a div is not focusable by itself, but this
             // guards against it becoming one later (or an ancestor doing so)
             // — the store's focusedPaneId must stay on whatever terminal pane
@@ -158,10 +222,15 @@ export function ExplorerTree({
             }}
             onContextMenu={(e) => { e.preventDefault(); onContextMenu(row, e); }}
           >
-            <span className="explorer-row__chevron">
-              {isDir ? (row.expanded ? '▾' : '▸') : ''}
-            </span>
+            <span className="explorer-row__chevron">{chevron}</span>
+            {agentTouched && (
+              // Marks WHO changed it, which the numbers cannot say. Decorative
+              // to the accessibility tree only because the row's aria-label
+              // below carries the same fact as words.
+              <span className="explorer-row__agent-dot" aria-hidden="true">●</span>
+            )}
             <span className="explorer-row__name">{row.entry.name}</span>
+            <DiffCell stat={stat} />
           </div>
         );
       })}

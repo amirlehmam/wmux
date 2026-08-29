@@ -355,6 +355,21 @@ export const ko: Translation = {
   'explorer.error.read_failed': '폴더를 읽을 수 없습니다',
   'code.error.not_found': '파일을 찾을 수 없습니다',
   'code.error.read_failed': '파일을 읽을 수 없습니다',
+  'code.error.not_granted': '저장하기 전에 트리에서 이 파일을 여세요',
+  'code.error.conflict': '이 파일은 연 이후 디스크에서 변경되었습니다',
+  'code.error.write_failed': '해당 파일을 저장할 수 없습니다',
+  'explorer.changedFiles': '{count}개 변경됨',
+  'explorer.baselineGit': 'HEAD 대비',
+  'explorer.baselineGitHint': '마지막 커밋(git HEAD)과 비교',
+  'explorer.baselineSnapshot': '이번 세션',
+  'explorer.baselineSnapshotHint': '세션 시작 시점의 이 폴더와 비교',
+  'code.edit': '이 파일 편집',
+  'code.readOnlyHint': '읽기 전용 — 변경하려면 편집을 클릭하세요',
+  'code.save': '저장 (Ctrl+S)',
+  'code.revert': '변경 사항 취소',
+  'code.unsaved': '저장되지 않은 변경 사항',
+  'code.reload': '디스크에서 다시 불러오기',
+  'code.conflictBody': '편집하는 동안 다른 사람이 이 파일을 변경했습니다. 다시 불러오면 편집 내용이 사라집니다.',
   // 설정 — 빠른 실행 프로필 패널
   // hintPart1..4는 UI 요소(+ 버튼, cd, .wmux.json)를 사이에 두고 이어 붙는
   // 한 문장의 조각입니다. 한국어 어순에 맞게 조각별 내용을 재배치했습니다.

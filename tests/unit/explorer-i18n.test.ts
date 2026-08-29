@@ -16,6 +16,9 @@ import type { ExplorerErrorCode } from '../../src/shared/types';
 const CODES: ExplorerErrorCode[] = [
   'no_root', 'remote', 'invalid_path', 'outside_root', 'not_found',
   'not_a_directory', 'binary', 'executable', 'too_large', 'denied', 'read_failed',
+  // Write-side codes. A save failure the user cannot read is worse than a read
+  // failure they cannot read: they are holding edits at the time.
+  'not_granted', 'conflict', 'write_failed',
 ];
 
 describe('explorer error keys', () => {
@@ -45,6 +48,13 @@ describe('explorer translations', () => {
     'explorer.copyPath', 'explorer.reveal', 'explorer.openInApp',
     ...CODES.map((c) => explorerErrorKey(c)),
     'code.error.not_found', 'code.error.read_failed',
+    // Change counts in the tree.
+    'explorer.changedFiles',
+    'explorer.baselineGit', 'explorer.baselineGitHint',
+    'explorer.baselineSnapshot', 'explorer.baselineSnapshotHint',
+    // Editing the code surface.
+    'code.edit', 'code.readOnlyHint', 'code.save', 'code.revert',
+    'code.unsaved', 'code.reload', 'code.conflictBody',
   ];
 
   it('ships every explorer string in every language, not just en/fr', () => {
@@ -61,6 +71,11 @@ describe('explorer translations', () => {
   it('keeps the {count} placeholder, which the panel substitutes at render', () => {
     for (const lang of SUPPORTED_LANGUAGES) {
       expect(DICTIONARIES[lang]?.['explorer.truncated'], lang).toContain('{count}');
+      // Same substitution, second string. A translation that drops the
+      // placeholder renders a totals bar reading "changed" with no number —
+      // which looks like a rendering bug rather than a translation one, so it
+      // is worth failing the build over.
+      expect(DICTIONARIES[lang]?.['explorer.changedFiles'], lang).toContain('{count}');
     }
   });
 });

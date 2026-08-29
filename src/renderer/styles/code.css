@@ -113,3 +113,89 @@
   flex: 1 1 auto;
   color: #d4d4d4;
 }
+
+/* ─── Editing ──────────────────────────────────────────────────────────────
+   The toolbar was built with `justify-content: space-between` for a two-item
+   row (path, copy). Edit mode adds up to three more, so the path takes the
+   slack and the buttons group at the right — same result for the old layout,
+   which is why space-between is left alone rather than swapped for a gap. */
+
+.code-pane__action {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.15);
+  padding: 3px 8px;
+  border-radius: 3px;
+  color: var(--ui-text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.code-pane__action:hover:not(:disabled) {
+  background: rgba(var(--ui-overlay-rgb), 0.12);
+}
+
+/* Disabled Save is the resting state of edit mode — nothing typed yet — so it
+   has to read as inert rather than as broken. */
+.code-pane__action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.code-pane__action--primary {
+  border-color: var(--accent, #58a6ff);
+  color: var(--accent, #58a6ff);
+}
+
+/* Matches the `•` the tab already shows, in words, for the pane the user is
+   actually looking at. */
+.code-pane__dirty {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--accent, #58a6ff);
+  opacity: 0.9;
+}
+
+.code-pane__status-detail {
+  display: block;
+  margin: 4px 0 8px;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+}
+
+/* The editor.
+
+   Metrics are copied from .code-pane__source deliberately: switching in and out
+   of edit mode must not reflow the text, or every toggle looks like the file
+   changed. `tab-size: 2` matches what the read-only view renders, since the
+   gutter view and the textarea are two presentations of one file.
+
+   `white-space: pre` + `wrap="off"` on the element: a soft-wrapped source file
+   makes column positions meaningless, which is the one thing an editor of code
+   must not do. */
+.code-pane__editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--ui-text-primary);
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+.code-pane__editor:focus {
+  /* An inset ring rather than an outline: an outline on a full-bleed element
+     is clipped by the scroll container and shows on two edges only. */
+  box-shadow: inset 0 0 0 1px rgba(var(--ui-overlay-rgb), 0.18);
+}

@@ -25,6 +25,13 @@ const EXPLORER_ERROR_KEY: Record<ExplorerErrorCode, TranslationKey> = {
   too_large: 'explorer.error.too_large',
   denied: 'explorer.error.denied',
   read_failed: 'explorer.error.read_failed',
+  // Write-side codes. They cannot arise from a listing, but the record is
+  // exhaustive over ExplorerErrorCode by type — which is the point: adding a
+  // code to the union without a message a user can read is a compile error, not
+  // a string that renders as `write_failed` in the pane.
+  not_granted: 'code.error.not_granted',
+  conflict: 'code.error.conflict',
+  write_failed: 'code.error.write_failed',
 };
 
 /** Codes whose explorer wording says "folder" where the code pane means a file. */

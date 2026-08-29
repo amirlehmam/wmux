@@ -32,13 +32,13 @@ import { CDPProxy } from './cdp-proxy';
 import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
 import { listDir, resolveInRoot, isExecutablePath } from './explorer-fs';
-import { readCodeFile } from './code-file';
+import { readCodeFile, writeCodeFile } from './code-file';
 import { getExplorerRoot, forgetExplorerRoot } from './explorer-roots';
 import { sessionWindows, toRestorePayload, restoreAnswerFor } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
 import { readConsent, updateConsent } from './agent-integration';
 import { handleAgentStateV2 } from './agent-state-rpc';
-import { getChangedFiles, getFileDiff } from './diff-provider';
+import { getChangedFiles, getFileDiff, getChangedFilesWithBaseline } from './diff-provider';
 import {
   readMarkdownFile,
   isAllowedMarkdownPath,
@@ -46,7 +46,7 @@ import {
   writeMarkdownFile,
   MD_DIALOG_EXTENSIONS,
 } from './markdown-file';
-import { grantMarkdownPath, isMarkdownPathGranted } from './markdown-grants';
+import { grantFilePath, isFilePathGranted } from './file-grants';
 import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
 // The process-wide singletons. Constructing a second SessionRegistry or
 // DashboardDaemon here would hand the same stream port to two surfaces and let
@@ -1104,7 +1104,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     const read = readMarkdownFile(result.filePaths[0]);
     // The user chose this file in a native dialog, so editing and saving it back
     // is what they asked for. That consent is what the grant set records (F3).
-    if (!('error' in read)) grantMarkdownPath(event.sender.id, read.filePath);
+    if (!('error' in read)) grantFilePath(event.sender.id, read.filePath);
     return read;
   });
 
@@ -1208,30 +1208,96 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Code viewer. This handler is where the code viewer's security boundary
   // actually lives — code-file.ts's deny-list is a UX filter, and resolveInRoot
   // is what keeps a renderer-supplied path inside the pane's folder.
+  //
+  // A successful read MINTS A WRITE GRANT. #210 shipped this handler without
+  // that line and argued against adding it; see file-grants.ts for the argument
+  // and for why the editor's transaction is a different one. In short: the path
+  // came through the jail, the user clicked a row in a tree to get here, and
+  // the grant is what lets Ctrl+S write back to this file and nothing else.
   ipcMain.handle(
     IPC_CHANNELS.CODE_READ_FILE,
     async (event, surfaceId: unknown, relPath: unknown) => {
       const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
       if ('error' in resolved) return resolved;
-      return readCodeFile(resolved.abs);
+      const read = readCodeFile(resolved.abs);
+      if (!('error' in read)) grantFilePath(event.sender.id, read.filePath);
+      return read;
     },
   );
 
-  // NO explorer-specific markdown READ handler, and that is a decision rather
-  // than an omission — it was written, then removed on review.
+  // Write it back. Three gates, and all three are load-bearing:
   //
-  // A .md opened from the tree goes through MARKDOWN_READ_FILE like every other
-  // renderer-supplied read, which means it is read-only until the user picks a
-  // destination in Save As. That looks like a gap ("I opened it in wmux, why
-  // can't I save it?") and the tempting fix is a jailed read that mints a grant
-  // because it is jailed. It must not exist: markdown-grants.ts states that a
-  // renderer-supplied path is never a grant source, since a renderer that can
-  // mint its own grants makes the whole set meaningless — and "jailed to a pane
-  // root" is not consent, it is just a smaller blast radius. The pane root is
-  // where the user's actual work lives, which is the worst place to hand out
-  // unattended write access.
+  //   1. resolveInRoot  — inside the pane's folder, no symlinked segment
+  //   2. the grant set  — and opened into a live pane in THIS window
+  //   3. expectedMtimeMs — and unchanged on disk since it was read
   //
-  // The native Save As dialog IS the consent. Leave it that way.
+  // (2) is what the jail alone does not give: without it a compromised renderer
+  // gets arbitrary write access across the user's whole project, which is
+  // precisely what #210 refused. (3) is what makes the feature usable at all
+  // next to a working agent — see writeCodeFile.
+  ipcMain.handle(
+    IPC_CHANNELS.CODE_WRITE_FILE,
+    async (event, surfaceId: unknown, relPath: unknown, content: unknown, expectedMtimeMs?: unknown) => {
+      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
+      if ('error' in resolved) return resolved;
+      if (!isFilePathGranted(event.sender.id, resolved.abs)) {
+        return { error: 'This file was not opened in a pane in this window', code: 'not_granted' };
+      }
+      return writeCodeFile(
+        resolved.abs,
+        typeof content === 'string' ? content : '',
+        Number.isFinite(expectedMtimeMs) ? Number(expectedMtimeMs) : undefined,
+      );
+    },
+  );
+
+  // A markdown read that goes THROUGH the jail — and therefore mints, where
+  // MARKDOWN_READ_FILE does not.
+  //
+  // #210 wrote this handler, then deleted it on review, on the grounds that
+  // "jailed to a pane root" is not consent. It is reinstated deliberately, with
+  // the consequence #210 declined, because the alternative is the gap that
+  // reasoning predicted verbatim: "I opened it in wmux, why can't I save it?".
+  // What makes it acceptable now is that it is not the whole answer — the write
+  // side adds the grant check AND the mtime guard, so the blast radius is
+  // "files the user opened into a pane in this window", not "the project root".
+  //
+  // Still narrower than the code read in one way that matters: readMarkdownFile
+  // keeps its extension whitelist. The jail is added to that guard, not swapped
+  // in for it.
+  ipcMain.handle(
+    IPC_CHANNELS.EXPLORER_READ_MARKDOWN,
+    async (event, surfaceId: unknown, relPath: unknown) => {
+      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
+      if ('error' in resolved) return resolved;
+      const read = readMarkdownFile(resolved.abs);
+      if (!('error' in read)) grantFilePath(event.sender.id, read.filePath);
+      return read;
+    },
+  );
+
+  // The tree's +N/-N column. Reuses the explorer's root gate rather than
+  // `diff:get-files`, which takes an absolute cwd straight from the renderer —
+  // that channel predates the jail and carries the pattern #210 exists to
+  // reject. Same provider underneath either way, so the DiffPane and the tree
+  // cannot disagree about what changed.
+  ipcMain.handle(
+    IPC_CHANNELS.EXPLORER_DIFF_STATS,
+    async (event, surfaceId: unknown) => {
+      const root = explorerRootFor(surfaceId, event.sender);
+      if ('error' in root) return root;
+      try {
+        const { files, baseline } = await getChangedFilesWithBaseline(root.realRoot);
+        return { root: root.realRoot, files, baseline };
+      } catch (err: any) {
+        // A git spawn can fail for reasons that are not the user's problem (no
+        // git on PATH, a repo mid-rebase). The tree simply shows no numbers
+        // rather than an error banner over a working file list.
+        console.error('[explorer] diff stats failed:', err?.message ?? err);
+        return { error: 'Failed to read changes', code: 'read_failed' };
+      }
+    },
+  );
 
   // Reveal in File Explorer. Every listed entry qualifies, folders and binaries
   // included: showItemInFolder only selects the item, it executes nothing.
@@ -1289,7 +1355,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(
     IPC_CHANNELS.MARKDOWN_SAVE_FILE,
     async (event, filePath: string, content: string, expectedMtimeMs?: number) => {
-      if (!isMarkdownPathGranted(event.sender.id, filePath)) {
+      if (!isFilePathGranted(event.sender.id, filePath)) {
         return { error: 'This file was not opened in wmux — use Save As', code: 'not_granted' };
       }
       return writeMarkdownFile(filePath, content, expectedMtimeMs);
@@ -1312,7 +1378,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       if (result.canceled || !result.filePath) return { canceled: true };
       const written = writeMarkdownFile(result.filePath, content);
       if ('ok' in written) {
-        grantMarkdownPath(event.sender.id, result.filePath);
+        grantFilePath(event.sender.id, result.filePath);
         return { ...written, filePath: result.filePath };
       }
       return written;

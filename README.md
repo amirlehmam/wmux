@@ -149,8 +149,16 @@ Split any pane right or down. Resize dividers by dragging. Zoom a pane to full s
 </tr>
 <tr>
 <td width="40%" valign="middle">
-<h3>Read-only code view</h3>
-Anything that isn't markdown opens in a <code>code</code> surface with a line-numbered gutter, alongside the terminal it came from. Reads are jailed in the main process against the pane's root, so the renderer only ever sends a relative path. Binary files are filtered out of the tree rather than opened as mojibake.
+<h3>See what changed, per file and per folder</h3>
+The tree carries a <code>+55/-22</code> column, rolled up so a collapsed <code>src/</code> shows the sum of everything beneath it — including folders you never expanded. In a git repo the numbers are everything uncommitted; outside one, everything since the session started. The panel says which. Files an agent touched get a dot, read from Claude Code's hook stream, so you can tell its edits from your own at a glance.</td>
+<td width="60%">
+<img src="./docs/assets/wmux-explorer.png" alt="File tree with per-file change counts" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="40%" valign="middle">
+<h3>Code view you can actually edit</h3>
+Anything that isn't markdown opens in a <code>code</code> surface with a line-numbered gutter, alongside the terminal it came from. Hit <b>Edit</b>, change a line, <code>Ctrl+S</code>. Saves are jailed to the pane's folder and only ever land on a file you opened in a pane — and they carry the timestamp the buffer was read at, so if an agent rewrote the file while you were typing the save is <em>refused</em> rather than quietly picking a winner. CRLF endings and UTF-16/BOM encodings survive the round trip.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-code.png" alt="Read-only code surface with a line-numbered gutter" width="100%" />
@@ -338,6 +346,14 @@ holds swaps them, so trading `Ctrl+1–9` and `Ctrl+Alt+1–9` is a single click
 | Enter | Open the selected file, or expand/collapse a folder |
 | Home / End | Jump to the first / last row |
 | Esc | Return focus to the terminal |
+
+### Code view
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+S | Save the file |
+| Tab | Insert a tab (does not leave the editor) |
+| Esc | Discard the edit and go back to reading |
 
 ### Browser
 

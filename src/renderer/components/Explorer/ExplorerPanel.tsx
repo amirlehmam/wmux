@@ -14,6 +14,7 @@ import {
 import { explorerErrorKey } from './explorer-errors';
 import { ExplorerTree } from './ExplorerTree';
 import { openInPreviewTab } from './open-preview';
+import { useExplorerDiff } from './use-explorer-diff';
 import '../../styles/explorer.css';
 import type { PaneId, SurfaceId } from '../../../shared/types';
 
@@ -141,6 +142,56 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   const currentKeyRef = useRef('');
   currentKeyRef.current = responseKey(surfaceId ?? '', root, String(showHidden));
 
+  // A reply arrived for a tree that is no longer on screen.
+  //
+  // Superseded, NOT failed. The attempt record exists to stop a folder that
+  // genuinely fails to list being re-queued every time `tree` changes identity
+  // — it was never meant to make a dropped request unrecoverable, which is
+  // exactly what left an expanded folder showing an open chevron over nothing
+  // after a pane switch. Unmark, so the refill can ask again; the key guard
+  // keeps this from unmarking a request some LATER pass has already re-issued.
+  //
+  // Returns whether the caller should stop. Extracted because BOTH the success
+  // and the rejection path need it and had drifted into two copies of the same
+  // six lines — the second of which is the one nobody would have remembered to
+  // update.
+  const dropIfStale = useCallback((relPath: string, key: string): boolean => {
+    if (currentKeyRef.current === key) return false;
+    if (relPath !== '' && requestedRef.current.key === key) {
+      requestedRef.current.paths.delete(relPath);
+    }
+    return true;
+  }, []);
+
+  /** Fold one successful listing into the live tree and its cache entry. */
+  const applyListing = useCallback((
+    result: Extract<ExplorerListResult, { entries: unknown }>,
+    relPath: string,
+    callCacheKey: string,
+  ) => {
+    setError(null);
+    liveRef.current = {
+      tree: { ...liveRef.current.tree, [result.relPath]: result.entries },
+      resolvedRoot: relPath === '' ? result.root : liveRef.current.resolvedRoot,
+    };
+    // Written under the key THIS call was made for — `treeCacheKey(root,
+    // showHidden)` off the caller's own closure, never off a later render.
+    cacheRef.current = rememberTree(cacheRef.current, callCacheKey, liveRef.current, MAX_ROOTS);
+    if (relPath === '') {
+      setTruncated(result.truncated);
+      setResolvedRoot(result.root);
+    }
+    setTree(liveRef.current.tree);
+  }, []);
+
+  /** Blank the panel — only ever for a ROOT failure. */
+  const failRoot = useCallback((code: ExplorerErrorCode) => {
+    setError(code);
+    liveRef.current = { tree: {}, resolvedRoot: null };
+    setTree({});
+    resetRootState();
+  }, [resetRootState]);
+
   const fetchDir = useCallback(async (relPath: string) => {
     if (!surfaceId || !root) return;
     const key = currentKeyRef.current;
@@ -154,62 +205,23 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
       // if the newer fetch then bailed at the guard above (no surfaceId/root)
       // and never started its own — nothing else would ever clear it.
       setLoading(false);
-      if (currentKeyRef.current !== key) {
-        // Superseded, NOT failed. The attempt record exists to stop a folder
-        // that genuinely fails to list being re-queued every time `tree`
-        // changes identity — it was never meant to make a dropped request
-        // unrecoverable, which is exactly what left an expanded folder showing
-        // an open chevron over nothing after a pane switch. Unmark, so the
-        // refill can ask again; the key guard keeps this from unmarking a
-        // request some LATER pass has already re-issued.
-        if (relPath !== '' && requestedRef.current.key === key) {
-          requestedRef.current.paths.delete(relPath);
-        }
-        return;
-      }
+      if (dropIfStale(relPath, key)) return;
       if ('error' in result) {
-        // Only a ROOT failure blanks the panel; a failure expanding one child
-        // leaves the rest of the tree on screen.
-        if (relPath === '') {
-          setError(result.code);
-          liveRef.current = { tree: {}, resolvedRoot: null };
-          setTree({});
-          resetRootState();
-        }
+        // A failure expanding one child leaves the rest of the tree on screen.
+        if (relPath === '') failRoot(result.code);
         return;
       }
-      setError(null);
-      liveRef.current = {
-        tree: { ...liveRef.current.tree, [result.relPath]: result.entries },
-        resolvedRoot: relPath === '' ? result.root : liveRef.current.resolvedRoot,
-      };
-      // Written under the key THIS call was made for — `treeCacheKey(root,
-      // showHidden)` off the callback's own closure, never off a later render.
-      cacheRef.current = rememberTree(cacheRef.current, callCacheKey, liveRef.current, MAX_ROOTS);
-      if (relPath === '') {
-        setTruncated(result.truncated);
-        setResolvedRoot(result.root);
-      }
-      setTree(liveRef.current.tree);
+      applyListing(result, relPath, callCacheKey);
     } catch {
       // ipcRenderer.invoke rejected — main threw rather than returning a
       // structured ExplorerListError, so there is no `code` to branch on.
       // Fall back to the generic read_failed message rather than leaving an
       // unhandled rejection and a stuck spinner.
       setLoading(false);
-      // A rejection that arrives stale unmarks for the same reason the success
-      // path above does: the refill only re-asks for a path it does not think
-      // it has already asked for, so leaving the mark on strands the folder
-      // open over nothing until the user collapses it by hand.
-      if (currentKeyRef.current !== key) {
-        if (relPath !== '' && requestedRef.current.key === key) {
-          requestedRef.current.paths.delete(relPath);
-        }
-        return;
-      }
-      if (relPath === '') { setError('read_failed'); setTree({}); resetRootState(); }
+      if (dropIfStale(relPath, key)) return;
+      if (relPath === '') failRoot('read_failed');
     }
-  }, [surfaceId, root, showHidden, resetRootState]);
+  }, [surfaceId, root, showHidden, dropIfStale, applyListing, failRoot]);
 
   // Which expanded folders have already been asked for under the CURRENT tree
   // identity. Not a cache — `tree` is that — but a record of attempts, so a
@@ -225,6 +237,12 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   // Refresh means "go and look again", so it drops this root's cache entry
   // first — otherwise the button could serve the user the very tree they are
   // asking to have re-read.
+  // The +N/-N column and the agent dots. Passed `absRoot` — the realpath'd
+  // spelling main listed — and not `root`, because the hook relativises
+  // absolute paths out of hook payloads against it, and the reported cwd can be
+  // a Git Bash `/c/...` string that no absolute Windows path will ever prefix.
+  const diff = useExplorerDiff(surfaceId, absRoot, true);
+
   const reloadTree = useCallback(() => {
     cacheRef.current = forgetTree(cacheRef.current, cacheKey);
     requestedRef.current = { key: '', paths: new Set() };
@@ -233,7 +251,11 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
     setError(null);
     resetRootState();
     if (surfaceId && root) void fetchDir('');
-  }, [cacheKey, surfaceId, root, fetchDir, resetRootState]);
+    // The button means "go and look again", and the numbers are part of what
+    // the user is looking at. Refreshing the tree while leaving a stale column
+    // beside it is the shape of bug the two-sources rule exists to avoid.
+    diff.refresh();
+  }, [cacheKey, surfaceId, root, fetchDir, resetRootState, diff]);
 
   // Re-root whenever the focused pane, its cwd, or the hidden filter changes.
   //
@@ -315,7 +337,9 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
     if (!activeWorkspaceId || !absRoot) return;
     const absolute = absolutePathOf(row.relPath);
     setOpenError(null);
-    void openInPreviewTab(
+    // No `void`: the two-argument `.then` below already handles rejection, so
+    // the promise is not floating and the marker was only ever decorative.
+    openInPreviewTab(
       activeWorkspaceId, focusedPaneId ?? ('' as PaneId), absolute, row.entry.name,
       // surfaceId + relPath are what a code read is addressed by — the panel is
       // the only place that holds both, and main will not accept an absolute
@@ -348,7 +372,10 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   }, [contextMenu, closeContextMenu]);
 
   const copyPath = useCallback((relPath: string) => {
-    void window.wmux?.clipboard?.writeText?.(absolutePathOf(relPath));
+    // Optional all the way down, so this can legitimately be `undefined` rather
+    // than a promise — hence `?.catch` and not `.catch`. A clipboard write that
+    // fails is not worth surfacing: the user sees nothing pasted and retries.
+    window.wmux?.clipboard?.writeText?.(absolutePathOf(relPath))?.catch(() => { /* ignore */ });
   }, [absolutePathOf]);
 
   // Reveal / open-in-app go through the EXPLORER's own jailed channels, not
@@ -364,7 +391,8 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   ) => {
     if (!surfaceId) { setOpenError('no_root'); return; }
     setOpenError(null);
-    void window.wmux.explorer[action](surfaceId, relPath).then(
+    // No `void` — the second `.then` argument below is the rejection handler.
+    window.wmux.explorer[action](surfaceId, relPath).then(
       (res: { code?: ExplorerErrorCode } | null) => {
         if (res && 'error' in res) setOpenError(res.code ?? 'read_failed');
       },
@@ -398,6 +426,40 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
           onClick={onClose}
         >{'×'}</button>
       </div>
+      {/* The totals bar, present only when something has actually changed —
+          an unchanged tree gets no bar rather than a row of zeroes.
+
+          It carries the baseline label because the two backends answer
+          genuinely different questions: in a repo these numbers are everything
+          uncommitted, and outside one they are everything since wmux started.
+          A column of numbers that silently means one or the other is a column
+          the user cannot act on. */}
+      {diff.total.files > 0 && (
+        <div className="explorer-panel__diffbar">
+          <span className="explorer-panel__diffbar-count">
+            {t('explorer.changedFiles', '{count} changed')
+              .replace('{count}', String(diff.total.files))}
+          </span>
+          <span className="explorer-row__diff">
+            {diff.total.additions > 0 && (
+              <span className="explorer-row__diff-add">+{diff.total.additions}</span>
+            )}
+            {diff.total.deletions > 0 && (
+              <span className="explorer-row__diff-del">-{diff.total.deletions}</span>
+            )}
+          </span>
+          <span
+            className="explorer-panel__diffbar-baseline"
+            title={diff.baseline === 'git'
+              ? t('explorer.baselineGitHint', 'Compared against the last commit (git HEAD)')
+              : t('explorer.baselineSnapshotHint', 'Compared against this folder when the session started')}
+          >
+            {diff.baseline === 'git'
+              ? t('explorer.baselineGit', 'vs HEAD')
+              : t('explorer.baselineSnapshot', 'this session')}
+          </span>
+        </div>
+      )}
       <div className="explorer-panel__body">
         {error && (
           <div className="explorer-panel__message">{t(explorerErrorKey(error), error)}</div>
@@ -413,6 +475,8 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
             onSelect={(row) => setSelected(row.relPath)}
             onActivate={handleActivate}
             onContextMenu={handleContextMenu}
+            diffStats={diff.stats}
+            touched={diff.touched}
           />
         )}
         {truncated && (

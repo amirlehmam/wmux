@@ -236,13 +236,32 @@ describe('ExplorerPanel wiring', () => {
   // expanded folder showing an open chevron over nothing until it was collapsed
   // and reopened by hand.
   //
-  // THREE sites, and the count is the assertion: the stale-reply path, the
-  // stale-REJECTION path beside it, and the collapse. A rejection reaches the
-  // catch instead of the reply branch, so it needs its own unmark or it strands
-  // the folder in exactly the way the other two exist to prevent.
+  // THREE sites need the unmark: the stale-reply path, the stale-REJECTION path
+  // beside it, and the collapse. A rejection reaches the catch instead of the
+  // reply branch, so it needs its own unmark or it strands the folder in exactly
+  // the way the other two exist to prevent.
+  //
+  // The first two now share one helper rather than two copies of six lines, so
+  // counting the delete no longer expresses this — it would pass at 2 whether
+  // the catch path called the helper or silently didn't. Assert what actually
+  // has to be true instead: the helper exists, and BOTH paths in fetchDir go
+  // through it. The collapse keeps its own direct unmark (different guard, not
+  // a stale reply), so the literal still appears there.
   it('unmarks a superseded child listing so the refill can ask again', () => {
     expect(src).toContain('requestedRef.current.key === key');
-    expect(src.match(/requestedRef\.current\.paths\.delete\(relPath\)/g)).toHaveLength(3);
+    expect(src).toContain('const dropIfStale = useCallback');
+    // Once in the success path, once in the catch. Not one, not three.
+    expect(src.match(/if \(dropIfStale\(relPath, key\)\) return;/g)).toHaveLength(2);
+    // And the collapse still unmarks on its own.
+    expect(src.match(/requestedRef\.current\.paths\.delete\(relPath\)/g)).toHaveLength(2);
+  });
+
+  // The catch is the half that is easy to lose in a refactor: a reader checking
+  // "does the stale case unmark?" finds the success path, sees it handled, and
+  // stops. Pin the rejection path by name.
+  it('unmarks on a REJECTED listing, not only a superseded reply', () => {
+    const catchBlock = src.slice(src.indexOf('} catch {', src.indexOf('const fetchDir')));
+    expect(catchBlock).toContain('dropIfStale(relPath, key)');
   });
 });
 

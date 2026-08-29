@@ -53,9 +53,14 @@ export function getSurfaceLabel(
     }
     case 'diff':
       return t('surfaceLabel.diff', 'Diff');
-    case 'code':
-      // No dirty marker: a code surface is read-only by construction.
-      return surface.codeFileName || t('surfaceLabel.code', 'Code');
+    case 'code': {
+      // Same `•` as markdown, and the same flag behind it. A code surface used
+      // to be read-only by construction and carried no marker; now that it can
+      // be edited, an unsaved buffer on a tab the user is not looking at needs
+      // to say so — which is the entire job of this convention.
+      const name = surface.codeFileName || t('surfaceLabel.code', 'Code');
+      return surface.markdownDirty ? `• ${name}` : name;
+    }
     case 'prompts':
       return t('surfaceLabel.prompts', 'Prompts');
     default:

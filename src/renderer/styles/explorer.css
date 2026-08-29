@@ -110,6 +110,74 @@
 .explorer-row__name {
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Takes the slack so the +N/-N cell sits hard against the right edge. The
+     `min-width: 0` is what actually lets it shrink: a flex item's default
+     `min-width: auto` refuses to go below its content's intrinsic width, so
+     without it a long filename pushes the numbers out of the panel instead of
+     ellipsising. */
+  flex: 1;
+  min-width: 0;
+}
+
+/* ─── Change counts (the +N/-N column) ───────────────────────────────────────
+   The two colours are lifted verbatim from diff.css's .diff-pane__stat-*, not
+   re-picked: the tree and the diff viewer describe the same changes, and two
+   greens that are nearly the same green read as a rendering bug rather than as
+   a distinction. */
+.explorer-row__diff {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  /* Numbers align in a column even at different widths, so the eye can compare
+     magnitudes down the tree instead of re-reading each row. */
+  letter-spacing: 0.01em;
+}
+
+.explorer-row__diff-add { color: #3fb950; }
+.explorer-row__diff-del { color: #f85149; }
+
+/* A changed row's name lifts out of the dimmed default, so "what moved" is
+   legible at a glance without the numbers having to be read. */
+.explorer-row--changed .explorer-row__name {
+  color: rgba(var(--ui-overlay-rgb), 1);
+}
+
+/* Agent attribution. Small, and in the accent colour rather than either diff
+   colour — it answers "who", not "how much", and colouring it green or red
+   would make it look like a third kind of change. */
+.explorer-row__agent-dot {
+  flex-shrink: 0;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--accent, #58a6ff);
+}
+
+/* ─── Totals bar ─────────────────────────────────────────────────────────── */
+.explorer-panel__diffbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 10px;
+  background: var(--ui-bg-2);
+  border-bottom: 1px solid rgba(var(--ui-overlay-rgb), 0.08);
+  color: rgba(var(--ui-overlay-rgb), 0.55);
+  flex-shrink: 0;
+}
+
+.explorer-panel__diffbar-count {
+  flex-shrink: 0;
+}
+
+/* Pushed to the right and dimmed: it is a caption for the numbers, not a
+   number itself. */
+.explorer-panel__diffbar-baseline {
+  margin-left: auto;
+  opacity: 0.7;
+  white-space: nowrap;
+  cursor: help;
 }
 
 .explorer-resize-handle {

@@ -508,6 +508,30 @@ export async function getChangedFiles(cwd: string): Promise<ChangedFile[]> {
   ));
 }
 
+/**
+ * The same answer, plus WHICH backend produced it.
+ *
+ * The explorer's +N/-N column needs this because the two backends answer
+ * genuinely different questions — git compares against HEAD ("everything
+ * uncommitted"), the snapshot against a baseline taken when the session started
+ * ("changed since you opened wmux") — and a column of numbers that silently
+ * means one or the other is a column the user cannot interpret. The panel
+ * labels itself from this.
+ *
+ * Deliberately a separate export rather than a widened `getChangedFiles`:
+ * DiffPane does not need the label, and changing a shared return shape to serve
+ * one caller is how the DiffPane and the explorer would start to drift.
+ * `isGitRepo` is TTL-cached and `getChangedFiles` coalesces, so the extra probe
+ * costs nothing on the poll path.
+ */
+export async function getChangedFilesWithBaseline(
+  cwd: string,
+): Promise<{ files: ChangedFile[]; baseline: 'git' | 'snapshot' }> {
+  if (!cwd) cwd = process.cwd();
+  const baseline = await isGitRepo(cwd) ? 'git' as const : 'snapshot' as const;
+  return { files: await getChangedFiles(cwd), baseline };
+}
+
 export async function getFileDiff(cwd: string, file: string): Promise<string> {
   if (!file) return '';
   if (!cwd) cwd = process.cwd();

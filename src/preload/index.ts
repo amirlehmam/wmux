@@ -322,6 +322,14 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_REVEAL, surfaceId, relPath),
     openInApp: (surfaceId: string, relPath: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_OPEN_IN_APP, surfaceId, relPath),
+    // Per-file change counts for the tree's +N/-N column. A surfaceId only —
+    // main derives the root and calls the same diff provider the DiffPane uses.
+    diffStats: (surfaceId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_DIFF_STATS, surfaceId),
+    // The jailed markdown read, which is the one that mints a write grant.
+    // `markdown.readFile` below takes an absolute path and mints nothing.
+    readMarkdown: (surfaceId: string, relPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_READ_MARKDOWN, surfaceId, relPath),
   },
   code: {
     // Same rule as `explorer` above: a surfaceId and a RELATIVE path, never an
@@ -329,6 +337,13 @@ contextBridge.exposeInMainWorld('wmux', {
     // in for the extension whitelist markdown reads are gated on.
     readFile: (surfaceId: string, relPath: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.CODE_READ_FILE, surfaceId, relPath),
+    // Save. `expectedMtimeMs` is the mtime the buffer was READ at, not the time
+    // of the save — main refuses the write if the file moved underneath it,
+    // which next to a working agent is a routine outcome rather than an edge
+    // case. Omitting it does not "force" the write, it removes the only thing
+    // standing between two writers and a silent data loss.
+    writeFile: (surfaceId: string, relPath: string, content: string, expectedMtimeMs?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CODE_WRITE_FILE, surfaceId, relPath, content, expectedMtimeMs),
   },
   diff: {
     getFiles: (cwd: string) => ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_FILES, cwd),

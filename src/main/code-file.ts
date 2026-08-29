@@ -113,6 +113,178 @@ function decode(buf: Buffer): string {
   return buf.toString('utf-8');
 }
 
+/** How a file was stored, so a save can put it back the same way. */
+export type CodeEncoding = 'utf8' | 'utf8-bom' | 'utf16le';
+
+export function detectEncoding(head: Buffer): CodeEncoding {
+  if (head.length >= 2 && head[0] === 0xFF && head[1] === 0xFE) return 'utf16le';
+  if (head.length >= 3 && head[0] === 0xEF && head[1] === 0xBB && head[2] === 0xBF) return 'utf8-bom';
+  return 'utf8';
+}
+
+function encode(text: string, encoding: CodeEncoding): Buffer {
+  if (encoding === 'utf16le') {
+    return Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(text, 'utf16le')]);
+  }
+  if (encoding === 'utf8-bom') {
+    return Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from(text, 'utf-8')]);
+  }
+  return Buffer.from(text, 'utf-8');
+}
+
+/**
+ * Whether a file's existing newlines are CRLF, judged on the majority.
+ *
+ * This is not a nicety. A `<textarea>` normalizes its value to LF — that is the
+ * HTML spec's API value, not a quirk we can opt out of — so a CRLF file typed
+ * into and saved verbatim comes back entirely LF. Every line then reads as
+ * modified, which on this platform means a one-character edit shows up as a
+ * whole-file rewrite in the +N/-N column this same release adds, and in the
+ * user's next commit. Detect what was there and put it back.
+ *
+ * Majority rather than "any CRLF present": a mixed file has to land somewhere,
+ * and matching the dominant style changes the fewest lines.
+ */
+export function usesCrlf(text: string): boolean {
+  let crlf = 0;
+  let lf = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '\n') continue;
+    if (i > 0 && text[i - 1] === '\r') crlf++;
+    else lf++;
+  }
+  return crlf > lf;
+}
+
+/** LF → CRLF, without doubling the `\r` of a line that already has one. */
+export function toCrlf(text: string): string {
+  return text.replace(/\r?\n/g, '\r\n');
+}
+
+export interface CodeWriteOk {
+  filePath: string;
+  /** mtime AFTER the write, so the pane's next save guards against this one. */
+  mtimeMs: number;
+}
+
+/**
+ * Write text back to a file the user opened in a pane.
+ *
+ * `absPath` MUST already have been through resolveInRoot AND the grant check in
+ * file-grants.ts. This function knows about neither; it is the last step, not
+ * the boundary.
+ *
+ * `expectedMtimeMs` is the load-bearing argument. The entire premise of this
+ * feature is a user editing a file in the same folder an agent is working in,
+ * so "changed underneath me" is the NORMAL case here rather than the exotic
+ * one. A mismatch is refused outright and never merged or resolved by picking a
+ * winner: silently choosing costs somebody their work with no message, which is
+ * the one outcome the user cannot recover from. Mirrors writeMarkdownFile's
+ * guard exactly rather than inventing a second conflict rule.
+ *
+ * Passing `undefined` skips the check, for a caller that genuinely has no prior
+ * read to compare against. Every caller in wmux passes one.
+ */
+export function writeCodeFile(
+  absPath: string,
+  content: string,
+  expectedMtimeMs?: number,
+): CodeWriteOk | ExplorerListError {
+  if (typeof content !== 'string') return fail('Invalid content', 'invalid_path');
+  if (isBinaryPath(absPath)) return fail('Not a text file', 'binary');
+
+  const stat = statForWrite(absPath, expectedMtimeMs);
+  if ('error' in stat) return stat;
+
+  const encoding = probeEncoding(absPath, stat.size);
+  if (typeof encoding !== 'string') return encoding;
+
+  const out = encodeForDisk(absPath, content, encoding);
+  if (!Buffer.isBuffer(out)) return out;
+  if (out.length > MAX_CODE_BYTES) return fail('File exceeds the 2MB limit', 'too_large');
+
+  try {
+    fs.writeFileSync(absPath, out);
+    return { filePath: absPath, mtimeMs: fs.lstatSync(absPath).mtimeMs };
+  } catch (err: any) {
+    // Path-free on the wire for the reason mapErrno states — a Node fs error
+    // message embeds the absolute path, and on Windows that carries the user's
+    // account name.
+    console.error('[code-file] write failed:', err?.message ?? err);
+    return fail('Failed to write file', 'write_failed');
+  }
+}
+
+/** lstat plus every refusal that must happen before a byte is written. */
+function statForWrite(
+  absPath: string,
+  expectedMtimeMs: number | undefined,
+): fs.Stats | ExplorerListError {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(absPath);
+  } catch {
+    return fail('File not found', 'not_found');
+  }
+  // Same refusals the read side makes. A symlink that appeared since the read
+  // is exactly the swap resolveInRoot's segment walk cannot close (see its
+  // TOCTOU note), so re-checking here is not redundant — it is the narrower,
+  // later check on the operation that actually mutates something.
+  if (stat.isSymbolicLink()) return fail('Refusing to write through a symlink', 'invalid_path');
+  if (!stat.isFile()) return fail('Not a regular file', 'invalid_path');
+  if (expectedMtimeMs !== undefined && stat.mtimeMs !== expectedMtimeMs) {
+    return fail('File changed on disk since it was opened', 'conflict');
+  }
+  return stat;
+}
+
+/**
+ * How the file on disk is currently spelled.
+ *
+ * Read from DISK rather than round-tripped through the renderer: this is the
+ * file being overwritten, so its own bytes are the authority, and an encoding
+ * field on the wire would be one more renderer-supplied input to distrust for
+ * no gain.
+ */
+function probeEncoding(absPath: string, size: number): CodeEncoding | ExplorerListError {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(absPath, 'r');
+    const head = Buffer.alloc(Math.min(3, size));
+    if (head.length > 0) fs.readSync(fd, head, 0, head.length, 0);
+    return detectEncoding(head);
+  } catch (err: any) {
+    console.error('[code-file] encoding probe failed:', err?.message ?? err);
+    return fail('Failed to write file', 'write_failed');
+  } finally {
+    if (fd !== null) { try { fs.closeSync(fd); } catch { /* best effort */ } }
+  }
+}
+
+/**
+ * The exact bytes to write: line endings restored to the file's own style, then
+ * encoded the way it was already stored.
+ *
+ * The size cap is applied by the caller to THIS buffer rather than to the
+ * incoming string, because UTF-16 doubles most source text — measuring the
+ * string would let a file through at up to twice the limit the read side will
+ * then refuse to reopen.
+ */
+function encodeForDisk(
+  absPath: string,
+  content: string,
+  encoding: CodeEncoding,
+): Buffer | ExplorerListError {
+  try {
+    const existing = readCodeFile(absPath);
+    const keepCrlf = !('error' in existing) && usesCrlf(existing.content);
+    return encode(keepCrlf ? toCrlf(content) : content, encoding);
+  } catch (err: any) {
+    console.error('[code-file] encode failed:', err?.message ?? err);
+    return fail('Failed to write file', 'write_failed');
+  }
+}
+
 /**
  * Read a file as text, applying every guard. Never throws — failures come back
  * as `{ error, code }` in ExplorerListError's shape, so the handler can forward

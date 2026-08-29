@@ -36,7 +36,7 @@ import {
   type ExplorerListResult,
 } from '../shared/types';
 import { isBinaryPath } from './code-file';
-import { canonical } from './markdown-grants';
+import { canonical } from './file-grants';
 
 /** Per-directory cap. Exceeding it sets `truncated` rather than shipping a
  *  50k-element array through IPC. Re-exported from shared/types.ts, which is
