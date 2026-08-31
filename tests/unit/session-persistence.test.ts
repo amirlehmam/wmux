@@ -290,7 +290,7 @@ describe('explorer panel state persistence', () => {
     fs.rmSync(APPDATA_OVERRIDE, { recursive: true, force: true });
   });
 
-  it('round-trips explorerOpen, explorerWidth and explorerExpanded', () => {
+  it('round-trips explorerOpen, explorerWidth, explorerExpanded and explorerShowHidden', () => {
     const data: any = {
       version: 1,
       windows: [{
@@ -303,6 +303,7 @@ describe('explorer panel state persistence', () => {
           explorerOpen: true,
           explorerWidth: 280,
           explorerExpanded: { 'C:/repo': ['docs', 'docs/nested'] },
+          explorerShowHidden: true,
         }],
       }],
     };
@@ -311,6 +312,7 @@ describe('explorer panel state persistence', () => {
     expect(ws.explorerOpen).toBe(true);
     expect(ws.explorerWidth).toBe(280);
     expect(ws.explorerExpanded).toEqual({ 'C:/repo': ['docs', 'docs/nested'] });
+    expect(ws.explorerShowHidden).toBe(true);
   });
 
   it('carries the explorer fields through the version-change auto-backup', () => {
@@ -324,6 +326,7 @@ describe('explorer panel state persistence', () => {
         workspaces: [{
           id: 'ws-1', title: 'ws', pinned: false, shell: 'pwsh', cwd: 'C:\\repo', splitTree: leaf,
           explorerOpen: true, explorerWidth: 280, explorerExpanded: { 'C:/repo': ['docs'] },
+          explorerShowHidden: true,
         }],
       }],
     } as any);
@@ -335,5 +338,6 @@ describe('explorer panel state persistence', () => {
     expect(ws.explorerOpen).toBe(true);
     expect(ws.explorerWidth).toBe(280);
     expect(ws.explorerExpanded).toEqual({ 'C:/repo': ['docs'] });
+    expect(ws.explorerShowHidden).toBe(true);
   });
 });

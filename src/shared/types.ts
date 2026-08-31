@@ -351,6 +351,13 @@ export interface WorkspaceInfo {
   explorerWidth?: number;
   /** Expanded dirs by root path, POSIX separators. Capped at 8 roots, LRU. */
   explorerExpanded?: Record<string, string[]>;
+  /**
+   * Whether the explorer lists dotfiles and filtered names. Per-workspace, the
+   * same scope as `explorerOpen` and `explorerWidth` — the panel is a view onto
+   * one workspace's tree, so a repo where `.github/` matters does not drag a
+   * repo where it is noise along with it.
+   */
+  explorerShowHidden?: boolean;
 }
 
 // Surface
@@ -490,6 +497,7 @@ export interface SavedSession {
     explorerOpen?: boolean;
     explorerWidth?: number;
     explorerExpanded?: Record<string, string[]>;
+    explorerShowHidden?: boolean;
     pinned?: boolean;
   }>;
   sidebarWidth: number;
