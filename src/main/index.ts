@@ -32,6 +32,7 @@ import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
 import { WindowManager } from './window-manager';
 import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
+import { getChangelog } from './changelog';
 import { initAgentIntegration } from './agent-integration';
 import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
 import { handleAgentStateV2, setAnswerWriter } from './agent-state-rpc';
@@ -1070,6 +1071,11 @@ app.whenReady().then(() => {
   // Late-mounted windows query the cached latest update info so the badge
   // appears even if the GitHub poll fired before the window's renderer attached.
   ipcMain.handle(IPC_CHANNELS.UPDATE_GET_LATEST, () => getLatestUpdate());
+  // Release notes for the Changelog tab (issue #211). Takes only a refresh
+  // flag — no repo, no URL, no token: the renderer names nothing about where
+  // this comes from, so a compromised one cannot point it somewhere else.
+  ipcMain.handle(IPC_CHANNELS.CHANGELOG_GET, (_event, opts?: { refresh?: boolean }) =>
+    getChangelog({ refresh: !!opts?.refresh }));
   // Badge click — download + install in place; the renderer falls back to the
   // release page when this says it can't (issue #125).
   ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, () => requestUpdateNow());

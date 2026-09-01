@@ -196,6 +196,12 @@ contextBridge.exposeInMainWorld('wmux', {
       }
     },
   },
+  // Release notes, in the app (issue #211). Deliberately its own namespace
+  // rather than a member of `update`: this answers "what changed", including in
+  // versions already installed, and works fine when there is no update at all.
+  changelog: {
+    get: (opts?: { refresh?: boolean }) => ipcRenderer.invoke(IPC_CHANNELS.CHANGELOG_GET, opts),
+  },
   update: {
     getLatest: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_LATEST),
     openRelease: (url: string) => ipcRenderer.send(IPC_CHANNELS.UPDATE_OPEN_RELEASE, url),

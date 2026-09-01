@@ -48,6 +48,19 @@ palette = [
   "#5555ff", "#ff55ff", "#55ffff", "#ffffff",
 ]
 
+[workspace]
+# What a NEW workspace opens with — the sidebar "+", Ctrl+N, first launch and
+# `wmux new-workspace` all use this.
+panes  = 3         # 1-8 terminal panes
+layout = "grid"    # grid | columns | rows | left | down | single
+
+[browser]
+# Start page for a workspace's browser panel. Needs a scheme.
+default-url = "http://localhost:3000"
+# Extra ports that count as dev servers, merged with the built-in list.
+dev-ports = [8501, 4321]
+auto-open = true
+
 [remote]
 # In a direct SSH pane, SCP local files before inserting their remote paths.
 upload-on-paste = true
@@ -59,6 +72,49 @@ upload-on-drop  = true
 "ctrl+alt+r"   = "clear<CR>"
 "ctrl+shift+q" = ""                # empty value = swallow the key
 ```
+
+## New workspace shape
+
+`[workspace]` decides what a fresh workspace opens with. Every entry point reads
+it — the sidebar `+`, Ctrl+N, first launch, and `wmux new-workspace`:
+
+```toml
+[workspace]
+panes  = 3
+layout = "grid"
+```
+
+| `layout`  | Arrangement |
+|-----------|-------------|
+| `grid`    | Balanced rows. At 3 panes this is wmux's classic T: two across the top, one below. **Default.** |
+| `columns` | All side by side. |
+| `rows`    | All stacked. |
+| `left`    | One full-height pane on the left, the rest stacked to its right. |
+| `down`    | One full-width pane on top, the rest side by side below. |
+| `single`  | Shorthand for `panes = 1`. |
+
+`panes` accepts 1 to 8; anything outside that is clamped, and `wmux config show`
+says so. Before 2.8.0 the sidebar `+` always made three panes and
+`wmux new-workspace` always made one — both now follow this setting, and
+`wmux new-workspace --panes 1 --layout single` pins the old CLI shape for a
+script that depends on it.
+
+A **saved layout marked Default** (Settings → Workspace → Saved Layouts) wins
+over this section: it also carries each pane's shell, directory and startup
+commands, so it answers the same question more completely.
+
+## Browser start page
+
+```toml
+[browser]
+default-url = "http://localhost:3000"
+```
+
+Where a workspace's browser panel opens before it has been anywhere. A scheme is
+required — a bare `localhost:3000` is refused with an explanation, because a
+webview handed one loads nothing and says nothing. Leave it empty (or omit it)
+for wmux's own page. This is the start page, and is separate from the default
+search engine, which decides where a typed non-URL goes.
 
 ## Remote file upload
 

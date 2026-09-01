@@ -96,6 +96,18 @@ export const en = {
   'titlebar.updateNeedsAdmin': 'Requires administrator rights',
   'titlebar.updateFailed': 'Update failed',
   'titlebar.updateRetry': 'Click to try again',
+  // Settings — Changelog panel (issue #211)
+  'settings.tab.changelog': 'Changelog',
+  'settings.changelog.title': 'Changelog',
+  'settings.changelog.hint': 'Release notes for recent versions of wmux, read from GitHub and cached so they stay readable offline.',
+  'settings.changelog.refresh': 'Refresh',
+  'settings.changelog.loading': 'Loading…',
+  'settings.changelog.offline': 'Showing the last copy — GitHub could not be reached.',
+  'settings.changelog.empty': 'No release notes yet. Connect to the internet and press Refresh.',
+  'settings.changelog.installed': 'installed',
+  'settings.changelog.prerelease': 'pre',
+  'settings.changelog.openOnGithub': 'Open on GitHub',
+  'settings.changelog.noNotes': 'This release has no notes.',
   // Settings — Help / About panel
   'settings.tab.help': 'Help',
   'settings.help.about': 'About wmux',

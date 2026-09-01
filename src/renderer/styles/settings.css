@@ -522,3 +522,67 @@
   padding: 2px 0;
 }
 .ql-profile__add-line:hover { color: var(--ui-text-primary); }
+
+/* ─── Changelog panel (issue #211) ──────────────────────────────────────────
+   Two columns: versions on the left, the selected release's notes on the
+   right. The notes column scrolls on its own rather than growing the settings
+   body — a release note is long, and a list you have to scroll past to reach
+   the thing it selects is not a list. */
+.changelog {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: 12px;
+  margin-top: 10px;
+  min-height: 0;
+}
+.changelog__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 420px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(var(--ui-overlay-rgb), 0.12);
+  padding-right: 8px;
+}
+.changelog__item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--ui-text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px 8px;
+  text-align: left;
+  width: 100%;
+}
+.changelog__item:hover { background: rgba(var(--ui-overlay-rgb), 0.08); }
+.changelog__item--active { background: rgba(var(--ui-overlay-rgb), 0.14); }
+.changelog__version { font-weight: 600; }
+.changelog__date { color: var(--ui-text-muted); font-size: 11px; margin-left: auto; }
+.changelog__badge {
+  background: var(--ui-accent);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 9px;
+  letter-spacing: .02em;
+  padding: 1px 4px;
+  text-transform: uppercase;
+}
+.changelog__badge--pre { background: rgba(var(--ui-overlay-rgb), 0.35); }
+.changelog__notes { max-height: 420px; overflow-y: auto; min-width: 0; }
+.changelog__notes-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.changelog__notes-head h4 { font-size: 13px; margin: 0; }
+/* Release notes carry code blocks and tables; neither may push the settings
+   window sideways, so each scrolls inside its own box. */
+.changelog__notes .markdown-body pre,
+.changelog__notes .markdown-body table { overflow-x: auto; max-width: 100%; }
+.changelog__stale { color: var(--ui-text-muted); }

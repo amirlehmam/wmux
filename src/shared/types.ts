@@ -754,6 +754,10 @@ export const IPC_CHANNELS = {
   // Orchestration (wmux-orchestrator plugin state broadcast)
   ORCHESTRATION_UPDATE: 'orchestration:update',
   ORCHESTRATION_CLEAR: 'orchestration:clear',
+  // In-app release notes (issue #211). Distinct from the UPDATE_* family below:
+  // that one answers "is there a newer version", this one answers "what changed",
+  // including in the versions already installed.
+  CHANGELOG_GET: 'changelog:get',
   // App update notification (GitHub releases polling — badge in the titlebar)
   UPDATE_AVAILABLE: 'update:available',
   UPDATE_GET_LATEST: 'update:get-latest',

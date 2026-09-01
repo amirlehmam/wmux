@@ -9,10 +9,14 @@ import KeyboardSettings from './KeyboardSettings';
 import PromptSettings from './PromptSettings';
 import QuickLaunchSettings from './QuickLaunchSettings';
 import HelpSettings from './HelpSettings';
+import ChangelogSettings from './ChangelogSettings';
 import { useT, type TranslationKey } from '../../i18n';
 import '../../styles/settings.css';
 
-const TABS = ['General', 'Sidebar', 'Workspace', 'Terminal', 'Prompts', 'Notifications', 'Browser', 'Profiles', 'Shortcuts', 'Help'] as const;
+// Changelog sits next to Help (issue #211) — both answer "tell me about wmux
+// itself" rather than "change how wmux behaves", and neither belongs among the
+// preference tabs above them.
+const TABS = ['General', 'Sidebar', 'Workspace', 'Terminal', 'Prompts', 'Notifications', 'Browser', 'Profiles', 'Shortcuts', 'Changelog', 'Help'] as const;
 
 // Map each tab to its i18n key (issue #56). Typed as TranslationKey, not
 // string: the lookup is what reaches t(), so the keys are checked here.
@@ -26,6 +30,7 @@ const TAB_LABEL_KEYS: Record<typeof TABS[number], TranslationKey> = {
   Browser: 'settings.tab.browser',
   Profiles: 'settings.tab.profiles',
   Shortcuts: 'settings.tab.shortcuts',
+  Changelog: 'settings.tab.changelog',
   Help: 'settings.tab.help',
 };
 
@@ -73,6 +78,9 @@ export default function SettingsWindow({ onClose }: SettingsWindowProps) {
             {activeTab === 'Browser' && <BrowserSettings />}
             {activeTab === 'Profiles' && <QuickLaunchSettings />}
             {activeTab === 'Shortcuts' && <KeyboardSettings />}
+            {/* Mounted only while selected, so opening Settings never fires the
+                GitHub fetch for a user who came here to change their font. */}
+            {activeTab === 'Changelog' && <ChangelogSettings />}
             {activeTab === 'Help' && <HelpSettings />}
           </div>
         </div>

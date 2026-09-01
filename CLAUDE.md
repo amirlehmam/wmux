@@ -75,7 +75,9 @@ docs/             Planning docs
 | `agent-state.ts` | Declared agent run state — blocked/working/idle, run refcount, `seq` dedupe, metadata TTL (issue #128). Also the back-channel: declared `choices` + `answerAgent`. **Answering never clears `blocked`** — the agent must confirm, or a mis-declared key silently stops a stuck pane asking for help |
 | `agent-state-rpc.ts` | `pane.report_agent` & friends, routed off the main V2 switch |
 | `agent-hook-bridge.ts` | Claude Code hooks → declared state, so it works with no plugin to install |
-| `session-persistence.ts` | Auto-save/restore window state |
+| `quit-sequence.ts` | When quit may let the process leave (#214). The `0xc0000409` aborts reported there are **shutdown** crashes: all six land on a `will-quit` line in the reporter's own `main.log`, to the second, and `logDiagnostic('will-quit', …)` is that handler's first statement. Six across thirteen quits at PTY counts 2–7 — a race, not the file explorer it was filed against. The mechanism is the one the `session-end` comment in `index.ts` already describes: `killAll()` fires N node-pty ConPTY exit callbacks and the process then walks into Node's environment teardown, where a napi call that loses throws off the top of the stack into `__fastfail(7)`. `pty-crash-guard.ts` closes the route where the *JS* callback throws and cannot close this one, because JS is never reached. Two moves: **drain** (hold the quit ~250 ms so the callbacks land while the environment is healthy — the strategy `session-end` argues for, applied to the ordinary quit), then **leave hard** (`app.exit()`, so whatever did not land never sees the teardown). A quit with **no** PTYs defers nothing and exits normally: the hard exit skips Chromium's own shutdown, so it is a treatment for a condition and not a new way of quitting. Pure, because `will-quit` needs a real Electron app to reach and the part worth pinning is the decision |
+| `changelog.ts` | Release notes in the app (#211). GETs `/releases` and caches every success under `%APPDATA%\wmux\cache` — inside wmux's own dir, so no part of the #132 consent gate. Every failure falls back to that cache, including a **manual Refresh**: a refresh that fails must not blank the list being read. No `Authorization` header ever; the moment this could carry a token it becomes a thing that can leak one. `toChangelogEntries` is pure and is where everything that can be wrong lives — drafts dropped, a `body` that is `null` rather than absent, a `name` that is `''` on a bare-tag release (so `??` keeps the wrong thing), and ORDER: the API returns releases by CREATION date, which stops being version order the moment a patch for an older line ships after a newer minor |
+| `session-persistence.ts` | Auto-save/restore window state. `saveSession` is atomic in the sense the comment always claimed and the code did not (#214): it used to `unlink` the live `session.json` before renaming the temp over it, a window with no session file at all — die there and the next launch has nothing to restore, comes up as a fresh Session 1, and re-mints every pane and surface id, which is that issue's "surfaces come back with new ids and lose their customTitle". The unlink was never needed: libuv's `uv_fs_rename` uses `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, so a plain `renameSync` over an existing file is legal. It survives only as a fallback for a real sharing violation (antivirus, a sync client), where not saving at all is worse than a brief window |
 | `port-scanner.ts` | Active port detection for running dev servers |
 | `powershell-shim.ts` | The `wmux.ps1` gate (issue #154). PowerShell resolves a .ps1 ahead of every PATHEXT entry, which is how cmd.exe's argument parser is kept out of the PowerShell path — but a .ps1 PowerShell refuses (Restricted policy, or Mark of the Web under RemoteSigned) is a hard error with NO fallback to the .cmd beside it. So the shim dir goes on PATH only after a probe script in that same dir has actually run in every installed host |
 | `node-runtime.ts` | Which binary on this machine can run a `.js` file (#187). Everything wmux hands an agent is "a script plus something to run it", and every consumer had been assuming `node` was on PATH or that the host process was itself a JS runtime — false under OpenCode, whose `process.execPath` is a compiled `opencode.exe`. Resolved once (memoised: it is read on the synchronous pane-create path, see #176) and declared as `WMUX_NODE`. The last resort is wmux's own Electron binary, which is Node under `ELECTRON_RUN_AS_NODE=1`, so the chain never dead-ends — but that flag is what makes it a runtime instead of a second wmux window, hence the separate `WMUX_NODE_ELECTRON` signal |
@@ -104,7 +106,7 @@ docs/             Planning docs
 - `Browser/` — BrowserPane, AddressBar, AgentBrowserSetup (the `not-installed` vs `no-dashboard` cards — two genuinely different situations, never one card: the second means the agent browser works fine and only its optional viewer is missing)
 - `Sidebar/` — Sidebar, WorkspaceRow, SessionMenu, SidebarResizeHandle
 - `Titlebar/` — Titlebar, NotificationBell, NotificationPanel
-- `Settings/` — SettingsWindow + per-category panels
+- `Settings/` — SettingsWindow + per-category panels. `ChangelogSettings` (#211) is the "read the release notes without googling wmux" tab, and is mounted only while selected so opening Settings for a font change never fires a GitHub request. Its notes go through the SAME `renderMarkdown` as MarkdownPane — that function is where DOMPurify runs, and this is the one place in wmux where the markdown came off the network
 - `CommandPalette/` — CommandPalette
 - `Markdown/` — MarkdownPane
 - `Tutorial/` — Tutorial
@@ -131,7 +133,7 @@ docs/             Planning docs
 - `agent-slice.ts` — Agent metadata tracking
 - `prompt-slice.ts` — Per-surface prompt log (#207). Bounded twice: 200 prompts per surface, 64 surfaces. **Only the facts** — a marker is a live emulator object and lives in `utils/prompt-marks.ts` instead. `line: null` means "not jumpable"; a view must never read it as line 0
 - `prompt-actions.ts` — The three prompt commands as functions of a surface id, because there are two callers (the shortcut table and the command palette) and they were about to disagree. The palette hands every action it does not recognise to a `console.log`, so an action wired only into the keyboard table appears in the palette, is selectable, and silently does nothing
-- `split-utils.ts` — Immutable split tree helpers
+- `split-utils.ts` — Immutable split tree helpers, plus `buildWorkspaceTree(panes, layout)` (#212): what a NEW workspace opens as. That shape used to be hard-coded in two places that disagreed — the sidebar `+` built a three-pane T, `wmux new-workspace` built one leaf — because `resolveDefaultSplitTree` took the fallback as a PARAMETER each caller filled in differently. It is now a setting with one resolution (a saved default layout first, then the configured count/arrangement), and `buildDefaultSplitTree()` is `buildWorkspaceTree(3, 'grid')` — byte-for-byte the shipped T, which is what lets it replace the old construction rather than sit beside it. `MAX_WORKSPACE_PANES` is a guard, not a limit: the value arrives from a hand-edited TOML file and over the pipe, and every pane it makes is a PTY
 
 ### Preload API (`window.wmux`)
 
@@ -157,6 +159,11 @@ agentBrowser: status, enable, disable, currentUrl, open, install
                                      # re-acquiring the dashboard and re-binding the
                                      # stream on every address-bar Enter
 agent:    list, status, onUpdate
+changelog: get   # release notes (#211). Takes only a refresh flag — no repo,
+                 # no URL, no token, so a compromised renderer cannot point it
+                 # somewhere else. Its own namespace rather than a member of
+                 # `update`: this answers "what changed", including in versions
+                 # already installed, and works when there is no update at all
 clipboard: writeText, readText    # no pasteImage since 1.12.0 — see remote below
 remote:   resolvePaste, resolveDrop  # what should this gesture type? Main answers
                                      # the WHOLE question (clipboard read, ssh
@@ -538,7 +545,13 @@ wmux ping | identify | capabilities
 wmux new-window | list-windows | focus-window <id>
 
 # Workspaces
-wmux new-workspace [--title T] [--shell S] [--cwd D]   # --shell accepts args: --shell "ssh user@host"
+wmux new-workspace [--title T] [--shell S] [--cwd D] [--panes N] [--layout L]
+                                       # --shell accepts args: --shell "ssh user@host"
+                                       # --panes 1-8, --layout grid|columns|rows|left|down|single
+                                       # Both default to the [workspace] setting (#212). This
+                                       # command opened ONE pane before 2.8.0 while the sidebar
+                                       # `+` opened three; they now agree, and `--panes 1` pins
+                                       # the old CLI shape for a script that depended on it.
 wmux close-workspace | select-workspace | rename-workspace | list-workspaces
 wmux current-workspace [--surface <id>]                # alias: whoami — the caller's OWN
                                        # workspace {id,title,cwd,shell,surfaceId}.
