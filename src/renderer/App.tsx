@@ -935,6 +935,7 @@ export default function App() {
             explorerOpen: ws.explorerOpen,
             explorerWidth: ws.explorerWidth,
             explorerExpanded: ws.explorerExpanded,
+            explorerShowHidden: ws.explorerShowHidden,
           })),
         }],
       };
@@ -1079,6 +1080,7 @@ export default function App() {
         explorerOpen: ws.explorerOpen,
         explorerWidth: ws.explorerWidth,
         explorerExpanded: ws.explorerExpanded,
+        explorerShowHidden: ws.explorerShowHidden,
       })),
       sidebarWidth: sidebarWidthRef.current,
       terminalPrefs: { ...state.terminalPrefs },

@@ -238,6 +238,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       explorerOpen: config.explorerOpen,
       explorerWidth: config.explorerWidth,
       explorerExpanded: config.explorerExpanded,
+      explorerShowHidden: config.explorerShowHidden,
     }));
 
     // IDs are regenerated above, so a saved activeWorkspaceId is meaningless —

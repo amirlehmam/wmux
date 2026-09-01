@@ -93,7 +93,6 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [showHidden, setShowHidden] = useState(false);
   // The absolute, realpath'd root main actually listed, taken from the root
   // reply. Main already knows it; before this landed the renderer threw it away
   // and concatenated paths onto the reported cwd instead, which under Git Bash
@@ -102,6 +101,17 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   const [resolvedRoot, setResolvedRoot] = useState<string | null>(null);
 
   const absRoot = pathRoot(resolvedRoot, root);
+
+  // Hidden-file visibility persists per workspace, for the same reason the
+  // expansion does: it is part of the view the user arranged, and a remount —
+  // a pane switch, a workspace reload — must not silently re-hide files they
+  // asked to see. It reads straight off the workspace rather than mirroring
+  // into local state, so there is one value and no resync effect.
+  const showHidden = !!workspace?.explorerShowHidden;
+  const toggleHidden = useCallback(() => {
+    if (!activeWorkspaceId) return;
+    updateWorkspaceMetadata(activeWorkspaceId, { explorerShowHidden: !showHidden });
+  }, [activeWorkspaceId, showHidden, updateWorkspaceMetadata]);
 
   // ─── The loaded tree, cached per root ──────────────────────────────────────
   // `tree` used to be torn down and refetched on every pane switch while
@@ -418,7 +428,7 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
           title={showHidden
             ? t('explorer.hideHidden', 'Hide hidden files')
             : t('explorer.showHidden', 'Show hidden files')}
-          onClick={() => setShowHidden((v) => !v)}
+          onClick={toggleHidden}
         >{showHidden ? '◉' : '○'}</button>
         <button
           className="explorer-panel__action"

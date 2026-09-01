@@ -37,6 +37,7 @@ export interface SessionData {
       explorerOpen?: boolean;
       explorerWidth?: number;
       explorerExpanded?: Record<string, string[]>;
+      explorerShowHidden?: boolean;
     }>;
   }>;
 }
@@ -131,6 +132,7 @@ function backupAutoSession(previousVersion: string): void {
         explorerOpen: w.explorerOpen,
         explorerWidth: w.explorerWidth,
         explorerExpanded: w.explorerExpanded,
+        explorerShowHidden: w.explorerShowHidden,
       })),
       sidebarWidth: windows[0]?.sidebarWidth ?? 260,
     };
