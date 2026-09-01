@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
-import { getAllPaneIds, findLeaf, patchLeafPrimarySurface } from '../../store/split-utils';
-import type { PaneId } from '../../../shared/types';
+import { getAllPaneIds, findLeaf, patchLeafPrimarySurface, MAX_WORKSPACE_PANES } from '../../store/split-utils';
+import type { PaneId, WorkspaceLayout } from '../../../shared/types';
 
 /**
  * One editable startup-command line for a saved layout's pane.
@@ -317,6 +317,60 @@ export default function WorkspaceSettings() {
       </p>
 
       <div className="settings-divider" />
+      <h3 className="settings-section-title">{t('settings.workspacePanel.newWorkspaceSection', 'New Workspace')}</h3>
+      <p className="settings-hint settings-hint--lead">
+        {t(
+          'settings.workspacePanel.newWorkspaceHint',
+          'What a new workspace opens with — the sidebar "+", Ctrl+N, first launch and wmux new-workspace all use this. A saved layout marked Default below wins over it.',
+        )}
+      </p>
+      <div className="settings-row">
+        <label className="settings-label" htmlFor="new-ws-panes">
+          {t('settings.workspacePanel.panes', 'Terminal panes')}
+        </label>
+        <input
+          id="new-ws-panes"
+          type="number"
+          min={1}
+          max={MAX_WORKSPACE_PANES}
+          className="settings-input settings-input--number"
+          value={workspacePrefs.newWorkspacePanes}
+          onChange={(e) => {
+            // Clamped on the way in, not on the way out: an out-of-range value
+            // that reaches the store spawns that many shells on the next new
+            // workspace, and `<input type=number>` does not enforce min/max on
+            // typed text.
+            const n = Math.min(Math.max(Math.round(Number(e.target.value)) || 1, 1), MAX_WORKSPACE_PANES);
+            setWorkspacePrefs({ newWorkspacePanes: n });
+          }}
+        />
+      </div>
+      <div className="settings-row">
+        <label className="settings-label" htmlFor="new-ws-layout">
+          {t('settings.workspacePanel.layout', 'Arrangement')}
+        </label>
+        <select
+          id="new-ws-layout"
+          className="settings-select"
+          value={workspacePrefs.newWorkspaceLayout}
+          onChange={(e) => setWorkspacePrefs({ newWorkspaceLayout: e.target.value as WorkspaceLayout })}
+          disabled={workspacePrefs.newWorkspacePanes <= 1}
+        >
+          <option value="grid">{t('settings.workspacePanel.layoutGrid', 'Grid (balanced rows)')}</option>
+          <option value="columns">{t('settings.workspacePanel.layoutColumns', 'Columns (side by side)')}</option>
+          <option value="rows">{t('settings.workspacePanel.layoutRows', 'Rows (stacked)')}</option>
+          <option value="left">{t('settings.workspacePanel.layoutLeft', 'Main pane left, rest stacked right')}</option>
+          <option value="down">{t('settings.workspacePanel.layoutDown', 'Main pane top, rest across the bottom')}</option>
+        </select>
+      </div>
+      <p className="settings-hint">
+        {t(
+          'settings.workspacePanel.layoutHint',
+          'Also settable in ~/.wmux/config.toml under [workspace]. With one pane there is nothing to arrange.',
+        )}
+      </p>
+
+      <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.workspacePanel.layoutsSection', 'Saved Layouts')}</h3>
       <p className="settings-hint settings-hint--lead">
         {t(
@@ -329,7 +383,7 @@ export default function WorkspaceSettings() {
         <p className="settings-hint">
           {t(
             'settings.workspacePanel.noLayoutsYet',
-            'No saved layouts yet — Ctrl+N and the CLI open a single pane; the sidebar "+" button and first launch use wmux\'s built-in layout.',
+            'No saved layouts yet — every new workspace uses the pane count and arrangement set above. Save one here to also fix each pane\'s shell, directory and startup commands.',
           )}
         </p>
       )}

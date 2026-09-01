@@ -68,7 +68,7 @@ describe('removeLeaf null contract', () => {
 
   it('returns a tree when a sibling survives', () => {
     const store = makeStore();
-    const wsId = store.getState().createWorkspace({ title: 'ws' });
+    const wsId = store.getState().createWorkspace({ title: 'ws', splitTree: createLeaf() });
     const ws0 = store.getState().workspaces.find((w) => w.id === wsId)!;
     const [paneId] = getAllPaneIds(ws0.splitTree);
     splitInStore(store, wsId, paneId);
@@ -86,7 +86,9 @@ describe('closing the last pane of a workspace', () => {
   beforeEach(() => {
     killed = installPtySpy();
     store = makeStore();
-    wsId = store.getState().createWorkspace({ title: 'solo' });
+    // "solo" is the point of the whole describe — the default workspace shape
+    // is a setting since #212, so it has to be stated rather than inherited.
+    wsId = store.getState().createWorkspace({ title: 'solo', splitTree: createLeaf() });
     const ws = store.getState().workspaces.find((w) => w.id === wsId)!;
     [paneId] = getAllPaneIds(ws.splitTree);
   });

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useStore } from '../../src/renderer/store';
 import { tryReplaceTabSpawn } from '../../src/renderer/App';
-import { WorkspaceId, PaneId, SurfaceId, WorkspaceInfo } from '../../src/shared/types';
+import { createLeaf } from '../../src/renderer/store/split-utils';
+import { PaneId, SurfaceId, WorkspaceInfo } from '../../src/shared/types';
 
 // Issue #4 (continued), blocker 1 from external review: `--replace-tab` agent
 // spawn (PR #85) destroys the pane's sole idle terminal directly via
@@ -26,7 +27,9 @@ describe('tryReplaceTabSpawn PR badge teardown', () => {
   });
 
   function setup() {
-    const workspaceId = useStore.getState().createWorkspace({ title: 'Test WS' });
+    // Explicitly one pane — this asserts on a SOLE terminal, and the default
+    // workspace shape is a setting since #212.
+    const workspaceId = useStore.getState().createWorkspace({ title: 'Test WS', splitTree: createLeaf() });
     const ws = useStore.getState().workspaces.find((w) => w.id === workspaceId) as WorkspaceInfo;
     const paneId = (ws.splitTree as Extract<typeof ws.splitTree, { type: 'leaf' }>).paneId as PaneId;
     const soleSurfaceId = (ws.splitTree as Extract<typeof ws.splitTree, { type: 'leaf' }>).surfaces[0].id;

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore } from '../../src/renderer/store';
 import { openInPreviewTab } from '../../src/renderer/components/Explorer/open-preview';
-import { splitNode } from '../../src/renderer/store/split-utils';
+import { splitNode, createLeaf } from '../../src/renderer/store/split-utils';
 
 // `readFile` is the JAILED markdown read (explorer.readMarkdown) — the one the
 // tree uses and the one that mints a save grant. The unjailed
@@ -18,7 +18,8 @@ const readMarkdownUnjailed = vi.fn();
 };
 
 function setup(): { ws: any; pane: any } {
-  const ws = useStore.getState().createWorkspace({ title: 'ws', shell: 'pwsh' });
+  // Explicitly one pane — the default is a setting since #212.
+  const ws = useStore.getState().createWorkspace({ title: 'ws', shell: 'pwsh', splitTree: createLeaf() });
   const workspace = useStore.getState().workspaces.find((w) => w.id === ws)!;
   const pane = (workspace.splitTree as any).paneId;
   useStore.getState().setFocusedPane?.(pane);

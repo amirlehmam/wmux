@@ -267,6 +267,10 @@ export const en = {
   'settings.browser.defaultSearchEngine': 'Default search engine',
   'settings.browser.startupSection': 'Startup',
   'settings.browser.openOnStartup': 'Open browser panel on startup',
+  // Start page (issue #212)
+  'settings.browser.defaultUrl': 'Start page',
+  'settings.browser.defaultUrlHint':
+    'Where a workspace\'s browser panel opens before it has been anywhere. Needs a scheme (http:// or https://). Leave empty for wmux\'s own page. Also settable in ~/.wmux/config.toml as [browser] default-url.',
   'settings.browser.linksSection': 'Links',
   'settings.browser.openLinksExternally': 'Open links in the system browser',
   'settings.browser.openLinksExternallyHint': 'Clicked links in terminals and markdown go to your default browser instead of the wmux panel. Ctrl+click always does the opposite.',
@@ -519,10 +523,23 @@ export const en = {
   'settings.workspacePanel.browse': 'Browse…',
   'settings.workspacePanel.defaultCwdHint':
     'Where a new terminal opens when nothing else decides. Splits, "Open in wmux", --cwd and restored sessions keep their own directory. ~ and %VARIABLES% are expanded; leave empty to keep the old behaviour.',
+  // New-workspace shape (issue #212)
+  'settings.workspacePanel.newWorkspaceSection': 'New Workspace',
+  'settings.workspacePanel.newWorkspaceHint':
+    'What a new workspace opens with — the sidebar "+", Ctrl+N, first launch and wmux new-workspace all use this. A saved layout marked Default below wins over it.',
+  'settings.workspacePanel.panes': 'Terminal panes',
+  'settings.workspacePanel.layout': 'Arrangement',
+  'settings.workspacePanel.layoutGrid': 'Grid (balanced rows)',
+  'settings.workspacePanel.layoutColumns': 'Columns (side by side)',
+  'settings.workspacePanel.layoutRows': 'Rows (stacked)',
+  'settings.workspacePanel.layoutLeft': 'Main pane left, rest stacked right',
+  'settings.workspacePanel.layoutDown': 'Main pane top, rest across the bottom',
+  'settings.workspacePanel.layoutHint':
+    'Also settable in ~/.wmux/config.toml under [workspace]. With one pane there is nothing to arrange.',
   'settings.workspacePanel.layoutsSection': 'Saved Layouts',
   'settings.workspacePanel.layoutsHint':
     'Arrange panes the way you like in a workspace — geometry, plus whatever shell or command each pane is already running — then save that arrangement here.',
-  'settings.workspacePanel.noLayoutsYet': 'No saved layouts yet — Ctrl+N and the CLI open a single pane; the sidebar "+" button and first launch use wmux\'s built-in layout.',
+  'settings.workspacePanel.noLayoutsYet': 'No saved layouts yet — every new workspace uses the pane count and arrangement set above. Save one here to also fix each pane\'s shell, directory and startup commands.',
   'settings.workspacePanel.newLayoutName': 'Layout {n}',
   'settings.workspacePanel.setDefault': 'Default',
   'settings.workspacePanel.saveCurrentLayout': '+ Save current layout as preset',

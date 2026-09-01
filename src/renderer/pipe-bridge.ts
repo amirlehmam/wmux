@@ -3,9 +3,9 @@
  * so the main process can call them via executeJavaScript from V2 pipe handlers.
  */
 import { useStore } from './store';
-import { splitNode, getAllPaneIds, findLeaf, buildGridLayout } from './store/split-utils';
+import { splitNode, getAllPaneIds, findLeaf, buildGridLayout, buildWorkspaceTree } from './store/split-utils';
 import { surfaceTerminalRegistry } from './hooks/useTerminal';
-import { PaneId, SurfaceId, WorkspaceId, SurfaceType, engineOf, type BrowserEngine } from '../shared/types';
+import { PaneId, SurfaceId, WorkspaceId, SurfaceType, engineOf, type BrowserEngine, type WorkspaceLayout } from '../shared/types';
 import { promptSummary, type PromptEntry, type PromptSource } from './store/prompt-slice';
 import { v4 as uuid } from 'uuid';
 import { translate, type TranslationKey } from './i18n/core';
@@ -13,6 +13,40 @@ import { translate, type TranslationKey } from './i18n/core';
 /** Non-hook context (bridges the main process to the store) — reads the current language directly. */
 const bridgeT = (key: TranslationKey, fallback?: string): string =>
   translate(useStore.getState().language, key, fallback);
+
+const WIRE_LAYOUTS: readonly WorkspaceLayout[] = ['grid', 'columns', 'rows', 'left', 'down'];
+
+/**
+ * What `--panes` / `--layout` off the wire mean, given the user's settings
+ * (issue #212).
+ *
+ * Exported and pure because the interesting behaviour is all in the gaps: an
+ * omitted flag must fall through to the SETTING (that is the whole point of
+ * #212 — one configurable answer, not a CLI that hard-codes its own), while a
+ * flag that is present must win over it.
+ *
+ * `single` is a pane COUNT wearing a layout's name — it is the word the issue
+ * used, so both entry points accept it, and both turn it into `panes = 1`
+ * rather than carrying a sixth layout through the builder. An explicit
+ * `--panes` still wins over it: writing both means the number was meant.
+ *
+ * An unrecognised layout falls back to the configured one rather than to a
+ * silent `grid`, because a typo should cost the user their typo and not also
+ * the setting they had already made.
+ */
+export function resolveWireLayout(
+  params: { panes?: number; layout?: string } | undefined,
+  prefs: { newWorkspacePanes: number; newWorkspaceLayout: WorkspaceLayout },
+): { panes: number; layout: WorkspaceLayout } {
+  const single = params?.layout === 'single';
+  const named = params?.layout !== undefined && (WIRE_LAYOUTS as readonly string[]).includes(params.layout)
+    ? params.layout as WorkspaceLayout
+    : undefined;
+  return {
+    panes: params?.panes ?? (single ? 1 : prefs.newWorkspacePanes),
+    layout: named ?? prefs.newWorkspaceLayout,
+  };
+}
 
 /**
  * A prompt log entry as everything outside the renderer sees it (issue #207).
@@ -49,12 +83,26 @@ export function initPipeBridge(): void {
 
   // ─── Workspace ──────────────────────────────────────────────────────────────
 
-  w.__wmux_createWorkspace = (params?: { title?: string; shell?: string; cwd?: string }) => {
+  w.__wmux_createWorkspace = (params?: {
+    title?: string; shell?: string; cwd?: string; panes?: number; layout?: string;
+  }) => {
     const store = useStore.getState();
+    // `--panes` / `--layout` (issue #212) build a tree HERE rather than being
+    // passed through to createWorkspace, because a caller-supplied splitTree is
+    // exactly what createWorkspace already accepts — and going through
+    // buildWorkspaceTree is what clamps a hostile `panes: 5000` arriving over
+    // the pipe to something that will not spawn five thousand shells.
+    //
+    // Only when one of them was given: omitting both must keep the caller on
+    // the configured default, which is the whole point of #212.
+    const wants = params?.panes !== undefined || params?.layout !== undefined;
+    const shape = resolveWireLayout(params, store.workspacePrefs);
+    const splitTree = wants ? buildWorkspaceTree(shape.panes, shape.layout) : undefined;
     const id = store.createWorkspace({
       title: params?.title,
       shell: params?.shell,
       cwd: params?.cwd,
+      ...(splitTree ? { splitTree } : {}),
     }, bridgeT);
     return { workspaceId: id };
   };

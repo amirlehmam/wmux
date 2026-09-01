@@ -4,7 +4,7 @@ import path from 'path';
 import { create } from 'zustand';
 import { createWorkspaceSlice, WorkspaceSlice } from '../../src/renderer/store/workspace-slice';
 import { createSurfaceSlice, isDiffTabDismissed, SurfaceSlice } from '../../src/renderer/store/surface-slice';
-import { getAllPaneIds, splitNode } from '../../src/renderer/store/split-utils';
+import { getAllPaneIds, splitNode, createLeaf } from '../../src/renderer/store/split-utils';
 import { WorkspaceId, PaneId, SurfaceId, SplitNode } from '../../src/shared/types';
 
 type TestStore = WorkspaceSlice & SurfaceSlice;
@@ -28,7 +28,10 @@ describe('surface-slice', () => {
 
   beforeEach(() => {
     useStore = makeStore();
-    workspaceId = useStore.getState().createWorkspace({ title: 'Test WS' });
+    // One pane, said out loud. A workspace's default shape is a SETTING since
+    // #212 (three panes), so a test that indexes "the" pane has to name the
+    // shape it is testing instead of inheriting whatever the default is today.
+    workspaceId = useStore.getState().createWorkspace({ title: 'Test WS', splitTree: createLeaf() });
     const tree = useStore.getState().workspaces[0].splitTree;
     paneId = (tree as Extract<SplitNode, { type: 'leaf' }>).paneId;
   });

@@ -194,6 +194,108 @@ describe('loadUserConfig', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [workspace] and [browser] default-url (issue #212).
+// ─────────────────────────────────────────────────────────────────────────────
+describe('loadUserConfig [workspace] and [browser] default-url', () => {
+  let tmpPath: string | null = null;
+
+  beforeEach(() => { resetConfigWarnings(); vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (tmpPath) {
+      try { fs.rmSync(path.dirname(tmpPath), { recursive: true, force: true }); } catch { /* noop */ }
+      tmpPath = null;
+    }
+  });
+
+  it('maps the shape the issue asked for', () => {
+    tmpPath = writeTmp(`
+      [workspace]
+      panes  = 4
+      layout = "left"
+
+      [browser]
+      default-url = "http://localhost:3000"
+    `);
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace).toEqual({ panes: 4, layout: 'left' });
+    expect(out.browser?.defaultUrl).toBe('http://localhost:3000');
+    expect(out.errors).toEqual([]);
+  });
+
+  it('accepts layout = "single" as one pane, the word the issue used', () => {
+    tmpPath = writeTmp('[workspace]\nlayout = "single"\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace?.panes).toBe(1);
+    // Normalised away rather than carried, so the tree builder has exactly one
+    // representation of "one pane".
+    expect(out.workspace?.layout).toBeUndefined();
+    expect(out.errors).toEqual([]);
+  });
+
+  it('lets an explicit panes win over layout = "single"', () => {
+    tmpPath = writeTmp('[workspace]\nlayout = "single"\npanes = 2\n');
+    expect(loadUserConfig(tmpPath).workspace?.panes).toBe(2);
+  });
+
+  it('clamps an out-of-range pane count AND says so', () => {
+    // Silently opening one pane and dutifully spawning 40 shells are both worse
+    // answers than 8 plus an explanation.
+    tmpPath = writeTmp('[workspace]\npanes = 40\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace?.panes).toBe(8);
+    expect(out.errors?.join('\n')).toMatch(/workspace\.panes.*outside 1-8/);
+  });
+
+  it('reports an unknown layout and keeps the rest of the section', () => {
+    tmpPath = writeTmp('[workspace]\npanes = 2\nlayout = "diagonal"\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace?.panes).toBe(2);
+    expect(out.workspace?.layout).toBeUndefined();
+    expect(out.errors?.join('\n')).toMatch(/workspace\.layout/);
+  });
+
+  it('refuses a schemeless default-url and names the fix', () => {
+    // A webview handed `localhost:3000` loads nothing and says nothing. And
+    // `localhost` is itself a legal scheme NAME, so a check that only looks for
+    // `<word>:` accepts exactly the mistake it was written to catch — hence the
+    // required `//`.
+    for (const bad of ['localhost:3000', 'example.com', '127.0.0.1:8080']) {
+      tmpPath = writeTmp(`[browser]\ndefault-url = "${bad}"\n`);
+      const out = loadUserConfig(tmpPath);
+      expect(out.browser?.defaultUrl, bad).toBeUndefined();
+      expect(out.errors?.join('\n')).toMatch(/default-url.*scheme/);
+      fs.rmSync(path.dirname(tmpPath), { recursive: true, force: true });
+      tmpPath = null;
+    }
+  });
+
+  it('accepts the schemes a start page is actually written with', () => {
+    for (const good of ['http://localhost:3000', 'https://example.com/x?y=1', 'file:///C:/x.html', 'about:blank']) {
+      tmpPath = writeTmp(`[browser]\ndefault-url = "${good}"\n`);
+      expect(loadUserConfig(tmpPath).browser?.defaultUrl, good).toBe(good);
+      fs.rmSync(path.dirname(tmpPath), { recursive: true, force: true });
+      tmpPath = null;
+    }
+  });
+
+  it('carries an explicitly empty default-url so a reload can unset it', () => {
+    // Dropping it would leave the previous value applied until restart.
+    tmpPath = writeTmp('[browser]\ndefault-url = ""\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.browser?.defaultUrl).toBe('');
+    expect(out.errors).toEqual([]);
+  });
+
+  it('leaves both undefined when the sections are absent', () => {
+    tmpPath = writeTmp('[terminal]\nfont-size = 12\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace).toBeUndefined();
+    expect(out.browser).toBeUndefined();
+  });
+});
+
 /**
  * A read or parse failure discards the WHOLE file — every [terminal], [keys],
  * [browser] and [appearance] section reverts to its default. That used to happen

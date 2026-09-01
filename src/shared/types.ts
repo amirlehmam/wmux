@@ -266,6 +266,20 @@ export interface ExplorerDiffOk {
 export type ExplorerDiffResult = ExplorerDiffOk | ExplorerListError;
 
 /**
+ * How the panes of a NEW workspace are arranged (issue #212).
+ *
+ * Lives in shared rather than beside the builder in the renderer's split-utils
+ * because both sides of the wire need the same vocabulary: `~/.wmux/config.toml`
+ * is read and validated in main, and the tree is built in the renderer. Two
+ * copies of a string union is two lists that can disagree about what a layout
+ * name means, with the mismatch showing up as a silently ignored setting.
+ *
+ * `single` is not here on purpose — it is `panes = 1`, and user-config
+ * normalises that spelling away before the value ever reaches a builder.
+ */
+export type WorkspaceLayout = 'grid' | 'columns' | 'rows' | 'left' | 'down';
+
+/**
  * A user-saved pane layout: geometry plus whatever each pane's surface was
  * already running (shell/cwd/startupCommands) at the moment it was captured
  * from a live workspace. Multiple can be saved; one may be marked the default

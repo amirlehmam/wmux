@@ -2,7 +2,7 @@ import { StateCreator } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { WorkspaceId, WorkspaceInfo, SplitNode, SavedLayout } from '../../shared/types';
 import { isPosixPath } from '../../shared/paths';
-import { createLeaf, instantiateLayout, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, mergeStartupCommands } from './split-utils';
+import { buildWorkspaceTree, WorkspaceLayout, instantiateLayout, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, mergeStartupCommands } from './split-utils';
 import { killTreeTerminalPtys } from './pty-teardown';
 import type { TranslationKey } from '../i18n/core';
 
@@ -14,21 +14,40 @@ const identityT: T = (_key, fallback) => fallback ?? _key;
 // slice (same reach-across pattern requestCloseWorkspace already uses below
 // for `workspacePrefs`), so pull both out through one cast.
 type SettingsReach = {
-  workspacePrefs?: { defaultLayoutId?: string | null };
+  workspacePrefs?: {
+    defaultLayoutId?: string | null;
+    newWorkspacePanes?: number;
+    newWorkspaceLayout?: WorkspaceLayout;
+  };
   savedLayouts?: SavedLayout[];
   setSavedLayouts?: (layouts: SavedLayout[]) => void;
 };
 
 /**
  * Resolves what a "new workspace" looks like when the caller hasn't supplied
- * an explicit `splitTree`. If a saved layout is marked default
- * (`workspacePrefs.defaultLayoutId`), every caller honors it identically. 
- * Otherwise `fallback` runs.
+ * an explicit `splitTree`. Two ranked sources, and no third:
+ *
+ *  1. a saved layout marked default (`workspacePrefs.defaultLayoutId`) — richer,
+ *     since it carries each pane's shell, cwd and startup commands;
+ *  2. otherwise the configured pane count and arrangement (issue #212).
+ *
+ * `fallback` used to default to `createLeaf`, and that default was the bug
+ * #212 reported. Callers disagreed about what a new workspace was: App.tsx
+ * passed `buildDefaultSplitTree` for the sidebar `+`, while `createWorkspace` —
+ * the CLI's path — took the parameter default and made one pane. Same function,
+ * two answers, neither configurable. The parameter is gone: there is now one
+ * answer and it is a setting.
  */
-export function resolveDefaultSplitTree(get: () => unknown, fallback: () => SplitNode = createLeaf): SplitNode {
+export function resolveDefaultSplitTree(get: () => unknown): SplitNode {
   const settings = get() as SettingsReach;
-  const layout = settings.savedLayouts?.find((l) => l.id === settings.workspacePrefs?.defaultLayoutId);
-  return layout ? instantiateLayout(layout.splitTree) : fallback();
+  const saved = settings.savedLayouts?.find((l) => l.id === settings.workspacePrefs?.defaultLayoutId);
+  if (saved) return instantiateLayout(saved.splitTree);
+  // A store that has no settings slice at all (a unit test building this slice
+  // on its own) still gets the shipped shape rather than a crash.
+  return buildWorkspaceTree(
+    settings.workspacePrefs?.newWorkspacePanes ?? 3,
+    settings.workspacePrefs?.newWorkspaceLayout ?? 'grid',
+  );
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────

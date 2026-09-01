@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import { QuickLaunchProfile, SavedLayout } from '../../shared/types';
 import { INDEX_MODIFIER_CHOICES, IndexModifiers, reconcileIndexModifiers } from '../utils/index-shortcuts';
+import type { WorkspaceLayout } from './split-utils';
 import {
   Language,
   applyUserLocales,
@@ -406,6 +407,27 @@ export interface WorkspacePrefs {
    * still on disk.
    */
   restoreClaudeSessions: boolean;
+  /**
+   * How many terminal panes a new workspace opens with, and how they sit
+   * (issue #212).
+   *
+   * These exist because the answer used to be hard-coded in two places that
+   * disagreed: the sidebar `+` built a three-pane T, `wmux new-workspace` built
+   * one pane, and nothing in Settings or config.toml could change either. A
+   * user who wanted a different arrangement rebuilt it by hand every time.
+   *
+   * Ranked BELOW `defaultLayoutId`, not beside it: a saved layout carries each
+   * pane's shell, cwd and startup commands, so it is a strictly richer answer
+   * to the same question. These two only decide what a workspace looks like
+   * when no layout is marked default — which is every install by default.
+   *
+   * `3` / `grid` is the T that has always shipped, so nobody's sidebar `+`
+   * changes. `wmux new-workspace` does change, from one pane to three, which is
+   * the consistency #212 asked for; `--panes 1` restores the old CLI behaviour
+   * for a script that depends on it.
+   */
+  newWorkspacePanes: number;
+  newWorkspaceLayout: WorkspaceLayout;
 }
 
 export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
@@ -419,6 +441,8 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   defaultLayoutId: null,
   restoreClaudeSessions: false,
   detectAgentScreens: true,
+  newWorkspacePanes: 3,
+  newWorkspaceLayout: 'grid',
 };
 
 // ─── Terminal settings ────────────────────────────────────────────────────────
@@ -500,6 +524,21 @@ export interface BrowserPrefs {
    * would change behaviour for everyone on upgrade.
    */
   openLinksExternally: boolean;
+  /**
+   * The page a workspace's browser panel opens on when the workspace has not
+   * been anywhere yet (issue #212). Distinct from `searchEngine`, which decides
+   * where a TYPED non-URL goes; this is the start page.
+   *
+   * Empty means "wmux's own" — the repo page BrowserPane already falls back to.
+   * That fallback existed all along and a restored workspace never reached it:
+   * the panel is handed `workspace.browserUrl`, the save path writes `|| ''`
+   * for a workspace whose browser was never opened, and `''` is not `undefined`
+   * so a default parameter does not fire on it. So a NEW workspace showed the
+   * repo page and a RESTORED one showed a blank panel, which is the "the
+   * browser panel opens blank" half of #212 — a bug wearing a feature request's
+   * clothes.
+   */
+  defaultUrl: string;
 }
 
 export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
@@ -507,6 +546,7 @@ export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
   devToolsIcon: 'default',
   openOnStartup: true,
   openLinksExternally: false,
+  defaultUrl: '',
 };
 
 // ─── Prompt settings (issue #207) ─────────────────────────────────────────────

@@ -3,8 +3,7 @@ import { useStore } from './store';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
 import SplitContainer from './components/SplitPane/SplitContainer';
-import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, buildDefaultSplitTree } from './store/split-utils';
-import { resolveDefaultSplitTree } from './store/workspace-slice';
+import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent } from './store/split-utils';
 import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
 import { aggregateProgress } from './store/progress-slice';
 import { isDiffTabDismissed } from './store/surface-slice';
@@ -109,7 +108,7 @@ let autoOpenDevPort = true;
  * deleting a key (or the whole section) from the file reverts its effect instead
  * of leaving the previous run's values sticky until restart.
  */
-function applyUserConfigBrowser(browser: any): void {
+function applyUserConfigBrowser(state: any, browser: any): void {
   activeDevPorts = DEFAULT_DEV_PORTS;
   autoOpenDevPort = true;
   if (!browser) return;
@@ -117,6 +116,24 @@ function applyUserConfigBrowser(browser: any): void {
     activeDevPorts = mergeDevPorts(DEFAULT_DEV_PORTS, browser.devPorts);
   }
   if (typeof browser.autoOpen === 'boolean') autoOpenDevPort = browser.autoOpen;
+  // The start page (#212) is a persisted PREF, not a module-level runtime value
+  // like the two above, because Settings offers it too — so file-wins-at-startup
+  // and app-wins-at-runtime both fall out of writing it to the same place.
+  if (typeof browser.defaultUrl === 'string') state.setBrowserPrefs({ defaultUrl: browser.defaultUrl });
+}
+
+/**
+ * Apply `[workspace]` (issue #212): how many panes a new workspace opens with
+ * and how they sit. Same file-wins-at-startup contract as the sections above —
+ * written into the pref every entry point already reads, so the sidebar `+`,
+ * Ctrl+N, first launch and `wmux new-workspace` cannot diverge again.
+ */
+function applyUserConfigWorkspace(state: any, workspace: any): void {
+  if (!workspace) return;
+  const patch: any = {};
+  if (typeof workspace.panes === 'number') patch.newWorkspacePanes = workspace.panes;
+  if (typeof workspace.layout === 'string') patch.newWorkspaceLayout = workspace.layout;
+  if (Object.keys(patch).length) state.setWorkspacePrefs(patch);
 }
 
 type StoreAction = (...args: any[]) => void;
@@ -515,6 +532,10 @@ export default function App() {
   const customBgOpacity = customBgLayerAlpha(appearancePrefs, transparencyPending);
   // Browser panel auto-opens on startup unless disabled in Settings (issue #22).
   const [browserOpen, setBrowserOpen] = useState(() => useStore.getState().browserPrefs.openOnStartup);
+  // Subscribed rather than read once: the start page (#212) can change under a
+  // `wmux reload-config`, and a panel already mounted for a workspace that has
+  // been nowhere should pick it up.
+  const browserPrefs = useStore((s) => s.browserPrefs);
   const [browserWidth, setBrowserWidth] = useState(420);
   const [isResizingBrowser, setIsResizingBrowser] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
@@ -604,15 +625,13 @@ export default function App() {
       // 'fresh' means main deliberately wants this window empty — a named
       // session must not be cloned into it (issue #143).
       if (outcome !== 'fresh' && await restoreNamedSession(t, setSidebarWidth)) return;
-      // Nothing to restore — create the default workspace. Explicitly resolves
-      // to the configured default layout if one is set, else the classic
-      // 3-pane factory layout — first-launch's own historical baseline,
-      // distinct from Ctrl+N/CLI's single-pane one (see resolveDefaultSplitTree).
+      // Nothing to restore — create the default workspace. No splitTree here on
+      // purpose: createWorkspace resolves it, and since #212 that resolution is
+      // the SAME one every other entry point gets (the default layout if one is
+      // marked, else the configured pane count/arrangement). Passing a shape in
+      // is what let first launch, the sidebar `+` and the CLI disagree.
       if (useStore.getState().workspaces.length === 0) {
-        createWorkspace({
-          title: t('app.firstSessionTitle', 'Session 1'),
-          splitTree: resolveDefaultSplitTree(useStore.getState, buildDefaultSplitTree),
-        });
+        createWorkspace({ title: t('app.firstSessionTitle', 'Session 1') });
       }
     })();
   }, []);
@@ -647,7 +666,8 @@ export default function App() {
     const apply = (result: any) => {
       const state = useStore.getState();
       applyUserConfigTerminal(state, result?.terminal);
-      applyUserConfigBrowser(result?.browser);
+      applyUserConfigBrowser(state, result?.browser);
+      applyUserConfigWorkspace(state, result?.workspace);
       // `[keys]` remaps (issue #146) — main has already parsed and validated
       // them, so this is a straight hand-off to the terminal key handler.
       setKeyRemaps(result?.keys);
@@ -1050,9 +1070,7 @@ export default function App() {
     const wsCount = useStore.getState().workspaces.length;
     const newId = createWorkspace({
       title: t('app.sessionTitle', 'Session {n}').replace('{n}', String(wsCount + 1)),
-      // Sidebar "+" button's own historical baseline (3-pane), distinct from
-      // Ctrl+N/CLI — see resolveDefaultSplitTree's doc comment.
-      splitTree: resolveDefaultSplitTree(useStore.getState, buildDefaultSplitTree),
+      // No splitTree: createWorkspace resolves the one shared answer (#212).
     });
     selectWorkspace(newId);
   }, [createWorkspace, selectWorkspace, t]);
@@ -1606,7 +1624,14 @@ export default function App() {
                 >
                   <BrowserPane
                     surfaceId={`browser-${ws.id}`}
-                    initialUrl={ws.browserUrl}
+                    // `|| undefined`, not `??` (issue #212). A workspace that has
+                    // never opened its browser is saved with `browserUrl: ''`,
+                    // and `''` is a value — it satisfies `??` and defeats
+                    // BrowserPane's default parameter, so a RESTORED workspace
+                    // opened the panel blank while a new one showed the start
+                    // page. Falling through empty is what makes the two agree,
+                    // and what gives `defaultUrl` somewhere to apply.
+                    initialUrl={ws.browserUrl || browserPrefs.defaultUrl || undefined}
                     onUrlChange={(url) => { updateWorkspaceMetadata(ws.id, { browserUrl: url }); }}
                   />
                 </div>

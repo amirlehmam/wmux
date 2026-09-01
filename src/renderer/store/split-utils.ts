@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { SplitNode, PaneId, SurfaceId, SurfaceType, SurfaceRef } from '../../shared/types';
+import { SplitNode, PaneId, SurfaceId, SurfaceType, SurfaceRef, WorkspaceLayout } from '../../shared/types';
 
 // ─── Leaf factory ────────────────────────────────────────────────────────────
 
@@ -17,24 +17,91 @@ export function createLeaf(
   };
 }
 
-// ─── buildDefaultSplitTree (the sidebar "+" / first-launch factory layout) ───
-// wmux's built-in "factory" new-workspace layout: a top row split into two
-// panes, plus one pane below.
-export function buildDefaultSplitTree(): SplitNode {
+// ─── buildWorkspaceTree (what a new workspace starts as) ─────────────────────
+/**
+ * How the panes of a fresh workspace are arranged (issue #212).
+ *
+ * The shape was hard-coded twice, differently: the sidebar `+` built a fixed
+ * three-pane T and `wmux new-workspace` built a single leaf. A user with a
+ * layout in mind therefore had to rebuild it by hand after every new workspace,
+ * and could not tell which entry point they were about to get.
+ *
+ *  - `grid`    balanced rows. This is the default and, at three panes, is
+ *              byte-for-byte the T that shipped: two across the top, one below.
+ *  - `columns` all side by side.
+ *  - `rows`    all stacked.
+ *  - `left`    one full-height pane on the left, the rest stacked to its right.
+ *  - `down`    one full-width pane on top, the rest side by side below.
+ *
+ * `single` is deliberately NOT a layout — it is `panes = 1`, and every layout
+ * collapses to one leaf there. It is accepted as a spelling in config.toml
+ * (that is the word the issue used) and normalised away before it reaches here,
+ * so there is exactly one representation of "one pane" in the tree code.
+ *
+ * The union itself lives in shared/types.ts, because main validates the config
+ * file and the renderer builds the tree.
+ */
+export type { WorkspaceLayout };
+
+/**
+ * Upper bound on a configured pane count.
+ *
+ * Not a technical limit — the tree is arbitrarily deep. It is a guard on a
+ * value that comes from a hand-edited TOML file and is acted on by SPAWNING A
+ * SHELL PER PANE: `panes = 500` is a typo, and honouring it means 500 PTYs on
+ * a keypress. Eight is past any layout anyone has asked for.
+ */
+export const MAX_WORKSPACE_PANES = 8;
+
+/** N panes in a row (or column), all the same size. */
+function chainPanes(direction: 'horizontal' | 'vertical', count: number): SplitNode {
+  if (count <= 1) return createLeaf();
+  return {
+    type: 'branch',
+    direction,
+    // 1/N for the first pane, and the rest split what remains — which is what
+    // makes three panes thirds rather than a half and two quarters.
+    ratio: 1 / count,
+    children: [createLeaf(), chainPanes(direction, count - 1)],
+  };
+}
+
+function gridPanes(count: number): SplitNode {
+  if (count <= 1) return createLeaf();
+  if (count === 2) return chainPanes('horizontal', 2);
+  // Rows, top-heavy on an odd count. At 3 this is the shipped T exactly, which
+  // is the property that lets this replace buildDefaultSplitTree outright.
+  const top = Math.ceil(count / 2);
   return {
     type: 'branch',
     direction: 'vertical',
     ratio: 0.5,
-    children: [
-      {
-        type: 'branch',
-        direction: 'horizontal',
-        ratio: 0.5,
-        children: [createLeaf(), createLeaf()],
-      },
-      createLeaf(),
-    ],
+    children: [chainPanes('horizontal', top), chainPanes('horizontal', count - top)],
   };
+}
+
+export function buildWorkspaceTree(panes: number, layout: WorkspaceLayout = 'grid'): SplitNode {
+  // Clamped rather than rejected: this runs on the create path, where the only
+  // alternative to a usable number is no workspace at all.
+  const n = Math.min(Math.max(Math.round(panes) || 1, 1), MAX_WORKSPACE_PANES);
+  if (n === 1) return createLeaf();
+  switch (layout) {
+    case 'columns': return chainPanes('horizontal', n);
+    case 'rows':    return chainPanes('vertical', n);
+    case 'left':
+      return { type: 'branch', direction: 'horizontal', ratio: 0.5, children: [createLeaf(), chainPanes('vertical', n - 1)] };
+    case 'down':
+      return { type: 'branch', direction: 'vertical', ratio: 0.5, children: [createLeaf(), chainPanes('horizontal', n - 1)] };
+    default:        return gridPanes(n);
+  }
+}
+
+// wmux's built-in "factory" new-workspace layout: a top row split into two
+// panes, plus one pane below. Kept as a name because it is what every caller
+// and test already asks for; it is now one point in buildWorkspaceTree's space
+// rather than a separate construction that could drift from it.
+export function buildDefaultSplitTree(): SplitNode {
+  return buildWorkspaceTree(3, 'grid');
 }
 
 // ─── instantiateLayout (saved default/preset layouts) ────────────────────────

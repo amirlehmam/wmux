@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { create } from 'zustand';
 import { createWorkspaceSlice, WorkspaceSlice } from '../../src/renderer/store/workspace-slice';
 import { createSurfaceSlice, SurfaceSlice } from '../../src/renderer/store/surface-slice';
+import { createLeaf } from '../../src/renderer/store/split-utils';
 import { WorkspaceId, PaneId, SurfaceId, SplitNode } from '../../src/shared/types';
 
 type TestStore = WorkspaceSlice & SurfaceSlice;
@@ -25,7 +26,8 @@ describe('duplicateSurface', () => {
 
   beforeEach(() => {
     useStore = makeStore();
-    workspaceId = useStore.getState().createWorkspace({ title: 'Test WS' });
+    // Explicitly one pane — the default is a setting since #212.
+    workspaceId = useStore.getState().createWorkspace({ title: 'Test WS', splitTree: createLeaf() });
     const tree = useStore.getState().workspaces[0].splitTree;
     paneId = (tree as Extract<SplitNode, { type: 'leaf' }>).paneId;
   });

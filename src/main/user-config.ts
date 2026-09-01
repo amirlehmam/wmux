@@ -27,9 +27,14 @@
  *   [appearance]
  *   ui-theme = "light"   # light | dark | system (issue #67)
  *
+ *   [workspace]                # what a NEW workspace starts as (issue #212)
+ *   panes  = 3                 # 1-8 terminal panes
+ *   layout = "grid"            # grid | columns | rows | left | down | single
+ *
  *   [browser]
  *   dev-ports = [8501, 4321]   # extra dev-server ports, merged with built-in defaults
  *   auto-open = true           # auto-navigate the browser to a newly-detected dev port
+ *   default-url = "http://localhost:3000"   # start page for a workspace's browser panel
  *
  *   [remote]
  *   upload-on-paste = true     # scp a pasted image to the host an ssh pane is on
@@ -48,6 +53,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { parseToml, TomlTable, TomlValue } from './toml-parser';
 import { parseKeyRemaps, KeyRemap } from '../shared/key-sequence';
+import { WorkspaceLayout } from '../shared/types';
 
 export interface UserColorScheme {
   background?: string;
@@ -75,12 +81,28 @@ export interface UserConfig {
   appearance?: {
     uiTheme?: UiTheme;
   };
+  /**
+   * What a new workspace starts as (issue #212). Ranked below a saved default
+   * layout, which carries per-pane shell/cwd/commands and so answers the same
+   * question more completely.
+   */
+  workspace?: {
+    /** Terminal panes in a new workspace, 1-8. */
+    panes?: number;
+    /** How those panes are arranged. `single` normalises to panes = 1. */
+    layout?: WorkspaceLayout;
+  };
   /** Browser surface behavior — dev-server port detection & auto-navigation. */
   browser?: {
     /** Extra ports (merged with the built-in defaults) that count as dev servers. */
     devPorts?: number[];
     /** Auto-navigate the workspace browser to a newly-detected dev port (default true). */
     autoOpen?: boolean;
+    /**
+     * Start page for a workspace's browser panel (issue #212). Distinct from
+     * the search engine, which decides where a typed non-URL goes.
+     */
+    defaultUrl?: string;
   };
   /**
    * Remote file upload — what paste and drop do when the pane is inside ssh.
@@ -328,7 +350,59 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
   return undefined;
 }
 
-// Browser dev-port detection: `[browser] dev-ports = [...]`, `auto-open = bool`.
+/**
+ * New-workspace shape: `[workspace] panes = N`, `layout = "..."` (issue #212).
+ *
+ * `single` is accepted and normalised to `panes = 1` — it is the word the issue
+ * used, and refusing it would make the setting look broken to the person who
+ * asked for it. It is normalised HERE rather than carried through, so the
+ * renderer's builder has exactly one representation of "one pane".
+ *
+ * A count outside 1-8 is an error the user gets told about, and is then clamped
+ * rather than dropped: `panes = 40` is a typo, and both silently opening one
+ * pane and dutifully spawning forty shells are worse answers than eight.
+ */
+const WORKSPACE_LAYOUTS: readonly WorkspaceLayout[] = ['grid', 'columns', 'rows', 'left', 'down'];
+const MAX_CONFIG_PANES = 8;
+
+function mapWorkspaceSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['workspace']> | undefined {
+  const workspace = asTable(root.workspace);
+  if (!workspace) return undefined;
+
+  const out: NonNullable<UserConfig['workspace']> = {};
+
+  const layoutRaw = asString(workspace.layout);
+  if (layoutRaw === 'single') {
+    out.panes = 1;
+  } else if (layoutRaw !== undefined) {
+    if ((WORKSPACE_LAYOUTS as readonly string[]).includes(layoutRaw)) {
+      out.layout = layoutRaw as WorkspaceLayout;
+    } else {
+      errors.push(`workspace.layout: "${layoutRaw}" not one of ${WORKSPACE_LAYOUTS.join('|')}|single`);
+    }
+  }
+
+  const panesRaw = workspace.panes;
+  if (panesRaw !== undefined) {
+    const panes = asNumber(panesRaw);
+    if (panes === undefined || !Number.isFinite(panes)) {
+      errors.push('workspace.panes: expected a number');
+    } else {
+      const clamped = Math.min(Math.max(Math.round(panes), 1), MAX_CONFIG_PANES);
+      if (clamped !== panes) {
+        errors.push(`workspace.panes: ${panes} is outside 1-${MAX_CONFIG_PANES}, using ${clamped}`);
+      }
+      // An explicit count wins over `layout = "single"`, which is only a
+      // shorthand for one — writing both means the user meant the number.
+      out.panes = clamped;
+    }
+  }
+
+  return Object.keys(out).length ? out : undefined;
+}
+
+// Browser dev-port detection: `[browser] dev-ports = [...]`, `auto-open = bool`,
+// plus the panel's start page `default-url` (issue #212).
 function mapBrowserSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['browser']> | undefined {
   const browser = asTable(root.browser);
   if (!browser) return undefined;
@@ -353,7 +427,38 @@ function mapBrowserSection(root: TomlTable, errors: string[]): NonNullable<UserC
   const autoOpen = asBool(browser['auto-open'] ?? browser.autoOpen);
   if (autoOpen !== undefined) out.autoOpen = autoOpen;
 
+  const defaultUrl = mapDefaultUrl(browser['default-url'] ?? browser.defaultUrl, errors);
+  if (defaultUrl !== undefined) out.defaultUrl = defaultUrl;
+
   return Object.keys(out).length ? out : undefined;
+}
+
+/** `[browser] default-url` (issue #212). Returns undefined when nothing valid was set. */
+function mapDefaultUrl(raw: TomlValue | undefined, errors: string[]): string | undefined {
+  if (raw === undefined) return undefined;
+  const url = asString(raw)?.trim();
+  if (url === undefined) {
+    errors.push('browser.default-url: expected a string');
+    return undefined;
+  }
+  // Explicitly empty is a valid answer — "no start page of my own". Carried
+  // rather than dropped so `wmux reload-config` can UNSET it; dropping it would
+  // leave the previous value in place until restart.
+  if (url === '') return '';
+  // A bare `localhost:3000` or `example.com` is the likeliest thing to type
+  // here, and a webview handed one loads nothing and says nothing. Naming a
+  // scheme is the whole fix, so say that rather than just refusing.
+  //
+  // The `//` is load-bearing, not decoration: `localhost:3000` satisfies a
+  // scheme-shaped `^[a-z][a-z0-9+.-]*:` perfectly — `localhost` IS a legal
+  // scheme name — so a check without it accepts exactly the mistake it was
+  // written to catch. `about:` is allowed beside it because `about:blank` is a
+  // reasonable thing to want and is the one common URL with no authority.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && !/^about:/i.test(url)) {
+    errors.push(`browser.default-url: "${url}" has no scheme — write http:// or https://`);
+    return undefined;
+  }
+  return url;
 }
 
 /**
@@ -403,6 +508,9 @@ function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
 
   const appearance = mapAppearanceSection(root, errors);
   if (appearance) out.appearance = appearance;
+
+  const workspace = mapWorkspaceSection(root, errors);
+  if (workspace) out.workspace = workspace;
 
   const browser = mapBrowserSection(root, errors);
   if (browser) out.browser = browser;

@@ -40,6 +40,27 @@ export default function BrowserSettings() {
         />
       </div>
 
+      <div className="settings-row">
+        <label className="settings-label" htmlFor="browser-default-url">
+          {t('settings.browser.defaultUrl', 'Start page')}
+        </label>
+        <input
+          id="browser-default-url"
+          type="text"
+          className="settings-input"
+          value={browserPrefs.defaultUrl}
+          onChange={(e) => setBrowserPrefs({ defaultUrl: e.target.value })}
+          placeholder="http://localhost:3000"
+          spellCheck={false}
+        />
+      </div>
+      <p className="settings-hint">
+        {t(
+          'settings.browser.defaultUrlHint',
+          'Where a workspace\'s browser panel opens before it has been anywhere. Needs a scheme (http:// or https://). Leave empty for wmux\'s own page. Also settable in ~/.wmux/config.toml as [browser] default-url.',
+        )}
+      </p>
+
       <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.browser.linksSection', 'Links')}</h3>
 
