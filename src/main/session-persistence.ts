@@ -80,7 +80,7 @@ export function saveSession(data: SessionData): void {
     } catch {
       // Target locked. Now — and only now — is the unlink worth its window,
       // because the alternative is not saving at all.
-      try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch {}
+      try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch { /* the rename below reports */ }
       fs.renameSync(tmpFile, SESSION_FILE);
     }
   } catch (err) {
