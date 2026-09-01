@@ -313,7 +313,26 @@ export function resolveShellForCwd(shell: string, cwd: string | undefined): stri
 // Resolve the working dir handed to pty.spawn, guaranteeing it is a directory
 // that exists — otherwise CreateProcess fails with error 267 (ERROR_DIRECTORY)
 // and the pane dies with an opaque "Cannot create process, error code: 267".
-// Returns undefined (node-pty's own default) when there is nothing usable.
+//
+// NEVER returns undefined. That used to be the answer when nothing named a
+// directory, and it meant node-pty's default: inherit wmux.exe's OWN working
+// directory. #205 already recorded what that is in practice — for a taskbar or
+// Start-menu launch, `C:\Windows\system32` — and treated it as the status quo
+// worth preserving. #214 is what preserving it cost. After a crash the OS
+// relaunches wmux with cwd `C:\Windows\system32`, every restored pane with no
+// remembered directory of its own starts there, and Claude Code files its
+// session transcript under `system32` — so `claude --continue` from the project
+// folder answers "no saved sessions" and the history looks lost when it is only
+// misfiled. The user's report calls this the one that hurts most, and it is not
+// really a fallback at all: it hands the pane wherever wmux happened to be
+// started from, which no user has ever chosen or can predict.
+//
+// %USERPROFILE% instead — the same fallback every other branch below already
+// uses for a cwd it cannot honour. Nothing that names a directory is affected:
+// a split inherits its parent's, "Open in wmux" and `--cwd` pass one outright,
+// a restored session carries the one it was frozen at, and `defaultCwd` (#205)
+// still wins over all of this. Only the case where the answer was previously
+// "wherever wmux.exe was launched from" changes.
 //
 // This is also the single place a HUMAN-typed path lands (the default starting
 // path setting, issue #205), so `~` and `%VAR%` are expanded here rather than in
@@ -323,11 +342,10 @@ export function resolveShellForCwd(shell: string, cwd: string | undefined): stri
 // buildShellArgs above still see the raw string, which is what keeps `~` on a
 // wsl.exe pane meaning "the distro's home" (`--cd ~`) instead of a Win32 path
 // that distro cannot open.
-export function resolveSpawnCwd(raw: string | undefined): string | undefined {
+export function resolveSpawnCwd(raw: string | undefined): string {
   const cwd = expandPathVars(raw ?? '', process.env);
-  if (!cwd) return undefined;
-
   const fallback = process.env.USERPROFILE || 'C:\\';
+  if (!cwd) return fallback;
 
   // POSIX/WSL cwd: not a valid Win32 working dir at all (issue #60).
   if (isPosixPath(cwd)) return fallback;

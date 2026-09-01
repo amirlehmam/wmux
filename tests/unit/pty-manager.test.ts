@@ -508,8 +508,11 @@ describe('resolveSpawnCwd', () => {
     expect(resolveSpawnCwd('/home/user/project')).toBe(home);
   });
 
-  it('passes undefined through (node-pty default)', () => {
-    expect(resolveSpawnCwd(undefined)).toBeUndefined();
+  // Deliberately NOT node-pty's default any more (#214). Its default is "inherit
+  // the parent process's cwd", and wmux's own cwd is whatever the launcher gave
+  // it — C:\Windows\system32 for a Start-menu launch or an OS crash relaunch.
+  it('falls back for no cwd, rather than inheriting wmux\'s own (issue #214)', () => {
+    expect(resolveSpawnCwd(undefined)).toBe(home);
   });
 });
 /**

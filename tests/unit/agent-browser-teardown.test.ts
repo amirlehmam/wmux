@@ -624,8 +624,15 @@ describe('app quit wiring', () => {
   });
 
   it('re-enters exactly once, so the second pass cannot prevent the quit again', () => {
-    expect(willQuit()).toContain('if (agentBrowserTornDown || !agentBrowserNeedsTeardown()) return;');
+    const body = willQuit();
+    // Two separate facts since #214, because the quit is now deferred for PTY
+    // draining as well as for agent-browser: "have the sessions been closed"
+    // and "is a teardown in flight" stopped being the same question, and
+    // conflating them let a second pass shorten the first pass's drain.
+    expect(body).toContain('!agentBrowserTornDown && agentBrowserNeedsTeardown()');
+    expect(body).toContain('alreadyDeferred: quitDeferred');
     expect(INDEX).toContain('let agentBrowserTornDown = false;');
+    expect(INDEX).toContain('let quitDeferred = false;');
   });
 
   /**
@@ -648,14 +655,38 @@ describe('app quit wiring', () => {
    */
   it('force-quits if the teardown itself never returns', () => {
     const body = willQuit();
-    expect(body).toMatch(/setTimeout\(\(\) => app\.exit\(0\), QUIT_TEARDOWN_BUDGET_MS \+ [\d_]+\)/);
+    expect(body).toMatch(/setTimeout\(leave, QUIT_TEARDOWN_BUDGET_MS \+ [\d_]+\)/);
     expect(body).toContain('clearTimeout(forceQuit)');
   });
 
   // A machine that never opened an agent pane must not pay a deferred quit for
-  // a feature it does not use.
+  // a feature it does not use. planQuit owns that decision now — and answers
+  // "nothing outstanding" only when there are no PTYs EITHER (issue #214);
+  // quit-sequence.test.ts pins the decision itself.
   it('does not defer at all when there is nothing to tear down', () => {
-    expect(willQuit()).toContain('!agentBrowserNeedsTeardown()');
+    const body = willQuit();
+    expect(body).toContain('agentBrowserPending, alreadyDeferred: quitDeferred');
+    expect(body).toContain('if (!plan.defer) return;');
+  });
+
+  /**
+   * Issue #214. Every one of the six reported 0xc0000409 aborts sits on a
+   * `will-quit` line in the reporter's main.log — the process reached shutdown
+   * and died inside this handler, racing node-pty's ConPTY exit callbacks
+   * against Node's environment teardown. Two properties close it, and both are
+   * easy to delete by accident while refactoring this handler:
+   */
+  it('drains before leaving, and leaves via app.exit rather than unwinding', () => {
+    const body = willQuit();
+    // The drain: the callbacks get a healthy environment to land in.
+    expect(body).toMatch(/setTimeout\(leave, plan\.drainMs\)/);
+    // The hard exit: whatever did not land never sees the teardown at all.
+    expect(body).toContain('app.exit(0)');
+    // And app.quit() must NOT come back — it re-enters this handler and unwinds,
+    // which is precisely the path that aborts. Comments stripped first: the
+    // code says why it is not app.quit(), and naming it there is not using it.
+    const code = body.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n');
+    expect(code).not.toContain('app.quit()');
   });
 });
 

@@ -48,17 +48,41 @@ export function ensureDirectories(): void {
   }
 }
 
+/**
+ * Write the auto-session, leaving a readable file at every instant (issue #214).
+ *
+ * This was described as an atomic write and was not one. It wrote a temp file,
+ * then `unlink`ed the live `session.json`, then renamed — so between those last
+ * two calls there was no session file on disk at all. Die in that window and
+ * the next launch finds nothing to restore: it falls back to a fresh Session 1
+ * or to an older named session, which re-mints every pane and surface id and so
+ * loses the tab names the user gave them. That is #214's "surfaces come back
+ * with new ids and lose their customTitle", and it needs no explanation beyond
+ * a process that aborts at an unpredictable moment — which is the rest of #214.
+ *
+ * The window was never necessary. The `unlink` is there for a comment that says
+ * "on Windows, rename won't overwrite", and that is true of the Win32
+ * `MoveFileW` but not of Node: libuv's `uv_fs_rename` calls `MoveFileExW` with
+ * `MOVEFILE_REPLACE_EXISTING`, so a plain `renameSync` over an existing file is
+ * both legal and atomic. The old two-step survives only as a FALLBACK, for the
+ * one thing that genuinely can fail the single-step form — a transient sharing
+ * violation from antivirus or a sync client holding the target open, which on a
+ * path under OneDrive is not hypothetical.
+ */
 export function saveSession(data: SessionData): void {
   ensureDirectories();
-  // Atomic write: write to temp file, then rename
   const tmpFile = SESSION_FILE + '.tmp';
   try {
     fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-    // On Windows, rename won't overwrite, so remove first
-    if (fs.existsSync(SESSION_FILE)) {
-      fs.unlinkSync(SESSION_FILE);
+    try {
+      // One step: the old file is replaced, never absent.
+      fs.renameSync(tmpFile, SESSION_FILE);
+    } catch {
+      // Target locked. Now — and only now — is the unlink worth its window,
+      // because the alternative is not saving at all.
+      try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch {}
+      fs.renameSync(tmpFile, SESSION_FILE);
     }
-    fs.renameSync(tmpFile, SESSION_FILE);
   } catch (err) {
     // Clean up temp file if it exists
     try { fs.unlinkSync(tmpFile); } catch {}

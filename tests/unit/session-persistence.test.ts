@@ -269,6 +269,96 @@ describe('handleVersionChange (issue #35)', () => {
 // Issue #145 already shipped once as "backupAutoSession copies a subset of
 // fields": browserUrl/browserWidth/pinned were silently dropped. The explorer
 // fields (#Task 4) are the same lifecycle risk, so they get the same coverage.
+// ─────────────────────────────────────────────────────────────────────────────
+// saveSession's atomicity (issue #214).
+//
+// It called itself an atomic write while unlinking the live session.json before
+// renaming the temp over it — a window in which no session file existed. A
+// process that aborts there (the rest of #214) leaves the next launch with
+// nothing to restore, so it comes up as a fresh Session 1 and every pane and
+// surface id is re-minted: "surfaces come back with new ids and lose their
+// customTitle".
+// ─────────────────────────────────────────────────────────────────────────────
+describe('saveSession never leaves the session file missing', () => {
+  const APPDATA_OVERRIDE = path.join(os.tmpdir(), 'wmux-atomic-test-' + process.pid);
+  let mod: typeof import('../../src/main/session-persistence');
+  let savedAppData: string | undefined;
+  const leaf = { type: 'leaf', paneId: 'pane-1', surfaces: [], activeSurfaceIndex: 0 };
+
+  function sessionOf(title: string): any {
+    return {
+      version: 1,
+      windows: [{
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        sidebarWidth: 260,
+        activeWorkspaceId: null,
+        workspaces: [{ id: 'ws-1', title, pinned: false, shell: 'pwsh', splitTree: leaf }],
+      }],
+    };
+  }
+
+  beforeEach(async () => {
+    savedAppData = process.env.APPDATA;
+    process.env.APPDATA = APPDATA_OVERRIDE;
+    delete process.env.WMUX_INSTANCE;
+    vi.resetModules();
+    mod = await import('../../src/main/session-persistence');
+    mod.ensureDirectories();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (savedAppData === undefined) delete process.env.APPDATA;
+    else process.env.APPDATA = savedAppData;
+    fs.rmSync(APPDATA_OVERRIDE, { recursive: true, force: true });
+  });
+
+  it('overwrites in a single rename, never unlinking the live file first', () => {
+    mod.saveSession(sessionOf('first'));
+    const unlink = vi.spyOn(fs, 'unlinkSync');
+    mod.saveSession(sessionOf('second'));
+    // The one call that would open the window. Its absence IS the fix.
+    expect(unlink).not.toHaveBeenCalledWith(mod.getSessionPath());
+    expect(mod.loadSession()!.windows[0].workspaces[0].title).toBe('second');
+  });
+
+  it('still saves when the target is locked, falling back to unlink + rename', () => {
+    // A sharing violation from antivirus or a sync client holding session.json
+    // open. Not saving at all is worse than a brief window, so the old two-step
+    // survives here — and only here.
+    mod.saveSession(sessionOf('first'));
+    const real = fs.renameSync;
+    let firstAttempt = true;
+    vi.spyOn(fs, 'renameSync').mockImplementation(((from: any, to: any) => {
+      if (firstAttempt) {
+        firstAttempt = false;
+        const err: any = new Error('EPERM: operation not permitted, rename');
+        err.code = 'EPERM';
+        throw err;
+      }
+      return real(from, to);
+    }) as typeof fs.renameSync);
+
+    mod.saveSession(sessionOf('second'));
+    expect(mod.loadSession()!.windows[0].workspaces[0].title).toBe('second');
+  });
+
+  it('leaves the previous session readable when the write fails outright', () => {
+    mod.saveSession(sessionOf('good'));
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((() => {
+      const err: any = new Error('ENOSPC: no space left on device');
+      err.code = 'ENOSPC';
+      throw err;
+    }) as typeof fs.writeFileSync);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => mod.saveSession(sessionOf('doomed'))).not.toThrow();
+    vi.restoreAllMocks();
+    // The point: a failed save costs the user the newest state, not all of it.
+    expect(mod.loadSession()!.windows[0].workspaces[0].title).toBe('good');
+  });
+});
+
 describe('explorer panel state persistence', () => {
   const APPDATA_OVERRIDE = path.join(os.tmpdir(), 'wmux-explorer-test-' + process.pid);
   let mod: typeof import('../../src/main/session-persistence');

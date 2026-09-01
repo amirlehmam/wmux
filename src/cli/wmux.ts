@@ -659,12 +659,29 @@ async function cmdMarkdown(args: string[]): Promise<void> {
   }
 }
 
+/**
+ * `--panes` / `--layout` exist because this command's shape changed (issue #212).
+ *
+ * It used to open exactly one pane while the sidebar `+` opened three, and
+ * neither was configurable. Both now read the same setting, whose default is
+ * three — the sidebar's old behaviour, since that is the one a person sees. A
+ * script that depended on getting one pane says `--panes 1` and is unaffected
+ * by whatever the user later puts in config.toml, which is the better contract
+ * for a script anyway.
+ */
 async function cmdNewWorkspace(args: string[]): Promise<void> {
   const params: any = {};
   for (let i = 1; i < args.length; i += 2) {
     if (args[i] === '--title') params.title = args[i + 1];
     if (args[i] === '--shell') params.shell = args[i + 1];
     if (args[i] === '--cwd') params.cwd = args[i + 1];
+    if (args[i] === '--panes') params.panes = parseInt(args[i + 1], 10);
+    if (args[i] === '--layout') params.layout = args[i + 1];
+  }
+  // A non-numeric --panes must not travel as NaN: it serialises to `null` in
+  // JSON and arrives looking like a deliberate value.
+  if (params.panes !== undefined && !Number.isFinite(params.panes)) {
+    fail('new-workspace', COMMAND_SPECS['new-workspace'], '--panes takes a number from 1 to 8');
   }
   print(await sendV2('workspace.create', params));
 }
@@ -1324,6 +1341,48 @@ function readDiagnosticsTail(lines: number): string[] {
 }
 
 /**
+ * Was this crash a SHUTDOWN crash? (issue #214)
+ *
+ * The single most useful fact about a wmux abort, and until now the report made
+ * you derive it by hand. #214 arrived with six crashes and a `main.log`, filed
+ * as a runtime regression in the file explorer. Every one of the six actually
+ * sat on a `will-quit` line — the process had reached shutdown and died inside
+ * it — but seeing that meant converting six local timestamps to UTC and
+ * eyeballing them against the log. Nobody should have to do that twice, least
+ * of all to find out their bug report is about a different bug.
+ *
+ * Both sides parse as absolute instants — the Event Log times carry a local
+ * offset, `main.log`'s carry `Z` — so they are compared as epoch milliseconds
+ * and never as text. A window rather than an exact match, because the crash
+ * lands somewhere inside the handler rather than on its first statement.
+ */
+const SHUTDOWN_WINDOW_MS = 30_000;
+
+export function correlateShutdown(
+  eventTime: string,
+  diagnostics: string[],
+): { event: string; deltaMs: number } | null {
+  const crashed = Date.parse(eventTime);
+  if (!Number.isFinite(crashed)) return null;
+
+  let best: { event: string; deltaMs: number } | null = null;
+  for (const line of diagnostics) {
+    // `<iso> pid=<n> <event> [k=v ...]` — the event is the third field.
+    const m = /^(\S+) pid=\d+ (\S+)/.exec(line);
+    if (!m) continue;
+    if (m[2] !== 'will-quit' && m[2] !== 'session-end') continue;
+    const at = Date.parse(m[1]);
+    if (!Number.isFinite(at)) continue;
+    const deltaMs = crashed - at;
+    // Strictly BEFORE the crash, and close to it. A `will-quit` after the crash
+    // belongs to a later run and says nothing about this one.
+    if (deltaMs < 0 || deltaMs > SHUTDOWN_WINDOW_MS) continue;
+    if (!best || deltaMs < best.deltaMs) best = { event: m[2], deltaMs };
+  }
+  return best;
+}
+
+/**
  * Assemble the report. Pure, so a test can assert on what it does and does not
  * contain without a Windows Event Log — the promise that this output is safe to
  * paste is the whole point of the command, and an untested promise is a wish.
@@ -1367,6 +1426,7 @@ export function formatCrashReport(input: {
     out.push('filter by source "Application Error". The four fields that identify a crash');
     out.push('are: Faulting module name, Exception code, Fault offset, Additional parameter.');
   } else {
+    let shutdownCrashes = 0;
     for (const e of input.events) {
       out.push(
         `- ${e.time}`,
@@ -1376,6 +1436,22 @@ export function formatCrashReport(input: {
         `    fault offset        : ${e.faultOffset}`,
         `    additional parameter: ${e.additionalParameter}`,
       );
+      const shutdown = correlateShutdown(e.time, input.diagnostics);
+      if (shutdown) {
+        shutdownCrashes++;
+        out.push(`    during              : shutdown (${shutdown.event} ${(shutdown.deltaMs / 1000).toFixed(1)}s earlier)`);
+      }
+    }
+    // Said once, in words, because it is the fact that decides where to look —
+    // and the one a reporter is most likely to get wrong (issue #214).
+    if (shutdownCrashes > 0) {
+      out.push('');
+      out.push(shutdownCrashes === input.events.length
+        ? `All ${shutdownCrashes} of these crashed during SHUTDOWN, not while running.`
+        : `${shutdownCrashes} of ${input.events.length} crashed during SHUTDOWN, not while running.`);
+      out.push('Nothing was lost from the running session; the damage is in what the next');
+      out.push('launch restores. Please say so in the issue — it rules out whatever feature');
+      out.push('was in use at the time.');
     }
   }
 
@@ -1590,8 +1666,10 @@ const COMMAND_SPECS = {
 
   // Workspace
   'new-workspace': {
-    usage: 'wmux new-workspace [--title T] [--shell S] [--cwd D]',
-    value: ['--title', '--shell', '--cwd'],
+    usage: 'wmux new-workspace [--title T] [--shell S] [--cwd D] [--panes N] [--layout L]\n'
+      + '  --panes  1-8 terminal panes (default: the [workspace] setting, 3)\n'
+      + '  --layout grid | columns | rows | left | down | single',
+    value: ['--title', '--shell', '--cwd', '--panes', '--layout'],
   },
   ssh: { usage: 'wmux ssh [ssh options] <user@host> [--title T]', passthrough: true },
   'close-workspace': { usage: 'wmux close-workspace [workspaceId]' },

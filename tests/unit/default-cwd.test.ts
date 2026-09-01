@@ -79,11 +79,18 @@ describe('resolveSpawnCwd with a user-typed starting path', () => {
     expect(resolveSpawnCwd('%WMUX_NO_SUCH_VAR%\\projects')).toBe(process.env.USERPROFILE || 'C:\\');
   });
 
-  it('still returns undefined for no cwd at all', () => {
-    expect(resolveSpawnCwd('')).toBeUndefined();
-    expect(resolveSpawnCwd(undefined)).toBeUndefined();
+  // Was `toBeUndefined()` — node-pty's default, which is "inherit wmux.exe's own
+  // working directory". #205 knew that meant C:\Windows\system32 for a
+  // Start-menu launch and kept it as the status quo; #214 is what it cost, when
+  // a crash relaunch put every restored pane there and Claude Code filed its
+  // transcripts under system32. A directory nobody chose is not a better answer
+  // than the home directory every other branch here already falls back to.
+  it('falls back to the home directory for no cwd at all, never wmux\'s own', () => {
+    const home = process.env.USERPROFILE || 'C:\\';
+    expect(resolveSpawnCwd('')).toBe(home);
+    expect(resolveSpawnCwd(undefined)).toBe(home);
     // Whitespace-only is "the user cleared the field", not a directory.
-    expect(resolveSpawnCwd('   ')).toBeUndefined();
+    expect(resolveSpawnCwd('   ')).toBe(home);
   });
 });
 
