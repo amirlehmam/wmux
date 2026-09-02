@@ -306,3 +306,125 @@ describe('PipeServer', () => {
     }
   });
 });
+
+// The server closes the connection itself, right behind the reply.
+//
+// Every wmux client is one request per connection and one reply per request, and
+// every one of them used to finish with `socket.end()` — a half-close. On a Windows
+// named pipe libuv answers a half-close by arming a 50 ms `eof_timeout`
+// (src/win/pipe.c) before it will report EOF, and since the server never closed its
+// side, every round trip paid that timer: `wmux ping` measured 96 ms against a pipe
+// that answers in 1 ms. A server that replies with `end()` does not help — both
+// sides then arm the timer. It has to be `write(reply, () => destroy())`, and the
+// client has to see 'close' within a few ms of the reply, not 50+.
+function replyThenClose(pipePath: string, message: string): Promise<{ reply: string; closeAfterReplyMs: number }> {
+  return new Promise((resolve, reject) => {
+    const client = net.connect({ path: pipePath }, () => {
+      client.write(message + '\n');
+    });
+    let data = '';
+    let repliedAt = 0;
+    client.on('data', (chunk) => {
+      data += chunk.toString();
+      if (data.includes('\n') && !repliedAt) repliedAt = performance.now();
+    });
+    // Deliberately no end() and no destroy() here: the point is that the SERVER
+    // finishes the connection.
+    client.on('close', () => {
+      if (!repliedAt) return reject(new Error('closed before any reply'));
+      resolve({ reply: data.trim(), closeAfterReplyMs: performance.now() - repliedAt });
+    });
+    client.on('error', reject);
+    setTimeout(() => { client.destroy(); reject(new Error('timeout')); }, 3000);
+  });
+}
+
+describe('PipeServer closes right behind its reply (libuv eof_timeout)', () => {
+  let server: PipeServer;
+
+  afterEach(() => {
+    server?.stop();
+  });
+
+  it('V1: the client sees close within 20 ms of pong', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe);
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const { reply, closeAfterReplyMs } = await replyThenClose(pipe, 'ping');
+    expect(reply).toBe('pong');
+    expect(closeAfterReplyMs).toBeLessThan(20);
+  });
+
+  it('V1: the same for an authenticated ok and for unauthorized', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    server.on('v1', () => {});
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const ok = await replyThenClose(pipe, 'auth secret report_pwd surf-1 C:/work');
+    expect(ok.reply).toBe('ok');
+    expect(ok.closeAfterReplyMs).toBeLessThan(20);
+
+    const nope = await replyThenClose(pipe, 'report_pwd surf-1 C:/work');
+    expect(nope.reply).toBe('unauthorized');
+    expect(nope.closeAfterReplyMs).toBeLessThan(20);
+  });
+
+  it('V2: the client sees close within 20 ms of the result, and of an error', async () => {
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    server.on('v2', (req, respond, respondError) => {
+      // Answer asynchronously, the way the real handlers do (executeJavaScript
+      // round trips to the renderer): the close must follow the REPLY, not the
+      // request.
+      if (req.method === 'workspace.list') setTimeout(() => respond({ workspaces: [] }), 30);
+      else respondError(-32601, `Method not found: ${req.method}`);
+    });
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const ok = await replyThenClose(pipe, JSON.stringify({ method: 'workspace.list', params: {}, id: 1, token: 'secret' }));
+    expect(JSON.parse(ok.reply).result).toEqual({ workspaces: [] });
+    expect(ok.closeAfterReplyMs).toBeLessThan(20);
+
+    const err = await replyThenClose(pipe, JSON.stringify({ method: 'nope', params: {}, id: 2, token: 'secret' }));
+    expect(JSON.parse(err.reply).error.code).toBe(-32601);
+    expect(err.closeAfterReplyMs).toBeLessThan(20);
+
+    const unauth = await replyThenClose(pipe, JSON.stringify({ method: 'workspace.list', params: {}, id: 3 }));
+    expect(JSON.parse(unauth.reply).error.code).toBe(-32001);
+    expect(unauth.closeAfterReplyMs).toBeLessThan(20);
+  });
+
+  it('V2: a reply that is not the last one pending keeps the connection open', async () => {
+    // No wmux client pipelines two requests on one connection (audited: the CLI,
+    // the hook helper, the shell integrations, the OpenCode plugin and the bridge
+    // are all one-shot). The framing loop still handles a chunk carrying two
+    // lines, so a close on the FIRST reply would eat the second — hence the
+    // guard: close only when nothing is still owed.
+    const pipe = uniquePipe();
+    server = new PipeServer(pipe, 'secret');
+    server.on('v2', (req, respond) => {
+      setTimeout(() => respond({ echo: req.id }), req.id === 1 ? 10 : 40);
+    });
+    server.start();
+    await new Promise(r => setTimeout(r, 200));
+
+    const replies = await new Promise<string[]>((resolve, reject) => {
+      const client = net.connect({ path: pipe }, () => {
+        const a = JSON.stringify({ method: 'x', params: {}, id: 1, token: 'secret' });
+        const b = JSON.stringify({ method: 'x', params: {}, id: 2, token: 'secret' });
+        client.write(a + '\n' + b + '\n');
+      });
+      let data = '';
+      client.on('data', (chunk) => { data += chunk.toString(); });
+      client.on('close', () => resolve(data.split('\n').filter(Boolean)));
+      client.on('error', reject);
+      setTimeout(() => { client.destroy(); reject(new Error('timeout')); }, 3000);
+    });
+    expect(replies.map((l) => JSON.parse(l).result)).toEqual([{ echo: 1 }, { echo: 2 }]);
+  });
+});

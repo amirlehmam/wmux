@@ -2,14 +2,19 @@
 # PostToolUse hook: increment toolUses counter for the active agent.
 # Called by Claude Code after each tool use. Must complete in <5s.
 
+# Leave before sourcing anything when this session is not an orchestrated
+# agent. Only panes spawned by spawn-agents.sh carry WMUX_AGENT_ID, and this
+# hook fires on every tool call of every Claude session on the machine:
+# sourcing orchestration-state.sh and scanning TMPDIR for a running state file
+# cost a measured 133 ms per tool call in sessions that had no orchestration.
+AGENT_ID="${WMUX_AGENT_ID:-}"
+[ -z "$AGENT_ID" ] && exit 0
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/orchestration-state.sh"
 
 ORCH_DIR=$(find_active_orch)
 [ -z "$ORCH_DIR" ] && exit 0
-
-AGENT_ID="${WMUX_AGENT_ID:-}"
-[ -z "$AGENT_ID" ] && exit 0
 
 # Find the agent's wave and index, then increment toolUses
 WAVE_IDX=$(node "$JSON_TOOL" query "$ORCH_DIR/state.json" wave-of-agent "$AGENT_ID" 2>/dev/null)

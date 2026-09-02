@@ -252,15 +252,22 @@ function sendV1(command) {
             client.write(line + '\n');
         });
         let data = '';
-        const timer = setTimeout(() => { client.end(); resolve(data.trim()); }, deadline(5000));
+        const timer = setTimeout(() => { client.destroy(); resolve(data.trim()); }, deadline(5000));
         const finish = () => { clearTimeout(timer); resolve(data.trim()); };
         client.on('data', (chunk) => {
             data += chunk.toString();
             // V1 replies are a single newline-terminated line (pong/ok/unauthorized).
             // Resolve as soon as it arrives instead of blocking on the server closing
-            // the socket (it doesn't) — otherwise every call waited the full 5s timer.
+            // the socket — otherwise every call waited the full 5s timer.
+            //
+            // destroy(), not end(): the reply is in hand and nothing more will be
+            // written, so a half-close buys nothing and costs ~60 ms. On a Windows
+            // named pipe libuv answers `end()` by arming a 50 ms `eof_timeout` (libuv
+            // src/win/pipe.c) before it reports EOF, and the process cannot exit
+            // until the handle is gone: `wmux ping` measured 96 ms this way against a
+            // pipe that answers in 1 ms, 36 ms with destroy(). Same in sendV2.
             if (data.includes('\n')) {
-                client.end();
+                client.destroy();
                 finish();
             }
         });
@@ -306,14 +313,15 @@ function sendV2(method, params = {}, timeoutMs = transport_deadline_1.DEFAULT_V2
         let data = '';
         const deadlineMs = deadline(timeoutMs);
         const timer = setTimeout(() => {
-            client.end();
+            client.destroy();
             reject(new Error(timeoutMessage(method, deadlineMs)));
         }, deadlineMs);
         client.on('data', (chunk) => {
             data += chunk.toString();
             if (data.includes('\n')) {
                 clearTimeout(timer);
-                client.end();
+                // destroy(), not end() — see sendV1 for the libuv eof_timeout this dodges.
+                client.destroy();
                 try {
                     const response = JSON.parse(data.trim());
                     if (response.error)

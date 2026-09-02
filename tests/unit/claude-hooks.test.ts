@@ -67,4 +67,34 @@ describe('applyWmuxHooks (issue #53)', () => {
     const twice = applyWmuxHooks(once, '/abs/wmux-hook.js');
     expect(twice.hooks.SubagentStop).toHaveLength(1);
   });
+
+  // Every wmux hook is an observer; the per-tool-call ones sat on the critical
+  // path of every tool call for 125-145 ms each. Claude Code only skips the
+  // wait when the entry says `async: true`, and a pre-existing install has the
+  // field missing, so applyWmuxHooks must add it on the rewrite it already does.
+  it('marks the per-tool-call observer hooks async and leaves the lifecycle ones sync', () => {
+    const out = applyWmuxHooks({}, HOOK);
+    const wmuxHooks = (entries: any[]) =>
+      entries.flatMap((e) => (e.hooks || []).filter((h: any) => h.command.includes('wmux-hook.js')));
+
+    for (const event of ['PostToolUse', 'PreToolUse', 'UserPromptSubmit']) {
+      const hooks = wmuxHooks(out.hooks[event]);
+      expect(hooks.length).toBeGreaterThan(0);
+      expect(hooks.every((h: any) => h.async === true)).toBe(true);
+    }
+    for (const event of ['SessionStart', 'Stop', 'SessionEnd']) {
+      expect(wmuxHooks(out.hooks[event]).every((h: any) => h.async === undefined)).toBe(true);
+    }
+  });
+
+  it('upgrades a wmux install that predates the async flag', () => {
+    const legacy = {
+      hooks: {
+        PreToolUse: [{ hooks: [{ type: 'command', command: `node "${HOOK}" --event PreToolUse 2>/dev/null || true` }] }],
+      },
+    };
+    const out = applyWmuxHooks(legacy, HOOK);
+    expect(out.hooks.PreToolUse).toHaveLength(1);
+    expect(out.hooks.PreToolUse[0].hooks[0].async).toBe(true);
+  });
 });

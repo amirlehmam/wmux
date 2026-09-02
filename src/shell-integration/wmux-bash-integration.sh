@@ -46,14 +46,35 @@ _wmux_report_cwd() {
     _wmux_report "report_pwd $surface_id $(pwd)"
 }
 
+# One git spawn per prompt, not two. `status --porcelain=v2 --branch` carries
+# both facts the row shows — the branch as a `# branch.head` header, dirtiness
+# as any non-header line — where `rev-parse --abbrev-ref HEAD` followed by
+# `status --porcelain` paid a second fork for the same answer. The wire text is
+# unchanged; the translation back to the old tokens is spelled out below:
+# `(detached)` is what rev-parse printed as `HEAD`, and `# branch.oid (initial)`
+# is an unborn repo, where rev-parse had nothing to resolve and the row showed
+# no branch — v2 exits 0 there and would name a branch that does not exist yet.
+# Untracked files count as dirty, exactly as before: no `-uno`.
+#
+# --no-optional-locks because this runs unasked on every prompt, and a status
+# that refreshes the index takes .git/index.lock — the lock the `git commit`
+# being typed needs. Parsed with builtins: the whole point is fewer forks.
 _wmux_report_git() {
     local surface_id="${WMUX_SURFACE_ID}"
     [ -z "$surface_id" ] && return
-    local branch
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-    if [ $? -eq 0 ] && [ -n "$branch" ]; then
-        local dirty=""
-        [ -n "$(git status --porcelain 2>/dev/null)" ] && dirty="dirty"
+    local out line branch="" dirty=""
+    if out=$(git --no-optional-locks status --porcelain=v2 --branch 2>/dev/null); then
+        while IFS= read -r line; do
+            case "$line" in
+                '# branch.oid (initial)') branch=""; break ;;
+                '# branch.head '*) branch="${line#'# branch.head '}" ;;
+                '# '*) ;;
+                *) dirty="dirty" ;;
+            esac
+        done <<< "$out"
+    fi
+    if [ -n "$branch" ]; then
+        [ "$branch" = "(detached)" ] && branch="HEAD"
         _wmux_report "report_git_branch $surface_id $branch $dirty"
     else
         _wmux_report "clear_git_branch $surface_id"

@@ -99,12 +99,12 @@ const MAX_STDIN = 10 * 1024 * 1024;
  * pipe. Every other way out of here is event-driven; this is the one that does
  * not depend on an event arriving.
  *
- * Deliberately a backstop and not a fix for an observed hang: measured against
- * an absent, a responsive and a wedged (accepts, never answers) server, the
- * hook exits on its own in every case, because on Windows named pipes `end()`
- * tears the connection down rather than half-closing it. The wmux CLI has
- * always armed this same timer before connecting (see sendV1/sendV2); the hook
- * helper was the one client without it, and matching costs nothing.
+ * Deliberately a backstop and not a fix for an observed hang: against an absent
+ * server the connect errors out, and against a responsive one the first reply
+ * chunk is the exit (see sendHook) — only a wedged server (accepts, never
+ * answers) ever reaches this. The wmux CLI has always armed this same timer
+ * before connecting (see sendV1/sendV2); the hook helper was the one client
+ * without it, and matching costs nothing.
  *
  * Derived rather than written down. This used to be `remote ? 30000 : 5000` —
  * the same intent as the CLI's `deadline()` in a second spelling that did not
@@ -253,21 +253,33 @@ function sendHook() {
         params.surfaceId = surfaceId;
     const client = net_1.default.connect(remote ? { host: remote.host, port: remote.port } : { path: pipePath }, () => {
         const msg = JSON.stringify({ method: 'hook.event', params, id: 1, token });
-        client.write(msg + '\n', () => client.end());
-        // Drain the reply we do not care about. This is not cosmetic: wmux answers
-        // but never closes the connection (pipe-server.ts), and a socket left in
-        // paused mode never reads far enough to see EOF — so it never emits 'end',
-        // never auto-destroys, and never emits 'close'. Without this the deadline
-        // below becomes the ONLY way out and every hook takes the full 5s.
-        client.resume();
+        client.write(msg + '\n');
     });
-    // Referenced, not unref'd: it has to be able to fire while the pending socket
-    // is what is holding the loop open. 'close' covers both a clean end and a
-    // destroy, so the happy path clears it immediately rather than lingering.
+    // The reply is the signal to leave, and leaving is destroy() — not end().
+    //
+    // This used to `end()` right after the write and drain the reply until the
+    // server closed. Two things were wrong with that. wmux's server never closed
+    // its side (it does now, but the hook on disk is often older than the wmux
+    // it talks to, and vice versa), so the exit waited on EOF that only ever came
+    // from a timer. And the timer is libuv's: on a Windows named pipe a half-close
+    // arms a 50 ms `eof_timeout` (libuv src/win/pipe.c) before EOF is reported,
+    // so every hook process sat ~60 ms past its reply doing nothing — 95 ms
+    // measured for a hook whose pipe round trip is 1 ms; 37 ms with this. The
+    // reply's content is not read: wmux acknowledges a hook.event, and there is
+    // nothing this process could do with a refusal.
+    //
+    // The deadline is referenced, not unref'd: it has to be able to fire while the
+    // pending socket is what is holding the loop open — a wmux that accepts and
+    // never answers (wedged, or shutting down) is the case it is for.
     const deadline = setTimeout(() => {
         client.destroy();
         process.exit(0);
     }, PIPE_DEADLINE_MS);
+    client.on('data', () => {
+        clearTimeout(deadline);
+        client.destroy();
+        process.exit(0);
+    });
     client.on('close', () => clearTimeout(deadline));
     client.on('error', () => {
         // wmux not running — silently ignore.

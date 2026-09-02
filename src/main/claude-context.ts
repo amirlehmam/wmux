@@ -290,12 +290,27 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
   const makeToolCmd = (tool: string) => `node "${hookScript}" ${tool} 2>/dev/null || true`;
   const makeEventCmd = (event: string) => `node "${hookScript}" --event ${event} 2>/dev/null || true`;
 
+  // The per-tool-call hooks run in the BACKGROUND. Every wmux hook is a pure
+  // observer: it reports to the pipe and never blocks a tool or injects
+  // context, so there is nothing for Claude Code to wait on — and it did wait,
+  // a measured 125-145 ms per hook process (Git Bash wrapper + node boot + the
+  // pipe round trip) on the critical path of EVERY tool call. `async: true` is
+  // honoured since Claude Code 2.1.x; older versions ignore the field.
+  //
+  // Ordering is not a concern: each report carries the wall-clock it fired at,
+  // and agent-state.ts drops a report older than the one it already accepted,
+  // so a slow PostToolUse landing after the Stop it preceded cannot resurrect a
+  // finished turn (issue #151). SessionStart, Stop and SessionEnd stay
+  // synchronous: they fire once per turn or session, and SessionEnd runs while
+  // the process is leaving.
+  const ASYNC = { async: true } as const;
+
   // PostToolUse — one entry per tracked tool for specific sidebar tracking.
   next.hooks.PostToolUse = [
     ...stripWmux(next.hooks.PostToolUse),
     ...TRACKED_TOOLS.map(tool => ({
       matcher: tool,
-      hooks: [{ type: 'command', command: makeToolCmd(tool) }],
+      hooks: [{ type: 'command', command: makeToolCmd(tool), ...ASYNC }],
     })),
   ];
 
@@ -335,7 +350,7 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
   // anything the pane was waiting to be told, it has now been told.
   next.hooks.UserPromptSubmit = [
     ...stripWmux(next.hooks.UserPromptSubmit),
-    { hooks: [{ type: 'command', command: makeEventCmd('UserPromptSubmit') }] },
+    { hooks: [{ type: 'command', command: makeEventCmd('UserPromptSubmit'), ...ASYNC }] },
   ];
 
   // PreToolUse — a tool is starting. Deliberately matcher-less, unlike
@@ -345,7 +360,7 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
   // untracked tools is still a turn. The helper reads the tool name off stdin.
   next.hooks.PreToolUse = [
     ...stripWmux(next.hooks.PreToolUse),
-    { hooks: [{ type: 'command', command: makeEventCmd('PreToolUse') }] },
+    { hooks: [{ type: 'command', command: makeEventCmd('PreToolUse'), ...ASYNC }] },
   ];
 
   // SessionEnd — Claude Code exited but the shell lives on. Releases the pane so

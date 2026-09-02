@@ -119,6 +119,7 @@ function Remove-StaleWmuxCwdFiles {
 
 $null = Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PSEngineEvent]::Exiting) -Action {
     Invoke-WmuxExitCleanup -CwdFile $global:_wmux_cwd_file
+    Stop-WmuxGitWorker -Pipeline $global:_wmux_git_ps -Runspace $global:_wmux_git_runspace
 }
 
 # What a poller tick should send. Pure so the decision can be tested without a
@@ -227,21 +228,223 @@ function Invoke-WmuxPrTick {
     return $Message.StartsWith('report_pr')
 }
 
-# Report git branch
+# Which git the prompt runs, resolved once. The `git` on PATH under Git for
+# Windows is the launcher in Git\cmd, which re-execs the real binary in
+# Git\mingw64\bin and costs ~8 ms per spawn doing so — measured, on a prompt
+# that runs git on every Enter. Going straight to the real binary skips that;
+# anything else on the machine (scoop, a portable git, none at all) keeps the
+# bare name and whatever PATH resolves it to.
+$global:_wmux_git = if (Test-Path -LiteralPath "$env:ProgramFiles\Git\mingw64\bin\git.exe" -PathType Leaf) {
+    "$env:ProgramFiles\Git\mingw64\bin\git.exe"
+} else {
+    'git'
+}
+
+# What the branch report should say, from ONE git spawn's output. Pure so the
+# decision can be tested against captured text rather than a repo.
+#
+# `git status --porcelain=v2 --branch` carries both facts the row shows — the
+# branch as a `# branch.head` header, dirtiness as any non-header line — where
+# the previous shape spawned `rev-parse --abbrev-ref HEAD` and then `status
+# --porcelain`, 49 ms of a 55 ms prompt. The wire text is unchanged, and the
+# translation back to the old tokens is explicit:
+#
+#   * `(detached)` becomes `HEAD` — what rev-parse printed, and what App.tsx
+#     stores as-is.
+#   * `# branch.oid (initial)` — an unborn repo, `git init` with no commit yet
+#     — clears. rev-parse had nothing to resolve there and exited 128, so the
+#     row showed no branch; v2 exits 0 and would happily name the branch that
+#     does not exist yet, which would change what the sidebar means.
+#   * Untracked files count as dirty, exactly as before: no `-uno`.
+#
+# Header lines are the only ones that begin `# `; every entry line begins with
+# its own type letter (`1`, `2`, `u`, `?`, `!`), so a path can never be read as
+# a header.
+function Get-WmuxGitBranchMessage {
+    param(
+        [string]$SurfaceId,
+        [string[]]$Lines,
+        [int]$ExitCode
+    )
+    if ($ExitCode -ne 0) { return "clear_git_branch $SurfaceId" }
+    $branch = $null
+    $dirty = ""
+    foreach ($line in $Lines) {
+        if ($line -eq '# branch.oid (initial)') { return "clear_git_branch $SurfaceId" }
+        if ($line.StartsWith('# branch.head ')) { $branch = $line.Substring(14); continue }
+        if ($line.StartsWith('# ')) { continue }
+        $dirty = "dirty"
+    }
+    if (-not $branch) { return "clear_git_branch $SurfaceId" }
+    if ($branch -eq '(detached)') { $branch = 'HEAD' }
+    return "report_git_branch $SurfaceId $branch $dirty"
+}
+
+# The git call runs OFF the prompt thread, in one in-process runspace that
+# lives as long as the shell. Even as a single spawn it is ~25 ms of a prompt
+# that otherwise costs ~1 ms, and the user is waiting on that prompt to type.
+#
+# A runspace and not Start-Job: a job is a whole child pwsh.exe, several
+# hundred ms to start and a process to keep — the PR poller pays that once,
+# on idle, for a 45 s tick. This has to be ready on every Enter.
+#
+# One runspace runs one pipeline at a time, and BeginInvoke on a busy one
+# throws. So the prompt never starts a worker while one is running: it drops
+# the cwd into `pending` and, if a worker is up, leaves — that worker drains
+# `pending` before it exits, which is also what makes two Enters 40 ms apart
+# both get reported, with the second cwd winning. `running` is flipped only
+# under the lock, by the prompt on the way up and by the worker on the way
+# out, so there is no moment where both believe the other has it.
+#
+# Opened asynchronously: Open() is 5-13 ms, and nothing here belongs on the
+# startup path. A prompt that arrives before the open completes — or after
+# the runspace failed to be created at all — runs git synchronously instead,
+# so the row is never silently blank.
+$global:_wmux_git_shared = [hashtable]::Synchronized(@{ pending = $null; running = $false })
+$global:_wmux_git_runspace = $null
+$global:_wmux_git_ps = $null
+$global:_wmux_git_handle = $null
+$global:_wmux_git_worker = $null
+try {
+    $_wmux_rs = [runspacefactory]::CreateRunspace()
+    $_wmux_rs.ThreadOptions = [System.Management.Automation.Runspaces.PSThreadOptions]::ReuseThread
+    $_wmux_rs.OpenAsync()
+    $global:_wmux_git_runspace = $_wmux_rs
+} catch {
+    $global:_wmux_git_runspace = $null
+}
+
+# What the worker runs. Built on FIRST use rather than at source time, the way
+# the PR job captures its functions when it starts and not when this file is
+# read: the runspace sees none of this session's functions, so the two it
+# needs travel across as text, and whatever Send-WmuxMessage is by the time
+# the first prompt fires is the one that goes.
+function Get-WmuxGitWorkerScript {
+    if (-not $global:_wmux_git_worker) {
+        $global:_wmux_git_worker = @"
+param(`$shared, `$git, `$surfaceId)
+function Send-WmuxMessage {
+$(${function:Send-WmuxMessage})
+}
+function Get-WmuxGitBranchMessage {
+$(${function:Get-WmuxGitBranchMessage})
+}
+while (`$true) {
+    [System.Threading.Monitor]::Enter(`$shared.SyncRoot)
+    try {
+        `$cwd = `$shared.pending
+        `$shared.pending = `$null
+        if (`$null -eq `$cwd) { `$shared.running = `$false; break }
+    } finally {
+        [System.Threading.Monitor]::Exit(`$shared.SyncRoot)
+    }
+    `$msg = "clear_git_branch `$surfaceId"
+    try {
+        `$out = & `$git -C `$cwd --no-optional-locks status --porcelain=v2 --branch 2>`$null
+        `$msg = Get-WmuxGitBranchMessage -SurfaceId `$surfaceId -Lines `$out -ExitCode `$LASTEXITCODE
+    } catch {
+        # git missing, or the directory went away: the row shows no branch.
+    }
+    Send-WmuxMessage `$msg
+}
+"@
+    }
+    return $global:_wmux_git_worker
+}
+
+# Hand a cwd to the worker. True if it was taken; false if the caller has to
+# run git itself this time (runspace not up, or a start that failed — in which
+# case the claim on `running` is given back, or no worker would ever run
+# again).
+function Request-WmuxGitReport {
+    param([string]$Cwd)
+    $rs = $global:_wmux_git_runspace
+    if ($null -eq $rs -or $rs.RunspaceStateInfo.State -ne 'Opened') { return $false }
+    $shared = $global:_wmux_git_shared
+    [System.Threading.Monitor]::Enter($shared.SyncRoot)
+    try {
+        $shared.pending = $Cwd
+        if ($shared.running) { return $true }
+        $shared.running = $true
+    } finally {
+        [System.Threading.Monitor]::Exit($shared.SyncRoot)
+    }
+    # `running` was false, so the previous worker — if there was one — has
+    # already left its loop and its pipeline is finishing; it is reaped here,
+    # at the one point where that is known to be imminent. The wait is bounded
+    # by pipeline teardown, well under a millisecond, but a runspace cannot
+    # take a new pipeline until it is done, so it is not optional. Reaping is
+    # not optional either: a completed PowerShell object per prompt is a leak.
+    $prev = $global:_wmux_git_ps
+    if ($null -ne $prev) {
+        $done = $global:_wmux_git_handle.AsyncWaitHandle.WaitOne(1000)
+        if (-not $done) {
+            [System.Threading.Monitor]::Enter($shared.SyncRoot)
+            try { $shared.running = $false; $shared.pending = $null } finally { [System.Threading.Monitor]::Exit($shared.SyncRoot) }
+            return $false
+        }
+        try { $null = $prev.EndInvoke($global:_wmux_git_handle) } catch {}
+        try { $prev.Dispose() } catch {}
+        $global:_wmux_git_ps = $null
+        $global:_wmux_git_handle = $null
+    }
+    $ps = $null
+    try {
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        $null = $ps.AddScript((Get-WmuxGitWorkerScript)).AddArgument($shared).AddArgument($global:_wmux_git).AddArgument($env:WMUX_SURFACE_ID)
+        $global:_wmux_git_handle = $ps.BeginInvoke()
+        $global:_wmux_git_ps = $ps
+        return $true
+    } catch {
+        if ($ps) { try { $ps.Dispose() } catch {} }
+        [System.Threading.Monitor]::Enter($shared.SyncRoot)
+        try { $shared.running = $false; $shared.pending = $null } finally { [System.Threading.Monitor]::Exit($shared.SyncRoot) }
+        return $false
+    }
+}
+
+# The worker's half of the exit: nothing here may keep the process alive or
+# leave a git behind. Driven from the Exiting handler below.
+function Stop-WmuxGitWorker {
+    param($Pipeline, $Runspace)
+    if ($null -ne $Pipeline) {
+        try { $Pipeline.Stop() } catch {}
+        try { $Pipeline.Dispose() } catch {}
+    }
+    if ($null -ne $Runspace) {
+        try { $Runspace.Dispose() } catch {}
+    }
+}
+
+# Report git branch.
+#
+# --no-optional-locks: this runs on every prompt, unasked, and a status that
+# refreshes the index takes .git/index.lock to write it back — which is the
+# lock the `git commit` the user is typing needs. git documents the flag for
+# exactly this (BACKGROUND REFRESH), and it costs nothing measurable.
+#
+# The worker is told WHERE with `git -C`, since its runspace has a location of
+# its own that never follows the pane. The directory handed over is the one a
+# native command started from this thread gets: the session's current
+# FILESYSTEM location, as a provider path. Not $PWD, which can be a PSDrive
+# spelling git has never heard of; and not the process directory, which
+# PowerShell never moves — `cd` changes the session's location only, and the
+# host passes that to each native process it starts. Off the filesystem
+# provider entirely (`cd Env:`) $PWD.ProviderPath is empty, while the
+# filesystem location is still wherever the pane last was — which is exactly
+# what git answered for when it ran here, so the row keeps saying the same
+# thing.
 function Report-GitBranch {
     $surfaceId = $env:WMUX_SURFACE_ID
     if (-not $surfaceId) { return }
 
+    $cwd = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath
+    if (Request-WmuxGitReport -Cwd $cwd) { return }
+
     try {
-        $branch = git rev-parse --abbrev-ref HEAD 2>$null
-        if ($LASTEXITCODE -eq 0 -and $branch) {
-            $dirty = ""
-            $status = git status --porcelain 2>$null
-            if ($status) { $dirty = "dirty" }
-            Send-WmuxMessage "report_git_branch $surfaceId $branch $dirty"
-        } else {
-            Send-WmuxMessage "clear_git_branch $surfaceId"
-        }
+        $out = & $global:_wmux_git --no-optional-locks status --porcelain=v2 --branch 2>$null
+        Send-WmuxMessage (Get-WmuxGitBranchMessage -SurfaceId $surfaceId -Lines $out -ExitCode $LASTEXITCODE)
     } catch {
         Send-WmuxMessage "clear_git_branch $surfaceId"
     }
@@ -439,10 +642,12 @@ if (-not $global:_wmux_prompt_hooked) {
         #
         # $? is overwritten by the very next statement, whatever it is.
         # $LASTEXITCODE needs the same treatment for a less obvious reason:
-        # Report-GitBranch runs git, which sets it, so anything reading it
-        # further down is reading git's exit code and calling it the user's.
-        # That is a live bug in the interrupted check below, which is why that
-        # check now reads the captured value too.
+        # anything below that runs a native command sets it, so anything
+        # reading it further down is reading that command's exit code and
+        # calling it the user's. That was a live bug in the interrupted check
+        # below while Report-GitBranch ran git on this thread; it runs git on
+        # a worker now, but keeps a synchronous fallback, and the capture is
+        # what makes the check correct on either path.
         $_wmux_ok = $global:?
         $_wmux_native_exit = $LASTEXITCODE
 

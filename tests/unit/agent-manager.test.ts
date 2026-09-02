@@ -1,7 +1,123 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { distributeAgents, AgentManager } from '../../src/main/agent-manager';
 
+/**
+ * Minimal PtyManager stand-in. Captures the data and exit callbacks per
+ * surface so a test can feed shell output / exits by hand. `consumed` is what
+ * create() reports as `startupCommandsConsumed` — false by default so the
+ * older tests keep exercising the prompt-detection path.
+ */
+function fakePtyManager(consumed = false) {
+  const exitCallbacks = new Map<string, (code: number) => void>();
+  const dataCallbacks = new Map<string, (data: string) => void>();
+  let nextId = 0;
+  return {
+    exitCallbacks,
+    dataCallbacks,
+    create: vi.fn(() => ({ id: `surf-${++nextId}`, shell: 'pwsh.exe', startupCommandsConsumed: consumed, reused: false })),
+    onData: vi.fn((id: string, cb: (data: string) => void) => { dataCallbacks.set(id, cb); return () => { dataCallbacks.delete(id); }; }),
+    onExit: vi.fn((id: string, cb: (code: number) => void) => { exitCallbacks.set(id, cb); }),
+    getPid: vi.fn(() => 1234),
+    has: vi.fn(() => true),
+    write: vi.fn(),
+    kill: vi.fn(),
+  };
+}
+
+function spawnOne(pty: ReturnType<typeof fakePtyManager>, cmd = 'echo hi') {
+  const manager = new AgentManager(pty as any);
+  const onAgentExit = vi.fn();
+  manager.setOnAgentExit(onAgentExit);
+  const { agentId, surfaceId } = manager.spawn({
+    cmd, label: 'worker-1', paneId: 'pane-1' as any, workspaceId: 'ws-1' as any,
+  });
+  return { manager, onAgentExit, agentId, surfaceId };
+}
+
 describe('Agent Manager', () => {
+  describe('spawn: command delivery', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('hands the cmd to the shell as a startup command and never types it when the PTY consumed it', () => {
+      vi.useFakeTimers();
+      const pty = fakePtyManager(true);
+      spawnOne(pty, 'claude -p "do the thing"');
+
+      expect(pty.create).toHaveBeenCalledTimes(1);
+      expect((pty.create.mock.calls[0] as any[])[0]).toMatchObject({ startupCommands: ['claude -p "do the thing"'] });
+      // No prompt sniffing at all: the integration script runs the command
+      // during init, before the first prompt, so a second delivery would run
+      // it twice.
+      expect(pty.onData).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(10_000);
+      expect(pty.write).not.toHaveBeenCalled();
+    });
+
+    it('still offers the cmd as a startup command when the shell cannot consume it', () => {
+      const pty = fakePtyManager(false);
+      spawnOne(pty);
+      expect((pty.create.mock.calls[0] as any[])[0]).toMatchObject({ startupCommands: ['echo hi'] });
+      expect(pty.onData).toHaveBeenCalledTimes(1);
+    });
+
+    it('recognises a PowerShell prompt wrapped in OSC 133 marks without waiting for the debounce', () => {
+      vi.useFakeTimers();
+      const pty = fakePtyManager(false);
+      const { surfaceId } = spawnOne(pty);
+
+      // Since #207 the prompt ENDS with the OSC 133;B mark, after the "> ".
+      pty.dataCallbacks.get(surfaceId)!('PS C:\\x> \x1b]133;B\x1b\\');
+      // The 150 ms settle pause, and nothing like the 1500 ms debounce.
+      vi.advanceTimersByTime(200);
+      expect(pty.write).toHaveBeenCalledTimes(1);
+      expect(pty.write).toHaveBeenCalledWith(surfaceId, 'echo hi\r');
+    });
+
+    it('recognises a prompt followed by trailing CSI sequences (cursor show, SGR reset)', () => {
+      vi.useFakeTimers();
+      const pty = fakePtyManager(false);
+      const { surfaceId } = spawnOne(pty);
+
+      pty.dataCallbacks.get(surfaceId)!('user@host:~$ \x1b[0m\x1b[?25h');
+      vi.advanceTimersByTime(200);
+      expect(pty.write).toHaveBeenCalledWith(surfaceId, 'echo hi\r');
+    });
+
+    it('waits out the debounce when output carries no prompt yet', () => {
+      vi.useFakeTimers();
+      const pty = fakePtyManager(false);
+      const { surfaceId } = spawnOne(pty);
+
+      pty.dataCallbacks.get(surfaceId)!('Loading personal and system profiles took 812ms.\r\n');
+      vi.advanceTimersByTime(200);
+      expect(pty.write).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1500);
+      expect(pty.write).toHaveBeenCalledWith(surfaceId, 'echo hi\r');
+    });
+
+    it('sends after the 5 s absolute fallback when the shell never draws a prompt', () => {
+      vi.useFakeTimers();
+      const pty = fakePtyManager(false);
+      const { surfaceId } = spawnOne(pty);
+
+      vi.advanceTimersByTime(5_200);
+      expect(pty.write).toHaveBeenCalledTimes(1);
+      expect(pty.write).toHaveBeenCalledWith(surfaceId, 'echo hi\r');
+    });
+
+    it('sends exactly once even when several prompts arrive', () => {
+      vi.useFakeTimers();
+      const pty = fakePtyManager(false);
+      const { surfaceId } = spawnOne(pty);
+
+      pty.dataCallbacks.get(surfaceId)!('PS C:\\x> \x1b]133;B\x1b\\');
+      vi.advanceTimersByTime(200);
+      pty.dataCallbacks.get(surfaceId)?.('PS C:\\x> ');
+      vi.advanceTimersByTime(6_000);
+      expect(pty.write).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('distributeAgents', () => {
     it('distributes evenly across panes', () => {
       const panes = [
@@ -42,32 +158,6 @@ describe('Agent Manager', () => {
   });
 
   describe('exit broadcast (setOnAgentExit)', () => {
-    /** Minimal PtyManager stand-in that captures the PTY exit callback per surface. */
-    function fakePtyManager() {
-      const exitCallbacks = new Map<string, (code: number) => void>();
-      let nextId = 0;
-      return {
-        exitCallbacks,
-        create: vi.fn(() => ({ id: `surf-${++nextId}` })),
-        onData: vi.fn(() => () => {}),
-        onExit: vi.fn((id: string, cb: (code: number) => void) => { exitCallbacks.set(id, cb); }),
-        getPid: vi.fn(() => 1234),
-        has: vi.fn(() => true),
-        write: vi.fn(),
-        kill: vi.fn(),
-      };
-    }
-
-    function spawnOne(pty: ReturnType<typeof fakePtyManager>) {
-      const manager = new AgentManager(pty as any);
-      const onAgentExit = vi.fn();
-      manager.setOnAgentExit(onAgentExit);
-      const { agentId, surfaceId } = manager.spawn({
-        cmd: 'echo hi', label: 'worker-1', paneId: 'pane-1' as any, workspaceId: 'ws-1' as any,
-      });
-      return { manager, onAgentExit, agentId, surfaceId };
-    }
-
     it('invokes the exit listener with type/surface info when the PTY exits', () => {
       const pty = fakePtyManager();
       const { onAgentExit, agentId, surfaceId } = spawnOne(pty);
