@@ -26,6 +26,15 @@ const CLI_DIR = path.resolve(__dirname, '../../resources/cli');
 const HOOK_SCRIPT = path.join(CLI_DIR, 'wmux-hook.js');
 const CLI_SCRIPT = path.join(CLI_DIR, 'wmux.js');
 
+/**
+ * How long a client may take from the reply to its own exit. Locally it is
+ * 4-6 ms; a loaded CI runner measured 20.3 ms once, which is node teardown,
+ * not the pipe. The budget only has to sit BELOW libuv's 50 ms eof_timeout to
+ * stay discriminating: a client that still end()s cannot see 'close', and so
+ * cannot exit, before that timer has run.
+ */
+const EXIT_BUDGET_MS = 45;
+
 let testCounter = 0;
 function uniquePipe(): string {
   return `\\\\.\\pipe\\wmux-latency-${process.pid}-${++testCounter}`;
@@ -84,7 +93,7 @@ describe('pipe clients exit right behind the reply, against a server that never 
     close = undefined;
   });
 
-  it('wmux-hook.js exits within 20 ms of the reply', async () => {
+  it('wmux-hook.js exits within the budget of the reply', async () => {
     const pipe = uniquePipe();
     const server = await neverClosingServer(pipe, () => JSON.stringify({ result: { ok: true }, id: 1 }));
     close = server.close;
@@ -100,10 +109,10 @@ describe('pipe clients exit right behind the reply, against a server that never 
     const repliedAt = await server.repliedAt;
     const { exitedAt, code } = await run;
     expect(code).toBe(0);
-    expect(exitedAt - repliedAt).toBeLessThan(20);
+    expect(exitedAt - repliedAt).toBeLessThan(EXIT_BUDGET_MS);
   });
 
-  it('wmux.js ping (sendV1) exits within 20 ms of pong', async () => {
+  it('wmux.js ping (sendV1) exits within the budget of pong', async () => {
     const pipe = uniquePipe();
     const server = await neverClosingServer(pipe, () => 'pong');
     close = server.close;
@@ -113,10 +122,10 @@ describe('pipe clients exit right behind the reply, against a server that never 
     const { exitedAt, code, stdout } = await run;
     expect(code).toBe(0);
     expect(stdout.trim()).toBe('pong');
-    expect(exitedAt - repliedAt).toBeLessThan(20);
+    expect(exitedAt - repliedAt).toBeLessThan(EXIT_BUDGET_MS);
   });
 
-  it('wmux.js identify (sendV2) exits within 20 ms of the result', async () => {
+  it('wmux.js identify (sendV2) exits within the budget of the result', async () => {
     const pipe = uniquePipe();
     const server = await neverClosingServer(pipe, () => JSON.stringify({ result: { app: 'wmux' }, id: 1 }));
     close = server.close;
@@ -126,6 +135,6 @@ describe('pipe clients exit right behind the reply, against a server that never 
     const { exitedAt, code, stdout } = await run;
     expect(code).toBe(0);
     expect(stdout).toContain('wmux');
-    expect(exitedAt - repliedAt).toBeLessThan(20);
+    expect(exitedAt - repliedAt).toBeLessThan(EXIT_BUDGET_MS);
   });
 });
