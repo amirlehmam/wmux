@@ -287,8 +287,17 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
 
   // PostToolUse passes the tool name as a positional arg; Notification/Stop
   // pass an --event flag so the helper reports an event type instead.
-  const makeToolCmd = (tool: string) => `node "${hookScript}" ${tool} 2>/dev/null || true`;
-  const makeEventCmd = (event: string) => `node "${hookScript}" --event ${event} 2>/dev/null || true`;
+  //
+  // Bare `node …` — not `2>/dev/null || true`. The helper already exits 0
+  // when the pipe is absent, so the shell wrapper never kept a downed wmux
+  // from blocking the agent. It DID break every consumer that is not bash:
+  // Grok (and anything else that honours ~/.claude/settings.json) runs these
+  // commands in PowerShell on Windows, where `>/dev/null` is Out-File of
+  // `C:\dev\null` and every hook fails with exit 1. Claude Code on Windows
+  // may still use Git Bash, so a PowerShell-only spelling (`2>$null`) is
+  // equally wrong. No redirect is valid in bash, cmd and pwsh.
+  const makeToolCmd = (tool: string) => `node "${hookScript}" ${tool}`;
+  const makeEventCmd = (event: string) => `node "${hookScript}" --event ${event}`;
 
   // The per-tool-call hooks run in the BACKGROUND. Every wmux hook is a pure
   // observer: it reports to the pipe and never blocks a tool or injects

@@ -17,11 +17,27 @@ describe('applyWmuxHooks (issue #53)', () => {
 
     // Notification + Stop: pass an --event flag.
     expect(wmuxCmds(out.hooks.Notification)).toEqual([
-      `node "${HOOK}" --event Notification 2>/dev/null || true`,
+      `node "${HOOK}" --event Notification`,
     ]);
     expect(wmuxCmds(out.hooks.Stop)).toEqual([
-      `node "${HOOK}" --event Stop 2>/dev/null || true`,
+      `node "${HOOK}" --event Stop`,
     ]);
+  });
+
+  // Grok (and other agents that load ~/.claude/settings.json) run these
+  // commands in PowerShell on Windows. `2>/dev/null` becomes Out-File of
+  // `C:\dev\null` and every hook fails; a PowerShell-only `2>$null` would
+  // equally break Claude Code under Git Bash. No redirect is the portable form.
+  it('emits hook commands that bash, cmd and PowerShell can all run', () => {
+    const out = applyWmuxHooks({}, HOOK);
+    const all = Object.values(out.hooks).flatMap((entries: any) => wmuxCmds(entries));
+    expect(all.length).toBeGreaterThan(0);
+    for (const cmd of all) {
+      expect(cmd).toMatch(/^node "/);
+      expect(cmd).not.toMatch(/\/dev\/null/);
+      expect(cmd).not.toMatch(/\|\|/);
+      expect(cmd).not.toMatch(/2>\$null/);
+    }
   });
 
   it('preserves existing user hooks in every array', () => {
@@ -96,5 +112,6 @@ describe('applyWmuxHooks (issue #53)', () => {
     const out = applyWmuxHooks(legacy, HOOK);
     expect(out.hooks.PreToolUse).toHaveLength(1);
     expect(out.hooks.PreToolUse[0].hooks[0].async).toBe(true);
+    expect(out.hooks.PreToolUse[0].hooks[0].command).toBe(`node "${HOOK}" --event PreToolUse`);
   });
 });
