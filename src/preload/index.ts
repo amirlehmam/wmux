@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('wmux', {
     // rather than an IPC round-trip because the markdown path chip (issue #116)
     // needs it during render to shorten `C:\Users\me\notes.md` → `~\notes.md`.
     homeDir: os.homedir(),
+    // `os.release()` verbatim (e.g. '10.0.26200'), read once at preload time.
+    // The renderer needs the Windows build number to hand xterm its ConPTY
+    // compatibility block at Terminal-construction time — an async IPC answer
+    // would arrive after the terminal already existed. See utils/windows-pty.ts.
+    osRelease: os.release(),
     getShells: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_SHELLS),
     getFonts: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_FONTS) as Promise<string[]>,
     openExternal: (url: string) => ipcRenderer.send(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
