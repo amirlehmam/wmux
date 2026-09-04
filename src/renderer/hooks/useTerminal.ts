@@ -24,6 +24,8 @@ import {
 } from '../utils/mouse-modes';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { resetTerminalModes } from '../utils/terminal-reset';
+import { windowsPtyCompat } from '../utils/windows-pty';
+import { ReplayHold } from '../utils/replay-hold';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
@@ -110,16 +112,26 @@ function clearStuckRunningState(surfaceId: string): void {
 // can replay it (issue #49). Normal buffer only, so a TUI's own SIGWINCH
 // redraw owns the alt screen after remount. Bounded LRU so a genuine pane
 // close (no remount to consume it) can't grow the cache.
-function snapshotSurfaceBuffer(surfaceId: string | undefined, serializeAddon: SerializeAddon): void {
+function snapshotSurfaceBuffer(
+  surfaceId: string | undefined,
+  serializeAddon: SerializeAddon,
+  terminal: Terminal,
+): void {
   if (!surfaceId) return;
   try {
-    const snapshot = serializeAddon.serialize({ excludeAltBuffer: true });
-    if (!snapshot) return;
+    const text = serializeAddon.serialize({ excludeAltBuffer: true });
+    if (!text) return;
     if (surfaceBufferCache.size >= MAX_BUFFER_CACHE) {
       const oldest = surfaceBufferCache.keys().next().value;
       if (oldest !== undefined) surfaceBufferCache.delete(oldest);
     }
-    surfaceBufferCache.set(surfaceId, snapshot);
+    // The dimensions travel with the text because the replay only reproduces
+    // the original screen at the original size: SerializeAddon restores the
+    // cursor to its VIEWPORT row, and the PTY on the other side is still the
+    // size we last told it. Replaying into a differently-sized buffer therefore
+    // lands the cursor a different number of rows from the bottom than ConPTY
+    // has it, and nothing afterwards corrects that. See restoreSurfaceBuffer.
+    surfaceBufferCache.set(surfaceId, { text, cols: terminal.cols, rows: terminal.rows });
   } catch {
     // Serialization failure is non-fatal — just lose the snapshot.
   }
@@ -295,7 +307,15 @@ function mouseModesFor(surfaceId: string): MouseModeState {
 // different depth/parent), disposing and recreating the terminal — which would
 // otherwise wipe the scrollback (issue #49). We snapshot on unmount and replay
 // on the next mount. Bounded so genuine pane closes can't leak the cache.
-const surfaceBufferCache = new Map<string, string>();
+interface BufferSnapshot {
+  /** SerializeAddon output — the normal buffer only. */
+  text: string;
+  /** The size the terminal (and so the PTY) had when it was taken. */
+  cols: number;
+  rows: number;
+}
+
+const surfaceBufferCache = new Map<string, BufferSnapshot>();
 const MAX_BUFFER_CACHE = 32;
 
 // Live xterm instances keyed by surfaceId, so the pipe bridge can read screen
@@ -503,15 +523,22 @@ function scheduleInitialResize(
   fit: () => void,
   fitAddon: FitAddon,
   ptyIdRef: { current: string | null },
+  replayHold: ReplayHold,
   attempt = 0,
 ): void {
+  // This is the resize that was measured taking the snapshot replay from 28
+  // rows to 60 before it had been parsed: it runs from the PTY-attach
+  // continuation, which is asynchronous and therefore races xterm's write
+  // buffer. `fit()` refuses on its own while held; the PTY must be left alone
+  // too, or the sides simply diverge from the other direction.
+  if (replayHold.isHolding) return;
   fit();
   const dims = fitAddon.proposeDimensions();
   if (dims) {
     window.wmux.pty.resize(ptyId, dims.cols, dims.rows);
   } else if (attempt < 8) {
     requestAnimationFrame(() => {
-      if (ptyIdRef.current === ptyId) scheduleInitialResize(ptyId, fit, fitAddon, ptyIdRef, attempt + 1);
+      if (ptyIdRef.current === ptyId) scheduleInitialResize(ptyId, fit, fitAddon, ptyIdRef, replayHold, attempt + 1);
     });
   }
 }
@@ -557,6 +584,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  /**
+   * Pins the terminal to a snapshot's size while that snapshot is being
+   * replayed. A ref because `fit()` and every effect that resizes have to see
+   * the SAME latch as the mount effect that set it; it is replaced per mount so
+   * a hold can never survive the terminal it belonged to.
+   */
+  const replayHoldRef = useRef<ReplayHold>(new ReplayHold());
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const ptyIdRef = useRef<string | null>(null);
   const cleanupFnsRef = useRef<Array<() => void>>([]);
@@ -607,6 +641,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   };
 
   const fit = () => {
+    // A snapshot replay pins the terminal to the size the snapshot was taken
+    // at until it has actually been PARSED — `terminal.write()` is async, so
+    // resizing before that lays the replay out at the wrong height and strands
+    // the restored cursor. Gated here rather than at each caller because
+    // fit() is reached from the ResizeObserver, the PTY attach, the visibility
+    // effect and the theme effect, and one ungated path is enough to lose it.
+    if (!replayHoldRef.current.request()) return;
     if (fitAddonRef.current) {
       try {
         fitAddonRef.current.fit();
@@ -641,6 +682,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       allowProposedApi: true,
       linkHandler: terminalLinkHandler,
       scrollback: prefs.scrollbackLines || 10000,
+      // Every wmux PTY is ConPTY, and xterm grows rows differently for one.
+      // Without this a pane that gets TALLER (an adjacent pane closed, the
+      // window resized) leaves xterm and ConPTY disagreeing about which row the
+      // cursor is on, and the prompt strands itself in the middle of old output.
+      // See utils/windows-pty.ts for the mechanism.
+      windowsPty: windowsPtyCompat(window.wmux?.system?.osRelease ?? ''),
     });
 
     xtermRef.current = terminal;
@@ -705,6 +752,20 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // Open terminal in the DOM
     terminal.open(terminalRef.current);
 
+    // Size the buffer to the pane BEFORE anything is written into it. xterm
+    // starts every terminal at 80x24, so a remount that replays a snapshot
+    // (below) used to lay ~200 lines of scrollback into a 24-row buffer and only
+    // reach the rAF fit() further down afterwards — a single ~20-row growth on
+    // an already-full buffer, which is the largest possible dose of the ConPTY
+    // row-growth mismatch windowsPty above exists to prevent. Safe to run
+    // synchronously here: proposeDimensions only needs the element laid out,
+    // which it is once open() has attached to it. The rAF fit() stays as the
+    // safety net for a pane that is not measurable yet (a hidden tab).
+    fit();
+
+    const replayHold = new ReplayHold();
+    replayHoldRef.current = replayHold;
+
     if (surfaceId) surfaceTerminalRegistry.set(surfaceId, terminal);
 
     const titleDisposable = recordTitleChanges(terminal, surfaceId);
@@ -718,7 +779,32 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       const snapshot = surfaceBufferCache.get(surfaceId);
       if (snapshot) {
         surfaceBufferCache.delete(surfaceId);
-        terminal.write(snapshot);
+        // Replay at the size the snapshot was taken at, undoing the fit()
+        // above — and HELD there, not merely set there. SerializeAddon restores
+        // the cursor to its VIEWPORT row, so the replayed screen agrees with
+        // ConPTY's about where the cursor is only at the size ConPTY still has;
+        // and `terminal.write()` is asynchronous, so a bare resize pins only the
+        // size the bytes are QUEUED at. A remount is triggered by a split-tree
+        // change — exactly when the pane's size changed — so the PTY attach, the
+        // ResizeObserver and the visibility effect are all racing the parse. The
+        // hold is what keeps them out of it; see utils/replay-hold.ts for the
+        // measurement. Growing to the pane's real size then happens once, in the
+        // write callback, applied to BOTH sides in step — which with windowsPty
+        // set moves the cursor the same way on each.
+        replayHold.hold();
+        terminal.resize(snapshot.cols, snapshot.rows);
+        terminal.write(snapshot.text, () => {
+          // Parsed at last. Release, and pay back the one size sync that was
+          // refused while we held — the pane's real size, applied to xterm and
+          // the PTY together, which is the single in-step growth `windowsPty`
+          // makes correct on both sides.
+          if (!replayHold.release()) return;
+          fit();
+          const dims = fitAddonRef.current?.proposeDimensions();
+          if (dims && ptyIdRef.current) {
+            window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
+          }
+        });
       }
 
       // Put the replacement terminal back into the mouse modes the STILL-RUNNING
@@ -1055,12 +1141,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       cleanupFnsRef.current.push(unsubData, unsubExit);
 
       // Flush any resize that arrived before this PTY was ready
-      if (pendingResizeDims) {
+      if (pendingResizeDims && !replayHold.isHolding) {
         window.wmux.pty.resize(id, pendingResizeDims.cols, pendingResizeDims.rows);
         pendingResizeDims = null;
       } else {
         // Initial resize, retried until the renderer has laid out (see helper).
-        scheduleInitialResize(id, fit, fitAddon, ptyIdRef);
+        scheduleInitialResize(id, fit, fitAddon, ptyIdRef, replayHold);
       }
 
       // Deferred visual safety-net (see scheduleDeferredRepaint).
@@ -1180,7 +1266,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       resizeRaf = requestAnimationFrame(() => {
         resizeRaf = null;
         fit();
-        const dims = fitAddon.proposeDimensions();
+        const dims = replayHoldRef.current.isHolding ? null : fitAddon.proposeDimensions();
         if (dims) {
           if (ptyIdRef.current) {
             window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
@@ -1239,7 +1325,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
       // Snapshot the buffer before disposal so a remount can replay it
       // (see snapshotSurfaceBuffer).
-      snapshotSurfaceBuffer(surfaceId, serializeAddon);
+      snapshotSurfaceBuffer(surfaceId, serializeAddon, terminal);
 
       // Drop the read-screen registry entry — but only if it still points at
       // THIS terminal (StrictMode re-setup may already have registered the
@@ -1408,7 +1494,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       raf = requestAnimationFrame(() => {
         if (!xtermRef.current) return;
         fit();
-        const dims = fitAddonRef.current?.proposeDimensions();
+        const dims = replayHoldRef.current.isHolding ? null : fitAddonRef.current?.proposeDimensions();
         if (dims && ptyIdRef.current) {
           window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
         }
@@ -1448,7 +1534,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           // The terminal may have been disposed between scheduling and firing.
           if (!xtermRef.current) return;
           fit();
-          const dims = fitAddonRef.current?.proposeDimensions();
+          const dims = replayHoldRef.current.isHolding ? null : fitAddonRef.current?.proposeDimensions();
           if (dims && ptyIdRef.current) {
             window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
           }
