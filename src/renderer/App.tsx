@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from './store';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
@@ -462,6 +463,14 @@ export function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: 
 }
 
 export default function App() {
+  // Field-scoped store subscription. A bare `useStore()` subscribes App to the
+  // WHOLE store, so every set() anywhere — one pane's OSC 9;4 progress, an
+  // agent verdict, a settings write — re-rendered App and with it the sidebar
+  // and every workspace's split container. That is #141's shape one level up:
+  // the per-chunk paths stay out of the store, but any store write that DID
+  // land still cost a full-App render. useShallow pins the subscription to the
+  // fields App actually reads; the actions are identity-stable, so App now
+  // re-renders only when workspaces/active/sidebar/shortcuts/notifications move.
   const {
     workspaces,
     activeWorkspaceId,
@@ -481,7 +490,26 @@ export default function App() {
     setAgentMeta,
     addNotification,
     toggleSidebar,
-  } = useStore();
+  } = useStore(useShallow((s) => ({
+    workspaces: s.workspaces,
+    activeWorkspaceId: s.activeWorkspaceId,
+    createWorkspace: s.createWorkspace,
+    requestCloseWorkspace: s.requestCloseWorkspace,
+    selectWorkspace: s.selectWorkspace,
+    renameWorkspace: s.renameWorkspace,
+    reorderWorkspaces: s.reorderWorkspaces,
+    updateWorkspaceMetadata: s.updateWorkspaceMetadata,
+    updateSplitTree: s.updateSplitTree,
+    sidebarVisible: s.sidebarVisible,
+    shortcuts: s.shortcuts,
+    notifications: s.notifications,
+    markRead: s.markRead,
+    markAllRead: s.markAllRead,
+    selectSurface: s.selectSurface,
+    setAgentMeta: s.setAgentMeta,
+    addNotification: s.addNotification,
+    toggleSidebar: s.toggleSidebar,
+  })));
 
   useUiTheme();
   useUiMode();
