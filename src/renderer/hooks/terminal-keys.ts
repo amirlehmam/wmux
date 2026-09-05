@@ -10,11 +10,30 @@ export const SHIFT_ENTER_SEQUENCE = '\x1b\r';
 export interface TerminalKeyEvent {
   type: string;
   key: string;
+  /** The physical key, e.g. 'KeyC'. Unlike `key`, it does not vary by layout. */
+  code: string;
   shiftKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
   metaKey: boolean;
   preventDefault(): void;
+}
+
+/**
+ * True when `event` is the physical key for `letter`.
+ *
+ * event.key is the character the key produces, so on a non-Latin layout
+ * Ctrl+C arrives as key === 'с' (Cyrillic) and never matches 'c'. event.code
+ * is the physical key and is layout-independent, so it fixes every non-Latin
+ * layout at once.
+ *
+ * event.key is still checked first: on Dvorak / Colemak the user presses the
+ * key that *shows* C, which is a different physical key, and matching code
+ * alone would break them.
+ */
+export function isLetterKey(event: TerminalKeyEvent, letter: string, code: string): boolean {
+  if (event.key === letter) return true;
+  return event.code === code && !/^[a-z]$/i.test(event.key);
 }
 
 /**

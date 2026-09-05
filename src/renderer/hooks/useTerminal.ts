@@ -27,7 +27,7 @@ import { resetTerminalModes } from '../utils/terminal-reset';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
 import { trimTrailingWhitespace } from '../utils/copy-text';
-import { handleShiftEnter, isShiftEnter } from './terminal-keys';
+import { handleShiftEnter, isLetterKey, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
 import { isConEmuSubcommand } from './osc9';
 import { forgetSurface as forgetPromptLog, handlePromptMark, refreshHighlights } from '../utils/prompt-log';
@@ -1032,7 +1032,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // (issue #146). Routed through terminal.input (→ onData) rather than
       // pty.write so broadcast-input fans a remapped key out like any other.
       if (applyKeyRemap(event, (data) => terminal.input(data, true))) return false;
-      if (event.type === 'keydown' && event.ctrlKey && event.key === 'c') {
+      if (event.type === 'keydown' && event.ctrlKey && isLetterKey(event, 'c', 'KeyC')) {
         // ConPTY pads lines to full width with real spaces — trim them or
         // pasted blocks carry ragged trailing whitespace (issue #102).
         const selection = trimTrailingWhitespace(terminal.getSelection());
@@ -1043,7 +1043,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         }
       }
       // Ctrl+V: main reads the clipboard and tells us what to type.
-      if (event.type === 'keydown' && event.ctrlKey && event.key === 'v') {
+      if (event.type === 'keydown' && event.ctrlKey && isLetterKey(event, 'v', 'KeyV')) {
         // Prevent the browser 'paste' event — without this, xterm's built-in
         // paste handler ALSO writes the clipboard content through onData,
         // causing the text to appear twice in the terminal.
