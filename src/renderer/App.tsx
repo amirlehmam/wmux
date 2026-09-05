@@ -101,7 +101,6 @@ function findBottomPane(node: SplitNode): PaneId | null {
 // Effective runtime values — seeded from the built-in defaults, then widened/
 // toggled by ~/.wmux/config.toml at startup and on `wmux reload-config`.
 let activeDevPorts: number[] = DEFAULT_DEV_PORTS;
-let autoOpenDevPort = true;
 
 /**
  * Apply `~/.wmux/config.toml`'s `[browser]` section: dev-port detection + auto-open.
@@ -111,12 +110,14 @@ let autoOpenDevPort = true;
  */
 function applyUserConfigBrowser(state: any, browser: any): void {
   activeDevPorts = DEFAULT_DEV_PORTS;
-  autoOpenDevPort = true;
   if (!browser) return;
   if (Array.isArray(browser.devPorts) && browser.devPorts.length) {
     activeDevPorts = mergeDevPorts(DEFAULT_DEV_PORTS, browser.devPorts);
   }
-  if (typeof browser.autoOpen === 'boolean') autoOpenDevPort = browser.autoOpen;
+  // Like defaultUrl below, auto-open is a persisted PREF (Settings offers it too),
+  // so file-wins-at-startup and app-wins-at-runtime both fall out of writing it
+  // to the same place rather than to a module-level runtime value.
+  if (typeof browser.autoOpen === 'boolean') state.setBrowserPrefs({ autoOpenDevServer: browser.autoOpen });
   // The start page (#212) is a persisted PREF, not a module-level runtime value
   // like the two above, because Settings offers it too — so file-wins-at-startup
   // and app-wins-at-runtime both fall out of writing it to the same place.
@@ -274,6 +275,7 @@ function handlePortsUpdate(cmd: any, updateWorkspaceMetadata: StoreAction): void
       // never opens when other recognized ports are already listening (netstat order
       // is arbitrary), and the guard permanently suppresses navigation thereafter.
       const newPort = firstNewDevPort(devPorts, ws?.ports || []);
+      const autoOpenDevPort = useStore.getState().browserPrefs.autoOpenDevServer;
       if (autoOpenDevPort && currentWs && newPort !== undefined) {
         window.wmux?.browser?.navigate?.(`browser-${currentWs}`, `http://localhost:${newPort}`);
       }

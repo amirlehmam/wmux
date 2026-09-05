@@ -61,6 +61,24 @@ export default function BrowserSettings() {
         )}
       </p>
 
+      <div className="settings-row">
+        <label className="settings-label">
+          {t('settings.browser.autoOpenDevServer', 'Auto-open dev servers in the browser panel')}
+        </label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={browserPrefs.autoOpenDevServer}
+          onChange={(e) => setBrowserPrefs({ autoOpenDevServer: e.target.checked })}
+        />
+      </div>
+      <p className="settings-hint">
+        {t(
+          'settings.browser.autoOpenDevServerHint',
+          'When on, the browser panel navigates to a dev server (Vite, Next, …) on its own the moment one starts. Off by default — detected ports are still shown, but nothing opens without you. Also settable in ~/.wmux/config.toml as [browser] auto-open.',
+        )}
+      </p>
+
       <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.browser.linksSection', 'Links')}</h3>
 

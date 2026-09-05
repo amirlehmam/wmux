@@ -283,6 +283,9 @@ export const en = {
   'settings.browser.defaultUrl': 'Start page',
   'settings.browser.defaultUrlHint':
     'Where a workspace\'s browser panel opens before it has been anywhere. Needs a scheme (http:// or https://). Leave empty for wmux\'s own page. Also settable in ~/.wmux/config.toml as [browser] default-url.',
+  'settings.browser.autoOpenDevServer': 'Auto-open dev servers in the browser panel',
+  'settings.browser.autoOpenDevServerHint':
+    'When on, the browser panel navigates to a dev server (Vite, Next, …) on its own the moment one starts. Off by default — detected ports are still shown, but nothing opens without you. Also settable in ~/.wmux/config.toml as [browser] auto-open.',
   'settings.browser.linksSection': 'Links',
   'settings.browser.openLinksExternally': 'Open links in the system browser',
   'settings.browser.openLinksExternallyHint': 'Clicked links in terminals and markdown go to your default browser instead of the wmux panel. Ctrl+click always does the opposite.',
