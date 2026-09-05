@@ -539,6 +539,17 @@ export interface BrowserPrefs {
    * clothes.
    */
   defaultUrl: string;
+  /**
+   * Automatically navigate the workspace's browser panel to a dev server the
+   * moment one is detected on a known port (Vite 5173, Next 3000, …).
+   *
+   * Default false: a panel navigating to a website on its own — with no click —
+   * reads as the app doing something behind the user's back, which is a common
+   * complaint. Off by default, opt in here or via `~/.wmux/config.toml`
+   * `[browser] auto-open`. Detected ports are still tracked and shown; this only
+   * governs the unprompted navigation.
+   */
+  autoOpenDevServer: boolean;
 }
 
 export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
@@ -547,6 +558,7 @@ export const DEFAULT_BROWSER_PREFS: BrowserPrefs = {
   openOnStartup: true,
   openLinksExternally: false,
   defaultUrl: '',
+  autoOpenDevServer: false,
 };
 
 // ─── Prompt settings (issue #207) ─────────────────────────────────────────────
