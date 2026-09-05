@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   SHIFT_ENTER_SEQUENCE,
   handleShiftEnter,
+  isLetterKey,
   isShiftEnter,
   type TerminalKeyEvent,
 } from '../../src/renderer/hooks/terminal-keys';
@@ -10,6 +11,7 @@ function keyEvent(over: Partial<TerminalKeyEvent> = {}): TerminalKeyEvent & { pr
   return {
     type: 'keydown',
     key: 'Enter',
+    code: 'Enter',
     shiftKey: true,
     ctrlKey: false,
     altKey: false,
@@ -58,5 +60,47 @@ describe('Shift+Enter (issue #119)', () => {
 
   it('tells xterm not to handle the key as well', () => {
     expect(handleShiftEnter(keyEvent(), vi.fn())).toBe(false);
+  });
+});
+
+describe('isLetterKey — layout-independent letter matching', () => {
+  it('matches the Latin letter the key produces', () => {
+    expect(isLetterKey(keyEvent({ key: 'c', code: 'KeyC' }), 'c', 'KeyC')).toBe(true);
+    expect(isLetterKey(keyEvent({ key: 'v', code: 'KeyV' }), 'v', 'KeyV')).toBe(true);
+  });
+
+  // The bug: on a Russian layout the C key produces U+0441, Cyrillic "es". It
+  // looks identical to a Latin "c" and is a different character, so matching on
+  // event.key alone never fires and the keystroke falls through to the PTY.
+  it('matches Cyrillic, where the key produces с (U+0441) instead of c', () => {
+    expect(isLetterKey(keyEvent({ key: '\u0441', code: 'KeyC' }), 'c', 'KeyC')).toBe(true);
+    expect(isLetterKey(keyEvent({ key: 'м', code: 'KeyV' }), 'v', 'KeyV')).toBe(true);
+  });
+
+  it('matches Greek, and so every other non-Latin script, without listing them', () => {
+    expect(isLetterKey(keyEvent({ key: 'ψ', code: 'KeyC' }), 'c', 'KeyC')).toBe(true);
+  });
+
+  // Dvorak moves C to the physical I key. The user presses the key that shows
+  // C, so event.key is what has to decide here — matching event.code alone
+  // would silently break every remapped Latin layout.
+  it('follows the character on Dvorak, where C sits on a different physical key', () => {
+    expect(isLetterKey(keyEvent({ key: 'c', code: 'KeyI' }), 'c', 'KeyC')).toBe(true);
+  });
+
+  it('ignores the physical key when it produces some other Latin letter', () => {
+    // Physical KeyC on Dvorak produces 'j' — pressing it must not copy.
+    expect(isLetterKey(keyEvent({ key: 'j', code: 'KeyC' }), 'c', 'KeyC')).toBe(false);
+  });
+
+  it('leaves unrelated keys alone', () => {
+    expect(isLetterKey(keyEvent({ key: 'x', code: 'KeyX' }), 'c', 'KeyC')).toBe(false);
+    expect(isLetterKey(keyEvent({ key: 'ч', code: 'KeyX' }), 'c', 'KeyC')).toBe(false);
+  });
+
+  // Shift uppercases event.key, so Ctrl+Shift+C stays out of the terminal's
+  // bare-Ctrl+C copy branch and reaches the global shortcut handler as before.
+  it('does not match the shifted Latin letter', () => {
+    expect(isLetterKey(keyEvent({ key: 'C', code: 'KeyC' }), 'c', 'KeyC')).toBe(false);
   });
 });
