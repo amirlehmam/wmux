@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { WorkspaceInfo, SplitNode, PaneId } from '../../../shared/types';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
@@ -142,12 +143,18 @@ export default function WorkspaceRow({
   const activeTabIndicator = useStore((state) => state.sidebarPrefs.activeTabIndicator);
   const uiMode = useStore((state) => state.appearancePrefs.uiMode);
 
-  const surfaceProgress = useStore((state) => state.surfaceProgress);
-  const wsProgress = useMemo(() => {
+  // Select only THIS workspace's progress entries, shallow-compared. The slice
+  // replaces the whole surfaceProgress object on any accepted update, so a bare
+  // `state.surfaceProgress` subscription re-rendered EVERY sidebar row for one
+  // pane's OSC 9;4 tick (#141's fan-out, one hop downstream of the slice's own
+  // change-gate). Per-surface entries are identity-stable while unchanged, so
+  // another workspace's progress leaves this array shallow-equal and this row
+  // untouched.
+  const wsProgressEntries = useStore(useShallow((state) => {
     const ids = getAllSurfaceIds(workspace.splitTree);
-    const entries = ids.map((id) => surfaceProgress[id]).filter(Boolean);
-    return aggregateProgress(entries);
-  }, [surfaceProgress, workspace.splitTree]);
+    return ids.map((id) => state.surfaceProgress[id]).filter(Boolean);
+  }));
+  const wsProgress = useMemo(() => aggregateProgress(wsProgressEntries), [wsProgressEntries]);
 
   // Find Claude activity for this workspace's surfaces (from PTY observer)
   const wsActivity = useMemo(() => {
