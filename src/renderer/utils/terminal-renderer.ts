@@ -63,13 +63,24 @@ export function attachVisibleRenderer(terminal: Terminal): RendererHandle {
   };
 
   webgl.onContextLoss(() => {
-    // GPU evicted this context (driver reset, context pressure elsewhere…).
-    // Downgrade this terminal to the DOM renderer instead of leaving it frozen.
+    // GPU evicted this context (driver reset, or context pressure — Chromium
+    // force-loses the oldest WebGL context past its ~16 cap, which happens
+    // exactly when panes are split/resized and several terminals flip visible at
+    // once). Downgrade this terminal to the DOM renderer instead of leaving it
+    // frozen.
     console.warn('[wmux] WebGL context lost, downgrading terminal to DOM renderer');
     release();
     try { webgl.dispose(); } catch { /* no-op */ }
     handle.kind = DOM_RENDERER_HANDLE.kind;
     handle.dispose = DOM_RENDERER_HANDLE.dispose;
+    // Disposing the WebGL addon reactivates xterm's DOM renderer, but nothing
+    // repaints the existing buffer into it — the canvas the lost context left
+    // behind stays blank until the next PTY write, which is the "text disappears
+    // when I resize/split panes" bug. Force a full redraw once the DOM renderer
+    // is live (next frame, so its layout has settled).
+    requestAnimationFrame(() => {
+      try { terminal.refresh(0, terminal.rows - 1); } catch { /* no-op */ }
+    });
   });
 
   return handle;
