@@ -428,13 +428,44 @@ function registerPromptMarks(terminal: Terminal, surfaceId: string | undefined) 
   return terminal.onScroll(() => handleAnchorScroll(terminal, surfaceId));
 }
 
-// Convert a wheel delta to a line count (sign preserved, magnitude ≥ 1).
-function wheelDeltaToLines(ev: WheelEvent, rows: number): number {
-  let amount: number;
-  if (ev.deltaMode === 1 /* DOM_DELTA_LINE */) amount = ev.deltaY;
-  else if (ev.deltaMode === 2 /* DOM_DELTA_PAGE */) amount = ev.deltaY * (rows || 24);
-  else amount = ev.deltaY / 17;
+// Per-surface fractional-line accumulator for pixel-precision devices
+// (touchpads, high-resolution mice). Those fire many events per second with
+// tiny sub-line deltaY values, and the old `Math.max(1, round)` forced EVERY
+// such micro-event to a whole line — so a gentle two-finger drag became a fast,
+// jerky line-at-a-time jump. We now carry the sub-line remainder between events
+// and only emit whole lines, which is what makes touchpad scrolling smooth.
+const wheelLineAccum = new Map<string, number>();
+
+// Round a line/page-mode delta away from zero so a notched wheel always moves at
+// least one line per detent.
+function snapWheelLines(amount: number): number {
+  if (amount === 0) return 0;
   return Math.sign(amount) * Math.max(1, Math.round(Math.abs(amount)));
+}
+
+// Convert a wheel event to a line count (sign preserved).
+//   line/page mode (notched wheels)   → at least one line per event
+//   pixel mode (touchpads, precision) → accumulate against the REAL cell height
+//                                        and emit only whole lines, keeping the
+//                                        remainder for the next event
+function wheelDeltaToLines(
+  ev: WheelEvent,
+  terminal: Terminal,
+  host: HTMLElement | null,
+  surfaceId: string | undefined,
+): number {
+  if (ev.deltaMode === 1 /* DOM_DELTA_LINE */) return snapWheelLines(ev.deltaY);
+  if (ev.deltaMode === 2 /* DOM_DELTA_PAGE */) return snapWheelLines(ev.deltaY * (terminal.rows || 24));
+  // DOM_DELTA_PIXEL. Use the measured cell height rather than a fixed 17px so the
+  // mapping tracks the user's font size; fall back to 17 only when geometry is
+  // unavailable (host not laid out yet).
+  const rect = host?.getBoundingClientRect();
+  const cellH = rect && terminal.rows > 0 ? rect.height / terminal.rows : 17;
+  const key = surfaceId ?? '__no-surface__';
+  const acc = (wheelLineAccum.get(key) ?? 0) + ev.deltaY / cellH;
+  const lines = Math.trunc(acc);
+  wheelLineAccum.set(key, acc - lines);
+  return lines;
 }
 
 // Approximate the terminal cell (1-based col/row) under the mouse pointer so
@@ -502,7 +533,7 @@ function handleTerminalWheel(
   if (!isAltBuffer && !isMouseEnabled) {
     ev.preventDefault();
     ev.stopPropagation();
-    const lines = wheelDeltaToLines(ev, terminal.rows);
+    const lines = wheelDeltaToLines(ev, terminal, host, surfaceId);
     if (lines !== 0) terminal.scrollLines(lines);
     return;
   }
@@ -510,7 +541,7 @@ function handleTerminalWheel(
   ev.preventDefault();
   ev.stopPropagation();
   if (!ptyId) return;
-  const count = wheelDeltaToLines(ev, terminal.rows);
+  const count = wheelDeltaToLines(ev, terminal, host, surfaceId);
   if (count !== 0) writeWheelToPty(ev, terminal, host, ptyId, count, isMouseEnabled);
 }
 
@@ -1414,7 +1445,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       resetTerminalModes(term);
       // Drop the replay cache too, or the next remount puts the modes straight
       // back — same coupling as the exit path.
-      if (surfaceId) surfaceMouseModes.delete(surfaceId);
+      if (surfaceId) {
+        surfaceMouseModes.delete(surfaceId);
+        wheelLineAccum.delete(surfaceId);
+      }
     };
     document.addEventListener('wmux:reset-terminal', handler);
     return () => document.removeEventListener('wmux:reset-terminal', handler);
