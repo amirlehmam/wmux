@@ -75,7 +75,7 @@ export default function BrowserSettings() {
       <p className="settings-hint">
         {t(
           'settings.browser.autoOpenDevServerHint',
-          'When on, the browser panel navigates to a dev server (Vite, Next, …) on its own the moment one starts. Off by default — detected ports are still shown, but nothing opens without you. Also settable in ~/.wmux/config.toml as [browser] auto-open.',
+          'When on, the browser panel navigates to a dev server (Vite, Next, …) on its own the moment one starts. On by default — turn it off and detected ports are still shown on the workspace row, but nothing opens without you. Also settable in ~/.wmux/config.toml as [browser] auto-open.',
         )}
       </p>
 

@@ -1161,6 +1161,14 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // emulator have to be cleared together or a remount re-asserts the
         // modes we just dropped.
         surfaceMouseModes.delete(id);
+        // The wheel accumulator is keyed the same way and has the same
+        // unbounded-growth problem, so it is dropped on the same path rather
+        // than only on `wmux:reset-terminal` — a surface that dies without
+        // ever being reset would otherwise leave its remainder behind for the
+        // life of the process. Dropping it is also correct on its own terms:
+        // a fraction of a line owed to a scroll gesture aimed at a dead
+        // process should not be paid out to whatever opens here next.
+        wheelLineAccum.delete(id);
         // A dead process cannot produce the output an anchor is holding back,
         // so holding the viewport off the bottom would hide the "[process
         // exited]" line this handler just wrote — the one thing the user most
