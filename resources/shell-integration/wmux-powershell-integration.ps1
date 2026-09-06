@@ -18,11 +18,24 @@ function wmux { node "$env:WMUX_CLI" @args }
 # Named pipe client helper. State updates carry an "auth <token> " prefix —
 # wmux injects WMUX_PIPE_TOKEN into every shell it spawns, and the pipe server
 # rejects unauthenticated V1 commands (issue #72).
+#
+# The pipe NAME must track WMUX_INSTANCE exactly the way shared/instance.ts's
+# getPipePath() does. A side-by-side instance (`WMUX_INSTANCE=dev`) listens on
+# "wmux-dev", so a shell hardcoding "wmux" connects to a pipe that is not there
+# and eats the full Connect() timeout before the catch below swallows it. The
+# prompt sends three of these per command (Report-Cwd, Report-ShellState,
+# ports_kick), so that mistake costs ~3s of dead time after EVERY command —
+# including `clear` — with nothing logged to explain it.
+$global:_wmux_pipe_name = $(
+    $inst = if ($env:WMUX_INSTANCE) { $env:WMUX_INSTANCE.Trim() } else { '' }
+    if ($inst) { "wmux-$inst" } else { 'wmux' }
+)
+
 function Send-WmuxMessage {
     param([string]$Message)
     try {
         if ($env:WMUX_PIPE_TOKEN) { $Message = "auth $($env:WMUX_PIPE_TOKEN) $Message" }
-        $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", "wmux", [System.IO.Pipes.PipeDirection]::InOut)
+        $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", $global:_wmux_pipe_name, [System.IO.Pipes.PipeDirection]::InOut)
         $pipe.Connect(1000)
         $writer = New-Object System.IO.StreamWriter($pipe)
         $writer.AutoFlush = $true
@@ -794,7 +807,7 @@ $null = Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PS
                 }
             }
         }
-    } -ArgumentList $env:WMUX_SURFACE_ID, "wmux", $env:WMUX_PIPE_TOKEN, $global:_wmux_cwd_file
+    } -ArgumentList $env:WMUX_SURFACE_ID, $global:_wmux_pipe_name, $env:WMUX_PIPE_TOKEN, $global:_wmux_cwd_file
 }
 
 # Quick-launch profile startup commands (issue #32).
