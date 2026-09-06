@@ -15,13 +15,35 @@ import { useT } from '../i18n';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Unshifted character for each punctuation key, by physical code.
+ *
+ * Only consulted when the direct e.key comparison already failed AND Shift is
+ * held, so a non-US layout is unaffected: there the recorder stored whatever
+ * e.key produced, and that matches directly. This exists to rescue the shipped
+ * US-layout defaults (`Ctrl+Shift+[` / `Ctrl+Shift+]`), which are written as
+ * the unshifted character but can only ever arrive as the shifted one.
+ */
+const UNSHIFTED_BY_CODE: Readonly<Record<string, string>> = {
+  BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'",
+  Comma: ',', Period: '.', Slash: '/', Backquote: '`',
+  Minus: '-', Equal: '=', Backslash: '\\',
+};
+
 export function matchesBinding(e: KeyboardEvent, binding: ShortcutBinding): boolean {
   // Case-insensitive compare for single-letter keys: Shift uppercases e.key on Windows,
   // but bindings are stored lowercase. Without toLowerCase, Ctrl+Shift+letter combos
   // never match (e.g. Ctrl+Shift+N fires with e.key='N' vs binding.key='n').
   const eventKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const bindingKey = binding.key.length === 1 ? binding.key.toLowerCase() : binding.key;
-  const keyMatch = eventKey === bindingKey;
+  // toLowerCase covers Shift on a LETTER ('N' -> 'n'). It does nothing for
+  // punctuation, where Shift produces a different character entirely: Ctrl+
+  // Shift+] arrives as e.key '}' while DEFAULT_SHORTCUTS stores ']', so
+  // nextSurface/prevSurface could never fire. Fall back to the physical key,
+  // the same way isLetterKey does in ./terminal-keys — e.code is stable under
+  // Shift, so BracketRight identifies ']' whether it produced ']' or '}'.
+  const keyMatch = eventKey === bindingKey
+    || (e.shiftKey && bindingKey.length === 1 && UNSHIFTED_BY_CODE[e.code] === bindingKey);
   const ctrlMatch = !!binding.ctrl === e.ctrlKey;
   const shiftMatch = !!binding.shift === e.shiftKey;
   const altMatch = !!binding.alt === e.altKey;
