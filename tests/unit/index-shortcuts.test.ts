@@ -147,3 +147,29 @@ describe('reconcileIndexModifiers', () => {
       .toEqual({ workspace: 'ctrl', surface: 'off' });
   });
 });
+
+
+// ─── Unknown modifier values must degrade, never throw ───────────────────────
+// Reading `.ctrl` off `MODIFIER_TRIPLE[<unknown>]` threw "Cannot read
+// properties of undefined (reading 'ctrl')" and, because the F1 cheat sheet
+// builds its rows through formatIndexShortcut, took the entire renderer down
+// via the root ErrorBoundary. matchIndexShortcut has the same shape and runs on
+// every keydown, which is the worse of the two.
+describe('unknown IndexModifiers values', () => {
+  const junk = ['ctrl-shift-alt', '', 'CTRL', undefined, null] as unknown as IndexModifiers[];
+
+  it('formatIndexShortcut returns null instead of throwing', () => {
+    for (const bad of junk) {
+      expect(() => formatIndexShortcut(bad)).not.toThrow();
+      expect(formatIndexShortcut(bad)).toBeNull();
+    }
+  });
+
+  it('matchIndexShortcut returns null instead of throwing', () => {
+    const e = { key: '3', code: 'Digit3', ctrlKey: true, altKey: false, shiftKey: false };
+    for (const bad of junk) {
+      expect(() => matchIndexShortcut(e, bad)).not.toThrow();
+      expect(matchIndexShortcut(e, bad)).toBeNull();
+    }
+  });
+});

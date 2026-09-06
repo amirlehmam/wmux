@@ -83,7 +83,11 @@ export function actionLabel(action: ShortcutAction, t: (key: TranslationKey, fal
 
 /** Render a binding as "Ctrl+Shift+T". Shared with the shortcut cheat-sheet
  *  (F1) so both views always show the user's live (possibly remapped) bindings. */
-export function formatBinding(binding: ShortcutBinding): string {
+export function formatBinding(binding: ShortcutBinding | undefined): string {
+  // Tolerates a missing entry: `shortcuts` is DEFAULT_SHORTCUTS spread with
+  // whatever was persisted, and a persisted null/undefined for an action would
+  // otherwise throw here and take out both this screen and the F1 cheat sheet.
+  if (!binding?.key) return '';
   const parts: string[] = [];
   if (binding.ctrl) parts.push('Ctrl');
   if (binding.alt) parts.push('Alt');
