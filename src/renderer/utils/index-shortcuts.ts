@@ -132,7 +132,21 @@ export function reconcileIndexModifiers(
   prev: { workspace: IndexModifiers; surface: IndexModifiers },
   patch: Partial<{ workspace: IndexModifiers; surface: IndexModifiers }>,
 ): { workspace: IndexModifiers; surface: IndexModifiers } {
-  const next = { ...prev, ...patch };
+  // `?? prev` rather than a spread. `{ ...prev, ...patch }` looks equivalent but
+  // is not: applyIndexModifiers always passes BOTH keys, so the family the
+  // caller did not touch arrives as an explicit `undefined` and a spread
+  // overwrites prev's good value with it. Changing one dropdown in Settings ->
+  // Keyboard therefore set the OTHER family to undefined, MODIFIER_TRIPLE
+  // [undefined] is undefined, and matchIndexShortcut read .ctrl off that on
+  // every keydown — blanking the renderer through the root ErrorBoundary.
+  // Nothing bad was ever persisted; the value was manufactured on write.
+  //
+  // The `patch.x !== undefined` checks below still read the raw patch, so
+  // "which field did the caller set" — the swap rule — is unchanged.
+  const next = {
+    workspace: patch.workspace ?? prev.workspace,
+    surface: patch.surface ?? prev.surface,
+  };
   if (next.workspace === 'off' || next.surface === 'off') return next;
   if (next.workspace !== next.surface) return next;
 

@@ -173,3 +173,39 @@ describe('unknown IndexModifiers values', () => {
     }
   });
 });
+
+
+// ─── The partial-patch clobber (the real cause of the 'ctrl' crash) ──────────
+// reconcileIndexModifiers used `{ ...prev, ...patch }`. applyIndexModifiers
+// always passes BOTH keys, so the untouched family arrived as an explicit
+// `undefined` and the spread wrote it over prev's good value. Changing one
+// dropdown in Settings -> Keyboard thus set the OTHER family to undefined, and
+// every subsequent keydown threw in matchIndexShortcut.
+describe('reconcileIndexModifiers with an explicit-undefined patch', () => {
+  it('keeps the untouched family instead of clobbering it', () => {
+    const prev = { workspace: 'ctrl', surface: 'ctrl-alt' } as const;
+    const out = reconcileIndexModifiers(prev, { workspace: 'alt', surface: undefined });
+    expect(out.surface).toBe('ctrl-alt');
+    expect(out.workspace).toBe('alt');
+  });
+
+  it('never yields undefined for either family', () => {
+    const prev = { workspace: 'ctrl', surface: 'ctrl-alt' } as const;
+    for (const patch of [
+      { workspace: 'alt' as const, surface: undefined },
+      { workspace: undefined, surface: 'alt' as const },
+      { workspace: undefined, surface: undefined },
+    ]) {
+      const out = reconcileIndexModifiers(prev, patch);
+      expect(out.workspace).toBeDefined();
+      expect(out.surface).toBeDefined();
+    }
+  });
+
+  it('still swaps on a collision (the rule this function exists for)', () => {
+    const prev = { workspace: 'ctrl', surface: 'ctrl-alt' } as const;
+    const out = reconcileIndexModifiers(prev, { workspace: 'ctrl-alt', surface: undefined });
+    expect(out.workspace).toBe('ctrl-alt');
+    expect(out.surface).toBe('ctrl'); // handed back the workspace's old combo
+  });
+});

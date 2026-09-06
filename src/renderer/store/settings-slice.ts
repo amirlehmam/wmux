@@ -842,15 +842,36 @@ function coerceIndexModifiers(value: unknown, fallback: IndexModifiers): IndexMo
  * The one place a `KeyboardPrefs` value is produced. Translates between the
  * pref field names and the family names `reconcileIndexModifiers` speaks, so
  * the collision rule itself stays a pure, testable function.
+ *
+ * Exported for the unit suite: it is the chokepoint both the load path and
+ * setKeyboardPrefs funnel through, so it is where the "no unknown value ever
+ * reaches the store" invariant is worth pinning directly.
  */
-function applyIndexModifiers(base: KeyboardPrefs, patch: Partial<KeyboardPrefs>): KeyboardPrefs {
-  const next = reconcileIndexModifiers(
-    { workspace: base.workspaceIndexModifiers, surface: base.surfaceIndexModifiers },
-    {
-      workspace: patch.workspaceIndexModifiers,
-      surface: patch.surfaceIndexModifiers,
-    },
-  );
+export function applyIndexModifiers(base: KeyboardPrefs, patch: Partial<KeyboardPrefs>): KeyboardPrefs {
+  // Coerce HERE, not only in loadKeyboardPrefs. setKeyboardPrefs hands this a
+  // caller-supplied patch (the CLI, a settings import) that nothing validates,
+  // so an unknown string used to land in the store verbatim. That made
+  // MODIFIER_TRIPLE[mods] undefined, and reading .ctrl off it threw on EVERY
+  // keydown through matchIndexShortcut -> handleIndexKey, taking the renderer
+  // down via the root ErrorBoundary. Guarding the two readers stops the crash;
+  // guarding here stops the bad value existing at all.
+  //
+  // `base` is coerced too, so a store already holding a bad value heals itself
+  // on the next write instead of staying poisoned for the life of the session.
+  const safeBase = {
+    workspace: coerceIndexModifiers(base.workspaceIndexModifiers, DEFAULT_KEYBOARD_PREFS.workspaceIndexModifiers),
+    surface: coerceIndexModifiers(base.surfaceIndexModifiers, DEFAULT_KEYBOARD_PREFS.surfaceIndexModifiers),
+  };
+  // `undefined` must survive as "the caller did not set this field" — that is
+  // exactly what reconcileIndexModifiers keys its swap rule on — so only a
+  // value that is actually present gets coerced.
+  const coercePatch = (v: IndexModifiers | undefined, fallback: IndexModifiers): IndexModifiers | undefined =>
+    v === undefined ? undefined : coerceIndexModifiers(v, fallback);
+
+  const next = reconcileIndexModifiers(safeBase, {
+    workspace: coercePatch(patch.workspaceIndexModifiers, safeBase.workspace),
+    surface: coercePatch(patch.surfaceIndexModifiers, safeBase.surface),
+  });
   return { workspaceIndexModifiers: next.workspace, surfaceIndexModifiers: next.surface };
 }
 
