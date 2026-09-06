@@ -124,15 +124,17 @@ export function claimsKeyEvent(
   if (matchIndexShortcut(indexEvent, keyboardPrefs.workspaceIndexModifiers) !== null) return true;
   if (matchIndexShortcut(indexEvent, keyboardPrefs.surfaceIndexModifiers) !== null) return true;
 
-  // Deliberately limited to combos carrying Ctrl or Alt. Three bindings are
-  // bare function keys (F1 cheat sheet, F3/Shift+F3 find next/previous) and
-  // xterm turns those into escape sequences a TUI may want — F1 is "help" in
-  // half the full-screen programs people run in here. Those are broken over a
-  // focused terminal for the same reason as Ctrl+N, but taking them back is a
-  // product decision with real blast radius, not the mechanical fix this is, so
-  // they keep today's behaviour and the terminal keeps winning.
-  if (!e.ctrlKey && !e.altKey) return false;
-
+  // Bare function keys included. Three bindings are bare (F1 cheat sheet,
+  // F3/Shift+F3 find next/previous) and xterm turns those into escape
+  // sequences, so they were dead over a focused terminal exactly like Ctrl+N.
+  //
+  // F1 is the case that decides this. It opens the shortcut cheat sheet — the
+  // one screen whose entire job is telling you what the other keys do — and a
+  // terminal is where you are standing when you need it. Leaving it to the PTY
+  // makes the feature undiscoverable in the app's default state, which is worse
+  // than the cost: F1 is also "help" in some full-screen TUIs, and they no
+  // longer receive it. The binding is deliberate and documented, so it should
+  // work where it is documented to work.
   if (!isSafeToIntercept(e)) return false;
   const pressed = bindingFromEvent(e);
   if (!pressed) return false;

@@ -157,15 +157,19 @@ describe('claimsKeyEvent', () => {
     expect(claims(key('Enter'))).toBe(false);
   });
 
-  it('leaves bare function keys to the terminal (deliberate scope limit)', () => {
-    // F1 / F3 / Shift+F3 ARE bound (cheat sheet, find next/previous) and are
-    // broken over a focused terminal for the same reason as Ctrl+N — but they
-    // are also "help" and "view" in TUI apps, so reclaiming them is a separate
-    // product call. The guard requires Ctrl or Alt precisely to exclude them.
-    expect(claims(key('F1'))).toBe(false);
-    expect(claims(key('F3'))).toBe(false);
-    expect(claims(key('F3', { shift: true }))).toBe(false);
-    expect(claims(key('F4', { alt: true }))).toBe(true); // closeWindow: Alt carries it
+  it('claims the bare function keys that are bound', () => {
+    // F1 opens the cheat sheet — the screen that documents every other key — so
+    // it has to work from a terminal, which is where you are when you need it.
+    // The cost is accepted knowingly: F1 no longer reaches a TUI's own help.
+    expect(claims(key('F1'))).toBe(true);
+    expect(claims(key('F3'))).toBe(true);
+    expect(claims(key('F3', { shift: true }))).toBe(true);
+    expect(claims(key('F4', { alt: true }))).toBe(true); // closeWindow
+  });
+
+  it('still ignores function keys that are NOT bound', () => {
+    expect(claims(key('F5'))).toBe(false);
+    expect(claims(key('F7'))).toBe(false);
   });
 
   it('does not claim Ctrl+O — openFolder is not in SAFE_CTRL_KEYS', () => {
