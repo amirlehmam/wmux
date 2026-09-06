@@ -167,6 +167,19 @@ describe('claimsKeyEvent', () => {
     expect(claims(key('F4', { alt: true }))).toBe(true); // closeWindow
   });
 
+  it('never steals a bare printable key, even if one is bound to it', () => {
+    // useKeyCapture records a bare letter as a binding with no modifier and no
+    // warning. Claiming it would swallow every press of that letter in the
+    // shell, which makes the terminal unusable — far worse than the shortcut
+    // simply not firing from a focused pane.
+    const rebound = { ...DEFAULT_SHORTCUTS, newWorkspace: { key: 'a' } };
+    expect(claimsKeyEvent(key('a'), rebound, DEFAULT_KEYBOARD_PREFS)).toBe(false);
+    expect(claimsKeyEvent(key('A', { shift: true }), rebound, DEFAULT_KEYBOARD_PREFS)).toBe(false);
+    // ...but the same action on a named key is still claimed.
+    const named = { ...DEFAULT_SHORTCUTS, newWorkspace: { key: 'F6' } };
+    expect(claimsKeyEvent(key('F6'), named, DEFAULT_KEYBOARD_PREFS)).toBe(true);
+  });
+
   it('still ignores function keys that are NOT bound', () => {
     expect(claims(key('F5'))).toBe(false);
     expect(claims(key('F7'))).toBe(false);

@@ -135,6 +135,13 @@ export function claimsKeyEvent(
   // than the cost: F1 is also "help" in some full-screen TUIs, and they no
   // longer receive it. The binding is deliberate and documented, so it should
   // work where it is documented to work.
+  // A bare key may only be claimed if it is a NAMED key (F1, F3, PageUp...).
+  // Single-character keys are what typing is made of, and useKeyCapture happily
+  // records a bare letter as a binding — with no modifier required and no
+  // warning — so without this a rebind to `a` would swallow every `a` the user
+  // types into the shell. Named keys carry no such risk: nothing types F3.
+  if (!e.ctrlKey && !e.altKey && e.key.length === 1) return false;
+
   if (!isSafeToIntercept(e)) return false;
   const pressed = bindingFromEvent(e);
   if (!pressed) return false;
