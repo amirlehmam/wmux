@@ -540,6 +540,24 @@ export default function App() {
     document.addEventListener('wmux:toggle-cheatsheet', toggle);
     return () => document.removeEventListener('wmux:toggle-cheatsheet', toggle);
   }, []);
+  // Closing the overlay must hand focus back to the terminal it was opened
+  // from. The sheet focuses its own filter box on mount, so without this the
+  // caret is left on <body> and the next keystroke goes nowhere — the user has
+  // to click the pane again. Only reachable now that F1 escapes a focused
+  // terminal at all; before that the overlay could only be opened from
+  // somewhere that was not a terminal.
+  const closeCheatSheet = useCallback(() => {
+    setCheatSheetOpen(false);
+    const st = useStore.getState();
+    const ws = st.workspaces.find((w) => w.id === st.activeWorkspaceId);
+    const leaf = ws && focusedPaneId ? findLeaf(ws.splitTree, focusedPaneId) : undefined;
+    const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+    if (surface?.type !== 'terminal') return;
+    // After the overlay unmounts, or the focus lands on an element about to go.
+    requestAnimationFrame(() => {
+      try { surfaceTerminalRegistry.get(surface.id)?.focus(); } catch { /* disposed */ }
+    });
+  }, [focusedPaneId]);
   // Broadcast-input mode banner (issue #64): mirror the runtime store flag.
   const broadcastInputActive = useStore((s) => s.broadcastInputActive);
   // Custom background parallel to theming (issue #89): rendered as a layer
@@ -1697,7 +1715,7 @@ export default function App() {
         />
       )}
 
-      {cheatSheetOpen && <ShortcutCheatSheet onClose={() => setCheatSheetOpen(false)} />}
+      {cheatSheetOpen && <ShortcutCheatSheet onClose={closeCheatSheet} />}
 
       <ConfirmCloseDialog />
       <ConfirmCloseSurfaceDialog />
