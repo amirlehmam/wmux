@@ -8,6 +8,7 @@ import { PaneId, SplitNode } from '../../shared/types';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { GLOBAL_IN_EDITOR, isEditableTarget } from './shortcut-target';
 import { matchIndexShortcut, resolveIndexTarget } from '../utils/index-shortcuts';
+import { isSafeToIntercept } from '../utils/shortcut-binding';
 import { followOutputFor, togglePinnedPromptFor, togglePromptOutlineFor } from '../store/prompt-actions';
 import { v4 as uuid } from 'uuid';
 import { useT } from '../i18n';
@@ -26,37 +27,6 @@ export function matchesBinding(e: KeyboardEvent, binding: ShortcutBinding): bool
   const altMatch = !!binding.alt === e.altKey;
   return keyMatch && ctrlMatch && shiftMatch && altMatch;
 }
-
-/**
- * Keys that are safe to intercept even when a terminal has focus.
- * All others with only Ctrl held (no Shift/Alt) are forwarded to the terminal.
- */
-const SAFE_CTRL_KEYS = new Set(['b', 'd', 'n', 't', 'w', 'f', ',']);
-
-function isSafeToIntercept(e: KeyboardEvent): boolean {
-  if (!e.ctrlKey) return true; // Not a Ctrl combo — always safe
-
-  // Ctrl+Shift+* and Ctrl+Alt+* are safe (terminal uses bare Ctrl combos)
-  if (e.shiftKey || e.altKey) return true;
-
-  // Ctrl+PageDown / Ctrl+PageUp are safe
-  if (e.key === 'PageDown' || e.key === 'PageUp') return true;
-
-  // Ctrl+F2 is safe (rename)
-  if (e.key === 'F2') return true;
-
-  // Ctrl+F12 is safe (dev tools)
-  if (e.key === 'F12') return true;
-
-  // Ctrl+= / Ctrl+- / Ctrl+0 are safe (font size)
-  if (e.key === '=' || e.key === '-' || e.key === '0') return true;
-
-  // Specifically whitelisted bare Ctrl keys
-  if (SAFE_CTRL_KEYS.has(e.key.toLowerCase())) return true;
-
-  return false;
-}
-
 
 // ─── Spatial pane navigation ─────────────────────────────────────────────────
 

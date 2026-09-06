@@ -30,6 +30,7 @@ import { ReplayHold } from '../utils/replay-hold';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isLetterKey, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
+import { claimsKeyEvent } from '../utils/shortcut-binding';
 import { isConEmuSubcommand } from './osc9';
 import { forgetSurface as forgetPromptLog, handlePromptMark, refreshHighlights } from '../utils/prompt-log';
 import {
@@ -1138,6 +1139,31 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // like any other key.
       if (isShiftEnter(event)) {
         return handleShiftEnter(event, (data) => terminal.input(data, true));
+      }
+      // Let wmux's own shortcuts escape the terminal.
+      //
+      // Every global binding lives on a document-level keydown listener
+      // (App.tsx's palette, useKeyboardShortcuts, PaneWrapper's find). xterm's
+      // _keyDown ends a handled key with cancel(event, true) — preventDefault
+      // AND stopPropagation — and it "handles" every bare Ctrl+<letter> by
+      // turning it into a control code (Ctrl+N -> ). So the event died at
+      // the helper textarea and none of those listeners ever ran: Ctrl+N, +T,
+      // +W, +D and +F did nothing while a terminal had focus, and appeared to
+      // start working only once focus had moved off it — e.g. right after
+      // opening the command palette, whose Ctrl+Shift+P xterm does not claim.
+      //
+      // Returning false makes _keyDown bail BEFORE cancel(), so the keystroke
+      // stays alive and bubbles to document, where the real handler runs and
+      // does its own preventDefault (which also suppresses the keypress).
+      //
+      // Placed last on purpose: config.toml remaps (#146), Ctrl+C copy, Ctrl+V
+      // paste and Shift+Enter (#119) are terminal-owned and keep precedence.
+      // claimsKeyEvent is the same predicate the document listener uses to
+      // decide it will act, so a key can never be released here only to be
+      // declined there.
+      if (event.type === 'keydown') {
+        const { shortcuts, keyboardPrefs } = useStore.getState();
+        if (claimsKeyEvent(event, shortcuts, keyboardPrefs)) return false;
       }
       return true;
     });
