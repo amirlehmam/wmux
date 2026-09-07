@@ -26,6 +26,25 @@ export function getAppDataDir(): string {
 }
 
 /**
+ * Windows taskbar identity. Carries the same suffix as the pipe and the
+ * APPDATA dir, and for the same reason.
+ *
+ * Windows resolves an AppUserModelId to exactly ONE executable. A dev build
+ * that keeps the production id therefore repoints `com.wmux.app` at its own
+ * node_modules/electron/dist/electron.exe the moment it starts: from then on
+ * the INSTALLED app's taskbar button borrows the dev binary's name and icon —
+ * it reads "Electron" — and the user's pinned button is orphaned, because a
+ * pin is keyed on that id (see build/installer.nsh). Neither heals when the
+ * dev build exits; the association outlives it.
+ *
+ * That is the one identity WMUX_INSTANCE did not already isolate, which made
+ * "run the dev build side by side" quietly destructive to a real install.
+ */
+export function getAppUserModelId(): string {
+  return `com.wmux.app${suffix()}`;
+}
+
+/**
  * Path to the per-instance auth token used to authenticate privileged (V2)
  * pipe requests. Stored under the instance's APPDATA dir, which is only
  * readable by the current user — so only processes running as this user can

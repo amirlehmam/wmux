@@ -20,7 +20,7 @@ import { PipeServer } from './pipe-server';
 import { PortScanner } from './port-scanner';
 import { CDPProxy } from './cdp-proxy';
 import { IPC_CHANNELS, SurfaceId, BrowserEngine } from '../shared/types';
-import { getPipePath, getAppDataDir, ensurePipeToken } from '../shared/instance';
+import { getPipePath, getAppDataDir, ensurePipeToken, getAppUserModelId } from '../shared/instance';
 import { loadSession, saveSession, handleVersionChange, SessionData } from './session-persistence';
 import { getAgentState, reportAgentSession } from './agent-state';
 import {
@@ -668,8 +668,10 @@ setAnswerWriter(async (surfaceId, payload) => {
   ptyManager.write(resolved.id, payload.text ?? '');
 });
 
-// Set Windows AppUserModelId so taskbar pinning uses the correct icon & identity
-app.setAppUserModelId('com.wmux.app');
+// Set Windows AppUserModelId so taskbar pinning uses the correct icon & identity.
+// Suffixed per instance: a WMUX_INSTANCE build must not seize the installed
+// app's taskbar identity out from under it (see getAppUserModelId).
+app.setAppUserModelId(getAppUserModelId());
 
 // Auto-strip MOTW on startup so users never see security warnings or pinning failures
 stripMotw();
