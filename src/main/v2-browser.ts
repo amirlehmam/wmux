@@ -384,24 +384,33 @@ function agentFailure(method: string, res: RunResult): Error {
 }
 
 /**
- * Warn when a `browser.wait` carries BOTH a ref and a per-call timeout on the
- * agent engine, where the timeout cannot survive into argv.
+ * The one sentence describing a `browser.wait` whose per-call timeout cannot
+ * survive into agent-browser's argv — or null when nothing is being dropped.
+ *
+ * Pure, and returns the message rather than printing it, because the diagnostic
+ * has TWO destinations and they are not interchangeable. `console.warn` reaches
+ * main's log, which is what a maintainer reads after the fact (`wmux
+ * crash-report` tails it); the V2 reply reaches the caller, which is the only
+ * place the person who actually typed the timeout is looking. `wmux browser
+ * wait e1 5000` is a separate process that prints the JSON reply and nothing
+ * else, so a console-only warning is invisible in every packaged build — it
+ * only ever showed up under `npm run dev`.
  *
  * This lives in the impure dispatch layer, NOT in `toAgentBrowserArgv`, on
  * purpose. The verb translator is pure and its tests deliberately PIN that the
  * timeout is dropped from the argv (there is no `--timeout` flag on
  * agent-browser's `wait <selector>` — only the global
  * AGENT_BROWSER_DEFAULT_TIMEOUT); adding a diagnostic there would either couple
- * a pure function to console output or force the tests to relax that pin. Here
- * the resolved engine and the original params are both in hand, so the warning
- * is emitted exactly once, only for the agent engine, and the argv the
+ * a pure function to its callers' output or force the tests to relax that pin.
+ * Here the resolved engine and the original params are both in hand, so the
+ * warning is produced exactly once, only for the agent engine, and the argv the
  * translator returns is unchanged. `timeout: 0` is a real value a direct V2
  * caller can send, so the finite check keeps it in scope (`Number.isFinite(0)`
  * is true) rather than reading it as absent. The ref-only and timeout-only
  * forms stay quiet: ref-only carries no timeout to lose, and timeout-only is
  * represented as `wait <ms>`, so nothing is dropped.
  */
-function warnUnrepresentableWaitTimeout(method: string, params: any): void {
+export function unrepresentableWaitTimeout(method: string, params: any): string | null {
   if (
     method === 'browser.wait' &&
     typeof params?.ref === 'string' &&
@@ -409,13 +418,14 @@ function warnUnrepresentableWaitTimeout(method: string, params: any): void {
     typeof params?.timeout === 'number' &&
     Number.isFinite(params.timeout)
   ) {
-    console.warn(
-      `[wmux] agent-browser: browser.wait was given a ${params.timeout}ms per-call ` +
-      `timeout alongside ref "${params.ref}", but agent-browser's \`wait\` CLI has no ` +
-      `per-call timeout flag — the timeout is dropped and the ref is still awaited under ` +
-      `agent-browser's global default (AGENT_BROWSER_DEFAULT_TIMEOUT).`,
+    return (
+      `browser.wait was given a ${params.timeout}ms per-call timeout alongside ref ` +
+      `"${params.ref}", but agent-browser's \`wait\` CLI has no per-call timeout flag — ` +
+      `the timeout is dropped and the ref is still awaited under agent-browser's global ` +
+      `default (AGENT_BROWSER_DEFAULT_TIMEOUT).`
     );
   }
+  return null;
 }
 
 /**
@@ -430,7 +440,8 @@ export async function runBrowserCommandForTarget(
   deps: BrowserDeps,
 ): Promise<any> {
   if (target.kind === 'agent') {
-    warnUnrepresentableWaitTimeout(method, params);
+    const warning = unrepresentableWaitTimeout(method, params);
+    if (warning) console.warn(`[wmux] agent-browser: ${warning}`);
     // Built FIRST, before anything is spawned: an unsupported verb must cost a
     // rejected message, not a Chrome round-trip. `toAgentBrowserArgv` throws
     // the identical -32601 the web switch below does, which is what makes the
@@ -438,7 +449,12 @@ export async function runBrowserCommandForTarget(
     const argv = toAgentBrowserArgv(method, params, target.session.sessionName);
     const res = await deps.runAgent(argv, agentTimeoutFor(method, params));
     if (!res.ok) throw agentFailure(method, res);
-    return await agentResultShape(method, res);
+    const shaped = await agentResultShape(method, res);
+    // Rides back on the reply, not only into main's log: the caller is another
+    // process whose whole view of this command is the JSON it prints. Attached
+    // only in the case that is ALREADY divergent between the engines, so the
+    // two engines still answer byte-identically everywhere they agree.
+    return warning ? { ...shaped, warning } : shaped;
   }
 
   const { wcId } = target;

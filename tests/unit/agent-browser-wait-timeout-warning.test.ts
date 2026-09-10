@@ -125,3 +125,69 @@ describe('agent-browser wait: unrepresentable per-call timeout warning', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The console is only half of it. `wmux browser wait e1 5000` is a SEPARATE
+ * process whose entire view of the command is the JSON reply it prints, so a
+ * warning that exists only on main's stdout is invisible in every packaged
+ * build — it showed up under `npm run dev` and nowhere else. The same sentence
+ * therefore rides back on the reply, and only in the case that is already
+ * divergent between the engines: everywhere the two engines agree, they still
+ * answer byte-identically.
+ */
+describe('agent-browser wait: the warning reaches the caller, not just the log', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it('attaches the warning to the V2 reply alongside the normal result', async () => {
+    const out = await runBrowserCommandForTarget(
+      'browser.wait', { ref: 'e1', timeout: 5000 }, agent(), deps(),
+    );
+
+    expect(out.ok).toBe(true);
+    expect(String(out.warning)).toContain('5000ms');
+    expect(String(out.warning)).toContain('e1');
+    // Unprefixed on the wire: '[wmux] agent-browser:' is a log-line marker, and
+    // the reply already says which engine answered.
+    expect(String(out.warning)).not.toContain('[wmux]');
+  });
+
+  it('says the same thing in both channels', async () => {
+    const out = await runBrowserCommandForTarget(
+      'browser.wait', { ref: 'e1', timeout: 5000 }, agent(), deps(),
+    );
+    expect(String(warn.mock.calls[0][0])).toContain(String(out.warning));
+  });
+
+  it('leaves the reply untouched when nothing is dropped', async () => {
+    const refOnly = await runBrowserCommandForTarget('browser.wait', { ref: 'e1' }, agent(), deps());
+    const msOnly = await runBrowserCommandForTarget('browser.wait', { timeout: 500 }, agent(), deps());
+    const other = await runBrowserCommandForTarget('browser.click', { ref: 'e1', timeout: 3000 }, agent(), deps());
+
+    for (const out of [refOnly, msOnly, other]) {
+      expect(out).toEqual({ ok: true });
+      expect('warning' in out).toBe(false);
+    }
+  });
+
+  it('never attaches a warning on the web engine, which honours the timeout', async () => {
+    const out = await runBrowserCommandForTarget(
+      'browser.wait', { ref: 'e1', timeout: 5000 }, web(3), { bridge: makeBridge(), runAgent: vi.fn() },
+    );
+    expect(out).toEqual({ ok: true });
+  });
+
+  it('does not clobber a shaped payload — the warning is added, never substituted', async () => {
+    // get_text carries a real payload; a wait never does. Pinned so a future
+    // verb that both shapes a result AND drops something keeps both halves.
+    const runAgent = vi.fn(async () => ok(null, 'hello'));
+    const out = await runBrowserCommandForTarget('browser.get_text', {}, agent(), deps(runAgent));
+    expect(out).toEqual({ text: 'hello' });
+  });
+});

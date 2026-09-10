@@ -627,7 +627,14 @@ wmux browser engine [web|agent] [--surface <id>]
 # AGENT_BROWSER_DEFAULT_TIMEOUT (25 s) — so in `agent` mode the caller's ms is
 # DROPPED and the ref wins. Unrepresentable in argv, not fixable in the verb table;
 # see the KNOWN ENGINE DIVERGENCE note in src/main/agent-browser-verbs.ts. Every
-# other verb behaves identically on both engines.
+# other verb behaves identically on both engines. Since 2.10.3 (#228) it is at
+# least SAID rather than silent: the agent-mode reply carries a `warning` field
+# naming the dropped ms, and the same sentence goes to main's log. It rides on the
+# REPLY and not only on `console.warn` because the caller is another process whose
+# whole view of the command is the JSON it prints — a console-only warning was
+# visible under `npm run dev` and in no packaged build. It is attached only in this
+# already-divergent case, so everywhere the engines agree they still answer
+# byte-identically.
 
 # Declared agent state (issue #128) — blocked / working / idle, no screen scraping.
 # Surface defaults to $WMUX_SURFACE_ID, so an agent inside a pane needs no id.
