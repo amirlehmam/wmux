@@ -384,6 +384,41 @@ function agentFailure(method: string, res: RunResult): Error {
 }
 
 /**
+ * Warn when a `browser.wait` carries BOTH a ref and a per-call timeout on the
+ * agent engine, where the timeout cannot survive into argv.
+ *
+ * This lives in the impure dispatch layer, NOT in `toAgentBrowserArgv`, on
+ * purpose. The verb translator is pure and its tests deliberately PIN that the
+ * timeout is dropped from the argv (there is no `--timeout` flag on
+ * agent-browser's `wait <selector>` — only the global
+ * AGENT_BROWSER_DEFAULT_TIMEOUT); adding a diagnostic there would either couple
+ * a pure function to console output or force the tests to relax that pin. Here
+ * the resolved engine and the original params are both in hand, so the warning
+ * is emitted exactly once, only for the agent engine, and the argv the
+ * translator returns is unchanged. `timeout: 0` is a real value a direct V2
+ * caller can send, so the finite check keeps it in scope (`Number.isFinite(0)`
+ * is true) rather than reading it as absent. The ref-only and timeout-only
+ * forms stay quiet: ref-only carries no timeout to lose, and timeout-only is
+ * represented as `wait <ms>`, so nothing is dropped.
+ */
+function warnUnrepresentableWaitTimeout(method: string, params: any): void {
+  if (
+    method === 'browser.wait' &&
+    typeof params?.ref === 'string' &&
+    params.ref.length > 0 &&
+    typeof params?.timeout === 'number' &&
+    Number.isFinite(params.timeout)
+  ) {
+    console.warn(
+      `[wmux] agent-browser: browser.wait was given a ${params.timeout}ms per-call ` +
+      `timeout alongside ref "${params.ref}", but agent-browser's \`wait\` CLI has no ` +
+      `per-call timeout flag — the timeout is dropped and the ref is still awaited under ` +
+      `agent-browser's global default (AGENT_BROWSER_DEFAULT_TIMEOUT).`,
+    );
+  }
+}
+
+/**
  * Run one browser verb against an already-resolved target. Shared by the
  * single-command and batch paths so there's one source of truth (and no deeply
  * nested handler maps).
@@ -395,6 +430,7 @@ export async function runBrowserCommandForTarget(
   deps: BrowserDeps,
 ): Promise<any> {
   if (target.kind === 'agent') {
+    warnUnrepresentableWaitTimeout(method, params);
     // Built FIRST, before anything is spawned: an unsupported verb must cost a
     // rejected message, not a Chrome round-trip. `toAgentBrowserArgv` throws
     // the identical -32601 the web switch below does, which is what makes the
