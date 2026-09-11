@@ -236,6 +236,17 @@ contextBridge.exposeInMainWorld('wmux', {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_STATE, handler);
     },
   },
+  // GPU watchdog (issue #229): the renderer only REPORTS that frames have
+  // stopped; main decides (focus + OS idle time) and does the restart.
+  gpu: {
+    reportStall: (report: { missed: number; stalledForMs: number }) =>
+      ipcRenderer.send(IPC_CHANNELS.GPU_STALL, report),
+    onRestarted: (callback: (info: { stalledForMs: number }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on(IPC_CHANNELS.GPU_RESTARTED, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.GPU_RESTARTED, handler);
+    },
+  },
   hook: {
     onEvent: (callback: (event: any) => void) => {
       const handler = (_event: any, data: any) => callback(data);

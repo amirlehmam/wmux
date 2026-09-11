@@ -309,7 +309,12 @@ async function promptToInstall(version: string): Promise<void> {
   const { response } = await dialog.showMessageBox({
     type: 'info',
     buttons: ['Install and restart', 'Later'],
-    defaultId: 0,
+    // 'Later' is the default button (issue #229). This dialog appears over a
+    // terminal the user is typing into, and Enter is the most common key
+    // there: with 'Install and restart' as the default, a keystroke aimed at
+    // the shell quit wmux and every live session in it. The install now
+    // needs a deliberate click — the same reasoning as the close guard (#227).
+    defaultId: 1,
     cancelId: 1,
     title: 'wmux update ready',
     message: `wmux ${version} has been downloaded.`,

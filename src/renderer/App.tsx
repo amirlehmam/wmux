@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { startGpuProbe } from './utils/gpu-watchdog';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from './store';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
@@ -768,6 +769,34 @@ export default function App() {
       });
     }).catch(() => { /* no main, or an old preload */ });
     return () => { cancelled = true; };
+  }, []);
+
+  // GPU watchdog (issue #229). A wedged GPU process stops every frame while
+  // the renderer stays perfectly healthy, so the probe is a race between
+  // requestAnimationFrame (driven by the GPU process) and a timer (not).
+  // The renderer only reports; main decides on focus + OS idle time and
+  // restarts the process. The bell notice is the one trace the user sees.
+  useEffect(() => {
+    const gpu = window.wmux?.gpu;
+    if (!gpu?.reportStall) return;
+    const stop = startGpuProbe({
+      requestFrame: (cb) => { requestAnimationFrame(cb); },
+      isVisible: () => document.visibilityState === 'visible',
+      report: (stall) => gpu.reportStall(stall),
+    });
+    const unsub = gpu.onRestarted?.(() => {
+      const st = useStore.getState();
+      const ws = st.workspaces.find((w) => w.id === st.activeWorkspaceId) ?? st.workspaces[0];
+      if (!ws) return;
+      addNotification({
+        surfaceId: '' as SurfaceId,
+        workspaceId: ws.id,
+        title: t('notification.gpuRestarted.title', 'wmux restarted its graphics process'),
+        text: t('notification.gpuRestarted.text',
+          'The window had stopped painting while you were using it. Terminals and agents were not affected.'),
+      });
+    });
+    return () => { stop(); unsub?.(); };
   }, []);
 
   // Listen for agent spawn events from main process

@@ -23,6 +23,7 @@ import { IPC_CHANNELS, SurfaceId, BrowserEngine } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken, getAppUserModelId } from '../shared/instance';
 import { loadSession, saveSession, handleVersionChange, savedVersion, SessionData } from './session-persistence';
 import { noteIconRevision } from './icon-cache';
+import { installGpuWatchdog } from './gpu-watchdog';
 import { getAgentState, reportAgentSession } from './agent-state';
 import {
   stampClaudeSessionIds,
@@ -986,6 +987,9 @@ app.whenReady().then(() => {
   });
 
   registerIpcHandlers(windowManager, cdpProxy);
+  // A wedged GPU process freezes every window while every PTY lives on
+  // (issue #229); the renderer probes for frames, this restarts the process.
+  installGpuWatchdog();
 
   // Tree-kill whatever a previously CRASHED instance left running (issue #139).
   // `will-quit` — the only thing that calls killAll() — does not run on a crash,

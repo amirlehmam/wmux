@@ -51,6 +51,9 @@ export const en = {
   'notification.iconChanged.title': 'wmux has a new icon',
   'notification.iconChanged.text':
     'If the taskbar or a pinned button still shows the old one, use Settings → General → Refresh taskbar icons.',
+  'notification.gpuRestarted.title': 'wmux restarted its graphics process',
+  'notification.gpuRestarted.text':
+    'The window had stopped painting while you were using it. Terminals and agents were not affected.',
   // Settings — General panel — Custom background (issue #89)
   'settings.general.customBgSection': 'Custom background',
   'settings.general.customBgEnable': 'Enable custom background',

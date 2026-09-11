@@ -657,6 +657,10 @@ export const IPC_CHANNELS = {
   SYSTEM_NATIVE_THEME_UPDATED: 'system:nativeThemeUpdated',
   // Metadata events (main → renderer)
   METADATA_UPDATE: 'metadata:update',
+  // GPU watchdog (issue #229). Renderer → main: "no frame for N s while
+  // visible"; main → renderer: "the GPU process was restarted" (a bell notice).
+  GPU_STALL: 'gpu:stall',
+  GPU_RESTARTED: 'gpu:restarted',
   // Agent
   AGENT_SPAWN: 'agent:spawn',
   AGENT_SPAWN_BATCH: 'agent:spawn-batch',
