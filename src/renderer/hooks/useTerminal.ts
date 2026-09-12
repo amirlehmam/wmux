@@ -472,7 +472,38 @@ function registerPromptMarks(terminal: Terminal, surfaceId: string | undefined) 
   // Declining an unrecognised subtype (iTerm2 and kitty both define vendor
   // extensions on this code) passes it on down xterm's handler chain — the same
   // rule the OSC 9 handler documents, for the same reason.
-  return terminal.onScroll(() => handleAnchorScroll(terminal, surfaceId));
+  const scroll = terminal.onScroll(() => handleAnchorScroll(terminal, surfaceId));
+
+  // Rebuild the highlights after a resize (issue #230).
+  //
+  // Not because the marks die — they do not: xterm 6 reflows markers with their
+  // content, so a band's row survives a narrow/widen intact. It is the
+  // decoration that goes stale. Its `width` was `terminal.cols` at registration
+  // time, so widening a pane leaves every band stopping short of the new right
+  // edge; and a resize is precisely when a full-screen TUI repaints everything
+  // it owns, which is when a band is most likely to have stopped sitting on its
+  // prompt. Rebuilding re-runs the content check on every entry at once.
+  //
+  // Trailing-debounced because a window drag emits a resize per frame while up
+  // to 200 decorations per surface would be torn down and rebuilt on each —
+  // the shape issue #141 is a standing warning against. `onResize` already only
+  // fires when the geometry actually changed.
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  const resize = terminal.onResize(() => {
+    if (resizeTimer !== null) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resizeTimer = null;
+      try { refreshHighlights(terminal, surfaceId); } catch { /* a disposed terminal */ }
+    }, 150);
+  });
+
+  return {
+    dispose() {
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      scroll.dispose();
+      resize.dispose();
+    },
+  };
 }
 
 // Per-surface fractional-line accumulator for pixel-precision devices

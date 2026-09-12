@@ -33,6 +33,8 @@ import type { IDecoration, IMarker, Terminal } from '@xterm/xterm';
 interface MarkRecord {
   marker: IMarker;
   decorations: IDecoration[];
+  /** A re-validation is already queued; see `applyHighlight`'s `onRender`. */
+  revalidating?: boolean;
 }
 
 /** surfaceId → entryId → mark. */
@@ -80,6 +82,45 @@ export function lineText(terminal: Terminal, absoluteLine: number): string {
   } catch {
     return '';
   }
+}
+
+/**
+ * The one spelling both sides of a needle test are reduced to.
+ *
+ * A needle is built from the prompt as the USER typed it; the haystack is a
+ * terminal row as some program RE-typed it. `git   status` typed becomes
+ * `git status` in the needle (whitespace-collapsed, see `buildNeedle`) and
+ * stays `git   status` on the row, so a raw `includes` misses a prompt that is
+ * verbatim on screen. Collapsing both is what makes the comparison mean
+ * "same words", which is the only thing either side can honestly claim.
+ */
+function normalizeForMatch(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Which of the rows a highlight covers carries the prompt, as an offset from
+ * the first — or null if none of them does.
+ *
+ * An OFFSET rather than a boolean because the answer is re-asked on every
+ * render of a visible decoration. Re-scanning all `height` rows there would be
+ * up to `MAX_HIGHLIGHT_ROWS` `translateToString` calls per decoration per
+ * frame, and a screen of them at PTY speed is issue #141's shape again. The
+ * offset is stable under scrollback trimming (the whole block shifts with the
+ * marker), so the re-check is one row. Reflow CAN move it — wrapping inserts
+ * rows inside the block — and that is one of the two reasons `refreshHighlights`
+ * runs on resize, which re-scans and re-establishes it.
+ */
+function needleRow(
+  terminal: Terminal,
+  from: number,
+  height: number,
+  needle: string,
+): number | null {
+  for (let offset = 0; offset < height; offset++) {
+    if (normalizeForMatch(lineText(terminal, from + offset)).includes(needle)) return offset;
+  }
+  return null;
 }
 
 /**
@@ -183,9 +224,9 @@ export function refineMark(
   let best: number | null = null;
   for (let delta = 0; delta <= REFINE_BACK_ROWS + REFINE_FORWARD_ROWS; delta++) {
     const back = origin - delta;
-    if (back >= lowest && lineText(terminal, back).toLowerCase().includes(needle)) { best = back; break; }
+    if (back >= lowest && needleRow(terminal, back, 1, needle) !== null) { best = back; break; }
     const fwd = origin + delta;
-    if (delta > 0 && fwd <= highest && lineText(terminal, fwd).toLowerCase().includes(needle)) { best = fwd; break; }
+    if (delta > 0 && fwd <= highest && needleRow(terminal, fwd, 1, needle) !== null) { best = fwd; break; }
   }
   if (best === null || best === origin) return origin;
 
@@ -206,10 +247,10 @@ export function refineMark(
  * matching "yes" against a screen of output finds the wrong row confidently,
  * and a confidently wrong jump mark is worse than none.
  */
-function buildNeedle(text: string): string | null {
+export function buildNeedle(text: string): string | null {
   const first = text.split('\n').map((l) => l.trim()).find((l) => l.length > 0);
   if (!first) return null;
-  const collapsed = first.replace(/\s+/g, ' ').toLowerCase();
+  const collapsed = normalizeForMatch(first);
   if (collapsed.length < MIN_NEEDLE) return null;
   return collapsed.slice(0, MAX_NEEDLE);
 }
@@ -228,6 +269,22 @@ export interface HighlightOptions {
   rows: number;
   /** Also put a tick on the scrollbar's overview ruler. */
   ruler: boolean;
+  /**
+   * The prompt fragment these rows must still carry for the tint to be honest
+   * (issue #230), or null when the prompt has no fragment distinctive enough to
+   * check — see `buildNeedle`.
+   */
+  needle?: string | null;
+  /**
+   * Whether the row is known to be the prompt's when `needle` cannot decide.
+   *
+   * True for a shell: OSC 133 names the row and nothing rewrites a command line
+   * once it is in scrollback. False for an agent: its row is a guess refined by
+   * a text search, so an UNCHECKABLE guess is exactly the case that put a band
+   * over a spinner. Defaults to true, so a caller that passes neither field
+   * gets the pre-#230 behaviour.
+   */
+  confirmed?: boolean;
 }
 
 /** Most rows one prompt highlight may cover. */
@@ -334,6 +391,32 @@ function blendOverBackground(color: string, background: string): string | null {
  * The rail stays in CSS, where it is the one thing showing the user's colour at
  * full saturation, and the custom property still carries it so `prompt-marks.css`
  * owns the width.
+ *
+ * ─── Why the tint is checked against the row's CONTENT (issue #230) ──────────
+ *
+ * A marker anchors a decoration to a buffer LINE, and for a shell that is the
+ * same thing as anchoring it to content: the row a command was typed on is
+ * never rewritten again. An agent TUI breaks that equivalence. It repaints its
+ * input box and its status row over the same lines several times a second, and
+ * the submit-time cursor — the only line wmux has when the `UserPromptSubmit`
+ * hook arrives — sits right inside that region. `refineMark` gets out of it by
+ * finding the row the prompt was echoed on, but it can MISS: a prompt shorter
+ * than `MIN_NEEDLE`, or one the TUI reflowed beyond recognition, leaves the
+ * mark where it started. Nothing then re-checked it, so the band went on
+ * tinting a row whose text had since become `✳ Germinating… (1m 15s)`.
+ *
+ * So the tint is a claim about content and is treated as one, twice:
+ *
+ *   • before registering — a band that would be wrong is never painted, rather
+ *     than painted and retracted a frame later;
+ *   • on every render — `onRender` fires when the row is laid out, and only
+ *     then, so a decoration in scrollback costs nothing and a visible one is
+ *     re-checked exactly as often as it is seen. That is the difference between
+ *     this and a timer, which is what issue #141 is a standing warning against.
+ *
+ * A failed check drops the tint and the rail, keeping the ruler tick: the mark
+ * is still roughly where the prompt is (which is what a tick claims), it is
+ * just no longer on the row (which is what a band claims).
  */
 export function applyHighlight(
   terminal: Terminal,
@@ -346,7 +429,15 @@ export function applyHighlight(
   clearHighlight(surfaceId, entryId);
 
   const height = Math.max(1, Math.min(MAX_HIGHLIGHT_ROWS, Math.floor(options.rows) || 1));
-  const tint = blendOverBackground(options.color, backgroundOf(terminal));
+  const needle = options.needle ?? null;
+  // An uncheckable prompt falls back to what the SOURCE can promise: a shell's
+  // row is named by OSC 133, an agent's is a guess.
+  const found = needle ? needleRow(terminal, record.marker.line, height, needle) : null;
+  const onTheRow = needle ? found !== null : options.confirmed !== false;
+  const tint = onTheRow ? blendOverBackground(options.color, backgroundOf(terminal)) : null;
+  // Nothing left to draw: no band, and no tick asked for.
+  if (!onTheRow && !options.ruler) return;
+
   try {
     const decoration = terminal.registerDecoration({
       marker: record.marker,
@@ -360,17 +451,35 @@ export function applyHighlight(
         : {}),
     });
     if (!decoration) return;
-    decoration.onRender((element) => {
-      // onRender fires again every time the row is re-laid-out (resize, scroll
-      // back into view), so this must be idempotent — classList and a custom
-      // property both are.
-      element.classList.add('wmux-prompt-mark');
-      element.style.setProperty('--wmux-prompt-color', options.color);
-      // Only when the blend could not be computed — an unparseable theme
-      // background — does the old over-the-glyphs tint come back, because a
-      // washed-out hint still beats a rail with nothing beside it.
-      element.classList.toggle('wmux-prompt-mark--css-tint', !tint);
-    });
+    if (onTheRow) {
+      decoration.onRender((element) => {
+        // onRender fires again every time the row is re-laid-out (resize, scroll
+        // back into view), so this must be idempotent — classList and a custom
+        // property both are.
+        element.classList.add('wmux-prompt-mark');
+        element.style.setProperty('--wmux-prompt-color', options.color);
+        // Only when the blend could not be computed — an unparseable theme
+        // background — does the old over-the-glyphs tint come back, because a
+        // washed-out hint still beats a rail with nothing beside it.
+        element.classList.toggle('wmux-prompt-mark--css-tint', !tint);
+        // Nothing to re-check when the tint rests on the caller's word rather
+        // than on the row's text.
+        if (!needle || found === null) return;
+        if (needleRow(terminal, record.marker.line + found, 1, needle) !== null) return;
+        // The row stopped carrying the prompt. Re-deciding means disposing this
+        // decoration, which must not happen from inside xterm's own render pass
+        // — it is iterating the decoration list right now. One deferred pass per
+        // record, so a decoration re-rendering at PTY speed queues one re-apply
+        // and not one per frame; the re-apply lands on the ruler-only branch,
+        // which registers no `onRender`, so this terminates.
+        if (record.revalidating) return;
+        record.revalidating = true;
+        setTimeout(() => {
+          record.revalidating = false;
+          applyHighlight(terminal, surfaceId, entryId, options);
+        }, 0);
+      });
+    }
     record.decorations.push(decoration);
   } catch {
     // Decorations are proposed API. A future xterm that changes the shape here

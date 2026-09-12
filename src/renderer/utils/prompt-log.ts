@@ -100,15 +100,33 @@ function commit(
   return entry;
 }
 
+/**
+ * What `applyHighlight` needs to decide whether a band on these rows is honest
+ * (issue #230).
+ *
+ * The needle is the prompt's own distinctive fragment, so the check is "does
+ * this row still say what the prompt said". `confirmed` is what the SOURCE can
+ * promise when the needle cannot decide — a shell's row was named by OSC 133
+ * and is never rewritten, an agent's row is a guess `refineMark` may have
+ * failed to place, and a guess in the middle of a TUI's repaint zone is the
+ * band-over-the-spinner this issue reported.
+ */
+function highlightOptionsFor(entry: PromptEntry) {
+  const prefs = promptPrefs();
+  return {
+    color: prefs.highlightColor,
+    rows: entry.rows,
+    ruler: prefs.ruler,
+    needle: marks.buildNeedle(entry.text),
+    confirmed: entry.source !== 'agent',
+  };
+}
+
 /** Highlight + anchor an entry according to the current preferences. */
 function applyViews(terminal: Terminal, entry: PromptEntry): void {
   const prefs = promptPrefs();
   if (prefs.highlight) {
-    marks.applyHighlight(terminal, entry.surfaceId, entry.id, {
-      color: prefs.highlightColor,
-      rows: entry.rows,
-      ruler: prefs.ruler,
-    });
+    marks.applyHighlight(terminal, entry.surfaceId, entry.id, highlightOptionsFor(entry));
   }
   // Anchoring is deliberately last and deliberately conditional on a resolved
   // line: an anchor is the one view that changes what the terminal DOES rather
@@ -277,22 +295,27 @@ function commitShellPrompt(terminal: Terminal, surfaceId: string): void {
 }
 
 /**
- * Re-apply highlights for a surface after a preference change.
+ * Re-apply highlights for a surface after a preference change — or a resize.
  *
- * Needed because a decoration is created once, at commit time, from the prefs
- * as they were then. Without this, turning the highlight on showed nothing
- * until the next prompt — which reads as a broken toggle.
+ * Needed for prefs because a decoration is created once, at commit time, from
+ * the prefs as they were then. Without this, turning the highlight on showed
+ * nothing until the next prompt — which reads as a broken toggle.
+ *
+ * Needed for a resize (issue #230) for two reasons that are easy to miss
+ * because the marker survives reflow and so the band looks like it should be
+ * fine. It is not: a decoration's `width` is `terminal.cols` as it was when it
+ * was registered, so widening a pane leaves every band stopping short of the
+ * new right edge. And the resize is the moment a TUI redraws everything it
+ * owns, which is exactly when a band's row is most likely to stop carrying its
+ * prompt — re-applying re-runs that check on every entry at once instead of
+ * waiting for each row to be scrolled back into view.
  */
 export function refreshHighlights(terminal: Terminal, surfaceId: string): void {
   const prefs = promptPrefs();
   marks.clearAllHighlights(surfaceId);
   if (!prefs.enabled || !prefs.highlight) return;
   for (const entry of useStore.getState().prompts[surfaceId] ?? []) {
-    marks.applyHighlight(terminal, surfaceId, entry.id, {
-      color: prefs.highlightColor,
-      rows: entry.rows,
-      ruler: prefs.ruler,
-    });
+    marks.applyHighlight(terminal, surfaceId, entry.id, highlightOptionsFor(entry));
   }
 }
 
