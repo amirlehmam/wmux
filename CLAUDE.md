@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 2.10.4
+**Version**: 2.10.5
 
 ---
 
@@ -279,6 +279,23 @@ Four things about this are easy to get wrong and expensive to rediscover:
   a store write there re-renders every subscriber at PTY speed, which is the shape of
   #141. It lives in a module map like `surfaceMouseModes`, and the pill subscribes to a
   throttled DOM event.
+- **A marker binds a highlight to a LINE, which is only the same as binding it to
+  CONTENT for a shell** (#230, 2.10.5). A command row in scrollback is never rewritten;
+  an agent TUI repaints its input box and status row over the same lines several times a
+  second, and the submit-time cursor — the only line wmux has when `UserPromptSubmit`
+  arrives — sits inside that region. `refineMark` gets out of it by finding the echoed
+  row, but it MISSES on a prompt under `MIN_NEEDLE` or one the TUI reflowed, and the
+  band then tinted `✳ Germinating… (1m 15s)`. So the tint is a claim about text, checked
+  before registering AND in `onRender` — which fires when a row is laid out and only
+  then, so scrollback costs nothing and a timer would be #141. A failed check drops the
+  tint and the rail, keeps the ruler tick, and an *uncheckable* prompt falls back to what
+  its SOURCE can promise (`confirmed`: true for OSC 133, false for an agent's guess). The
+  match is stored as an OFFSET from the marker so the re-check is one row; termination is
+  structural, not a retry count — the degraded re-apply registers no `onRender`.
+  `refreshHighlights` also runs on resize, and not because the marks die: xterm 6 reflows
+  markers with their content (verified — narrowing 80→40 moved `marker.line` 20→40 still
+  pointing at the same text). It is the decoration that goes stale, since its `width` was
+  `terminal.cols` at registration time.
 
 Defaults: `highlight` and `anchor` ON, `pin` OFF (it costs vertical space), `outline`
 available but closed, and `anchorScope: 'agent'` — anchoring applies to AGENT answers
