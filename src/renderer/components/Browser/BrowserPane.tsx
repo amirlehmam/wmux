@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import AddressBar from './AddressBar';
+import { useT } from '../../i18n';
 import AgentBrowserSetup from './AgentBrowserSetup';
 import { popupBridgeSource } from './popup-bridge';
 import type { BrowserEngine } from '../../../shared/types';
+import { BROWSER_BLANK_PAGE } from '../../utils/browser-start-page';
 import '../../styles/browser.css';
 
 interface BrowserPaneProps {
@@ -178,7 +180,11 @@ export function elementHidden(el: HTMLElement | null | undefined): boolean {
 }
 
 export default function BrowserPane({
-  initialUrl = 'https://github.com/amirlehmam/wmux',
+  // Blank, not the project's own GitHub repo (#232). A browser surface nobody
+  // has given a URL has nowhere to be, and shipping the vendor's page as that
+  // answer meant wmux opened its own repo on every launch — then persisted it
+  // as if the user had chosen it. See utils/browser-start-page.ts.
+  initialUrl = BROWSER_BLANK_PAGE,
   surfaceId,
   workspaceId,
   onUrlChange,
@@ -191,6 +197,10 @@ export default function BrowserPane({
   // spurious ERR_ABORTED (logged by the main process' guest-view handler).
   // The engine switch is exactly such a mutation, so it goes through loadURL
   // too and src stays pinned to initialSrc forever.
+  // Render-only: the #141 warning on AGENT_URL_POLL_MS is about `useT()`'s
+  // unstable identity in a dependency ARRAY. This one is read in JSX and never
+  // closed over by an effect.
+  const t = useT();
   const [initialSrc] = useState(initialUrl);
   const [currentUrl, setCurrentUrl] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -576,11 +586,29 @@ export default function BrowserPane({
 
   const isAgent = engine === 'agent';
   const overlay = isAgent && (agentStatus === 'setup' || agentStatus === 'no-dashboard');
+  /**
+   * Nothing to show yet — the state a surface is in when no page was asked for
+   * (#232, where the old answer was to load the project's own GitHub repo).
+   *
+   * It needs a placeholder rather than just letting `about:blank` through,
+   * because a blank guest page paints WHITE regardless of the app's theme, and a
+   * white rectangle where a dark pane should be reads as a crash, not as "empty".
+   * Hidden the same way the setup card hides it: `visibility`, never unmounting,
+   * so the webview keeps its CDP registration.
+   */
+  const isBlank = !isAgent && (!currentUrl || currentUrl === BROWSER_BLANK_PAGE);
+  /**
+   * An empty address bar, not the literal `about:blank`: the surface has no
+   * page, and naming the sentinel invites the user to think it is one.
+   */
+  let barUrl = currentUrl;
+  if (isAgent) barUrl = agentUrl;
+  else if (isBlank) barUrl = '';
 
   return (
     <div className="browser-pane" ref={rootRef} onMouseDownCapture={claimCdp}>
       <AddressBar
-        url={isAgent ? agentUrl : currentUrl}
+        url={barUrl}
         isLoading={isLoading}
         canGoBack={!isAgent && canGoBack}
         canGoForward={!isAgent && canGoForward}
@@ -602,8 +630,21 @@ export default function BrowserPane({
           // Hidden rather than unmounted: unmounting destroys the guest page and
           // its CDP registration, so the setup card would cost the user the tab
           // they were on. Same reason keep-alive tabs use visibility.
-          style={overlay ? { visibility: 'hidden' } : undefined}
+          style={overlay || isBlank ? { visibility: 'hidden' } : undefined}
         />
+        {isBlank && !overlay && (
+          <div className="browser-pane__blank">
+            <p className="browser-pane__blank-title">
+              {t('browser.blank.title', 'No page open')}
+            </p>
+            <p className="browser-pane__blank-hint">
+              {t(
+                'browser.blank.hint',
+                'Type a URL above, or set a start page in Settings → Browser.',
+              )}
+            </p>
+          </div>
+        )}
         {overlay && (
           <AgentBrowserSetup
             reason={agentStatus === 'setup' ? 'not-installed' : 'no-dashboard'}

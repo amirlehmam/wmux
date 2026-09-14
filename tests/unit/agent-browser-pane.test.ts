@@ -414,7 +414,14 @@ describe('AgentBrowserSetup', () => {
     expect(PANE_CODE).toMatch(/reason=\{agentStatus === 'setup' \? 'not-installed' : 'no-dashboard'\}/);
     // Hiding, not unmounting: unmounting destroys the guest page and its CDP
     // registration, so the card would cost the user the tab they were on.
-    expect(PANE_CODE).toMatch(/style=\{overlay \? \{ visibility: 'hidden' \} : undefined\}/);
+    //
+    // `isBlank` joined the condition in #232 and for the same reason: the
+    // no-page-yet placeholder also covers a live webview rather than replacing
+    // it. What this pins is that the webview is always RENDERED and only ever
+    // made invisible — the condition is free to grow, a `{overlay && <webview`
+    // is the regression.
+    expect(PANE_CODE).toMatch(/style=\{overlay \|\| isBlank \? \{ visibility: 'hidden' \} : undefined\}/);
+    expect(PANE_CODE).not.toMatch(/&&\s*<webview/);
   });
 
   it('detects the dead dashboard from did-fail-load as well as from status()', () => {

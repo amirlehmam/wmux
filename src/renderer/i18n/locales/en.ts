@@ -663,6 +663,10 @@ export const en = {
   'addressBar.engineAgentTitle': 'Hand this tab to a real Chrome outside wmux, and watch what your agent does to it here. Needs a one-time install.',
   'addressBar.backAgent': 'History is not available while the agent drives the browser',
   'addressBar.reloadViewer': 'Reload the activity viewer (does not reload the page the agent is on)',
+  // A browser surface with no page yet (#232). wmux used to answer this with its
+  // own GitHub repo, which it then remembered as if the user had chosen it.
+  'browser.blank.title': 'No page open',
+  'browser.blank.hint': 'Type a URL above, or set a start page in Settings → Browser.',
   'agentBrowser.setupTitle': 'Let your agent drive a real Chrome',
   'agentBrowser.setupBody': 'agent-browser gives this tab a real Chrome instead of the built-in panel: real profiles, real extensions, sites that refuse an embedded browser. You watch a live viewport and a chronological feed of every command your agent runs.',
   'agentBrowser.setupCost': 'One-time download of about 240 MB (the tool plus its own Chrome).',

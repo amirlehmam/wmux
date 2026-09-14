@@ -3,11 +3,6 @@ import { splitNode, getAllPaneIds } from '../store/split-utils';
 import { PaneId, SplitNode, SurfaceRef, WorkspaceId } from '../../shared/types';
 import { v4 as uuid } from 'uuid';
 
-function findLeaf(tree: SplitNode, paneId: PaneId): (SplitNode & { type: 'leaf' }) | null {
-  if (tree.type === 'leaf') return tree.paneId === paneId ? tree : null;
-  return findLeaf(tree.children[0], paneId) ?? findLeaf(tree.children[1], paneId);
-}
-
 /** Recursively collect all surfaces from a split tree. */
 function getAllSurfaces(node: SplitNode): SurfaceRef[] {
   if (node.type === 'leaf') return node.surfaces;
@@ -78,15 +73,35 @@ export function openInWmuxBrowser(url: string, opts?: { invert?: boolean }): voi
   }
 
   const newPaneId = `pane-${uuid()}` as PaneId;
-  const newTree = splitNode(ws.splitTree, targetPaneId, newPaneId, 'browser', 'horizontal');
-  state.updateSplitTree(wsId, newTree);
+  const split = splitNode(ws.splitTree, targetPaneId, newPaneId, 'browser', 'horizontal');
+  // Mount the pane ON the target, rather than racing a navigate event at it.
+  //
+  // This used to split first and then dispatch `wmux:browser-navigate` after a
+  // 600 ms timer, on the reasoning that React render (~16 ms) plus webview init
+  // (~200-500 ms) would be done by then. A timer tuned to an observation is not
+  // a guarantee: on a loaded machine, or when the listener had not attached yet,
+  // the navigate landed on nothing and the pane was left showing BrowserPane's
+  // default page — which is how a browser tab the user never asked for appeared
+  // on wmux's own GitHub repo (#232). Handing the surface its url up front
+  // removes the window entirely; there is nothing left to be late for.
+  state.updateSplitTree(wsId, withLeafSurfaceUrl(split, newPaneId, url));
+}
 
-  // Resolve the surfaceId of the newly created browser pane from the updated tree
-  const newSurfaceId = findLeaf(newTree, newPaneId)?.surfaces[0]?.id;
-
-  // Wait for React to mount the BrowserPane + webview dom-ready, then navigate
-  // 600ms covers: React render (~16ms) + webview init (~200-500ms)
-  setTimeout(() => {
-    window.dispatchEvent(new CustomEvent('wmux:browser-navigate', { detail: { url, surfaceId: newSurfaceId } }));
-  }, 600);
+/**
+ * Return `tree` with the sole surface of `paneId` carrying `url`.
+ *
+ * Immutable, like every other split-tree mutation (see split-utils.ts) — the
+ * renderer re-renders off object identity, so patching a leaf in place gives a
+ * pane whose props never update.
+ */
+export function withLeafSurfaceUrl(tree: SplitNode, paneId: PaneId, url: string): SplitNode {
+  if (tree.type === 'leaf') {
+    if (tree.paneId !== paneId) return tree;
+    return { ...tree, surfaces: tree.surfaces.map((s, i) => (i === 0 ? { ...s, url } : s)) };
+  }
+  const [left, right] = tree.children;
+  const newLeft = withLeafSurfaceUrl(left, paneId, url);
+  const newRight = withLeafSurfaceUrl(right, paneId, url);
+  if (newLeft === left && newRight === right) return tree;
+  return { ...tree, children: [newLeft, newRight] };
 }

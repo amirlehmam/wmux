@@ -119,6 +119,38 @@
   border: none;
 }
 
+/* A browser surface with no page (#232). Covers the webview rather than letting
+   `about:blank` through, because a blank guest page paints WHITE whatever the
+   app theme is, and a white rectangle where a dark pane should be reads as a
+   crash rather than as "empty". Same absolute-overlay shape as the setup card
+   below, so the webview keeps its size and its CDP registration. */
+.browser-pane__blank {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  background: var(--ui-bg-2);
+}
+
+.browser-pane__blank-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(var(--ui-overlay-rgb),0.6);
+}
+
+.browser-pane__blank-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(var(--ui-overlay-rgb),0.42);
+}
+
 .browser-pane__setup {
   position: absolute;
   inset: 0;

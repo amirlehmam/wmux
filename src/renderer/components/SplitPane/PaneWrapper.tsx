@@ -11,6 +11,7 @@ import PromptsPane from '../Terminal/PromptsPane';
 import NotificationRing from '../Terminal/NotificationRing';
 import SurfaceTabBar from './SurfaceTabBar';
 import { useStore } from '../../store';
+import { shouldRememberUrl } from '../../utils/browser-start-page';
 import { keyDismissesAttention } from './attention-dismiss';
 import type { SurfaceDragCommitOptions, SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import {
@@ -56,6 +57,7 @@ export default function PaneWrapper({
   const duplicateSurface = useStore((s) => s.duplicateSurface);
   const closeOtherSurfaces = useStore((s) => s.closeOtherSurfaces);
   const closeSurfacesToRight = useStore((s) => s.closeSurfacesToRight);
+  const browserPrefs = useStore((s) => s.browserPrefs);
   const selectSurface = useStore((s) => s.selectSurface);
   const moveSurface = useStore((s) => s.moveSurface);
   const splitAndMoveSurface = useStore((s) => s.splitAndMoveSurface);
@@ -276,7 +278,19 @@ export default function PaneWrapper({
             <BrowserPane
               surfaceId={surface.id}
               workspaceId={workspaceId}
-              {...(surface.url ? { initialUrl: surface.url } : {})}
+              // Remembered page, then the configured Start page, then blank.
+              // The Start page link is new in #232: a browser TAB used to skip
+              // `browserPrefs.defaultUrl` entirely and go straight to
+              // BrowserPane's default, so a user who had set a start page still
+              // got the vendor's GitHub repo in every tab they opened.
+              //
+              // No vendor filtering here, unlike the panel — see
+              // utils/browser-start-page.ts. A tab's url is written directly by
+              // openInWmuxBrowser when the user clicks a link, so filtering it
+              // would blank a pane opened on wmux's own issue tracker on purpose.
+              {...(surface.url || browserPrefs.defaultUrl
+                ? { initialUrl: surface.url || browserPrefs.defaultUrl }
+                : {})}
               // Read through engineOf, never off the raw field: the session
               // file is user-editable, so a corrupt value has to degrade to
               // `web` here exactly as it does in main (v2-browser) and in the
@@ -288,7 +302,7 @@ export default function PaneWrapper({
               // restructure (which remounts this pane) restores the page the
               // user was on instead of resetting to the default (issue #40).
               onUrlChange={(u) => {
-                if (u && u !== 'about:blank') {
+                if (shouldRememberUrl(u)) {
                   updateSurface(workspaceId, paneId, surface.id, { url: u });
                 }
               }}

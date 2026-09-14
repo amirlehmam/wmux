@@ -25,6 +25,7 @@ import ShortcutCheatSheet from './components/CheatSheet/ShortcutCheatSheet';
 import ConfirmCloseDialog from './components/ConfirmCloseDialog';
 import ConfirmCloseSurfaceDialog from './components/ConfirmCloseSurfaceDialog';
 import BrowserPane from './components/Browser/BrowserPane';
+import { rememberedPanelUrl, shouldRememberPanelUrl } from './utils/browser-start-page';
 import { ExplorerPanel } from './components/Explorer/ExplorerPanel';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
@@ -1747,8 +1748,20 @@ export default function App() {
                     // opened the panel blank while a new one showed the start
                     // page. Falling through empty is what makes the two agree,
                     // and what gives `defaultUrl` somewhere to apply.
-                    initialUrl={ws.browserUrl || browserPrefs.defaultUrl || undefined}
-                    onUrlChange={(url) => { updateWorkspaceMetadata(ws.id, { browserUrl: url }); }}
+                    //
+                    // `rememberedStartPage` drops a remembered URL that is
+                    // wmux's OWN GitHub repo (#232). Nobody chose that value —
+                    // it is the old hardcoded default, written back here by
+                    // `onUrlChange` firing for the initial load, which is how
+                    // the panel ended up reopening github.com/amirlehmam/wmux
+                    // (and, one click later, its issue tracker) on every launch.
+                    initialUrl={rememberedPanelUrl(ws.browserUrl) || browserPrefs.defaultUrl || undefined}
+                    // Guarded the way the split-tree pane already guards it: a
+                    // blank surface and the vendor page are not places the user
+                    // navigated to, so neither is remembered as one.
+                    onUrlChange={(url) => {
+                      if (shouldRememberPanelUrl(url)) updateWorkspaceMetadata(ws.id, { browserUrl: url });
+                    }}
                   />
                 </div>
               ))}
