@@ -46,6 +46,12 @@
  * automatically is the right shape for a follow-up, since extensions CAN be
  * configured globally; it is a separate piece of work from teaching omp that
  * wmux exists.
+ *
+ * That follow-up landed for pi rather than for omp — see pi-context.ts and
+ * resources/pi-extension/wmux.js (#231). pi auto-discovers extensions from
+ * `~/.pi/agent/extensions/` globally, which is exactly the property this
+ * paragraph is asking for; omp still lacks a global equivalent, so it still
+ * gets no hooks.
  */
 import * as fs from 'fs';
 import * as path from 'path';

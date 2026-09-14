@@ -54,8 +54,9 @@ const END_MARKER = '<!-- wmux:end -->';
  * Splice the wmux block into a context file the user also writes in.
  *
  * Shared by every agent whose context file is a single shared document
- * (Claude Code's CLAUDE.md, OpenCode's AGENTS.md, omp's AGENTS.md). Kiro is the
- * exception — it gets a file of wmux's own, so it has nothing to splice.
+ * (Claude Code's CLAUDE.md, OpenCode's AGENTS.md, omp's AGENTS.md, and whichever
+ * of pi's candidate names pi will actually read — see pi-context.ts). Kiro is
+ * the exception: it gets a file of wmux's own, so it has nothing to splice.
  *
  * `trimEnd()` on the block is load-bearing and not cosmetic. The block ends
  * with a newline and so does the text following the old END_MARKER, so keeping

@@ -35,13 +35,13 @@ const FEATURES: Array<{ key: Feature; labelKey: TranslationKey; labelFallback: s
     key: 'instructions',
     labelKey: 'settings.integration.instructions',
     labelFallback: 'Agent instructions',
-    pathHint: '~/.claude/CLAUDE.md · ~/.config/opencode/AGENTS.md · ~/.kiro/steering/wmux.md',
+    pathHint: '~/.claude/CLAUDE.md · ~/.config/opencode/AGENTS.md · ~/.kiro/steering/wmux.md · ~/.omp/agent/AGENTS.md · ~/.pi/agent/AGENTS.md',
   },
   {
     key: 'hooks',
     labelKey: 'settings.integration.hooks',
     labelFallback: 'Status hooks',
-    pathHint: '~/.claude/settings.json',
+    pathHint: '~/.claude/settings.json · ~/.pi/agent/extensions/wmux.js',
   },
   {
     key: 'orchestrator',

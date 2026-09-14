@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // launch-agent.js — Launch an agent with the prompt from a file.
-// Set WMUX_AGENT_CMD to pick one: claude (default), opencode, or omp.
+// Set WMUX_AGENT_CMD to pick one: claude (default), opencode, omp, or pi.
 // Usage: node launch-agent.js <prompt-file>
 //
 // Uses execFileSync to bypass all shell quoting issues.
@@ -101,6 +101,14 @@ const AGENTS = {
   omp: {
     bin: 'omp',
     args: prompt => ['run', '--', prompt],
+  },
+  // pi (@earendil-works/pi-coding-agent), issue #231. No `run` subcommand: pi
+  // takes the prompt as positional arguments and starts INTERACTIVE, like
+  // claude, so the user can watch and intervene. `--` is pi's documented "end
+  // option parsing; treat remaining arguments as messages" separator.
+  pi: {
+    bin: 'pi',
+    args: prompt => ['--', prompt],
   },
 };
 

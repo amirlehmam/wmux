@@ -3,6 +3,16 @@ import * as path from 'path';
 import * as os from 'os';
 import { stripWmuxBlock, stripLegacyBlocks } from './claude-context';
 import { injectWmuxBlock as spliceBlock, readRenderedInstructions } from './agent-instructions';
+import { isWmuxPluginFile, pluginNeedsUpdate } from './agent-plugin-file';
+
+/**
+ * Re-exported rather than moved, because the tests target it here and because
+ * this is still the file that documents what the marker is for. The
+ * implementation went to agent-plugin-file.ts when the pi extension (#231)
+ * became the second thing wmux installs into somebody else's config directory —
+ * a duplicate with no enforcement is not a duplicate, it is a time bomb (#137).
+ */
+export { pluginNeedsUpdate };
 
 /**
  * Pure: insert/replace the wmux block within existing content, preserving the rest.
@@ -39,17 +49,6 @@ export function ensureOpencodeContext(): void {
   } catch (err) {
     console.warn('[wmux] Failed to update OpenCode context:', err);
   }
-}
-
-const VERSION_RE = /wmux-plugin-version:\s*(\S+)/;
-
-/** Pure: compare embedded version markers to decide whether to re-install. */
-export function pluginNeedsUpdate(src: string, target: string | null): boolean {
-  if (target === null) return true;
-  const s = src.match(VERSION_RE)?.[1];
-  const t = target.match(VERSION_RE)?.[1];
-  if (s === undefined) return true; // fail safe: unversioned source → always reinstall
-  return s !== t;
 }
 
 function getPluginSrcPath(): string {
@@ -117,7 +116,7 @@ export function removeOpencodePlugin(): void {
   try {
     const dest = path.join(os.homedir(), '.config', 'opencode', 'plugin', 'wmux.js');
     if (!fs.existsSync(dest)) return;
-    if (!VERSION_RE.test(fs.readFileSync(dest, 'utf-8'))) return;
+    if (!isWmuxPluginFile(fs.readFileSync(dest, 'utf-8'))) return;
     fs.unlinkSync(dest);
     console.log('[wmux] Removed the wmux OpenCode plugin from', dest);
   } catch (err) {

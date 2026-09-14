@@ -55,6 +55,7 @@
     { "from": "src/cli-bin", "to": "cli-bin" },
     { "from": "src/cli-bin-ps", "to": "cli-bin-ps" },
     { "from": "resources/wmux-orchestrator", "to": "wmux-orchestrator" },
-    { "from": "resources/opencode-plugin", "to": "opencode-plugin" }
+    { "from": "resources/opencode-plugin", "to": "opencode-plugin" },
+    { "from": "resources/pi-extension", "to": "pi-extension" }
   ]
 }

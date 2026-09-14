@@ -32,6 +32,10 @@ export const AGENT_ALIASES: Record<string, string[]> = {
   codex: ['codex'],
   opencode: ['opencode'],
   kiro: ['kiro', 'kiro-cli'],
+  // omp (#165) and pi (#231) — separate harnesses, separate binaries, despite
+  // omp's name being "Oh My Pi".
+  omp: ['omp'],
+  pi: ['pi'],
   gemini: ['gemini'],
   cursor: ['cursor', 'cursor-agent'],
   copilot: ['copilot'],
