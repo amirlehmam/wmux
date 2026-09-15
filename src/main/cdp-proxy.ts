@@ -52,6 +52,36 @@ export function isAllowedCdpOrigin(origin: string | undefined): boolean {
   return false;
 }
 
+/**
+ * The route an HTTP request is asking for, with the spellings Chrome accepts
+ * folded onto one (issue #233).
+ *
+ * The handler below used to compare `req.url` against a literal, which made
+ * the proxy stricter than the thing it impersonates: Chrome serves
+ * `/json/version` and `/json/version/` alike, and Playwright's
+ * `connectOverCDP` probes the TRAILING-SLASH form. So a client that attaches
+ * to real Chrome got a 404 here and could not reach the browser panel at all,
+ * while `curl /json/version` returned 200 — which is what made the report look
+ * like a Playwright bug rather than ours.
+ *
+ * A query string is dropped for the same reason: it is not part of the route,
+ * and an exact-match comparison silently treats `/json/list?for=me` as unknown.
+ *
+ * Pure and exported so the whole table of accepted spellings is testable
+ * without binding a port, exactly as the two guards above are.
+ */
+export function cdpRoutePath(rawUrl: string | undefined): string {
+  if (!rawUrl) return '';
+  // `req.url` is origin-form (no scheme/host), so everything from the first
+  // `?` or `#` onwards is query/fragment and never part of the route.
+  const mark = rawUrl.search(/[?#]/);
+  let path = mark === -1 ? rawUrl : rawUrl.slice(0, mark);
+  // Fold trailing slashes away. Guarded at length 1 so "/" stays "/" rather
+  // than collapsing to the empty string a missing url already maps to.
+  while (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+  return path;
+}
+
 export class CDPProxy {
   private server: http.Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -99,7 +129,10 @@ export class CDPProxy {
         return;
       }
 
-      if (req.url === '/json/version') {
+      // One normalization for every route below (issue #233).
+      const route = cdpRoutePath(req.url);
+
+      if (route === '/json/version') {
         // Derive from the running Electron's actual versions so strict CDP
         // clients (chrome-devtools-mcp, puppeteer-core) negotiate correctly and
         // this never goes stale across Electron/Chromium bumps.
@@ -117,7 +150,7 @@ export class CDPProxy {
         return;
       }
 
-      if (req.url === '/json/list' || req.url === '/json') {
+      if (route === '/json/list' || route === '/json') {
         const page = this.getPageInfo();
         res.end(JSON.stringify([{
           description: '',
@@ -132,7 +165,7 @@ export class CDPProxy {
       }
 
       // Chrome DevTools also queries /json/protocol
-      if (req.url === '/json/protocol') {
+      if (route === '/json/protocol') {
         res.end('{}');
         return;
       }

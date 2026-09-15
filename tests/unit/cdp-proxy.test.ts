@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import net from 'net';
+import http from 'http';
 
 // cdp-proxy.ts imports `electron` at module scope; stub it so the pure
 // host-check function can be tested without an Electron runtime.
@@ -7,7 +8,7 @@ vi.mock('electron', () => ({
   webContents: { fromId: () => undefined },
 }));
 
-import { CDPProxy, isAllowedCdpHost, isAllowedCdpOrigin } from '../../src/main/cdp-proxy';
+import { CDPProxy, cdpRoutePath, isAllowedCdpHost, isAllowedCdpOrigin } from '../../src/main/cdp-proxy';
 
 describe('isAllowedCdpHost (DNS-rebinding guard)', () => {
   it('allows loopback literals with the proxy port', () => {
@@ -233,5 +234,92 @@ describe('CDPProxy.start (port fallback when a first instance holds 9222)', () =
     expect(proxy.isListening()).toBe(false);
     // Only meaningful if it bound something in the first place.
     expect(typeof wasListening).toBe('boolean');
+  });
+});
+
+describe('cdpRoutePath (route normalization, issue #233)', () => {
+  it('accepts the trailing-slash spelling Playwright probes', () => {
+    // The exact table from the report: the left column 200'd, the right 404'd,
+    // and connectOverCDP only ever asks for the right one.
+    expect(cdpRoutePath('/json/version/')).toBe('/json/version');
+    expect(cdpRoutePath('/json/list/')).toBe('/json/list');
+    expect(cdpRoutePath('/json/')).toBe('/json');
+    expect(cdpRoutePath('/json/protocol/')).toBe('/json/protocol');
+  });
+
+  it('leaves the plain spelling alone', () => {
+    expect(cdpRoutePath('/json/version')).toBe('/json/version');
+    expect(cdpRoutePath('/json/list')).toBe('/json/list');
+    expect(cdpRoutePath('/json')).toBe('/json');
+  });
+
+  it('drops a query string and a fragment', () => {
+    expect(cdpRoutePath('/json/list?for=playwright')).toBe('/json/list');
+    expect(cdpRoutePath('/json/version/?v=1')).toBe('/json/version');
+    expect(cdpRoutePath('/json#frag')).toBe('/json');
+  });
+
+  it('folds repeated trailing slashes but never to the empty string', () => {
+    expect(cdpRoutePath('/json/version///')).toBe('/json/version');
+    // "/" must stay "/" — collapsing it would make the root indistinguishable
+    // from a request that carried no url at all.
+    expect(cdpRoutePath('/')).toBe('/');
+    expect(cdpRoutePath(undefined)).toBe('');
+    expect(cdpRoutePath('')).toBe('');
+  });
+
+  it('does not turn an unknown route into a known one', () => {
+    expect(cdpRoutePath('/json/versionx')).toBe('/json/versionx');
+    expect(cdpRoutePath('/jsonx/')).toBe('/jsonx');
+  });
+});
+
+describe('CDPProxy HTTP routes answer both spellings (issue #233)', () => {
+  it('serves /json/version and /json/version/ identically', async () => {
+    const proxy = new CDPProxy();
+    await proxy.start();
+    const port = proxy.getPort();
+    if (port === null) {
+      // Whole range busy — nothing to assert against (same contract as the
+      // fallback test above: say so rather than fail on the environment).
+      console.warn('[test] skipped: CDP proxy bound no port');
+      proxy.stop();
+      return;
+    }
+    try {
+      const get = (path: string): Promise<{ status: number; body: string }> =>
+        new Promise((resolve, reject) => {
+          const req = http.request(
+            { host: '127.0.0.1', port, path, method: 'GET' },
+            (res) => {
+              let body = '';
+              res.on('data', (c) => { body += c; });
+              res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+            },
+          );
+          req.on('error', reject);
+          req.end();
+        });
+
+      for (const route of ['/json/version', '/json/list', '/json', '/json/protocol']) {
+        const plain = await get(route);
+        const slashed = await get(`${route}/`);
+        expect(plain.status, route).toBe(200);
+        // The regression: this was 404 before the normalization.
+        expect(slashed.status, `${route}/`).toBe(200);
+        expect(slashed.body).toBe(plain.body);
+      }
+
+      // A real unknown route still 404s — normalization must not widen the
+      // surface, only accept the spellings Chrome itself accepts.
+      expect((await get('/json/nope')).status).toBe(404);
+      expect((await get('/json/nope/')).status).toBe(404);
+
+      // And the version payload is still the thing Playwright reads.
+      const version = JSON.parse((await get('/json/version/')).body);
+      expect(version.webSocketDebuggerUrl).toBe(`ws://localhost:${port}/devtools/browser/1`);
+    } finally {
+      proxy.stop();
+    }
   });
 });
