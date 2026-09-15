@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { resolveStatusText, statusClassFor, StatusTextInputs } from '../../src/renderer/components/Sidebar/workspace-status';
+import { mergedAgentSignals, resolveStatusText, stateDotClassFor, statusClassFor, StatusTextInputs } from '../../src/renderer/components/Sidebar/workspace-status';
 
 /** The component passes the real translator; the fallback text is what we assert on. */
 const t = ((_key: string, fallback?: string) => fallback ?? _key) as never;
@@ -130,5 +130,79 @@ describe('statusClassFor — the colour must not contradict the words', () => {
     expect(statusClassFor(inputs({ shellState: 'interrupted' }))).toBe('workspace-row__status--interrupted');
     expect(statusClassFor(inputs({ shellState: 'idle' }))).toBe('workspace-row__status--done');
     expect(statusClassFor(inputs())).toBe('workspace-row__status--idle');
+  });
+});
+
+/** A roster slice. Absent kinds are 0, exactly as rollupAgents reports them. */
+function counts(over: Partial<{ blocked: number; working: number; idle: number; unknown: number }> = {}) {
+  const c = { blocked: 0, working: 0, idle: 0, unknown: 0, ...over };
+  return { ...c, total: c.blocked + c.working + c.idle + c.unknown };
+}
+
+describe('mergedAgentSignals — the roster joins the older signals (issue #235)', () => {
+  it('a detected working agent is enough on its own', () => {
+    // The reported bug: Claude over ssh+tmux reports no hooks to this machine,
+    // so every session-derived count is 0 and the row fell through to 'Idle'
+    // while the roster banner beside it said the agent was working.
+    const s = inputs({ agentCounts: counts({ working: 1 }), shellState: 'idle' });
+    expect(resolveStatusText(s, t)).toBe('Running…');
+    expect(statusClassFor(s)).toBe('workspace-row__status--working');
+    expect(stateDotClassFor(s, false)).toBe('workspace-row__state-dot--running');
+  });
+
+  it('a detected blocker outranks detected work, and carries its count', () => {
+    const s = inputs({ agentCounts: counts({ blocked: 2, working: 1 }) });
+    expect(resolveStatusText(s, t)).toBe('Needs you · 2');
+    expect(statusClassFor(s)).toBe('workspace-row__status--blocked');
+    expect(stateDotClassFor(s, true)).toBe('workspace-row__state-dot--blocked');
+  });
+
+  it('unknown contributes nothing — absence of a claim is not a claim', () => {
+    // The whole roster is agents that exist and have said nothing. Every chain
+    // must land exactly where it would with no roster at all (issue #128).
+    const silent = inputs({ agentCounts: counts({ unknown: 3 }), shellState: 'running' });
+    const none = inputs({ shellState: 'running' });
+    expect(resolveStatusText(silent, t)).toBe(resolveStatusText(none, t));
+    expect(statusClassFor(silent)).toBe(statusClassFor(none));
+    expect(stateDotClassFor(silent, false)).toBe(stateDotClassFor(none, false));
+    expect(resolveStatusText(silent, t)).toBe('Running');
+  });
+
+  it('a live tool label still outranks a bare working count', () => {
+    // Priority 1 must survive the merge: "Reading file…" says more than
+    // "Running…", so the roster agreeing that work is happening must not
+    // coarsen the line.
+    const s = inputs({ agentCounts: counts({ working: 1 }), currentToolLabel: 'Reading file…' });
+    expect(resolveStatusText(s, t)).toBe('Reading file…');
+  });
+
+  it('a manual override still wins over everything the roster saw', () => {
+    const s = inputs({ statusOverride: 'idle', agentCounts: counts({ blocked: 1 }) });
+    expect(resolveStatusText(s, t)).toBe('Idle');
+    expect(statusClassFor(s)).toBe('workspace-row__status--idle');
+    expect(stateDotClassFor(s, true)).toBe('workspace-row__state-dot--idle');
+  });
+
+  it('the multi-session summary is clamped to the sessions it can name', () => {
+    // The roster can see agents this workspace has no tracked SESSION for.
+    // "3/2 running" reads as a bug rather than as detection working.
+    const s = inputs({ sessionCount: 2, workingSessions: 0, agentCounts: counts({ working: 3 }) });
+    expect(resolveStatusText(s, t)).toBe('Claude · 2/2 running');
+  });
+
+  it('takes the larger of the two sources rather than either alone', () => {
+    const s = inputs({ blockedSessions: 1, workingSessions: 2, agentCounts: counts({ blocked: 3, working: 1 }) });
+    expect(mergedAgentSignals(s)).toEqual({ blocked: 3, working: 2, idle: false });
+  });
+
+  it('an idle claim from either source reads as idle', () => {
+    expect(mergedAgentSignals(inputs({ agentCounts: counts({ idle: 1 }) })).idle).toBe(true);
+    expect(mergedAgentSignals(inputs({ claudeIsIdle: true })).idle).toBe(true);
+    expect(mergedAgentSignals(inputs({ agentCounts: counts({ unknown: 2 }) })).idle).toBe(false);
+  });
+
+  it('no roster at all behaves as it always did', () => {
+    expect(mergedAgentSignals(inputs({ blockedSessions: 1, workingSessions: 2 })))
+      .toEqual({ blocked: 1, working: 2, idle: false });
   });
 });

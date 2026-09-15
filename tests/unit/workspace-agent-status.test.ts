@@ -46,12 +46,17 @@ function render(states: Record<string, DeclaredAgentSnapshot> = {}, overrides: P
     hookActivity: {}, claudeActivity: {},
   })));
 }
+/** `base` plus its BEM modifier, or `base` alone when the chain yielded none. */
+function withModifier(base: string, modifier: string): string {
+  return modifier ? `${base} ${base}--${modifier}` : base;
+}
+
 function expectStatus(text: string, status: string, dot: string) {
   expect(container.querySelector('.workspace-row__status')?.textContent).toBe(text);
-  expect(container.querySelector('.workspace-row__status')?.className.trim()).toBe(
-    `workspace-row__status${status ? ` workspace-row__status--${status}` : ''}`);
-  expect(container.querySelector('.workspace-row__state-dot')?.className.trim()).toBe(
-    `workspace-row__state-dot${dot ? ` workspace-row__state-dot--${dot}` : ''}`);
+  expect(container.querySelector('.workspace-row__status')?.className.trim())
+    .toBe(withModifier('workspace-row__status', status));
+  expect(container.querySelector('.workspace-row__state-dot')?.className.trim())
+    .toBe(withModifier('workspace-row__state-dot', dot));
 }
 
 describe('workspace status shares the roster state (#235)', () => {
@@ -89,18 +94,37 @@ describe('workspace status shares the roster state (#235)', () => {
     expectStatus(expected[0], expected[1], expected[2]);
   });
 
-  it('keeps an identified but unmatched agent unknown even with a running shell', () => {
+  // An agent that is PRESENT but silent is the case the declared-state protocol
+  // exists for (issue #128): `unknown` means "we know an agent is here and it
+  // has not said what it is doing". It must fall THROUGH to the heuristics — a
+  // row cannot go blank-dotted just because the roster learned a pane exists.
+  it('an identified but silent agent falls through to the shell, dot included', () => {
     store.setState({ agentIdentities: { a: { kind: 'claude', source: 'command' } },
       agentDetections: { a: { agent: null, state: 'unknown' } } });
     render({}, { shellState: 'running' });
-    expectStatus('Unknown', '', '');
+    expectStatus('Running', 'running', 'running');
   });
 
-  it('keeps screen-identified agents unknown until a state is detected', () => {
+  // The invariant, stated as a parity: learning that a silent agent EXISTS must
+  // not change one pixel of the row. Anything a silent agent does change, it
+  // changed by overriding a finer signal it knows nothing about.
+  it.each(['running', 'interrupted', 'idle', undefined] as const)(
+    'a silent agent renders identically to no agent at all (shell: %s)', shellState => {
+      render({}, { shellState });
+      const before = container.innerHTML;
+      act(() => store.setState({
+        agentIdentities: { a: { kind: 'claude', source: 'command' } },
+        agentDetections: { a: { agent: 'claude', state: 'unknown' } },
+      }));
+      expect(container.innerHTML).toBe(before);
+    });
+
+  it('a screen-identified agent stays on the shell until a state is detected', () => {
     store.setState({ agentDetections: { a: { agent: 'claude', state: 'unknown' } } });
-    render();
-    expectStatus('Unknown', '', '');
+    render({}, { shellState: 'running' });
+    expectStatus('Running', 'running', 'running');
     act(() => store.setState({ agentDetections: { a: { agent: 'claude', state: 'idle' } } }));
+    // An idle CLAIM does outrank the shell — that is priority 2, unchanged.
     expectStatus('Idle', 'idle', 'idle');
   });
 
