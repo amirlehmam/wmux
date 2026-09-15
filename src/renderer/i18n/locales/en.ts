@@ -260,6 +260,7 @@ export const en = {
   'workspaceRow.needsYou': 'Needs you',
   'workspaceRow.needsYouCount': 'Needs you · {count}',
   'workspaceRow.idle': 'Idle',
+  'workspaceRow.unknown': 'Unknown',
   'workspaceRow.running': 'Running',
   'workspaceRow.sessionRunning': 'Running…',
   'workspaceRow.interrupted': 'Interrupted',

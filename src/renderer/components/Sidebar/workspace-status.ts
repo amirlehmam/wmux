@@ -8,12 +8,15 @@
  * whether it is busy. Getting that order wrong is invisible in a type check and
  * obvious to anyone watching the sidebar.
  */
+import { workspaceAgentState, type AgentCounts } from '../../store/agent-rollup';
 import type { TranslationKey } from '../../i18n';
 
 export type T = (key: TranslationKey, fallback?: string) => string;
 
 export interface StatusTextInputs {
   statusOverride?: 'running' | 'idle';
+  /** Shared roster counts; legacy activity applies only when no agent is present. */
+  agentCounts?: AgentCounts;
   runningAgentCount: number;
   agentTotal: number;
   sessionCount: number;
@@ -32,6 +35,17 @@ export function claudeStatusText(s: StatusTextInputs, t: T): string | null {
   if (s.statusOverride) {
     return s.statusOverride === 'running' ? t('workspaceRow.running', 'Running') : t('workspaceRow.idle', 'Idle');
   }
+
+  const agentState = workspaceAgentState(s.agentCounts);
+  if (agentState === 'blocked') {
+    const count = s.agentCounts!.blocked;
+    return count > 1
+      ? t('workspaceRow.needsYouCount', 'Needs you · {count}').replace('{count}', String(count))
+      : t('workspaceRow.needsYou', 'Needs you');
+  }
+  if (agentState === 'working') return s.currentToolLabel || t('workspaceRow.sessionRunning', 'Running…');
+  if (agentState === 'idle') return t('workspaceRow.idle', 'Idle');
+  if (agentState === 'unknown') return t('workspaceRow.unknown', 'Unknown');
 
   // Priority 0.25: a session is parked on the user. Ranked above the running
   // summaries on purpose — everything else describes work that proceeds on its
@@ -100,6 +114,8 @@ export function statusClassFor(s: StatusTextInputs): string {
       ? 'workspace-row__status--running'
       : 'workspace-row__status--idle';
   }
+  const agentState = workspaceAgentState(s.agentCounts);
+  if (agentState) return agentState === 'unknown' ? '' : `workspace-row__status--${agentState}`;
   if (s.blockedSessions > 0) return 'workspace-row__status--blocked';
   if (s.runningAgentCount > 0) return 'workspace-row__status--working';
   if (s.sessionCount >= 2) {
@@ -134,4 +150,21 @@ export function resolveStatusText(s: StatusTextInputs, t: T): string {
 
   // Priority 5: Default — always show something
   return t('workspaceRow.idle', 'Idle');
+}
+
+/** The workspace dot uses the same roster state and preserves the shell fallback. */
+export function stateDotClassFor(s: StatusTextInputs, isClaudeActive: boolean): string {
+  if (s.statusOverride) return `workspace-row__state-dot--${s.statusOverride}`;
+  const agentState = workspaceAgentState(s.agentCounts);
+  if (agentState) {
+    if (agentState === 'unknown') return '';
+    return `workspace-row__state-dot--${agentState === 'working' ? 'running' : agentState}`;
+  }
+  if (s.blockedSessions > 0) return 'workspace-row__state-dot--blocked';
+  if (isClaudeActive) return 'workspace-row__state-dot--running';
+  if (s.claudeIsIdle) return 'workspace-row__state-dot--idle';
+  if (s.shellState === 'running') return 'workspace-row__state-dot--running';
+  if (s.shellState === 'interrupted') return 'workspace-row__state-dot--interrupted';
+  if (s.shellState === 'idle') return 'workspace-row__state-dot--idle';
+  return '';
 }
