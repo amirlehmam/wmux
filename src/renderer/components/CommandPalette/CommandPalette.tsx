@@ -3,7 +3,6 @@ import { useStore } from '../../store';
 import { SurfaceId } from '../../../shared/types';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { actionLabel } from '../Settings/KeyboardSettings';
-import { instantiateLayout } from '../../store/split-utils';
 import { useT } from '../../i18n';
 import '../../styles/command-palette.css';
 
@@ -53,7 +52,7 @@ function fuzzyMatch(needle: string, haystack: string): boolean {
 export default function CommandPalette({ onClose, onAction }: CommandPaletteProps) {
   const {
     shortcuts, workspaces, activeWorkspaceId, selectWorkspace,
-    savedLayouts, createWorkspace, saveCurrentLayoutAsPreset,
+    savedLayouts, createWorkspaceFromLayout, saveCurrentLayoutAsPreset,
   } = useStore();
   const t = useT();
 
@@ -162,8 +161,8 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
         label: t('palette.newWorkspaceWithLayout', 'New Workspace: {name}').replace('{name}', layout.name),
         category: t('palette.category.layouts', 'Layouts'),
         action: () => {
-          const newId = createWorkspace({ splitTree: instantiateLayout(layout.splitTree) }, t);
-          selectWorkspace(newId);
+          const newId = createWorkspaceFromLayout(layout.id, t);
+          if (newId) selectWorkspace(newId);
           onClose();
         },
       });
@@ -201,7 +200,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
     return items;
   }, [
     shortcuts, workspaces, activeWorkspaceId, selectWorkspace, onAction, onClose, t,
-    savedLayouts, createWorkspace, saveCurrentLayoutAsPreset,
+    savedLayouts, createWorkspaceFromLayout, saveCurrentLayoutAsPreset,
   ]);
 
   // Filter based on query

@@ -42,15 +42,44 @@ type SettingsReach = {
  * answer and it is a setting.
  */
 export function resolveDefaultSplitTree(get: () => unknown): SplitNode {
+  return resolveDefaultLayout(get).splitTree;
+}
+
+/** `resolveDefaultSplitTree`, plus the saved layout it came from, if any. */
+function resolveDefaultLayout(get: () => unknown): { splitTree: SplitNode; layout?: SavedLayout } {
   const settings = get() as SettingsReach;
   const saved = settings.savedLayouts?.find((l) => l.id === settings.workspacePrefs?.defaultLayoutId);
-  if (saved) return instantiateLayout(saved.splitTree);
+  if (saved) return { splitTree: instantiateLayout(saved.splitTree), layout: saved };
   // A store that has no settings slice at all (a unit test building this slice
   // on its own) still gets the shipped shape rather than a crash.
-  return buildWorkspaceTree(
-    settings.workspacePrefs?.newWorkspacePanes ?? 3,
-    settings.workspacePrefs?.newWorkspaceLayout ?? 'grid',
-  );
+  return {
+    splitTree: buildWorkspaceTree(
+      settings.workspacePrefs?.newWorkspacePanes ?? 3,
+      settings.workspacePrefs?.newWorkspaceLayout ?? 'grid',
+    ),
+  };
+}
+
+/**
+ * The title of the next workspace made from a saved layout: its name plus an
+ * instance number, `Work-1`, `Work-2`, … The number is one past the highest
+ * `Name-N` among the workspaces open NOW, so it never repeats a live title and
+ * starts again at 1 once they are all closed. A plain `Work` (the workspace the
+ * layout was saved from) does not count — it is not an instance.
+ *
+ * Returns '' for a blank name; the caller falls back to the tab-derived title.
+ */
+export function layoutInstanceTitle(layoutName: string, workspaces: Array<{ title: string }>): string {
+  const name = layoutName.trim();
+  if (!name) return '';
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^${escaped}-(\\d+)$`);
+  let highest = 0;
+  for (const ws of workspaces) {
+    const match = pattern.exec(ws.title);
+    if (match) highest = Math.max(highest, Number(match[1]));
+  }
+  return `${name}-${highest + 1}`;
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -66,6 +95,12 @@ export interface WorkspaceSlice {
   pendingCloseWorkspaceIds: WorkspaceId[];
 
   createWorkspace(options?: Partial<WorkspaceInfo>, t?: T): WorkspaceId;
+  /**
+   * A workspace from one saved layout, titled `{layout name}-{n}`. Returns null
+   * when the layout no longer exists (deleted between a menu render and the
+   * click). Does not select the new workspace.
+   */
+  createWorkspaceFromLayout(layoutId: string, t?: T): WorkspaceId | null;
   closeWorkspace(id: WorkspaceId): void;
   /**
    * Close a workspace on behalf of a USER gesture (sidebar ×, context menu,
@@ -109,15 +144,18 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
 
   createWorkspace(options = {}, t = identityT): WorkspaceId {
     const id: WorkspaceId = `ws-${uuid()}`;
-    const splitTree = options.splitTree ?? resolveDefaultSplitTree(get);
+    const resolved = options.splitTree ? { splitTree: options.splitTree } : resolveDefaultLayout(get);
+    const splitTree = resolved.splitTree;
     const workspace: WorkspaceInfo = {
       id,
       // `??`, not `||`: an explicit title — even `--title ""` — is kept as given.
-      // Without one the workspace is named after the tabs it opens with, and
+      // Without one, a workspace built from the default saved layout is named
+      // after that layout (`Work-2`); otherwise after the tabs it opens with;
       // only a workspace with nothing to name it after gets the numbered title.
       // Computed once: later tab changes never rename it.
       title: options.title
-        ?? (deriveWorkspaceTitle(splitTree, options.cwd, options.shell, t)
+        ?? (layoutInstanceTitle(resolved.layout?.name ?? '', get().workspaces)
+          || deriveWorkspaceTitle(splitTree, options.cwd, options.shell, t)
           || t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(get().workspaces.length + 1))),
       pinned: options.pinned ?? false,
       shell: options.shell || '',
@@ -156,6 +194,18 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
     });
 
     return id;
+  },
+
+  createWorkspaceFromLayout(layoutId: string, t = identityT): WorkspaceId | null {
+    const layout = (get() as SettingsReach).savedLayouts?.find((l) => l.id === layoutId);
+    if (!layout) return null;
+    const title = layoutInstanceTitle(layout.name, get().workspaces);
+    return get().createWorkspace({
+      splitTree: instantiateLayout(layout.splitTree),
+      // A blank layout name gives '' and must not become an explicit empty
+      // title: leave it undefined so the tab-derived title applies.
+      ...(title ? { title } : {}),
+    }, t);
   },
 
   closeWorkspace(id: WorkspaceId): void {

@@ -5,7 +5,7 @@ import { useStore } from './store';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
 import SplitContainer from './components/SplitPane/SplitContainer';
-import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, instantiateLayout } from './store/split-utils';
+import { updateRatio, getAllPaneIds, findLeaf, replaceSoleTerminalSurface, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent } from './store/split-utils';
 import { DEFAULT_DEV_PORTS, mergeDevPorts, matchDevPorts, firstNewDevPort } from './dev-ports';
 import { aggregateProgress } from './store/progress-slice';
 import { isDiffTabDismissed } from './store/surface-slice';
@@ -1203,12 +1203,10 @@ export default function App() {
 
   // Same result as the palette's `New Workspace: {name}`.
   const handleCreateWorkspaceFromLayout = useCallback((layoutId: string) => {
-    const layout = useStore.getState().savedLayouts.find((l) => l.id === layoutId);
-    // Deleted between the menu rendering and the click.
-    if (!layout) return;
-    const newId = createWorkspace({ splitTree: instantiateLayout(layout.splitTree) }, t);
-    selectWorkspace(newId);
-  }, [createWorkspace, selectWorkspace, t]);
+    // null: the layout was deleted between the menu rendering and the click.
+    const newId = useStore.getState().createWorkspaceFromLayout(layoutId, t);
+    if (newId) selectWorkspace(newId);
+  }, [selectWorkspace, t]);
 
   const handleManageLayouts = useCallback(() => openSettings('Workspace'), [openSettings]);
 

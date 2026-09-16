@@ -7,7 +7,7 @@ import {
   getAllPaneIds,
   MAX_WORKSPACE_PANES,
 } from '../../src/renderer/store/split-utils';
-import { createWorkspaceSlice, WorkspaceSlice, resolveDefaultSplitTree } from '../../src/renderer/store/workspace-slice';
+import { createWorkspaceSlice, WorkspaceSlice, resolveDefaultSplitTree, layoutInstanceTitle } from '../../src/renderer/store/workspace-slice';
 import { resolveWireLayout } from '../../src/renderer/pipe-bridge';
 import { DEFAULT_WORKSPACE_PREFS } from '../../src/renderer/store/settings-slice';
 import type { SplitNode } from '../../src/shared/types';
@@ -203,9 +203,22 @@ describe('createWorkspace — the title of an untitled workspace', () => {
     expect(titleOf(store, id)).toBe('notes + Prompts');
   });
 
-  it('uses the default layout the same way when no tree is passed', () => {
+  it('names a workspace built from the default layout after that layout', () => {
     const layout = {
       id: 'L1', name: 'dev', createdAt: 0,
+      splitTree: { type: 'leaf', paneId: 'pane-a', activeSurfaceIndex: 0, surfaces: [{ id: 'surf-a', type: 'terminal', shell: 'pwsh.exe' }] },
+    };
+    const store = storeWith({ ...DEFAULT_WORKSPACE_PREFS, defaultLayoutId: 'L1' }, [layout]);
+    expect(titleOf(store, store.getState().createWorkspace())).toBe('dev-1');
+    expect(titleOf(store, store.getState().createWorkspace())).toBe('dev-2');
+    // --cwd alone still resolves the default layout, so it is still an instance.
+    expect(titleOf(store, store.getState().createWorkspace({ cwd: 'C:\\src\\api' }))).toBe('dev-3');
+    expect(titleOf(store, store.getState().createWorkspace({ title: 'X' }))).toBe('X');
+  });
+
+  it('falls back to the tab-derived title when the default layout has no name', () => {
+    const layout = {
+      id: 'L1', name: '  ', createdAt: 0,
       splitTree: { type: 'leaf', paneId: 'pane-a', activeSurfaceIndex: 0, surfaces: [{ id: 'surf-a', type: 'terminal', shell: 'pwsh.exe' }] },
     };
     const store = storeWith({ ...DEFAULT_WORKSPACE_PREFS, defaultLayoutId: 'L1' }, [layout]);
@@ -219,5 +232,75 @@ describe('createWorkspace — the title of an untitled workspace', () => {
       { title: 'mine' },
     ]);
     expect(store.getState().workspaces.map((w) => w.title)).toEqual(['Session 1', 'mine']);
+  });
+});
+
+describe('layoutInstanceTitle — `Work-1`, `Work-2`, …', () => {
+  const ws = (...titles: string[]) => titles.map((title) => ({ title }));
+
+  it('starts at 1, and does not count the workspace the layout was saved from', () => {
+    expect(layoutInstanceTitle('Work', ws())).toBe('Work-1');
+    expect(layoutInstanceTitle('Work', ws('Work'))).toBe('Work-1');
+  });
+
+  it('goes one past the highest open instance', () => {
+    expect(layoutInstanceTitle('Work', ws('Work', 'Work-1'))).toBe('Work-2');
+    // Work-1 closed, Work-2 still open: never reuse a number below a live one.
+    expect(layoutInstanceTitle('Work', ws('Work-2'))).toBe('Work-3');
+    expect(layoutInstanceTitle('Work', ws('Work-9', 'Work-10'))).toBe('Work-11');
+  });
+
+  it('only counts exact `Name-N` titles', () => {
+    expect(layoutInstanceTitle('Work', ws('Work-1-copy', 'Homework-5', 'work-4', 'Work-x'))).toBe('Work-1');
+  });
+
+  it('treats regex characters in the name literally', () => {
+    expect(layoutInstanceTitle('a.b (c)+', ws('aXb (c)+-3', 'a.b (c)+-2'))).toBe('a.b (c)+-3');
+  });
+
+  it('trims the name, and answers empty for a blank one', () => {
+    expect(layoutInstanceTitle('  Work ', ws('Work-1'))).toBe('Work-2');
+    expect(layoutInstanceTitle('   ', ws())).toBe('');
+  });
+});
+
+describe('createWorkspaceFromLayout', () => {
+  const tree = { type: 'leaf', paneId: 'pane-a', activeSurfaceIndex: 0, surfaces: [{ id: 'surf-a', type: 'terminal', shell: 'pwsh.exe' }] };
+  function storeWith(savedLayouts: any[]) {
+    return create<WorkspaceSlice>()((...args) => ({
+      ...createWorkspaceSlice(...args),
+      workspacePrefs: DEFAULT_WORKSPACE_PREFS,
+      savedLayouts,
+    }) as any);
+  }
+
+  it('numbers each new instance of a layout', () => {
+    const store = storeWith([{ id: 'L1', name: 'Work', createdAt: 0, splitTree: tree }]);
+    store.getState().createWorkspace({ title: 'Work' });
+    const a = store.getState().createWorkspaceFromLayout('L1')!;
+    const b = store.getState().createWorkspaceFromLayout('L1')!;
+    const titles = store.getState().workspaces.map((w) => w.title);
+    expect(titles).toEqual(['Work', 'Work-1', 'Work-2']);
+    expect(a).not.toBe(b);
+  });
+
+  it('builds a fresh copy of the layout, not the template itself', () => {
+    const store = storeWith([{ id: 'L1', name: 'Work', createdAt: 0, splitTree: tree }]);
+    const id = store.getState().createWorkspaceFromLayout('L1')!;
+    const created = store.getState().workspaces.find((w) => w.id === id)!;
+    expect(getAllPaneIds(created.splitTree)).toHaveLength(1);
+    expect(getAllPaneIds(created.splitTree)[0]).not.toBe('pane-a');
+  });
+
+  it('uses the tab-derived title for a layout with a blank name', () => {
+    const store = storeWith([{ id: 'L1', name: '', createdAt: 0, splitTree: tree }]);
+    const id = store.getState().createWorkspaceFromLayout('L1')!;
+    expect(store.getState().workspaces.find((w) => w.id === id)!.title).toBe('PowerShell');
+  });
+
+  it('returns null and creates nothing for a layout that no longer exists', () => {
+    const store = storeWith([]);
+    expect(store.getState().createWorkspaceFromLayout('gone')).toBeNull();
+    expect(store.getState().workspaces).toHaveLength(0);
   });
 });

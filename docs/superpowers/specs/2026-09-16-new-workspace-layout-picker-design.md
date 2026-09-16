@@ -131,6 +131,19 @@ This spec adds a layout picker to the sidebar `+` button and changes how an unti
 9. IF no tab has a name of its own — every tab would be labelled only by its type (`Terminal`, `Browser`, `Markdown`, `Code`, `Diff`, `Prompts`) — or the workspace has no tabs THEN wmux SHALL use `Workspace {n}` instead. *(Decision D4: a bare `Terminal + Terminal + Terminal` cannot tell workspaces apart.)* A tab has a name of its own when its label comes from a custom title, a directory, a file name or a shell.
 10. The full title SHALL be stored untruncated; the sidebar SHALL keep truncating long titles visually as it does today.
 
+### US-6 — Layout instances are named after the layout *(amendment, 2026-09-16)*
+
+**User story:** As a wmux user who saves a workspace as a layout (e.g. `Work`) and opens more copies of it, I want each copy to be named after the layout with an instance number, so that `Work-1`, `Work-2` are recognisable as copies of `Work`.
+
+**Acceptance criteria:**
+
+1. WHEN a workspace is created from a saved layout without an explicit title — a layout picked in the sidebar menu, the palette's `New Workspace: {name}`, or any path that resolves the default layout (sidebar `+`, Ctrl+N, first launch, `wmux new-workspace` without `--title`/`--panes`/`--layout`) — THEN wmux SHALL title it `{layout name}-{n}`.
+2. `n` SHALL be one more than the highest `n` among open workspaces titled exactly `{layout name}-{n}`, or `1` if there are none. A workspace titled exactly `{layout name}` SHALL NOT count.
+3. The layout name SHALL be trimmed. IF it is blank THEN US-5 applies (tab-derived title, else `Workspace {n}`).
+4. An explicit title SHALL still win (US-5.8).
+
+This takes precedence over US-5 for layout-based workspaces. Implemented as `layoutInstanceTitle` and the store action `createWorkspaceFromLayout` in `workspace-slice.ts`, which C4 and the palette now both call instead of building the tree themselves.
+
 ### Non-goals
 
 - A default-layout marker in the menu (US-2.6).
