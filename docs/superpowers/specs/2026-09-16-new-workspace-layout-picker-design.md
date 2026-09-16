@@ -1,7 +1,7 @@
 # New Workspace Layout Picker — Design Spec
 
 **Date:** 2026-09-16
-**Status:** Implemented — Phase 1 (Requirements) approved · Phase 2 (Design) approved · Phase 3 (Tasks) done except the manual checklist (8.1, 8.3, 8.4)
+**Status:** Implemented, verification incomplete — Phase 1 (Requirements) approved · Phase 2 (Design) approved · Phase 3 (Tasks) code done; task 8 open (see *Verification status*)
 
 > Turn the sidebar `+` into a split-button: `+` still creates a workspace from the default, an upward caret `▴` opens a list of the saved layouts from Settings so any of them can be picked in one click. New workspaces are titled after the tabs they open.
 
@@ -360,6 +360,8 @@ No new persisted data. Everything is read from existing state:
 **Decision:** Option 2 — fall back to `Workspace {n}` when no tab is `named` (US-5.9).
 **Rationale:** No regression for users without saved layouts, while every workspace with at least one real name (directory, file, shell, custom title) still gets a tab-derived title. `Workspace {n}` rather than `Session {n}`, because it is the fallback `createWorkspace` already owns and the `Session` keys are removed (C3).
 
+**Not an input: `workspacePrefs.defaultCwd` / `defaultShell`.** A bare terminal does spawn in those at runtime (`useTerminal.ts`), so the title could name them. It deliberately does not: the preferences are the same for every new workspace, so `Projects + Projects + Projects` on every `+` is the same indistinguishable row this decision exists to avoid, just with a different word. Only a directory or shell that belongs to *this* workspace — a surface's own `cwd`/`shell`, or `--cwd`/`--shell` — counts as a name.
+
 ### 4.6 Error Handling
 
 | Scenario | Handling |
@@ -432,7 +434,7 @@ Sequencing: **foundation-first inside each slice, slice A before slice B.** Slic
   - [x] 3.1 `src/renderer/App.tsx`: `handleCreateWorkspace` → `createWorkspace(undefined, t)`. First launch → `createWorkspace(undefined, t)`.
   - [x] 3.2 `src/renderer/components/CommandPalette/CommandPalette.tsx`: the `New Workspace: {name}` action passes `t` to `createWorkspace`.
   - [x] 3.3 Remove `app.sessionTitle` and `app.firstSessionTitle` from all 18 files in `src/renderer/i18n/locales/`.
-  - **Verify:** `grep -rn "app.sessionTitle\|app.firstSessionTitle" src` returns nothing; `tests/unit/i18n.test.ts` is green; `npm run dev` passes manual checklist items 1 (title part), 8 and 9.
+  - **Verify:** `grep -rn "app.sessionTitle\|app.firstSessionTitle" src` returns nothing; `tests/unit/i18n.test.ts` is green; `npm run dev` passes manual checklist items 1 (title part), 8 and 9. *Manual part pending — see Verification status.*
   - _Requirements: US-5.7, A1 · Design: C3_
 
 - [x] **4. Docs for slice A**
@@ -463,14 +465,22 @@ Sequencing: **foundation-first inside each slice, slice A before slice B.** Slic
   - [x] 7.1 `SettingsWindow.tsx`: optional `initialTab` prop as the `useState` initial value.
   - [x] 7.2 `App.tsx`: `settingsTab` state; existing openers reset it to `undefined`; `handleManageLayouts` sets `'Workspace'` and opens Settings; new `handleCreateWorkspaceFromLayout` (C4).
   - [x] 7.3 `Sidebar.tsx`: props `onCreateFromLayout`, `onManageLayouts`; replace `sidebar__new-btn` with `<NewWorkspaceButton>`. `App.tsx` passes both callbacks.
-  - **Verify:** `npm run dev` passes manual checklist items 1–7 and 10.
+  - **Verify:** `npm run dev` passes manual checklist items 1–7 and 10. *Pending — see Verification status.*
   - _Requirements: US-1, US-2.8, US-3.4 · Design: C4, C5, C8_
 
 - [ ] **8. Final verification**
   - [ ] 8.1 Full manual checklist (§4.7, items 1–10) in `npm run dev`.
-  - [x] 8.2 `npm test`, `npm run lint`, `npm run build:main`, `npm run build:renderer` all green.
+  - [ ] 8.2 `npm test`, `npm run lint`, `npm run build:main`, `npm run build:renderer` all green.
   - [ ] 8.3 Re-read §3 and tick every acceptance criterion against the running app. Update this spec if the implementation diverged.
   - [ ] 8.4 Screenshot of both caret states and the empty state for the PR.
+
+#### Verification status (2026-09-16)
+
+What has actually been checked, so the ticks above are not read as more than that:
+
+- **Automated.** `npm run build:main`, `npm run build:renderer` and `tsc --noEmit` pass. `npm test` passes except `pty-manager › resolveExistingShellPath … pwsh`, which fails identically on `master` on a machine without PowerShell 7. `npm run lint` reports errors, all pre-existing and identical on `master`; none in files this change touches. So 8.2 is **not** met as written.
+- **Manual (partial, one dev run).** Seen working: the split-button renders with the caret up; the caret opens the menu above the button (`aria-expanded` follows) and a second click closes it (item 2); the empty state shows the hint and both actions (item 5); "Save current layout" adds a layout to the list (item 5); a first-launch workspace with bare terminals is titled `Workspace 1` (item 1). Results for Escape, outside click and picking a layout were inconclusive because the window was used by someone else during the run.
+- **Not yet checked.** Items 3, 4, 6–10 of §4.7, US-6 (`Work-1` naming) in the running app, and 8.4 screenshots.
   - _Requirements: all_
 
 ### Tasks Checklist
