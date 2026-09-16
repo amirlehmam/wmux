@@ -162,7 +162,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
         label: t('palette.newWorkspaceWithLayout', 'New Workspace: {name}').replace('{name}', layout.name),
         category: t('palette.category.layouts', 'Layouts'),
         action: () => {
-          const newId = createWorkspace({ splitTree: instantiateLayout(layout.splitTree) });
+          const newId = createWorkspace({ splitTree: instantiateLayout(layout.splitTree) }, t);
           selectWorkspace(newId);
           onClose();
         },

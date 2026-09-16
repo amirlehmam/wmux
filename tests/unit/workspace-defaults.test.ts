@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { create } from 'zustand';
 import {
   buildWorkspaceTree,
+  instantiateLayout,
   buildDefaultSplitTree,
   getAllPaneIds,
   MAX_WORKSPACE_PANES,
@@ -154,5 +155,69 @@ describe('resolveWireLayout — what --panes / --layout mean', () => {
     // The typo should cost the user their typo, not also the setting they made.
     expect(resolveWireLayout({ layout: 'gird' }, prefs).layout).toBe('grid');
     expect(resolveWireLayout({ layout: 'gird' }, { ...prefs, newWorkspaceLayout: 'rows' }).layout).toBe('rows');
+  });
+});
+
+describe('createWorkspace — the title of an untitled workspace', () => {
+  function storeWith(prefs: any = DEFAULT_WORKSPACE_PREFS, savedLayouts: any[] = []) {
+    return create<WorkspaceSlice>()((...args) => ({
+      ...createWorkspaceSlice(...args),
+      workspacePrefs: prefs,
+      savedLayouts,
+    }) as any);
+  }
+  const titleOf = (store: ReturnType<typeof storeWith>, id: string) =>
+    store.getState().workspaces.find((w) => w.id === id)!.title;
+
+  it('numbers a workspace whose tabs have nothing to name it after', () => {
+    // The standard shape with no cwd or shell is three bare terminals, and
+    // `Terminal + Terminal + Terminal` on every row would tell nothing apart.
+    const store = storeWith();
+    store.getState().createWorkspace();
+    const id = store.getState().createWorkspace();
+    expect(titleOf(store, id)).toBe('Workspace 2');
+  });
+
+  it('names it after its tabs when they carry a name', () => {
+    const store = storeWith();
+    const id = store.getState().createWorkspace({ cwd: 'C:\\src\\api' });
+    expect(titleOf(store, id)).toBe('api + api + api');
+  });
+
+  it('keeps an explicit title, including an empty one', () => {
+    const store = storeWith();
+    expect(titleOf(store, store.getState().createWorkspace({ title: 'X', cwd: 'C:\\src\\api' }))).toBe('X');
+    expect(titleOf(store, store.getState().createWorkspace({ title: '', cwd: 'C:\\src\\api' }))).toBe('');
+  });
+
+  it('names a workspace made from a saved layout after that layout\'s tabs', () => {
+    const tree: SplitNode = {
+      type: 'branch', direction: 'horizontal', ratio: 0.5,
+      children: [
+        { type: 'leaf', paneId: 'pane-a' as any, activeSurfaceIndex: 0, surfaces: [{ id: 'surf-a' as any, type: 'terminal', cwd: 'D:\\notes' }] },
+        { type: 'leaf', paneId: 'pane-b' as any, activeSurfaceIndex: 0, surfaces: [{ id: 'surf-b' as any, type: 'prompts' }] },
+      ],
+    };
+    const store = storeWith();
+    const id = store.getState().createWorkspace({ splitTree: instantiateLayout(tree) });
+    expect(titleOf(store, id)).toBe('notes + Prompts');
+  });
+
+  it('uses the default layout the same way when no tree is passed', () => {
+    const layout = {
+      id: 'L1', name: 'dev', createdAt: 0,
+      splitTree: { type: 'leaf', paneId: 'pane-a', activeSurfaceIndex: 0, surfaces: [{ id: 'surf-a', type: 'terminal', shell: 'pwsh.exe' }] },
+    };
+    const store = storeWith({ ...DEFAULT_WORKSPACE_PREFS, defaultLayoutId: 'L1' }, [layout]);
+    expect(titleOf(store, store.getState().createWorkspace())).toBe('PowerShell');
+  });
+
+  it('leaves restored titles exactly as they were saved', () => {
+    const store = storeWith();
+    store.getState().replaceAllWorkspaces([
+      { title: 'Session 1', cwd: 'C:\\src\\api' },
+      { title: 'mine' },
+    ]);
+    expect(store.getState().workspaces.map((w) => w.title)).toEqual(['Session 1', 'mine']);
   });
 });

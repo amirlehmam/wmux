@@ -559,8 +559,6 @@ export const tr: Translation = {
   'app.claudeNeedsInput': 'Claude Code sizin girişinize ihtiyaç duyuyor',
   'app.claudeFinishedIn': 'Claude Code, {workspace} içinde işini bitirdi',
   'app.claudeFinished': 'Claude Code işini bitirdi',
-  'app.firstSessionTitle': 'Oturum 1',
-  'app.sessionTitle': 'Oturum {n}',
   'app.sessionSaved': '"{name}" oturumu kaydedildi',
   'app.expandSidebar': 'Kenar çubuğunu genişlet (Ctrl+B)',
   'app.closeBrowserPanel': 'Tarayıcı panelini kapat',

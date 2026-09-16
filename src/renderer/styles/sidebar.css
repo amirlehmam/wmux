@@ -74,6 +74,52 @@
   border-color: rgba(var(--ui-overlay-rgb), 0.15);
 }
 
+/* `+ │ ▴` split-button: one border and radius around both halves, the same
+   footprint the lone `+` had. */
+.sidebar__new-group {
+  display: flex;
+  width: 100%;
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+.sidebar__new-group:hover {
+  border-color: rgba(var(--ui-overlay-rgb), 0.15);
+}
+.sidebar__new-group .sidebar__new-btn {
+  flex: 1;
+  width: auto;
+  border: none;
+  border-radius: 0;
+}
+.sidebar__new-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(var(--ui-overlay-rgb), 0.1);
+  color: rgba(var(--ui-overlay-rgb), 0.5);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sidebar__new-caret:hover,
+.sidebar__new-caret[aria-expanded="true"] {
+  background: rgba(var(--ui-overlay-rgb), 0.05);
+  color: rgba(var(--ui-overlay-rgb), 0.8);
+}
+.sidebar__new-caret svg {
+  transition: transform 0.15s ease;
+}
+/* IconCaret points down. Closed, it points up, toward where the menu opens;
+   open, it points down again, meaning "collapse". */
+.sidebar__new-caret--closed svg {
+  transform: rotate(180deg);
+}
+
 /* Workspace Row */
 .workspace-row {
   position: relative;

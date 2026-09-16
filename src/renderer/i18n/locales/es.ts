@@ -549,8 +549,6 @@ export const es: Translation = {
   'app.claudeNeedsInput': 'Claude Code necesita tu intervención',
   'app.claudeFinishedIn': 'Claude Code terminó en {workspace}',
   'app.claudeFinished': 'Claude Code terminó',
-  'app.firstSessionTitle': 'Sesión 1',
-  'app.sessionTitle': 'Sesión {n}',
   'app.sessionSaved': 'Sesión "{name}" guardada',
   'app.expandSidebar': 'Expandir la barra lateral (Ctrl+B)',
   'app.closeBrowserPanel': 'Cerrar el panel del navegador',

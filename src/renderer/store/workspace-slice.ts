@@ -4,6 +4,9 @@ import { WorkspaceId, WorkspaceInfo, SplitNode, SavedLayout } from '../../shared
 import { isPosixPath } from '../../shared/paths';
 import { buildWorkspaceTree, WorkspaceLayout, instantiateLayout, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, mergeStartupCommands } from './split-utils';
 import { killTreeTerminalPtys } from './pty-teardown';
+// The one module that owns every tab-label rule. It is pure (no React), so the
+// store importing it pulls in nothing but the label helpers.
+import { deriveWorkspaceTitle } from '../components/SplitPane/surface-label';
 import type { TranslationKey } from '../i18n/core';
 
 /** Defaults to returning the fallback verbatim so callers that omit `t` still see English. */
@@ -109,7 +112,13 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
     const splitTree = options.splitTree ?? resolveDefaultSplitTree(get);
     const workspace: WorkspaceInfo = {
       id,
-      title: options.title ?? t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(get().workspaces.length + 1)),
+      // `??`, not `||`: an explicit title — even `--title ""` — is kept as given.
+      // Without one the workspace is named after the tabs it opens with, and
+      // only a workspace with nothing to name it after gets the numbered title.
+      // Computed once: later tab changes never rename it.
+      title: options.title
+        ?? (deriveWorkspaceTitle(splitTree, options.cwd, options.shell, t)
+          || t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(get().workspaces.length + 1))),
       pinned: options.pinned ?? false,
       shell: options.shell || '',
       splitTree,
