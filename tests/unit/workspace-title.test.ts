@@ -79,6 +79,19 @@ describe('deriveWorkspaceTitle — labels', () => {
     expect(deriveWorkspaceTitle(leaf(s({ shell: '   ' })), undefined, undefined)).toBe('');
   });
 
+  it('keeps an unquoted absolute path with spaces whole', () => {
+    // main's parseShellSpec never splits an existing absolute path, so neither may the title.
+    expect(deriveWorkspaceTitle(leaf(s({ shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' })), undefined, undefined)).toBe('PowerShell');
+    expect(deriveWorkspaceTitle(leaf(s({ shell: 'C:\\Program Files\\Git\\bin\\bash.exe --login' })), undefined, undefined)).toBe('Bash');
+    // Only a path that STARTS the spec gets this; an argument is still an argument.
+    expect(deriveWorkspaceTitle(leaf(s({ shell: 'node C:\\tools\\x.exe' })), undefined, undefined)).toBe('Node');
+  });
+
+  it('falls back to the workspace shell when the surface spec is blank', () => {
+    expect(deriveWorkspaceTitle(leaf(s({ shell: '   ' })), undefined, 'pwsh.exe')).toBe('PowerShell');
+    expect(deriveWorkspaceTitle(leaf(s({ shell: '""' })), undefined, 'cmd.exe')).toBe('Command Prompt');
+  });
+
   it('never uses what only exists once the PTY runs', () => {
     // currentCwd and resolvedShell are live fields: nothing has reported them
     // when a workspace is created, and a stored title must not depend on them.

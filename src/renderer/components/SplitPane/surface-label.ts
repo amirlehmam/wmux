@@ -96,7 +96,15 @@ function shellProgram(spec: string | undefined): string | undefined {
   if (!trimmed) return undefined;
   if (trimmed.startsWith('"')) {
     const end = trimmed.indexOf('"', 1);
-    return (end === -1 ? trimmed.slice(1) : trimmed.slice(1, end)) || undefined;
+    return (end === -1 ? trimmed.slice(1) : trimmed.slice(1, end)).trim() || undefined;
+  }
+  // An unquoted absolute path may contain spaces (`C:\Program Files\PowerShell\7\pwsh.exe`),
+  // and main's parseShellSpec keeps such a path whole because the file exists.
+  // The renderer cannot ask the disk, so it keeps the path up to its executable
+  // extension instead of cutting it at `C:\Program`.
+  if (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(trimmed)) {
+    const exe = /^(.*?\.(?:exe|com|cmd|bat))(?:\s|$)/i.exec(trimmed);
+    if (exe) return exe[1];
   }
   return trimmed.split(/\s+/)[0];
 }
@@ -123,7 +131,9 @@ function getInitialSurfaceLabel(
       const cwd = surface.cwd || workspaceCwd;
       const folder = cwd ? cwdFolderName(cwd) : null;
       if (folder) return { label: folder, named: true };
-      const shell = getShellLabel(shellProgram(surface.shell || workspaceShell));
+      // Parsed separately: a blank surface spec must fall through to the
+      // workspace shell rather than shadow it.
+      const shell = getShellLabel(shellProgram(surface.shell) ?? shellProgram(workspaceShell));
       if (shell) return { label: shell, named: true };
       return { label: t('surfaceLabel.terminal', 'Terminal'), named: false };
     }
