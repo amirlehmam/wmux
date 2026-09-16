@@ -4,6 +4,7 @@ import WorkspaceRow from './WorkspaceRow';
 import SidebarResizeHandle from './SidebarResizeHandle';
 import WorkspaceContextMenu from './WorkspaceContextMenu';
 import SessionMenu from './SessionMenu';
+import NewWorkspaceButton from './NewWorkspaceButton';
 import OrchestrationPanel from './OrchestrationPanel';
 import AgentRosterBanner from './AgentRosterBanner';
 import type { AgentRosterEntry } from '../../store/agent-rollup';
@@ -28,6 +29,10 @@ interface SidebarProps {
   onSelect: (id: WorkspaceId) => void;
   onClose: (id: WorkspaceId) => void;
   onCreate: () => void;
+  /** A workspace from one saved layout, picked in the `+` caret menu. */
+  onCreateFromLayout: (layoutId: string) => void;
+  /** Open Settings on the Workspace tab, where saved layouts are managed. */
+  onManageLayouts: () => void;
   onRename: (id: WorkspaceId, title: string) => void;
   onReorder: (ids: WorkspaceId[]) => void;
   onUpdateMetadata: (id: WorkspaceId, partial: Partial<WorkspaceInfo>) => void;
@@ -52,6 +57,8 @@ export default function Sidebar({
   onSelect,
   onClose,
   onCreate,
+  onCreateFromLayout,
+  onManageLayouts,
   onRename,
   onReorder,
   onUpdateMetadata,
@@ -318,9 +325,11 @@ export default function Sidebar({
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9zM2.5 3a.5.5 0 0 0-.5.5V6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.572-2.331-1.184C6.268 3.394 5.762 3 5.264 3H2.5zM14 7H2v5.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V7z"/></svg>
         </button>
-        <button className="sidebar__new-btn" onClick={onCreate} title={t('sidebar.newWorkspace', 'New workspace')}>
-          +
-        </button>
+        <NewWorkspaceButton
+          onCreate={onCreate}
+          onCreateFromLayout={onCreateFromLayout}
+          onManageLayouts={onManageLayouts}
+        />
         {sessionMenuMode && (
           <SessionMenu
             mode={sessionMenuMode}

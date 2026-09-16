@@ -559,8 +559,6 @@ export const ru: Translation = {
   'app.claudeNeedsInput': 'Claude Code нуждается в вашем вводе',
   'app.claudeFinishedIn': 'Claude Code завершил работу в {workspace}',
   'app.claudeFinished': 'Claude Code завершил работу',
-  'app.firstSessionTitle': 'Сеанс 1',
-  'app.sessionTitle': 'Сеанс {n}',
   'app.sessionSaved': 'Сеанс "{name}" сохранён',
   'app.expandSidebar': 'Развернуть боковую панель (Ctrl+B)',
   'app.closeBrowserPanel': 'Закрыть панель браузера',

@@ -559,8 +559,6 @@ export const uk: Translation = {
   'app.claudeNeedsInput': 'Claude Code потребує вашого введення',
   'app.claudeFinishedIn': 'Claude Code завершив роботу в {workspace}',
   'app.claudeFinished': 'Claude Code завершив роботу',
-  'app.firstSessionTitle': 'Сеанс 1',
-  'app.sessionTitle': 'Сеанс {n}',
   'app.sessionSaved': 'Сеанс "{name}" збережено',
   'app.expandSidebar': 'Розгорнути бічну панель (Ctrl+B)',
   'app.closeBrowserPanel': 'Закрити панель браузера',

@@ -567,8 +567,6 @@ export const ko: Translation = {
   'app.claudeNeedsInput': 'Claude Code가 입력을 기다리고 있습니다',
   'app.claudeFinishedIn': '{workspace}에서 Claude Code가 작업을 마쳤습니다',
   'app.claudeFinished': 'Claude Code가 작업을 마쳤습니다',
-  'app.firstSessionTitle': '세션 1',
-  'app.sessionTitle': '세션 {n}',
   'app.sessionSaved': '세션 "{name}"을(를) 저장했습니다',
   'app.expandSidebar': '사이드바 펼치기 (Ctrl+B)',
   'app.closeBrowserPanel': '브라우저 패널 닫기',

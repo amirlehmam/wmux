@@ -548,8 +548,6 @@ export const nl: Translation = {
   'app.claudeNeedsInput': 'Claude Code heeft je invoer nodig',
   'app.claudeFinishedIn': 'Claude Code is klaar in {workspace}',
   'app.claudeFinished': 'Claude Code is klaar',
-  'app.firstSessionTitle': 'Sessie 1',
-  'app.sessionTitle': 'Sessie {n}',
   'app.sessionSaved': 'Sessie "{name}" opgeslagen',
   'app.expandSidebar': 'Zijbalk uitklappen (Ctrl+B)',
   'app.closeBrowserPanel': 'Browserpaneel sluiten',

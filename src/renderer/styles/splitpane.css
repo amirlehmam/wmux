@@ -285,6 +285,22 @@ html.wmux-transparent .split-divider--horizontal {
   margin: 4px 2px;
   background: rgba(var(--ui-overlay-rgb),0.10);
 }
+/* A menu that opens upward (the sidebar layout picker) caps its height at the
+   space above it — max-height comes inline — and scrolls rather than clipping. */
+.surface-tab-menu--up {
+  overflow-y: auto;
+}
+.surface-tab-menu--up > * {
+  flex-shrink: 0;
+}
+.surface-tab-menu__hint {
+  padding: 7px 10px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  cursor: default;
+  user-select: none;
+}
 .surface-tab-menu__profile-name {
   flex: 1;
   overflow: hidden;

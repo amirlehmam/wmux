@@ -34,12 +34,16 @@ const TAB_LABEL_KEYS: Record<typeof TABS[number], TranslationKey> = {
   Help: 'settings.tab.help',
 };
 
+export type SettingsTab = typeof TABS[number];
+
 interface SettingsWindowProps {
   onClose: () => void;
+  /** The tab to open on. Read once, at mount; the user can switch away freely. */
+  initialTab?: SettingsTab;
 }
 
-export default function SettingsWindow({ onClose }: SettingsWindowProps) {
-  const [activeTab, setActiveTab] = useState<typeof TABS[number]>('Terminal');
+export default function SettingsWindow({ onClose, initialTab }: SettingsWindowProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'Terminal');
   const t = useT();
 
   return (

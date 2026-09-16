@@ -598,8 +598,6 @@ export const fr: Translation = {
   'app.claudeNeedsInput': 'Claude Code a besoin de votre intervention',
   'app.claudeFinishedIn': 'Claude Code a terminé dans {workspace}',
   'app.claudeFinished': 'Claude Code a terminé',
-  'app.firstSessionTitle': 'Session 1',
-  'app.sessionTitle': 'Session {n}',
   'app.sessionSaved': 'Session « {name} » enregistrée',
   'app.expandSidebar': 'Développer la barre latérale (Ctrl+B)',
   'app.closeBrowserPanel': 'Fermer le panneau du navigateur',

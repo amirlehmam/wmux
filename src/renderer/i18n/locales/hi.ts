@@ -559,8 +559,6 @@ export const hi: Translation = {
   'app.claudeNeedsInput': 'Claude Code को आपके इनपुट की ज़रूरत है',
   'app.claudeFinishedIn': 'Claude Code {workspace} में पूर्ण हुआ',
   'app.claudeFinished': 'Claude Code पूर्ण हुआ',
-  'app.firstSessionTitle': 'सत्र 1',
-  'app.sessionTitle': 'सत्र {n}',
   'app.sessionSaved': 'सत्र "{name}" सहेजा गया',
   'app.expandSidebar': 'साइडबार विस्तृत करें (Ctrl+B)',
   'app.closeBrowserPanel': 'ब्राउज़र पैनल बंद करें',
