@@ -415,6 +415,13 @@ describe('applyStagedPortableUpdate', () => {
     expect(app.quit).not.toHaveBeenCalled();
   });
 
+  it('does not quit when a path would be rewritten on the helper command line', async () => {
+    const withPercentPair = { ...staged(), installDir: 'C:\\tools\\%OS%\\wmux', exePath: 'C:\\tools\\%OS%\\wmux\\wmux.exe' };
+    await expect(applyStagedPortableUpdate(withPercentPair)).rejects.toThrow(/expand/);
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
   it('does not quit when the helper fails to start', async () => {
     const child = fakeChild();
     spawnMock.mockReturnValue(child);
@@ -464,5 +471,16 @@ describe('buildHelperArgs', () => {
 
   it('refuses a piece that would add a quote of its own', () => {
     expect(() => buildHelperArgs('C:\\t\\h.cmd', ['1', 'C:\\a" & calc & "', 'C:\\w', 'C:\\w\\wmux.exe'])).toThrow(/double quote/);
+  });
+
+  // cmd expands a defined %NAME% even inside quotes, so `C:\x\%OS%\y` would
+  // reach the helper as `C:\x\Windows_NT\y` and the install would do nothing.
+  it('refuses a %…% pair anywhere, including the helper path', () => {
+    expect(() => buildHelperArgs('C:\\t\\h.cmd', ['1', 'C:\\x\\%OS%\\y', 'C:\\w', 'C:\\w\\wmux.exe'])).toThrow(/expand/);
+    expect(() => buildHelperArgs('C:\\Users\\a%b%c\\Temp\\h.cmd', ['1', 'C:\\p', 'C:\\w', 'C:\\w\\wmux.exe'])).toThrow(/expand/);
+  });
+
+  it('allows a lone percent sign, which cmd leaves alone', () => {
+    expect(buildHelperArgs('C:\\t\\h.cmd', ['1', 'C:\\100%\\p', 'C:\\w', 'C:\\w\\wmux.exe'])[3]).toContain('"C:\\100%\\p"');
   });
 });

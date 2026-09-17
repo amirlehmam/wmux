@@ -302,11 +302,21 @@ export function buildApplyUpdateCmd(): string {
  * exactly that pair and leaves every inner quote alone. That only holds if
  * nothing inside adds a quote of its own, which a Windows path cannot contain;
  * one that somehow does is refused rather than allowed to re-split the line.
+ *
+ * Quotes do not stop the other rewrite cmd performs on a command line: a
+ * `%NAME%` naming a defined variable is expanded inside them (measured:
+ * `"C:\x\%OS%\y"` arrives as `C:\x\Windows_NT\y`). `%` is legal in a Windows
+ * path, and a path that changes on the way in is the same silent no-restart
+ * as the space was. A lone `%` survives, so only a pair is refused — here,
+ * while wmux is still running to say so.
  */
 export function buildHelperArgs(helper: string, args: string[]): string[] {
   const parts = [helper, ...args];
   if (parts.some((p) => p.includes('"'))) {
     throw new Error('update helper argument contains a double quote');
+  }
+  if (parts.some((p) => /%[^%]*%/.test(p))) {
+    throw new Error('update helper argument contains a %…% pair that cmd.exe would expand');
   }
   return ['/d', '/s', '/c', `"${parts.map((p) => `"${p}"`).join(' ')}"`];
 }
