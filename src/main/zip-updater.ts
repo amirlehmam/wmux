@@ -118,7 +118,14 @@ export function buildApplyUpdateCmd(): string {
     ':relaunch',
     'start "" "%EXE%"',
     'rmdir /s /q "%SRC%"',
-    'del "%~f0"',
+    // Deliberately does NOT delete itself (no `del "%~f0"`). A hidden,
+    // detached script that silently overwrites an unsigned .exe, launches
+    // it, and then erases its own file is a textbook dropper/self-cleanup
+    // signature — exactly what AV behavioral engines (e.g. Norton SONAR)
+    // are built to flag, and a plausible contributor to reports of the
+    // updater triggering a heavy AV scan/lockdown. The leftover .cmd is a
+    // few hundred bytes in %TEMP%, harmless, and Windows reclaims temp
+    // files on its own.
   ].join('\r\n');
 }
 

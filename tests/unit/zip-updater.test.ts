@@ -123,6 +123,13 @@ describe('buildApplyUpdateCmd', () => {
     expect(cmd.indexOf(':relaunch')).toBeLessThan(cmd.indexOf('start "" "%EXE%"'));
   });
 
+  // Self-deleting scripts are a classic dropper/malware signature; not
+  // self-deleting removes one plausible trigger for AV behavioral scans
+  // (e.g. Norton SONAR) hanging the system on update.
+  it('does not self-delete', () => {
+    expect(cmd).not.toMatch(/del\s+"%~f0"/i);
+  });
+
   it('does not embed caller paths — those arrive as arguments', () => {
     expect(cmd).not.toMatch(/C:\\/);
     expect(cmd).toContain('set "PID=%~1"');
