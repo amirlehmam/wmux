@@ -15,6 +15,11 @@ const REPO_NAME = 'wmux';
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FIRST_CHECK_DELAY_MS = 5_000;
 
+/** The GitHub page for one release, in the shape the release-page IPC accepts. */
+export function releasePageUrl(version: string): string {
+  return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/v${encodeURIComponent(version.replace(/^v/, ''))}`;
+}
+
 export interface UpdateAvailableInfo {
   version: string;
   url: string;

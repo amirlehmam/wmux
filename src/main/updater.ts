@@ -3,7 +3,7 @@ import { app, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC_CHANNELS } from '../shared/types';
-import { fetchLatestRelease, compareVersions } from './update-checker';
+import { fetchLatestRelease, compareVersions, releasePageUrl } from './update-checker';
 import {
   isPortableZipInstall,
   resolvePortableZipTarget,
@@ -208,8 +208,13 @@ export function canSelfUpdate(): boolean {
  * page: an unpackaged dev run, the updater kill switch, a release with no
  * latest.yml, or any updater error. The GitHub link stays the safety net it
  * always was; it is just no longer the only path.
+ *
+ * `url` is set when main knows which release page to open. The renderer's own
+ * copy comes from the notify-only poller and may not have arrived — a zip
+ * update started from Help does not wait for it — so a fallback that relies on
+ * it alone can open nothing.
  */
-export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: string }> {
+export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: string; url?: string }> {
   if (!canSelfUpdate()) return { handled: false, reason: 'not_supported' };
 
   // Already downloaded — this click is the install confirmation.
@@ -225,11 +230,16 @@ export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: s
   // not "Restart". And not forever — a failure that repeats (an antivirus that
   // blocks the helper every time) would otherwise make every click look dead,
   // so after the retry has also failed the release page takes over.
+  //
+  // The phase stays `error` and the dialog is started synchronously, not after
+  // a setImmediate: promptToInstall claims `installPrompted` before its first
+  // await, so a second click lands on that guard. Flipping to `ready` first
+  // let a second click take the branch above and quit behind the open dialog.
   if (stagedZip && state.phase === 'error') {
-    if (zipApplyFailures >= MAX_ZIP_APPLY_ATTEMPTS) return { handled: false, reason: 'install_failed' };
-    const staged = stagedZip;
-    setState({ phase: 'ready', version: staged.version, percent: 100, message: undefined });
-    setImmediate(() => { void promptToInstall(staged.version); });
+    if (zipApplyFailures >= MAX_ZIP_APPLY_ATTEMPTS) {
+      return { handled: false, reason: 'install_failed', url: releasePageUrl(stagedZip.version) };
+    }
+    void promptToInstall(stagedZip.version);
     return { handled: true };
   }
   if (state.phase === 'ready') {

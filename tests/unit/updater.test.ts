@@ -398,6 +398,23 @@ describe('portable zip install that cannot run (#3)', () => {
     expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
   });
 
+  // Two clicks that both reach main before the first dialog is up must not let
+  // the second one install behind the dialog's back.
+  it('does not let a second quick click on the error badge skip the dialog', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    fakeDialog.showMessageBox.mockReturnValueOnce(new Promise(() => {})); // user still reading
+    await Promise.all([u.requestUpdateNow(), u.requestUpdateNow()]);
+    await flush();
+    await flush();
+    expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it('does not quit on a retry the user declines', async () => {
     const u = await freshUpdater();
     await downloadAndAnswer(u, 1); // Later
@@ -426,7 +443,13 @@ describe('portable zip install that cannot run (#3)', () => {
     await vi.waitFor(() => expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
 
-    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: false, reason: 'install_failed' });
+    // With the page to open: the renderer's cached release info may never have
+    // arrived, and a fallback with nothing to open is the dead click again.
+    await expect(u.requestUpdateNow()).resolves.toEqual({
+      handled: false,
+      reason: 'install_failed',
+      url: 'https://github.com/amirlehmam/wmux/releases/tag/v9.9.9',
+    });
     await flush();
     expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2);
     expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
