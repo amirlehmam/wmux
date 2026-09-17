@@ -455,6 +455,56 @@ describe('portable zip install that cannot run (#3)', () => {
     expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
   });
 
+  // The cap counts failures of the CURRENT payload. Drop the `zipApplyFailures
+  // = 0` beside the newly staged zip and the count carries across updates, so
+  // the FIRST failure of the next one hits the cap: the user is sent to the
+  // release page instead of being offered the retry the badge promises.
+  it('counts install failures against the staged zip, not the process', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+
+    // First update: one failure, and one that takes the payload with it so the
+    // next click downloads a new zip rather than retrying this one.
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(payloadMissing());
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    // Second update: downloaded and staged from scratch.
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('ready'));
+    expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(2);
+
+    // Its first failure is its first, not the previous update's second.
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(3));
+  });
+
+  // main does not listen for `unhandledRejection` (index.ts says so, and says
+  // why), so a dialog that rejects on the retry path would take the whole app
+  // down rather than cost one click.
+  it('survives a dialog that rejects on the retry, and stays clickable', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    fakeDialog.showMessageBox.mockRejectedValueOnce(new Error('dialog is gone'));
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(u.getUpdateState()).toMatchObject({ phase: 'error', message: 'dialog is gone' }));
+
+    // The badge is the only way back, so the click after the failed dialog has
+    // to get past `installPrompted` and ask again.
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(3));
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it('asks again for the next update after an install from the dialog failed', async () => {
     const u = await freshUpdater();
     zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(payloadMissing());

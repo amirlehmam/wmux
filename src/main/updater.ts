@@ -2,7 +2,7 @@ import { autoUpdater } from 'electron-updater';
 import { app, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { IPC_CHANNELS } from '../shared/types';
+import { IPC_CHANNELS, type UpdateTriggerResult } from '../shared/types';
 import { fetchLatestRelease, compareVersions, releasePageUrl } from './update-checker';
 import {
   isPortableZipInstall,
@@ -214,7 +214,7 @@ export function canSelfUpdate(): boolean {
  * update started from Help does not wait for it — so a fallback that relies on
  * it alone can open nothing.
  */
-export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: string; url?: string }> {
+export async function requestUpdateNow(): Promise<UpdateTriggerResult> {
   if (!canSelfUpdate()) return { handled: false, reason: 'not_supported' };
 
   // Already downloaded — this click is the install confirmation.
@@ -239,7 +239,23 @@ export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: s
     if (zipApplyFailures >= MAX_ZIP_APPLY_ATTEMPTS) {
       return { handled: false, reason: 'install_failed', url: releasePageUrl(stagedZip.version) };
     }
-    void promptToInstall(stagedZip.version);
+    // Not a bare `void`: `index.ts` deliberately leaves `unhandledRejection`
+    // unlistened-for, so under Node's default mode a rejection here kills main
+    // — every PTY in every window — which is strictly worse than the dead click
+    // this branch exists to fix. `dialog.showMessageBox` can reject (its owning
+    // context going away while the dialog is being created), and the honest
+    // outcome of that is a badge that still works. `installPrompted` is cleared
+    // for that reason: the phase is already `error`, so the badge stays
+    // clickable only if the next click can get past that guard.
+    //
+    // `.catch` on the returned promise, never `await`/`try`: `promptToInstall`
+    // claims `installPrompted` before its first await, and that synchronous
+    // claim is what stops a second quick click installing behind the dialog.
+    promptToInstall(stagedZip.version).catch((err) => {
+      installPrompted = false;
+      console.error('[updater] install prompt failed:', err);
+      setState({ phase: 'error', message: String((err as Error)?.message ?? err) });
+    });
     return { handled: true };
   }
   if (state.phase === 'ready') {

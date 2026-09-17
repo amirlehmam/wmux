@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { UpdateTriggerResult } from '../../shared/types';
+
+// Re-exported so the hook's callers keep their one import, while the shape
+// itself is declared once beside the channel it travels on.
+export type { UpdateTriggerResult };
 
 export interface UpdateInfo {
   version: string;
@@ -16,13 +21,6 @@ export interface UpdateState {
 }
 
 const IDLE: UpdateState = { phase: 'idle', version: null, percent: 0 };
-
-export interface UpdateTriggerResult {
-  handled: boolean;
-  reason?: string;
-  /** The release page main wants opened, when it knows one. */
-  url?: string;
-}
 
 /**
  * Which release page a fallback should open. Main's answer wins: the cached
