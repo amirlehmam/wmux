@@ -274,10 +274,12 @@ export async function applyStagedPortableUpdate(staged: StagedZipUpdate): Promis
   }
   const helper = path.join(os.tmpdir(), updateHelperName(process.pid));
   fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
-  const child = spawn(cmd, [/* unchanged */], { detached: true, stdio: 'ignore', windowsHide: true });
+  const child = spawn(cmd, buildHelperArgs(helper, [/* pid, src, dst, exe */]), {
+    detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true, // §6.6
+  });
   await new Promise<void>((resolve, reject) => {
     child.once('spawn', resolve);
-    child.once('error', reject);
+    child.on('error', reject); // `on`, not `once`: every late error stays handled
   });
   child.unref();
   app.quit();
@@ -286,14 +288,18 @@ export async function applyStagedPortableUpdate(staged: StagedZipUpdate): Promis
 
 The `'error'` listener stays attached after `'spawn'`, so a late error on the child is a no-op rather than an uncaught exception in main.
 
-Both callers in `updater.ts` (`:214` inside `setImmediate`, `:324` after the dialog) go through one local function:
+Both apply sites in `updater.ts` (the `ready` badge click, inside `setImmediate`, and the dialog's *Install and restart*) go through one local function:
 
 ```ts
 async function applyStagedZipOrReset(staged: StagedZipUpdate): Promise<void> {
+  if (applyingZip) return;          // a second click while the helper is starting
+  applyingZip = true;               // stays set on success: wmux is quitting
   try {
     await applyStagedPortableUpdate(staged);
   } catch (err) {
-    installPrompted = false;
+    applyingZip = false;
+    installPrompted = false;        // F11: the next update still asks
+    zipApplyFailures += 1;          // reset whenever a new update is staged
     if ((err as { code?: string })?.code === 'PAYLOAD_MISSING') stagedZip = null;
     console.error('[updater] cannot apply staged zip update:', err);
     setState({ phase: 'error', message: String((err as Error)?.message ?? err) });
@@ -301,30 +307,35 @@ async function applyStagedZipOrReset(staged: StagedZipUpdate): Promise<void> {
 }
 ```
 
-`requestUpdateNow()` gains one branch ahead of the existing `ready` check, so a click on the error badge retries a payload that is still staged:
+`requestUpdateNow()` treats a click on the `error` badge with a still-staged zip as a retry. The retry goes back through the dialog, because that badge reads *Click to try again*, not *Restart*. It is also capped, so a failure that repeats (an antivirus blocking the helper every time) cannot turn every click into a dead one:
 
 ```ts
-if (stagedZip && (state.phase === 'ready' || state.phase === 'error')) {
+if (stagedZip && state.phase === 'ready') {
   const staged = stagedZip;
   setImmediate(() => { void applyStagedZipOrReset(staged); });
   return { handled: true };
 }
+if (stagedZip && state.phase === 'error') {
+  if (zipApplyFailures >= MAX_ZIP_APPLY_ATTEMPTS) {   // 2: the first try and one retry
+    return { handled: false, reason: 'install_failed', url: releasePageUrl(stagedZip.version) };
+  }
+  void promptToInstall(stagedZip.version);            // synchronously, and the phase stays `error`
+  return { handled: true };
+}
 ```
 
-`stagedZip` is non-null in the `error` phase only after a failed install, since every download failure already clears it (`updater.ts:278`, `:285`). So the two outcomes are:
+Two parts of that are load-bearing, and both were bugs in an earlier version of this branch:
+
+- **The phase stays `error`, and the dialog starts without a `setImmediate`.** `promptToInstall` claims `installPrompted` before its first `await`, so a second quick click lands on that guard. Setting `ready` first, then deferring the dialog, let a second click take the `ready` branch and quit behind the open dialog.
+- **`install_failed` carries the release page URL.** The renderer's fallback used to open only the release info cached from the notify-only poller, which may not have answered when the update was started from Help. `fallbackReleaseUrl` in `useUpdate.ts` prefers main's URL.
+
+`stagedZip` is non-null in the `error` phase only after a failed install, since every download failure already clears it. So the outcomes are:
 
 - **Payload gone:** `stagedZip` is null, the badge reads *Update failed: … download it again · Click to try again*, and the click goes down `requestPortableZipUpdate()` and downloads again.
-- **Helper failed:** `stagedZip` is kept, the badge shows the failure, and the click retries the install. The guard runs again first, so a payload that vanished in the meantime still falls into the first case.
-
-The renderer already shows `error` with *Click to try again* (`UpdateBadge.tsx:49`), which is now true for both.
+- **Helper failed:** `stagedZip` is kept, the badge shows the failure, and the click shows the install dialog again. The payload guard runs again first, so a payload that vanished in the meantime still falls into the first case.
+- **Helper failed twice:** the click opens the release page.
 
 The guard is still a race: something could delete the payload in the gap between this `existsSync` and the helper's own check. That gap is the time `cmd.exe` takes to start, against the days F7 allows today.
-
-Two details added during implementation. `applyStagedZipOrReset` holds an `applyingZip` flag: applying now waits for `'spawn'`, and a second click in that gap would otherwise write and start a second helper for the same install. The flag stays set on success, since wmux is quitting. And the `'error'` listener is `on`, not `once`, so a second late error cannot become uncaught either.
-
-Changed after code review: a click on the `error` badge with a staged zip no longer applies straight away. It goes back through the install dialog, because that badge reads *Click to try again*, not *Restart*. After the retry of the same payload has failed too, `requestUpdateNow` answers `handled: false, reason: 'install_failed'`, and the renderer opens the release page. Otherwise a failure that repeats, like an antivirus blocking the helper every time, would make every click look dead.
-
-Changed after the Copilot review. The retry keeps the phase at `error` and starts `promptToInstall` synchronously, so its `installPrompted` guard catches a second quick click; setting `ready` first let that click install behind the open dialog. `install_failed` also carries the release page URL from main, because the renderer's cached release info (from the notify-only poller) may be missing when the update was started from Help.
 
 ### 6.6 Helper command line (D11)
 
@@ -333,7 +344,7 @@ export function buildHelperArgs(helper: string, args: string[]): string[]
 // → ['/d', '/s', '/c', '""<helper>" "<pid>" "<src>" "<dst>" "<exe>""']
 ```
 
-Spawned with `windowsVerbatimArguments: true`, so Node adds no quoting of its own. Throws if any piece contains `"`; from `applyStagedPortableUpdate` that is a rejection before quit, like every other failure in §6.5.
+Spawned with `windowsVerbatimArguments: true`, so Node adds no quoting of its own. Throws if any piece contains `"`, or a `%…%` pair: quotes do not stop cmd expanding a defined variable, and `"C:\x\%OS%\y"` was measured arriving as `C:\x\Windows_NT\y`. A lone `%` passes through unchanged and is allowed. From `applyStagedPortableUpdate` a throw is a rejection before quit, like every other failure in §6.5.
 
 ## 7. Tasks (Phase 3)
 
@@ -369,12 +380,14 @@ All on `fix/updater-no-self-delete` (D4), one Conventional Commit per task where
 | File | Change |
 |---|---|
 | `src/main/zip-updater.ts` | −1 helper line; name builders, classifier, sweep, `isPidAlive`, delay constant; async apply with payload guard and spawn wait; `buildHelperArgs` (D11); comments |
-| `src/main/updater.ts` | `applyStagedZipOrReset` at both apply sites; retry branch in `requestUpdateNow` |
+| `src/main/updater.ts` | `applyStagedZipOrReset` at both apply sites; capped retry through the dialog in `requestUpdateNow` |
+| `src/main/update-checker.ts` | `releasePageUrl` for the `install_failed` fallback |
 | `src/main/index.ts` | delayed sweep call in the packaged startup block |
-| `tests/unit/zip-updater.test.ts`, `tests/unit/updater.test.ts` | tests from §7 |
+| `src/renderer/hooks/useUpdate.ts` | `fallbackReleaseUrl`: the release-page fallback prefers the URL main returns |
+| `tests/unit/zip-updater.test.ts`, `tests/unit/updater.test.ts`, `tests/unit/use-update-fallback.test.ts` | tests from §7, plus those for the review fixes |
 | `CLAUDE.md` | `zip-updater.ts` row |
 | `docs/superpowers/specs/2026-09-17-zip-updater-av-signals-design.md` | this file |
 
 **Risk.** The sweep is the only new code that deletes anything, and every rule in §6.3 fails towards keeping, including the extract dir a helper is still copying from (rule 5). The helper change removes a step whose output nothing depends on (F1–F3); if A1 turns out false, the effect is a MOTW stream left on a file that wmux strips on its next launch. The install changes only add paths that previously ended in a quit with no restart. One no-restart path remains that wmux cannot see: an antivirus removing the helper after `cmd.exe` has started (§5, Out of scope).
 
-**Not changed.** The NSIS path, release packaging, the renderer (the `error` phase and its *Click to try again* already exist), and the helper's wait loop (D3).
+**Not changed.** The NSIS path, release packaging, the renderer's badge and Help components (the `error` phase and its *Click to try again* already exist; only the fallback URL choice in `useUpdate.ts` changed), and the helper's wait loop (D3).
