@@ -2,8 +2,8 @@ import { autoUpdater } from 'electron-updater';
 import { app, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { IPC_CHANNELS } from '../shared/types';
-import { fetchLatestRelease, compareVersions } from './update-checker';
+import { IPC_CHANNELS, type UpdateTriggerResult } from '../shared/types';
+import { fetchLatestRelease, compareVersions, releasePageUrl } from './update-checker';
 import {
   isPortableZipInstall,
   resolvePortableZipTarget,
@@ -63,6 +63,10 @@ async function releaseAgeMs(version: string): Promise<number | null> {
 let installPrompted = false;
 let missingChannelFileWarned = false;
 let stagedZip: StagedZipUpdate | null = null;
+let applyingZip = false;
+// Failed installs of the CURRENT staged zip; reset whenever a new one is staged.
+let zipApplyFailures = 0;
+const MAX_ZIP_APPLY_ATTEMPTS = 2;
 
 function currentInstallIsPortable(): boolean {
   if (!app.isPackaged) return false;
@@ -204,16 +208,67 @@ export function canSelfUpdate(): boolean {
  * page: an unpackaged dev run, the updater kill switch, a release with no
  * latest.yml, or any updater error. The GitHub link stays the safety net it
  * always was; it is just no longer the only path.
+ *
+ * `url` is set when main knows which release page to open. The renderer's own
+ * copy comes from the notify-only poller and may not have arrived — a zip
+ * update started from Help does not wait for it — so a fallback that relies on
+ * it alone can open nothing.
  */
-export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: string }> {
+export async function requestUpdateNow(): Promise<UpdateTriggerResult> {
   if (!canSelfUpdate()) return { handled: false, reason: 'not_supported' };
 
-  // Already downloaded — this click is the install confirmation.
-  if (state.phase === 'ready') {
-    if (stagedZip) {
-      setImmediate(() => applyStagedPortableUpdate(stagedZip!));
-      return { handled: true };
+  // Already downloaded — this click is the install confirmation. That holds
+  // only once the dialog is no longer asking: a finished download sets `ready`
+  // and then awaits promptToInstall, and `dialog.showMessageBox` is called with
+  // no parent window, so it is not modal to wmux and the badge stays clickable
+  // underneath it. Without this guard that click scheduled the helper directly,
+  // quitting wmux while the question was still on screen and unanswered — the
+  // same bypass the `error` branch below was fixed for, on the path that gets
+  // there first. `installPrompted` is cleared when the user picks 'Later', so
+  // the intended case (dialog dismissed, badge clicked later to mean yes) is
+  // untouched.
+  if (stagedZip && state.phase === 'ready') {
+    if (installPrompted) return { handled: true };
+    const staged = stagedZip;
+    setImmediate(() => { void applyStagedZipOrReset(staged); });
+    return { handled: true };
+  }
+  // `error` only holds a staged zip after an install that failed without
+  // touching the payload (every download failure clears it), so the click
+  // offers the install again rather than downloading 100 MB again. Through the
+  // dialog, not straight into a quit: this badge reads "Click to try again",
+  // not "Restart". And not forever — a failure that repeats (an antivirus that
+  // blocks the helper every time) would otherwise make every click look dead,
+  // so after the retry has also failed the release page takes over.
+  //
+  // The phase stays `error` and the dialog is started synchronously, not after
+  // a setImmediate: promptToInstall claims `installPrompted` before its first
+  // await, so a second click lands on that guard. Flipping to `ready` first
+  // let a second click take the branch above and quit behind the open dialog.
+  if (stagedZip && state.phase === 'error') {
+    if (zipApplyFailures >= MAX_ZIP_APPLY_ATTEMPTS) {
+      return { handled: false, reason: 'install_failed', url: releasePageUrl(stagedZip.version) };
     }
+    // Not a bare `void`: `index.ts` deliberately leaves `unhandledRejection`
+    // unlistened-for, so under Node's default mode a rejection here kills main
+    // — every PTY in every window — which is strictly worse than the dead click
+    // this branch exists to fix. `dialog.showMessageBox` can reject (its owning
+    // context going away while the dialog is being created), and the honest
+    // outcome of that is a badge that still works. `installPrompted` is cleared
+    // for that reason: the phase is already `error`, so the badge stays
+    // clickable only if the next click can get past that guard.
+    //
+    // `.catch` on the returned promise, never `await`/`try`: `promptToInstall`
+    // claims `installPrompted` before its first await, and that synchronous
+    // claim is what stops a second quick click installing behind the dialog.
+    promptToInstall(stagedZip.version).catch((err) => {
+      installPrompted = false;
+      console.error('[updater] install prompt failed:', err);
+      setState({ phase: 'error', message: String((err as Error)?.message ?? err) });
+    });
+    return { handled: true };
+  }
+  if (state.phase === 'ready') {
     setImmediate(() => autoUpdater.quitAndInstall());
     return { handled: true };
   }
@@ -265,6 +320,7 @@ async function requestPortableZipUpdate(): Promise<{ handled: boolean; reason?: 
       onProgress: (percent) => setState({ phase: 'downloading', version: target.version, percent }),
     }).then(async (staged) => {
       stagedZip = staged;
+      zipApplyFailures = 0;
       userDriven = false;
       setState({
         phase: 'ready',
@@ -321,10 +377,32 @@ async function promptToInstall(version: string): Promise<void> {
     detail: 'Review the release notes on GitHub before installing. Install now?' + elevationNote,
   });
   if (response === 0) {
-    if (stagedZip) applyStagedPortableUpdate(stagedZip);
+    if (stagedZip) await applyStagedZipOrReset(stagedZip);
     else autoUpdater.quitAndInstall();
   } else {
     installPrompted = false;
+  }
+}
+
+// A zip install that fails before wmux quits must leave the app usable and the
+// badge truthful (#3). The staged payload is kept unless it is the thing that
+// is missing, so a retry costs a click rather than another download, and
+// `installPrompted` is cleared or the next downloaded update would never ask.
+async function applyStagedZipOrReset(staged: StagedZipUpdate): Promise<void> {
+  // Applying waits for the helper to start, so a second click in that gap
+  // would otherwise write and start a second helper for the same install.
+  // Left set on success: wmux is quitting, and there is nothing to retry.
+  if (applyingZip) return;
+  applyingZip = true;
+  try {
+    await applyStagedPortableUpdate(staged);
+  } catch (err) {
+    applyingZip = false;
+    installPrompted = false;
+    zipApplyFailures += 1;
+    if ((err as { code?: string } | undefined)?.code === 'PAYLOAD_MISSING') stagedZip = null;
+    console.error('[updater] cannot apply staged zip update:', err);
+    setState({ phase: 'error', message: String((err as Error)?.message ?? err) });
   }
 }
 

@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { UpdateTriggerResult } from '../../shared/types';
+
+// Re-exported so the hook's callers keep their one import, while the shape
+// itself is declared once beside the channel it travels on.
+export type { UpdateTriggerResult };
 
 export interface UpdateInfo {
   version: string;
@@ -17,9 +22,16 @@ export interface UpdateState {
 
 const IDLE: UpdateState = { phase: 'idle', version: null, percent: 0 };
 
-export interface UpdateTriggerResult {
-  handled: boolean;
-  reason?: string;
+/**
+ * Which release page a fallback should open. Main's answer wins: the cached
+ * `update` comes from the notify-only poller, which may not have answered yet
+ * when an update was started from Help, and then there would be nothing to open.
+ */
+export function fallbackReleaseUrl(
+  result: UpdateTriggerResult | null | undefined,
+  update: UpdateInfo | null,
+): string | null {
+  return result?.url || update?.url || null;
 }
 
 /**
@@ -62,7 +74,10 @@ export function useUpdate() {
   const trigger = useCallback(async (): Promise<UpdateTriggerResult> => {
     const api = (window as any).wmux?.update;
     if (!api) return { handled: false, reason: 'not_supported' };
-    const openRelease = () => update && api.openRelease?.(update.url);
+    const openRelease = (result?: UpdateTriggerResult) => {
+      const url = fallbackReleaseUrl(result, update);
+      if (url) api.openRelease?.(url);
+    };
 
     if (!api.install) {
       openRelease();
@@ -75,7 +90,7 @@ export function useUpdate() {
           setUpToDate(true);
           return result;
         }
-        openRelease();
+        openRelease(result);
       }
       return result ?? { handled: false, reason: 'error' };
     } catch {

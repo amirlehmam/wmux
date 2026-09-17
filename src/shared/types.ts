@@ -778,6 +778,24 @@ export const IPC_CHANNELS = {
   UPDATE_STATE: 'update:state',
 } as const;
 
+/**
+ * What UPDATE_INSTALL answers — one declaration for all three sides of that
+ * channel, because it had already drifted: main learned to return `url` and the
+ * preload bridge still declared `{ handled, reason }`, so the only thing a
+ * typed renderer could see the release page through was its own local copy of
+ * this shape. A consumer that trusted the bridge's type would have dropped the
+ * fallback URL silently.
+ *
+ * `handled: false` is the caller's cue to open the release page itself; `url`
+ * is set when main knows which one, since the renderer's cached release info
+ * comes from the notify-only poller and may not have arrived yet.
+ */
+export interface UpdateTriggerResult {
+  handled: boolean;
+  reason?: string;
+  url?: string;
+}
+
 // ─── Orchestration state (wmux-orchestrator plugin) ────────────────────────
 // Mirrors the shape written by the plugin into {TMPDIR}/wmux-orch-*/state.json.
 

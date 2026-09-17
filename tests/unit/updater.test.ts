@@ -17,9 +17,11 @@ const fakeApp = vi.hoisted(() => ({
   },
 }));
 
+const fakeDialog = vi.hoisted(() => ({ showMessageBox: vi.fn() }));
+
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
-  dialog: { showMessageBox: vi.fn() },
+  dialog: fakeDialog,
   app: fakeApp,
   net: { request: vi.fn() },
 }));
@@ -320,5 +322,241 @@ describe('portable zip install', () => {
     u.initAutoUpdater();
     expect(u.autoUpdater.on).not.toHaveBeenCalled();
     expect(u.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Issue #3: "Install and restart" used to quit unconditionally. A payload that
+ * vanished while the update sat behind "Later", or a helper an antivirus would
+ * not let start, left the user with wmux closed and nothing to restart it.
+ * A failed install now stays in the app, says so, and the next click does the
+ * one thing that can help.
+ */
+describe('portable zip install that cannot run (#3)', () => {
+  const target = {
+    version: '9.9.9',
+    asset: { name: 'wmux-9.9.9-win-x64.zip', browser_download_url: 'https://example.test/x.zip', size: 10 },
+  };
+  const staged = { version: '9.9.9', extractDir: 'X:\\payload', installDir: 'X:\\wmux', exePath: 'X:\\wmux\\wmux.exe' };
+  const payloadMissing = () =>
+    Object.assign(new Error('the downloaded update is no longer on disk — download it again'), { code: 'PAYLOAD_MISSING' });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  beforeEach(() => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-portable-'));
+    fs.writeFileSync(path.join(root, 'wmux.exe'), '');
+    fakeApp.exePath = path.join(root, 'wmux.exe');
+    fakeApp.isPackaged = true;
+    delete process.env.WMUX_DISABLE_UPDATER;
+    zipMocks.resolvePortableZipTarget.mockReset().mockResolvedValue(target);
+    zipMocks.runPortableZipUpdate.mockReset().mockResolvedValue(staged);
+    zipMocks.applyStagedPortableUpdate.mockReset();
+    fakeDialog.showMessageBox.mockReset().mockResolvedValue({ response: 1 });
+  });
+
+  /** Download, answer the dialog with `response`, and wait for it to settle. */
+  async function downloadAndAnswer(u: Awaited<ReturnType<typeof freshUpdater>>, response: number) {
+    fakeDialog.showMessageBox.mockResolvedValueOnce({ response });
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalled());
+    await flush();
+  }
+
+  it('forgets a payload that is gone, and downloads again on the next click', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    expect(u.getUpdateState().phase).toBe('ready');
+
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(payloadMissing());
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+    expect(u.getUpdateState().message).toMatch(/download it again/);
+
+    await u.requestUpdateNow();
+    expect(zipMocks.resolvePortableZipTarget).toHaveBeenCalledTimes(2);
+    expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(2);
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a good payload when the helper fails, and offers the install again without downloading', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState()).toMatchObject({ phase: 'error', message: 'spawn EPERM' }));
+
+    // The error badge says "Click to try again", not "Restart": the retry asks
+    // before it quits wmux and every session in it.
+    zipMocks.applyStagedPortableUpdate.mockResolvedValueOnce(undefined);
+    fakeDialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2));
+    expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenLastCalledWith(staged);
+    expect(zipMocks.resolvePortableZipTarget).toHaveBeenCalledTimes(1);
+    expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  // Two clicks that both reach main before the first dialog is up must not let
+  // the second one install behind the dialog's back.
+  it('does not let a second quick click on the error badge skip the dialog', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    fakeDialog.showMessageBox.mockReturnValueOnce(new Promise(() => {})); // user still reading
+    await Promise.all([u.requestUpdateNow(), u.requestUpdateNow()]);
+    await flush();
+    await flush();
+    expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  // The same bypass as above, one phase earlier and reached first: a finished
+  // download sets `ready` and then asks. showMessageBox is called with no
+  // parent window, so it is not modal to wmux and the badge stays clickable
+  // underneath the open dialog — and that click used to schedule the helper
+  // directly, quitting wmux while the question was still unanswered.
+  it('does not install behind the dialog that the finished download opened', async () => {
+    const u = await freshUpdater();
+    fakeDialog.showMessageBox.mockReturnValueOnce(new Promise(() => {})); // still on screen
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('ready'));
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(1));
+
+    // A badge click while that dialog is unanswered must not quit wmux.
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await flush();
+    await flush();
+    expect(zipMocks.applyStagedPortableUpdate).not.toHaveBeenCalled();
+    // And it must not stack a second dialog on top of the first.
+    expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  // The guard above must not break the case it sits on top of: once the user
+  // has answered 'Later', the badge click IS the confirmation and installs.
+  it('still installs on a badge click once the dialog has been dismissed', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    expect(u.getUpdateState().phase).toBe('ready');
+
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1));
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenLastCalledWith(staged);
+  });
+
+  it('does not quit on a retry the user declines', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    await u.requestUpdateNow(); // dialog answers Later (the beforeEach default)
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2));
+    await flush();
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  // An antivirus that blocks the helper blocks it every time. Without a limit
+  // each click re-runs the same failing install, the badge never changes, and
+  // the release page — the fallback for exactly this — is never offered.
+  it('hands over to the release page once the retry has failed too', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValue(new Error('spawn EPERM'));
+
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+    fakeDialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    // With the page to open: the renderer's cached release info may never have
+    // arrived, and a fallback with nothing to open is the dead click again.
+    await expect(u.requestUpdateNow()).resolves.toEqual({
+      handled: false,
+      reason: 'install_failed',
+      url: 'https://github.com/amirlehmam/wmux/releases/tag/v9.9.9',
+    });
+    await flush();
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2);
+    expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  // The cap counts failures of the CURRENT payload. Drop the `zipApplyFailures
+  // = 0` beside the newly staged zip and the count carries across updates, so
+  // the FIRST failure of the next one hits the cap: the user is sent to the
+  // release page instead of being offered the retry the badge promises.
+  it('counts install failures against the staged zip, not the process', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+
+    // First update: one failure, and one that takes the payload with it so the
+    // next click downloads a new zip rather than retrying this one.
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(payloadMissing());
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    // Second update: downloaded and staged from scratch.
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('ready'));
+    expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(2);
+
+    // Its first failure is its first, not the previous update's second.
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(3));
+  });
+
+  // main does not listen for `unhandledRejection` (index.ts says so, and says
+  // why), so a dialog that rejects on the retry path would take the whole app
+  // down rather than cost one click.
+  it('survives a dialog that rejects on the retry, and stays clickable', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    fakeDialog.showMessageBox.mockRejectedValueOnce(new Error('dialog is gone'));
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(u.getUpdateState()).toMatchObject({ phase: 'error', message: 'dialog is gone' }));
+
+    // The badge is the only way back, so the click after the failed dialog has
+    // to get past `installPrompted` and ask again.
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(3));
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again for the next update after an install from the dialog failed', async () => {
+    const u = await freshUpdater();
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(payloadMissing());
+    await downloadAndAnswer(u, 0); // Install and restart
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not start a second install while the first is still waiting on its helper', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockReturnValue(new Promise(() => {}));
+    await u.requestUpdateNow();
+    await flush();
+    await u.requestUpdateNow();
+    await flush();
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
   });
 });
