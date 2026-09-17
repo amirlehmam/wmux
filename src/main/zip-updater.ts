@@ -324,7 +324,16 @@ export function buildApplyUpdateCmd(): string {
     ':copy',
     'echo   Copying files...',
     '"%SYS%\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
-    'if %ERRORLEVEL% GEQ 8 goto copyfailed',
+    // `if errorlevel 8`, not `if %ERRORLEVEL% GEQ 8`: with command extensions
+    // cmd only resolves that expansion to the dynamic exit status while no
+    // variable of the same name exists, and `setlocal` copies the inherited
+    // environment rather than emptying it. An inherited ERRORLEVEL=0 would send
+    // a failed robocopy down the success path, where the cleanup below deletes
+    // the payload the user needs to retry — the exact harm :copyfailed exists to
+    // prevent. Same inherited-variable exposure the two flags above are cleared
+    // for, and the wait loop already uses this form. `if errorlevel N` is
+    // ">= N", so the threshold is unchanged.
+    'if errorlevel 8 goto copyfailed',
     'goto relaunch',
     // A failed copy used to jump straight to :relaunch, which read as correct
     // because :relaunch was the next line anyway — and that is what made it

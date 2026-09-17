@@ -142,9 +142,9 @@ describe('buildApplyUpdateCmd', () => {
   // failure branch has to fall through to the same relaunch as the happy path.
   it('still relaunches when robocopy fails', () => {
     const lines = cmd.split('\r\n');
-    expect(cmd).toContain('if %ERRORLEVEL% GEQ 8 goto copyfailed');
+    expect(cmd).toContain('if errorlevel 8 goto copyfailed');
     expect(cmd).toContain(':relaunch');
-    expect(cmd).not.toMatch(/GEQ 8 exit/);
+    expect(cmd).not.toMatch(/errorlevel 8 exit/);
     // The failure branch sits between the copy and the relaunch and falls into
     // it, rather than jumping over it or off the end of the script.
     expect(lines.indexOf(':copyfailed')).toBeGreaterThan(lines.indexOf(':copy'));
@@ -171,6 +171,16 @@ describe('buildApplyUpdateCmd', () => {
     const failed = lines.indexOf('echo   Some files could not be replaced; wmux is starting on the previous version.');
     expect(failed).toBeGreaterThan(lines.indexOf(':copyfailed'));
     expect(failed).toBeLessThan(lines.indexOf(':relaunch'));
+  });
+
+  // Third inherited-variable exposure in the same script, and the one that is
+  // not a variable wmux named: with command extensions, cmd resolves
+  // %ERRORLEVEL% to the dynamic exit status only while no variable of that name
+  // exists. An inherited ERRORLEVEL=0 sends a failed robocopy down the success
+  // path, where the cleanup deletes the payload needed to retry.
+  it('reads robocopy status from cmd, not from an expansion a variable can shadow', () => {
+    expect(cmd).toContain('if errorlevel 8 goto copyfailed');
+    expect(cmd).not.toContain('%ERRORLEVEL%');
   });
 
   // The helper inherits wmux's environment, and `setlocal` copies it rather

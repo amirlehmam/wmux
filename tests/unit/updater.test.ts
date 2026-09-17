@@ -415,6 +415,39 @@ describe('portable zip install that cannot run (#3)', () => {
     expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
   });
 
+  // The same bypass as above, one phase earlier and reached first: a finished
+  // download sets `ready` and then asks. showMessageBox is called with no
+  // parent window, so it is not modal to wmux and the badge stays clickable
+  // underneath the open dialog — and that click used to schedule the helper
+  // directly, quitting wmux while the question was still unanswered.
+  it('does not install behind the dialog that the finished download opened', async () => {
+    const u = await freshUpdater();
+    fakeDialog.showMessageBox.mockReturnValueOnce(new Promise(() => {})); // still on screen
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('ready'));
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(1));
+
+    // A badge click while that dialog is unanswered must not quit wmux.
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await flush();
+    await flush();
+    expect(zipMocks.applyStagedPortableUpdate).not.toHaveBeenCalled();
+    // And it must not stack a second dialog on top of the first.
+    expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  // The guard above must not break the case it sits on top of: once the user
+  // has answered 'Later', the badge click IS the confirmation and installs.
+  it('still installs on a badge click once the dialog has been dismissed', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    expect(u.getUpdateState().phase).toBe('ready');
+
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
+    await vi.waitFor(() => expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1));
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenLastCalledWith(staged);
+  });
+
   it('does not quit on a retry the user declines', async () => {
     const u = await freshUpdater();
     await downloadAndAnswer(u, 1); // Later

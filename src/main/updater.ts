@@ -217,8 +217,18 @@ export function canSelfUpdate(): boolean {
 export async function requestUpdateNow(): Promise<UpdateTriggerResult> {
   if (!canSelfUpdate()) return { handled: false, reason: 'not_supported' };
 
-  // Already downloaded — this click is the install confirmation.
+  // Already downloaded — this click is the install confirmation. That holds
+  // only once the dialog is no longer asking: a finished download sets `ready`
+  // and then awaits promptToInstall, and `dialog.showMessageBox` is called with
+  // no parent window, so it is not modal to wmux and the badge stays clickable
+  // underneath it. Without this guard that click scheduled the helper directly,
+  // quitting wmux while the question was still on screen and unanswered — the
+  // same bypass the `error` branch below was fixed for, on the path that gets
+  // there first. `installPrompted` is cleared when the user picks 'Later', so
+  // the intended case (dialog dismissed, badge clicked later to mean yes) is
+  // untouched.
   if (stagedZip && state.phase === 'ready') {
+    if (installPrompted) return { handled: true };
     const staged = stagedZip;
     setImmediate(() => { void applyStagedZipOrReset(staged); });
     return { handled: true };
