@@ -42,7 +42,7 @@ src/
   shell-integration/  Shell hooks (bash/zsh/PowerShell/cmd)
 
 resources/        Runtime assets (icons, themes, sounds, shell-integration, CLI)
-  wmux-orchestrator/  Claude Code plugin (auto-installed on startup)
+  wmux-orchestrator/  Claude Code plugin — DEPRECATED, no longer installed (#239)
 site/             Landing page (static HTML, Netlify)
 tests/            Unit + e2e (Vitest)
 docs/             Planning docs
