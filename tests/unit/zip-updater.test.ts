@@ -141,18 +141,113 @@ describe('buildApplyUpdateCmd', () => {
   // that exits without relaunching leaves the user with no wmux at all. The
   // failure branch has to fall through to the same relaunch as the happy path.
   it('still relaunches when robocopy fails', () => {
-    expect(cmd).toContain('if %ERRORLEVEL% GEQ 8 goto relaunch');
+    const lines = cmd.split('\r\n');
+    expect(cmd).toContain('if %ERRORLEVEL% GEQ 8 goto copyfailed');
     expect(cmd).toContain(':relaunch');
     expect(cmd).not.toMatch(/GEQ 8 exit/);
+    // The failure branch sits between the copy and the relaunch and falls into
+    // it, rather than jumping over it or off the end of the script.
+    expect(lines.indexOf(':copyfailed')).toBeGreaterThan(lines.indexOf(':copy'));
+    expect(lines.indexOf(':copyfailed')).toBeLessThan(lines.indexOf(':relaunch'));
     // The relaunch must come after the label, not only on the success path.
     expect(cmd.indexOf(':relaunch')).toBeLessThan(cmd.indexOf('start "" "%EXE%"'));
+  });
+
+  // The jump used to be `goto relaunch` with :relaunch on the very next line,
+  // so the failure read as handled while doing nothing: the console said
+  // "Installing" then "Starting wmux...", the user got the version they
+  // already had, and the cleanup below deleted the ~150 MB payload they would
+  // have to download again to retry.
+  it('says a failed copy out loud and keeps the payload', () => {
+    const lines = cmd.split('\r\n');
+    expect(cmd).toContain('echo   Some files could not be replaced; wmux is starting on the previous version.');
+    expect(cmd).toContain('set "KEEPSRC=1"');
+    expect(cmd).toContain('if not defined KEEPSRC rmdir /s /q "%SRC%" 2>nul');
+    // A successful copy must not fall into the failure branch on its way to
+    // the relaunch, or every update would claim to have failed.
+    expect(lines[lines.indexOf(':copyfailed') - 1]).toBe('goto relaunch');
+    // The message is the failure's own, printed before the relaunch line and
+    // not instead of it.
+    const failed = lines.indexOf('echo   Some files could not be replaced; wmux is starting on the previous version.');
+    expect(failed).toBeGreaterThan(lines.indexOf(':copyfailed'));
+    expect(failed).toBeLessThan(lines.indexOf(':relaunch'));
+  });
+
+  // The helper inherits wmux's environment, and `setlocal` copies it rather
+  // than emptying it, so a SKIPCOPY or KEEPSRC already living out there would
+  // decide a branch this script never set: an inherited KEEPSRC silently keeps
+  // every payload, an inherited SKIPCOPY skips every copy — an update that
+  // reports success and installs nothing.
+  it('clears both branch flags before anything reads them', () => {
+    const lines = cmd.split('\r\n');
+    for (const flag of ['SKIPCOPY', 'KEEPSRC']) {
+      const cleared = lines.indexOf(`set "${flag}="`);
+      expect(cleared).toBeGreaterThan(-1);
+      // Cleared before the first line that reads it, not merely present.
+      const firstRead = lines.findIndex((l) => l.includes(`%${flag}%`) || l.includes(`defined ${flag}`));
+      expect(firstRead).toBeGreaterThan(cleared);
+    }
+  });
+
+  // Same invariant, one line earlier, and it was the line breaking it. wmux
+  // checks the payload with existsSync and only then spawns this helper and
+  // quits, so the helper's own check runs on the far side of app.quit(): an
+  // antivirus or a temp cleaner removing the payload inside that window hit
+  // `exit /b 1` here, after wmux was already gone. Going to :relaunch gets the
+  // user their old install back instead of nothing.
+  it('relaunches instead of exiting when the payload is gone', () => {
+    const lines = cmd.split('\r\n');
+    expect(cmd).not.toContain('if not exist "%SRC%\\wmux.exe" exit /b 1');
+    expect(cmd).toContain('if not exist "%SRC%\\wmux.exe" set "SKIPCOPY=');
+    expect(lines).toContain('if not defined SKIPCOPY goto copy');
+    // The skip jumps to the label, not off the end of the script, and lands
+    // before the copy block rather than falling through into it.
+    expect(lines.indexOf('goto relaunch')).toBeGreaterThan(lines.indexOf('if not defined SKIPCOPY goto copy'));
+    expect(lines.indexOf('goto relaunch')).toBeLessThan(lines.indexOf(':copy'));
+    expect(lines.indexOf(':copy')).toBeLessThan(lines.indexOf(':relaunch'));
+  });
+
+  // The only thing no relaunch can fix is having no exe to relaunch, so that
+  // is the only bail-out left. A missing pid costs the wait, not the restart.
+  it('bails out only when there is no exe to start', () => {
+    expect(cmd.match(/exit \/b 1/g)).toEqual(['exit /b 1']);
+    expect(cmd).toContain('if not defined EXE exit /b 1');
+    expect(cmd).not.toContain('if not defined PID exit /b 1');
+  });
+
+  // The wait is cheap and it is the only thing stopping `start "" "%EXE%"`
+  // from racing a wmux that has not finished quitting, so the degraded path
+  // skips the copy and nothing else.
+  it('still waits for the old process before a degraded relaunch', () => {
+    const lines = cmd.split('\r\n');
+    expect(lines.indexOf('if not defined SKIPCOPY goto copy')).toBeGreaterThan(lines.indexOf(':wait'));
+    expect(cmd.indexOf('if not defined SKIPCOPY goto copy')).toBeGreaterThan(cmd.indexOf('tasklist.exe'));
+  });
+
+  // This console is the user's whole view of the update: a window that says
+  // "Installing" and then starts the build they already had, with no line in
+  // between, reads as the update having worked.
+  it('says on screen when it skipped the copy, and why', () => {
+    expect(cmd).toContain('echo   Skipping the update: %SKIPCOPY%.');
+    expect(cmd).toContain('set "SKIPCOPY=the downloaded files are no longer on disk"');
+  });
+
+  // /q suppresses the confirmation prompt, not the error: with the payload
+  // already gone, the relaunch path's rmdir prints "The system cannot find
+  // the file specified." straight into that same console.
+  it('does not let the cleanup rmdir complain about a payload that is gone', () => {
+    expect(cmd).toContain('rmdir /s /q "%SRC%" 2>nul');
   });
 
   // Self-deleting scripts are a classic dropper/malware signature; not
   // self-deleting removes one plausible trigger for AV behavioral scans
   // (e.g. Norton SONAR) hanging the system on update.
+  // Matching `del "%~f0"` caught one spelling of a signature that has several:
+  // `del /f /q "%~f0"` and the `(goto) 2>nul & del "%~f0"` idiom both walked
+  // past it. The helper has no legitimate reason to name its own file at all,
+  // so the thing to refuse is `%~f0`, not any particular command around it.
   it('does not self-delete', () => {
-    expect(cmd).not.toMatch(/del\s+"%~f0"/i);
+    expect(cmd).not.toContain('%~f0');
   });
 
   // The console cannot be hidden (DETACHED_PROCESS makes Windows ignore
@@ -364,6 +459,45 @@ describe('sweepUpdateLeftovers (#3)', () => {
     expect(fs.readFileSync(inside, 'utf8')).toBe('keep me');
   });
 
+  // The junction above never reaches the symlink guard: Windows lstat answers
+  // isSymbolicLink() true and isDirectory() false, so the `typeMatches` rule
+  // one line down already rejects it and the test above passes with the guard
+  // deleted. The guard is there for a stat that answers BOTH — so that is the
+  // stat the sweep has to be handed for the guard to be the thing under test.
+  it('does not remove a link whose stat also claims to be a real directory', async () => {
+    const dir = tempDir();
+    const target = tempDir();
+    const inside = path.join(target, 'precious.txt');
+    fs.writeFileSync(inside, 'keep me');
+    const link = path.join(dir, updateStampName('2.12.0', 114));
+    fs.symlinkSync(target, link, 'junction');
+
+    const realLstat = fs.promises.lstat;
+    const lstatSpy = vi.spyOn(fs.promises, 'lstat').mockImplementation(async (p) => {
+      if (String(p) !== link) return realLstat(p);
+      return {
+        mtimeMs: now - 2 * HOUR,
+        isDirectory: () => true,
+        isFile: () => false,
+        isSymbolicLink: () => true,
+      } as unknown as fs.Stats;
+    });
+    // Mocked rather than only watched: without the guard this call is real, and
+    // a test that proves the bug by deleting the link is not one to run twice.
+    const rmSpy = vi.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+    try {
+      const result = await sweep(dir);
+      expect(rmSpy).not.toHaveBeenCalled();
+      expect(result.removed).toEqual([]);
+      expect(result.failed).toEqual([]);
+    } finally {
+      rmSpy.mockRestore();
+      lstatSpy.mockRestore();
+    }
+    expect(fs.existsSync(link)).toBe(true);
+    expect(fs.readFileSync(inside, 'utf8')).toBe('keep me');
+  });
+
   it('records a failed remove and carries on', async () => {
     const dir = tempDir();
     file(dir, updateHelperName(112), 2 * HOUR);
@@ -446,6 +580,12 @@ describe('applyStagedPortableUpdate', () => {
     await expect(applyStagedPortableUpdate(withPercentPair)).rejects.toThrow(/expand/);
     expect(spawnMock).not.toHaveBeenCalled();
     expect(app.quit).not.toHaveBeenCalled();
+    // The same assertion its two siblings make, and the one this test was
+    // missing: the refusal used to be evaluated as an argument to spawn(), so
+    // the helper had already been written to the path it was about to declare
+    // unusable. An install under a `%…%` path left one .cmd per click, and the
+    // sweep keeps those for an hour.
+    expect(fs.readdirSync(scratchTemp)).toEqual([]);
   });
 
   it('does not quit when the helper fails to start', async () => {

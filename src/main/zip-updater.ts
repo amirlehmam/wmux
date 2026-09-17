@@ -273,8 +273,24 @@ export function buildApplyUpdateCmd(): string {
     'set "SRC=%~2"',
     'set "DST=%~3"',
     'set "EXE=%~4"',
-    'if not defined PID exit /b 1',
-    'if not exist "%SRC%\\wmux.exe" exit /b 1',
+    // The one thing this helper cannot work around is having no exe to
+    // start, so that is the only line here that exits without reaching
+    // :relaunch. Everything else is decided into SKIPCOPY and settled at
+    // the branch below, because wmux calls existsSync on the payload
+    // BEFORE it spawns this script and quits right after — the two checks
+    // sit on opposite sides of app.quit(), so an antivirus or a temp
+    // cleaner taking %SRC% away in between used to hit a bare `exit /b 1`
+    // here, with wmux already gone and nothing left to restart it.
+    'if not defined EXE exit /b 1',
+    // Both flags are cleared before use: this script inherits wmux's
+    // environment, so a variable of either name already living there would
+    // otherwise decide a branch nobody here set.
+    'set "SKIPCOPY="',
+    'set "KEEPSRC="',
+    // No pid is no way to know when the old wmux let go of its files, and
+    // copying over a live install is how a half-written wmux.exe happens.
+    'if not defined PID set "SKIPCOPY=there is no wmux process to wait for"',
+    'if not exist "%SRC%\\wmux.exe" set "SKIPCOPY=the downloaded files are no longer on disk"',
     'echo.',
     'echo   Installing the wmux update.',
     'echo   This window closes by itself. Leave it open; nothing to type here.',
@@ -296,19 +312,44 @@ export function buildApplyUpdateCmd(): string {
     'if not errorlevel 1 goto wait',
     '"%SYS%\\waitfor.exe" /t 2 wmuxUpdateWait >nul 2>nul',
     'title wmux update',
+    // The wait happens whatever SKIPCOPY says. It costs a second or two
+    // and it is what keeps `start "" "%EXE%"` from racing a wmux that has
+    // not finished quitting; only the copy is worth skipping. The reason
+    // is printed rather than swallowed, because this console is the user's
+    // whole view of the update, and a window that says "Installing" and
+    // then quietly starts the build they already had reads as a success.
+    'if not defined SKIPCOPY goto copy',
+    'echo   Skipping the update: %SKIPCOPY%.',
+    'goto relaunch',
+    ':copy',
     'echo   Copying files...',
     '"%SYS%\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
-    'if %ERRORLEVEL% GEQ 8 goto relaunch',
-    // The relaunch is unconditional, including after a failed copy. wmux has
-    // already quit by the time this runs, so bailing out here is the one
-    // outcome the user cannot recover from without finding wmux.exe by hand.
-    // A robocopy failure (install root not writable, a leftover child still
-    // holding a DLL past /R:5) usually leaves the old build in place, so
-    // %EXE% still starts — on the old version, which beats not starting.
+    'if %ERRORLEVEL% GEQ 8 goto copyfailed',
+    'goto relaunch',
+    // A failed copy used to jump straight to :relaunch, which read as correct
+    // because :relaunch was the next line anyway — and that is what made it
+    // silent. robocopy exits >= 8 when the install root is not writable or a
+    // leftover child still holds a DLL past /R:5; the old build then stays,
+    // %EXE% starts on the version the user already had, and the only thing on
+    // screen was "Installing the wmux update." followed by "Starting wmux...".
+    // So the failure gets its own label: it says what happened, and it keeps
+    // the payload, because the cleanup below would otherwise delete the ~150 MB
+    // the user would have to download again. The sweep reclaims it within the
+    // hour either way.
+    ':copyfailed',
+    'echo   Some files could not be replaced; wmux is starting on the previous version.',
+    'set "KEEPSRC=1"',
+    // The relaunch itself stays unconditional, including after a failed copy.
+    // wmux has already quit by the time this runs, so bailing out here is the
+    // one outcome the user cannot recover from without finding wmux.exe by hand.
     ':relaunch',
     'echo   Starting wmux...',
     'start "" "%EXE%"',
-    'rmdir /s /q "%SRC%"',
+    // 2>nul because a missing %SRC% is now a path that reaches this line:
+    // /q suppresses the confirmation prompt and nothing else, so rmdir on
+    // a directory that is already gone still prints "The system cannot
+    // find the file specified." into a console kept readable on purpose.
+    'if not defined KEEPSRC rmdir /s /q "%SRC%" 2>nul',
     // Deliberately does NOT delete itself (no `del "%~f0"`). A hidden,
     // detached script that silently overwrites an unsigned .exe, launches
     // it, and then erases its own file is a textbook dropper/self-cleanup
@@ -575,14 +616,22 @@ export async function applyStagedPortableUpdate(staged: StagedZipUpdate): Promis
     );
   }
   const helper = path.join(os.tmpdir(), updateHelperName(process.pid));
-  fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
-  const cmd = process.env.ComSpec || system32('cmd.exe');
-  const child = spawn(cmd, buildHelperArgs(helper, [
+  // buildHelperArgs runs BEFORE the write, so a refusal leaves %TEMP% exactly
+  // as it found it — like the other two pre-flight failures above. Evaluating
+  // it inline as a spawn() argument still refused the update, but only after
+  // writeFileSync had dropped a helper on a path the refusal had just declared
+  // unusable, and sweepUpdateLeftovers keeps that file for an hour. An install
+  // under a `%…%` path clicks "Install and restart" repeatedly, so it is one
+  // stray .cmd per click.
+  const helperArgs = buildHelperArgs(helper, [
     String(process.pid),
     staged.extractDir,
     staged.installDir,
     staged.exePath,
-  ]), {
+  ]);
+  fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
+  const cmd = process.env.ComSpec || system32('cmd.exe');
+  const child = spawn(cmd, helperArgs, {
     detached: true,
     stdio: 'ignore',
     // `windowsHide` does NOT hide this one: DETACHED_PROCESS makes Windows
