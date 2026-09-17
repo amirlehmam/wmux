@@ -2,9 +2,27 @@
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { webContents } from 'electron';
+import {
+  BrowserDomainContext,
+  connectionKind,
+  handleBrowserCommand,
+  tagEventSession,
+} from './cdp-browser-domain';
 
 const DEFAULT_PORT = 9222;
 const MAX_PORT = 9230;
+
+/**
+ * The single target and session wmux exposes (issue #237).
+ *
+ * `TARGET_ID` is `'1'` because `/json/list` has always advertised `id: '1'`
+ * and a client that read the target list must find the same target on the
+ * socket. The session id is wmux's own invention — Electron's debugger has no
+ * session of its own to borrow, which is the entire reason this translation
+ * exists — and is prefixed so it is recognisable in a protocol log.
+ */
+const TARGET_ID = '1';
+const PAGE_SESSION_ID = 'wmux-page-1';
 
 // DNS-rebinding guard. The proxy binds to loopback only, but a browser on the
 // same machine can still reach it if a malicious page resolves an attacker
@@ -107,6 +125,25 @@ export class CDPProxy {
     return this.webContentsId;
   }
 
+  /**
+   * Everything the browser-domain answers need. Rebuilt per command rather
+   * than cached: `title` and `url` change under a client's feet on every
+   * navigation, and a stale `Target.getTargetInfo` is how a client concludes
+   * its own `Page.navigate` did not happen.
+   */
+  private browserDomainContext(): BrowserDomainContext {
+    const chromeVersion = process.versions.chrome || '0.0.0.0';
+    const chromeMajor = chromeVersion.split('.')[0];
+    return {
+      page: this.getPageInfo(),
+      chromeVersion,
+      v8Version: (process.versions.v8 || '').split('-')[0],
+      userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`,
+      targetId: TARGET_ID,
+      sessionId: PAGE_SESSION_ID,
+    };
+  }
+
   private getPageInfo(): { title: string; url: string } {
     if (!this.webContentsId) return { title: '', url: '' };
     try {
@@ -145,7 +182,7 @@ export class CDPProxy {
           'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`,
           'V8-Version': v8,
           'WebKit-Version': '537.36',
-          webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/browser/1`,
+          webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/browser/${TARGET_ID}`,
         }));
         return;
       }
@@ -155,11 +192,11 @@ export class CDPProxy {
         res.end(JSON.stringify([{
           description: '',
           devtoolsFrontendUrl: '',
-          id: '1',
+          id: TARGET_ID,
           type: 'page',
           title: page.title,
           url: page.url,
-          webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/page/1`,
+          webSocketDebuggerUrl: `ws://localhost:${this.port}/devtools/page/${TARGET_ID}`,
         }]));
         return;
       }
@@ -185,11 +222,17 @@ export class CDPProxy {
         isAllowedCdpHost(info.req.headers.host) && isAllowedCdpOrigin(info.req.headers.origin),
     });
 
-    this.wss.on('connection', (ws) => {
+    this.wss.on('connection', (ws, req) => {
       if (!this.webContentsId) {
         ws.close(1011, 'Browser panel is not open');
         return;
       }
+
+      // Which protocol this client thinks it is speaking (issue #237). A
+      // browser connection gets the emulated browser domains and flattened
+      // sessions; a page connection keeps the raw forwarding this proxy has
+      // always done, so nothing that works today starts behaving differently.
+      const kind = connectionKind(cdpRoutePath(req.url));
 
       this.activeWs = ws;
       const wc = webContents.fromId(this.webContentsId);
@@ -199,10 +242,14 @@ export class CDPProxy {
         return;
       }
 
-      // Forward debugger events → WebSocket client
+      // Forward debugger events → WebSocket client. On a browser connection
+      // every event carries the page session id, because that is the session
+      // the client was told it attached to — an untagged event is dropped by a
+      // flattened-protocol client as belonging to no session it knows.
+      const eventSessionId = tagEventSession(kind, PAGE_SESSION_ID);
       const onDebuggerMessage = (_event: any, method: string, params: any) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ method, params }));
+          ws.send(JSON.stringify(eventSessionId ? { method, params, sessionId: eventSessionId } : { method, params }));
         }
       };
       wc.debugger.on('message', onDebuggerMessage);
@@ -212,22 +259,63 @@ export class CDPProxy {
         this.activeWs = null;
       };
 
+      // Every reply echoes the request's `sessionId`. Puppeteer routes an
+      // incoming message by `sessionId` before it ever looks at `id`, so a
+      // reply that drops the field lands in the connection's callback table
+      // instead of the session's, resolves nothing, and the caller hangs until
+      // its own timeout — which reads as a slow page, not a protocol bug.
+      const reply = (msg: any, body: Record<string, unknown>): void => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify(msg.sessionId ? { id: msg.id, ...body, sessionId: msg.sessionId } : { id: msg.id, ...body }));
+      };
+      const emit = (event: { method: string; params: Record<string, unknown>; sessionId?: string }): void => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
+      };
+      const send = async (msg: any, method: string, params: Record<string, unknown>): Promise<void> => {
+        try {
+          reply(msg, { result: await wc.debugger.sendCommand(method, params) });
+        } catch (err: any) {
+          reply(msg, { error: { code: -32000, message: err.message } });
+        }
+      };
+
       // Handle incoming CDP commands from WebSocket client
       ws.on('message', async (data) => {
+        let msg: any;
         try {
-          const msg = JSON.parse(data.toString());
-          if (!wc || wc.isDestroyed() || !wc.debugger.isAttached()) {
-            ws.send(JSON.stringify({ id: msg.id, error: { code: -32000, message: 'Browser not attached' } }));
-            return;
-          }
-          try {
-            const result = await wc.debugger.sendCommand(msg.method, msg.params || {});
-            ws.send(JSON.stringify({ id: msg.id, result }));
-          } catch (err: any) {
-            ws.send(JSON.stringify({ id: msg.id, error: { code: -32000, message: err.message } }));
-          }
+          msg = JSON.parse(data.toString());
         } catch {
-          // Malformed JSON — ignore
+          return; // Malformed JSON — ignore
+        }
+        if (!wc || wc.isDestroyed() || !wc.debugger.isAttached()) {
+          reply(msg, { error: { code: -32000, message: 'Browser not attached' } });
+          return;
+        }
+        // A page connection is the old pipe, unchanged.
+        if (kind === 'page') {
+          await send(msg, msg.method, msg.params || {});
+          return;
+        }
+        const { events, action } = handleBrowserCommand(
+          msg.method, msg.params, msg.sessionId, this.browserDomainContext(),
+        );
+        // Events first: Chrome emits the targets a command implies before
+        // answering it, and a client that waits on `targetCreated` before
+        // continuing would otherwise wait forever.
+        events.forEach(emit);
+        if (action.type === 'forward') {
+          await send(msg, msg.method, msg.params || {});
+        } else if (action.type === 'error') {
+          reply(msg, { error: { code: action.code, message: action.message } });
+        } else {
+          reply(msg, { result: action.result });
+          // Answered, then acted on: `Target.createTarget` is reported against
+          // the target that already exists, and the navigation it stands for
+          // runs afterwards. A failure here is the page's to report through
+          // its own lifecycle events, not this command's.
+          if (action.sideEffect) {
+            try { await wc.debugger.sendCommand(action.sideEffect.method, action.sideEffect.params); } catch {}
+          }
         }
       });
 

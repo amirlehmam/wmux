@@ -453,13 +453,33 @@ export function removeClaudeHooks(): void {
 }
 
 /**
+ * Where Claude Code actually reads user-scope MCP servers from (issue #237).
+ *
+ * NOT `~/.claude/settings.json`, which is where wmux wrote this for six
+ * releases. `settings.json` has no `mcpServers` key — its schema strips unknown
+ * keys rather than erroring, so the entry landed in a file, changed nothing, and
+ * `ensureChromeDevtoolsConfig` logged a success. `claude mcp list` never showed
+ * it. That is the whole of #237's first blocker, and it is a silent failure by
+ * construction: there is no observable difference between "written" and
+ * "written somewhere nobody reads" unless you go and look.
+ *
+ * `~/.claude.json`'s top-level `mcpServers` is the user scope — what
+ * `claude mcp add --scope user` writes. `settings.json` holds only the
+ * approval/policy keys (`enabledMcpjsonServers`, `allowedMcpServers`, …), which
+ * is why the `enabledPlugins` half below stays exactly where it was.
+ */
+function getClaudeConfigPath(): string {
+  return path.join(os.homedir(), '.claude.json');
+}
+
+/**
  * Version selected for this wmux release. Do not use a mutable npm dist-tag
- * here: this command is persisted in Claude's settings and may execute long
+ * here: this command is persisted in Claude's config and may execute long
  * after the wmux release that wrote it.
  */
 export const CHROME_DEVTOOLS_MCP_PACKAGE = 'chrome-devtools-mcp@1.7.0';
 
-/** Build the custom MCP server entry written to Claude's settings. */
+/** Build the custom MCP server entry written to Claude's user config. */
 export function buildChromeDevtoolsMcpServer(): { command: string; args: string[] } {
   return {
     command: 'npx',
@@ -468,7 +488,7 @@ export function buildChromeDevtoolsMcpServer(): { command: string; args: string[
 }
 
 /**
- * Whether a `chrome-devtools` entry already in settings.json is one wmux wrote.
+ * Whether a `chrome-devtools` entry already in Claude's config is one wmux wrote.
  *
  * The predicate has to be "did wmux author this", not "is this what wmux wants".
  * Pinning the package (#161) means the desired entry changes on every release
@@ -495,92 +515,180 @@ export function isWmuxAuthoredMcpEntry(entry: unknown): boolean {
   );
 }
 
+/** The `mcpServers` object of a parsed config, or undefined if there isn't a usable one. */
+function mcpServersOf(config: unknown): Record<string, unknown> | undefined {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return undefined;
+  const servers = (config as Record<string, unknown>).mcpServers;
+  if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return undefined;
+  return servers as Record<string, unknown>;
+}
+
 /**
- * Configures chrome-devtools-mcp to connect to wmux's CDP proxy on localhost:9222.
- * Disables the plugin version and adds a custom MCP server in settings.json with
- * --browserUrl pointing to wmux. This is more reliable than modifying the plugin cache.
+ * Put the `chrome-devtools` entry into a parsed `~/.claude.json`, or report that
+ * it is already right.
+ *
+ * Pure and separate from the write because `~/.claude.json` is Claude Code's own
+ * live state file — it holds the OAuth account, per-project history, onboarding
+ * flags — and wmux rewrites it whole. Every needless write is a chance to lose
+ * something Claude Code wrote a millisecond earlier, so "changed" has to be
+ * exact, not approximate.
  */
-export function ensureChromeDevtoolsConfig(): void {
+export function applyChromeDevtoolsMcp(config: unknown): { next: any; changed: boolean } {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return { next: config, changed: false };
+  }
+  const next = config as Record<string, any>;
+  const existing = mcpServersOf(next)?.['chrome-devtools'];
+  // Somebody else's entry stands; wmux does not get to retune it.
+  if (existing && !isWmuxAuthoredMcpEntry(existing)) return { next, changed: false };
+  const desired = buildChromeDevtoolsMcpServer();
+  if (existing && JSON.stringify(existing) === JSON.stringify(desired)) return { next, changed: false };
+  if (!mcpServersOf(next)) next.mcpServers = {};
+  next.mcpServers['chrome-devtools'] = desired;
+  return { next, changed: true };
+}
+
+/**
+ * The inverse: drop the entry, and the `mcpServers` object with it if wmux's was
+ * the only one in there — an empty key left behind is still a footprint in a
+ * file wmux was asked to stay out of.
+ *
+ * Matches on {@link isWmuxAuthoredMcpEntry}, not on the port alone: a user who
+ * has since pointed `chrome-devtools` at their own Chrome keeps it.
+ *
+ * This is also the migration for #237's first blocker. Older releases wrote the
+ * entry into `~/.claude/settings.json`, where it did nothing; the same function
+ * clears it from there, because the shape is identical and it is wmux's litter
+ * either way. It is actively confusing litter: #237 was reported by someone who
+ * found the entry sitting in settings.json, correct in every detail, while
+ * `claude mcp list` disagreed.
+ */
+export function stripChromeDevtoolsMcp(config: unknown): { next: any; changed: boolean } {
+  const next = config as Record<string, any>;
+  const servers = mcpServersOf(config);
+  if (!servers || !('chrome-devtools' in servers)) return { next, changed: false };
+  if (!isWmuxAuthoredMcpEntry(servers['chrome-devtools'])) return { next, changed: false };
+  delete servers['chrome-devtools'];
+  if (Object.keys(servers).length === 0) delete next.mcpServers;
+  return { next, changed: true };
+}
+
+/** Parsed JSON at `filePath`, or null if it is missing or unreadable. */
+function readJsonIfExists(filePath: string): any {
   try {
-    const settingsPath = getSettingsPath();
-    if (!fs.existsSync(settingsPath)) return;
-
-    const raw = fs.readFileSync(settingsPath, 'utf-8');
-    let settings: any;
-    try { settings = JSON.parse(raw); } catch { return; }
-
-    let changed = false;
-
-    // Disable the plugin (it launches its own Chrome)
-    if (settings.enabledPlugins?.['chrome-devtools-mcp@claude-plugins-official'] !== false) {
-      if (!settings.enabledPlugins) settings.enabledPlugins = {};
-      settings.enabledPlugins['chrome-devtools-mcp@claude-plugins-official'] = false;
-      changed = true;
-    }
-
-    // Add as custom MCP server with --browserUrl.
-    //
-    // Written when there is no entry at all, and rewritten only when the entry
-    // present is one wmux itself authored — which is how the @latest → pinned
-    // migration reaches existing installs without wmux clobbering an entry the
-    // user has since retuned. See isWmuxAuthoredMcpEntry.
-    if (!settings.mcpServers) settings.mcpServers = {};
-    const existing = settings.mcpServers['chrome-devtools'];
-    const desired = buildChromeDevtoolsMcpServer();
-    const mine = !existing || isWmuxAuthoredMcpEntry(existing);
-    if (mine && JSON.stringify(existing) !== JSON.stringify(desired)) {
-      settings.mcpServers['chrome-devtools'] = desired;
-      changed = true;
-    }
-
-    if (changed) {
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-      console.log('[wmux] Configured chrome-devtools-mcp as custom MCP server → localhost:9222');
-    }
-  } catch (err) {
-    console.warn('[wmux] Failed to configure chrome-devtools-mcp:', err);
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
   }
 }
 
 /**
- * Undo {@link ensureChromeDevtoolsConfig} (issue #132): drop the MCP server
- * entry wmux added and stop forcing the official plugin off.
+ * Write a parsed config back over Claude Code's live state file.
  *
- * Only an entry that points at wmux's own CDP proxy port is removed — a user
- * who has since pointed `chrome-devtools` somewhere of their own keeps it.
- * Likewise the `enabledPlugins` flag is only cleared when it is still `false`,
- * the value wmux set; a user who deliberately re-enabled it is left alone.
+ * Temp-file + rename, for the reason `session-persistence.ts` spells out at
+ * length (#214): a plain `writeFileSync` over 160 KB of somebody else's state
+ * leaves a truncated file readable if the process dies mid-write, and this
+ * particular file holds the user's Claude Code login. `renameSync` maps onto
+ * `MoveFileExW`/`MOVEFILE_REPLACE_EXISTING`, so the old file is replaced rather
+ * than ever being absent.
  */
-export function removeChromeDevtoolsConfig(): void {
+function writeJsonAtomic(filePath: string, value: unknown): void {
+  const tmp = filePath + '.wmux.tmp';
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf-8');
+    fs.renameSync(tmp, filePath);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch {}
+    throw err;
+  }
+}
+
+/**
+ * The `~/.claude.json` half, both directions. Guarded on the file existing:
+ * wmux does not bring Claude Code's state file into being on a machine where
+ * Claude Code has never run, and an absent file means there is no install to
+ * configure either.
+ */
+function syncClaudeConfigMcp(wanted: boolean): void {
+  try {
+    const configPath = getClaudeConfigPath();
+    const config = readJsonIfExists(configPath);
+    if (!config) return;
+    const { next, changed } = wanted ? applyChromeDevtoolsMcp(config) : stripChromeDevtoolsMcp(config);
+    if (!changed) return;
+    writeJsonAtomic(configPath, next);
+    console.log(
+      wanted
+        ? '[wmux] Configured chrome-devtools-mcp in ~/.claude.json → localhost:9222'
+        : '[wmux] Removed chrome-devtools-mcp from ~/.claude.json'
+    );
+  } catch (err) {
+    console.warn('[wmux] Failed to update chrome-devtools-mcp in ~/.claude.json:', err);
+  }
+}
+
+/**
+ * The `~/.claude/settings.json` half: the official plugin's enabled flag, which
+ * genuinely IS read from here, plus the removal of the MCP entry older releases
+ * wrote into this file by mistake. The stale entry goes on BOTH paths, so an
+ * existing install is cleaned up by the upgrade rather than by the user first
+ * having to switch the feature off.
+ */
+function syncSettingsPluginFlag(wanted: boolean): void {
+  const pluginKey = 'chrome-devtools-mcp@claude-plugins-official';
   try {
     const settingsPath = getSettingsPath();
-    if (!fs.existsSync(settingsPath)) return;
-    const raw = fs.readFileSync(settingsPath, 'utf-8');
-    let settings: any;
-    try { settings = JSON.parse(raw); } catch { return; }
+    const settings = readJsonIfExists(settingsPath);
+    if (!settings) return;
 
-    let changed = false;
-    const entry = settings.mcpServers?.['chrome-devtools'];
-    if (entry && JSON.stringify(entry).includes('9222')) {
-      delete settings.mcpServers['chrome-devtools'];
-      if (Object.keys(settings.mcpServers).length === 0) delete settings.mcpServers;
-      changed = true;
-    }
-    const pluginKey = 'chrome-devtools-mcp@claude-plugins-official';
-    if (settings.enabledPlugins?.[pluginKey] === false) {
+    let changed = stripChromeDevtoolsMcp(settings).changed;
+
+    if (wanted) {
+      // The official plugin launches its own Chrome, which is the thing being
+      // replaced.
+      if (settings.enabledPlugins?.[pluginKey] !== false) {
+        if (!settings.enabledPlugins) settings.enabledPlugins = {};
+        settings.enabledPlugins[pluginKey] = false;
+        changed = true;
+      }
+    } else if (settings.enabledPlugins?.[pluginKey] === false) {
+      // Only `false` — the value wmux set. A user who deliberately re-enabled
+      // the plugin keeps their `true`.
       delete settings.enabledPlugins[pluginKey];
       if (Object.keys(settings.enabledPlugins).length === 0) delete settings.enabledPlugins;
       changed = true;
     }
 
-    if (changed) {
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-      console.log('[wmux] Removed chrome-devtools-mcp configuration from ~/.claude/settings.json');
-    }
+    if (changed) fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
   } catch (err) {
-    console.warn('[wmux] Failed to remove chrome-devtools-mcp config:', err);
+    console.warn('[wmux] Failed to update the chrome-devtools plugin flag:', err);
   }
 }
+
+/**
+ * Point chrome-devtools-mcp at wmux's CDP proxy on localhost:9222, and stop the
+ * official plugin from launching a Chrome of its own.
+ *
+ * Two files, because the two halves are read from two places (issue #237): the
+ * server definition goes to `~/.claude.json`, the plugin flag stays in
+ * `~/.claude/settings.json`.
+ */
+export function ensureChromeDevtoolsConfig(): void {
+  syncClaudeConfigMcp(true);
+  syncSettingsPluginFlag(true);
+}
+
+/**
+ * Undo {@link ensureChromeDevtoolsConfig} (issue #132): drop the MCP server
+ * entry wmux added — from both the file it belongs in and the file older
+ * releases put it in — and stop forcing the official plugin off.
+ */
+export function removeChromeDevtoolsConfig(): void {
+  syncClaudeConfigMcp(false);
+  syncSettingsPluginFlag(false);
+}
+
 
 
 /**
