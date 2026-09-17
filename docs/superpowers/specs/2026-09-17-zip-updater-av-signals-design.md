@@ -324,6 +324,8 @@ Two details added during implementation. `applyStagedZipOrReset` holds an `apply
 
 Changed after code review: a click on the `error` badge with a staged zip no longer applies straight away. It goes back through the install dialog, because that badge reads *Click to try again*, not *Restart*. After the retry of the same payload has failed too, `requestUpdateNow` answers `handled: false, reason: 'install_failed'`, and the renderer opens the release page. Otherwise a failure that repeats, like an antivirus blocking the helper every time, would make every click look dead.
 
+Changed after the Copilot review. The retry keeps the phase at `error` and starts `promptToInstall` synchronously, so its `installPrompted` guard catches a second quick click; setting `ready` first let that click install behind the open dialog. `install_failed` also carries the release page URL from main, because the renderer's cached release info (from the notify-only poller) may be missing when the update was started from Help.
+
 ### 6.6 Helper command line (D11)
 
 ```ts

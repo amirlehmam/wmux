@@ -25,7 +25,8 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 // this PID to exit, robocopies the payload over the install root, and
 // relaunches.
 //
-// The helper does NOT strip Mark of the Web, and must not start again (#3).
+// The helper does NOT strip Mark of the Web, and that step must not be
+// reintroduced (#3).
 // There is nothing to strip: net.request + createWriteStream write no
 // :Zone.Identifier stream, so neither the zip nor its extracted payload has
 // one, and executables under the install dir are already unblocked in-process
