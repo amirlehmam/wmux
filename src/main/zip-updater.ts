@@ -22,15 +22,22 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 //
 // Apply cannot overwrite a running wmux.exe, so after the zip is extracted
 // we write a tiny cmd helper, detach it, and quit. The helper waits for
-// this PID to exit, robocopies the payload over the install root, strips
-// Mark of the Web, and relaunches.
+// this PID to exit, robocopies the payload over the install root, and
+// relaunches.
+//
+// The helper does NOT strip Mark of the Web, and must not start again (#3).
+// There is nothing to strip: net.request + createWriteStream write no
+// :Zone.Identifier stream, so neither the zip nor its extracted payload has
+// one, and executables under the install dir are already unblocked in-process
+// by stripMotw() in index.ts on every launch. A hidden PowerShell recursively
+// running Unblock-File is, on the other hand, a MOTW-bypass pattern (MITRE
+// T1553.005) and the strongest behavioural-AV signal the helper used to emit.
 //
 // No extra runtime downloads (no curl, no npm unzip, no Invoke-WebRequest):
 //   download — Electron net.request (Chromium). Always present in a packaged build.
 //   extract  — %SystemRoot%\System32\tar.exe (Windows 10 1803+, which Electron 43
 //              already requires), then Windows PowerShell Expand-Archive.
 //   apply    — cmd.exe + robocopy/tasklist/timeout/findstr, all via System32.
-//   MOTW     — Unblock-File is best-effort; a missing PowerShell does not block relaunch.
 
 const UNINSTALLER_NAME = 'Uninstall wmux.exe';
 
@@ -107,8 +114,6 @@ export function buildApplyUpdateCmd(): string {
     '"%SYS%\\timeout.exe" /t 2 /nobreak >nul',
     '"%SYS%\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
     'if %ERRORLEVEL% GEQ 8 goto relaunch',
-    // MOTW strip is best-effort: a constrained PowerShell must not block relaunch.
-    'if exist "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -Command "Get-ChildItem -LiteralPath $env:DST -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1',
     // The relaunch is unconditional, including after a failed copy. wmux has
     // already quit by the time this runs, so bailing out here is the one
     // outcome the user cannot recover from without finding wmux.exe by hand.
@@ -123,9 +128,9 @@ export function buildApplyUpdateCmd(): string {
     // it, and then erases its own file is a textbook dropper/self-cleanup
     // signature — exactly what AV behavioral engines (e.g. Norton SONAR)
     // are built to flag, and a plausible contributor to reports of the
-    // updater triggering a heavy AV scan/lockdown. The leftover .cmd is a
-    // few hundred bytes in %TEMP%, harmless, and Windows reclaims temp
-    // files on its own.
+    // updater triggering a heavy AV scan/lockdown. %TEMP% is NOT reclaimed
+    // on its own (only Storage Sense does that, and it is off by default),
+    // so the leftover .cmd, one per update, stays behind.
   ].join('\r\n');
 }
 

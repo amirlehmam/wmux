@@ -104,12 +104,20 @@ describe('findPayloadRoot', () => {
 describe('buildApplyUpdateCmd', () => {
   const cmd = buildApplyUpdateCmd();
 
-  it('waits for the old process, copies, unblocks, and relaunches', () => {
+  it('waits for the old process, copies, relaunches, and removes the payload', () => {
     expect(cmd).toContain('robocopy.exe');
-    expect(cmd).toContain('Unblock-File');
     expect(cmd).toMatch(/start "" "%EXE%"/);
     expect(cmd).toContain('tasklist.exe');
+    expect(cmd).toContain('rmdir /s /q "%SRC%"');
     expect(cmd).toContain('%SystemRoot%\\System32');
+  });
+
+  // Issue #3: a hidden PowerShell recursively running Unblock-File is a MOTW
+  // bypass pattern (T1553.005) and stripped nothing — the payload never had a
+  // :Zone.Identifier stream, and executables are unblocked in-process on launch.
+  it('does not run PowerShell or strip Mark of the Web', () => {
+    expect(cmd).not.toMatch(/powershell/i);
+    expect(cmd).not.toMatch(/Unblock-File/i);
   });
 
   // wmux has already quit by the time the helper runs, so a robocopy failure
