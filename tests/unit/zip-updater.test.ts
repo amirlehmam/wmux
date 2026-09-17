@@ -33,6 +33,7 @@ import {
   isPidAlive,
   sweepUpdateLeftovers,
   applyStagedPortableUpdate,
+  buildHelperArgs,
 } from '../../src/main/zip-updater';
 import { app } from 'electron';
 
@@ -438,8 +439,30 @@ describe('applyStagedPortableUpdate', () => {
     expect(() => child.emit('error', new Error('later'))).not.toThrow();
 
     const [, args, opts] = spawnMock.mock.calls[0];
-    expect(args.slice(0, 3)).toEqual(['/d', '/c', path.join(scratchTemp, `wmux-apply-update-${process.pid}.cmd`)]);
-    expect(args.slice(3)).toEqual([String(process.pid), payload, 'C:\\wmux', 'C:\\wmux\\wmux.exe']);
-    expect(opts).toMatchObject({ detached: true, windowsHide: true, stdio: 'ignore' });
+    const helper = path.join(scratchTemp, `wmux-apply-update-${process.pid}.cmd`);
+    expect(args).toEqual(buildHelperArgs(helper, [String(process.pid), payload, 'C:\\wmux', 'C:\\wmux\\wmux.exe']));
+    expect(opts).toMatchObject({ detached: true, windowsHide: true, stdio: 'ignore', windowsVerbatimArguments: true });
+  });
+});
+
+// `cmd /c` strips the first and last quote of a line that starts with one and
+// holds more than two, so a %TEMP% with a space ("C:\Users\First Last\...")
+// turned the helper path into `C:\Users\First` and the update did nothing
+// after wmux had already quit.
+describe('buildHelperArgs', () => {
+  it('wraps every piece in quotes inside one outer pair, under /s', () => {
+    const args = buildHelperArgs('C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-apply-update-7.cmd', [
+      '7', 'C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-update-9.9.9-7', 'C:\\Program Files\\wmux', 'C:\\Program Files\\wmux\\wmux.exe',
+    ]);
+    expect(args).toEqual([
+      '/d', '/s', '/c',
+      '""C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-apply-update-7.cmd" "7" ' +
+        '"C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-update-9.9.9-7" "C:\\Program Files\\wmux" ' +
+        '"C:\\Program Files\\wmux\\wmux.exe""',
+    ]);
+  });
+
+  it('refuses a piece that would add a quote of its own', () => {
+    expect(() => buildHelperArgs('C:\\t\\h.cmd', ['1', 'C:\\a" & calc & "', 'C:\\w', 'C:\\w\\wmux.exe'])).toThrow(/double quote/);
   });
 });

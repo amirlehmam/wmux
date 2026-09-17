@@ -285,6 +285,31 @@ export function buildApplyUpdateCmd(): string {
   ].join('\r\n');
 }
 
+/**
+ * cmd.exe arguments that run `helper` with `args`, for a VERBATIM spawn.
+ *
+ * Handing the pieces to spawn() separately is not enough. Node quotes each one
+ * that contains a space, and `cmd /c` then applies its own rule to the result:
+ * when the command line starts with a quote and holds more than two, it strips
+ * the first and the LAST quote on the line. A %TEMP% with a space in it — any
+ * Windows account named "First Last" — made the helper path arrive as
+ * `C:\Users\First`, "is not recognized", and cmd.exe exited having done
+ * nothing, after wmux had already quit into the update. cmd.exe itself had
+ * started, so no spawn error could report it.
+ *
+ * `/s` plus one outer pair of quotes is the documented way out: cmd strips
+ * exactly that pair and leaves every inner quote alone. That only holds if
+ * nothing inside adds a quote of its own, which a Windows path cannot contain;
+ * one that somehow does is refused rather than allowed to re-split the line.
+ */
+export function buildHelperArgs(helper: string, args: string[]): string[] {
+  const parts = [helper, ...args];
+  if (parts.some((p) => p.includes('"'))) {
+    throw new Error('update helper argument contains a double quote');
+  }
+  return ['/d', '/s', '/c', `"${parts.map((p) => `"${p}"`).join(' ')}"`];
+}
+
 function system32(name: string): string {
   return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', name);
 }
@@ -506,16 +531,16 @@ export async function applyStagedPortableUpdate(staged: StagedZipUpdate): Promis
   const helper = path.join(os.tmpdir(), updateHelperName(process.pid));
   fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
   const cmd = process.env.ComSpec || system32('cmd.exe');
-  const child = spawn(cmd, [
-    '/d', '/c', helper,
+  const child = spawn(cmd, buildHelperArgs(helper, [
     String(process.pid),
     staged.extractDir,
     staged.installDir,
     staged.exePath,
-  ], {
+  ]), {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
+    windowsVerbatimArguments: true,
   });
   await new Promise<void>((resolve, reject) => {
     child.once('spawn', resolve);
