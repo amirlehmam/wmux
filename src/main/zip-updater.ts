@@ -482,7 +482,27 @@ export async function runPortableZipUpdate(opts: {
   }
 }
 
-export function applyStagedPortableUpdate(staged: StagedZipUpdate): void {
+/**
+ * Hands the swap to the detached helper and quits — but only once the helper
+ * is actually running. Every failure wmux can still observe rejects WITHOUT
+ * quitting, because a quit whose helper never runs leaves the user with no
+ * wmux and nothing to restart it (#3):
+ *
+ *   - the payload is gone (Storage Sense, a temp cleanup, days after "Later"):
+ *     rejects with code PAYLOAD_MISSING, and only a fresh download can help;
+ *   - the helper cannot be written, or cmd.exe fails to start (an antivirus
+ *     blocking either): rejects with that error, and the payload is still good.
+ *
+ * The 'error' listener stays attached after 'spawn', so a late error on the
+ * child is a no-op rather than an uncaught exception in main.
+ */
+export async function applyStagedPortableUpdate(staged: StagedZipUpdate): Promise<void> {
+  if (!fs.existsSync(path.join(staged.extractDir, 'wmux.exe'))) {
+    throw Object.assign(
+      new Error('the downloaded update is no longer on disk — download it again'),
+      { code: 'PAYLOAD_MISSING' },
+    );
+  }
   const helper = path.join(os.tmpdir(), updateHelperName(process.pid));
   fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
   const cmd = process.env.ComSpec || system32('cmd.exe');
@@ -496,6 +516,10 @@ export function applyStagedPortableUpdate(staged: StagedZipUpdate): void {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.on('error', reject);
   });
   child.unref();
   app.quit();

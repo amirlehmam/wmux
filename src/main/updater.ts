@@ -63,6 +63,7 @@ async function releaseAgeMs(version: string): Promise<number | null> {
 let installPrompted = false;
 let missingChannelFileWarned = false;
 let stagedZip: StagedZipUpdate | null = null;
+let applyingZip = false;
 
 function currentInstallIsPortable(): boolean {
   if (!app.isPackaged) return false;
@@ -208,12 +209,16 @@ export function canSelfUpdate(): boolean {
 export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: string }> {
   if (!canSelfUpdate()) return { handled: false, reason: 'not_supported' };
 
-  // Already downloaded — this click is the install confirmation.
+  // Already downloaded — this click is the install confirmation. A staged zip
+  // is also retried from `error`: that phase only holds a staged zip after an
+  // install that failed without touching the payload (every download failure
+  // clears it), so the click should install, not download 100 MB again.
+  if (stagedZip && (state.phase === 'ready' || state.phase === 'error')) {
+    const staged = stagedZip;
+    setImmediate(() => { void applyStagedZipOrReset(staged); });
+    return { handled: true };
+  }
   if (state.phase === 'ready') {
-    if (stagedZip) {
-      setImmediate(() => applyStagedPortableUpdate(stagedZip!));
-      return { handled: true };
-    }
     setImmediate(() => autoUpdater.quitAndInstall());
     return { handled: true };
   }
@@ -321,10 +326,31 @@ async function promptToInstall(version: string): Promise<void> {
     detail: 'Review the release notes on GitHub before installing. Install now?' + elevationNote,
   });
   if (response === 0) {
-    if (stagedZip) applyStagedPortableUpdate(stagedZip);
+    if (stagedZip) await applyStagedZipOrReset(stagedZip);
     else autoUpdater.quitAndInstall();
   } else {
     installPrompted = false;
+  }
+}
+
+// A zip install that fails before wmux quits must leave the app usable and the
+// badge truthful (#3). The staged payload is kept unless it is the thing that
+// is missing, so a retry costs a click rather than another download, and
+// `installPrompted` is cleared or the next downloaded update would never ask.
+async function applyStagedZipOrReset(staged: StagedZipUpdate): Promise<void> {
+  // Applying waits for the helper to start, so a second click in that gap
+  // would otherwise write and start a second helper for the same install.
+  // Left set on success: wmux is quitting, and there is nothing to retry.
+  if (applyingZip) return;
+  applyingZip = true;
+  try {
+    await applyStagedPortableUpdate(staged);
+  } catch (err) {
+    applyingZip = false;
+    installPrompted = false;
+    if ((err as { code?: string } | undefined)?.code === 'PAYLOAD_MISSING') stagedZip = null;
+    console.error('[updater] cannot apply staged zip update:', err);
+    setState({ phase: 'error', message: String((err as Error)?.message ?? err) });
   }
 }
 

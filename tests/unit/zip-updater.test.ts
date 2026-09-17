@@ -1,7 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+const spawnMock = vi.hoisted(() => vi.fn());
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return { ...actual, spawn: spawnMock };
+});
 
 vi.mock('electron', () => ({
   app: {
@@ -24,7 +32,9 @@ import {
   classifyUpdateLeftover,
   isPidAlive,
   sweepUpdateLeftovers,
+  applyStagedPortableUpdate,
 } from '../../src/main/zip-updater';
+import { app } from 'electron';
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-zip-'));
@@ -347,5 +357,89 @@ describe('sweepUpdateLeftovers (#3)', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// A quit whose helper never runs leaves the user with no wmux and nothing to
+// restart it (#3). Every failure wmux can still see must reject BEFORE quit.
+describe('applyStagedPortableUpdate', () => {
+  const savedTemp = { TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR };
+  let payload: string;
+  let scratchTemp: string;
+
+  function fakeChild(): EventEmitter & { unref: ReturnType<typeof vi.fn> } {
+    return Object.assign(new EventEmitter(), { unref: vi.fn() });
+  }
+
+  function staged() {
+    return { version: '9.9.9', extractDir: payload, installDir: 'C:\\wmux', exePath: 'C:\\wmux\\wmux.exe' };
+  }
+
+  function pointTempAt(dir: string): void {
+    process.env.TEMP = dir;
+    process.env.TMP = dir;
+    process.env.TMPDIR = dir;
+  }
+
+  beforeEach(() => {
+    payload = tempDir();
+    fs.writeFileSync(path.join(payload, 'wmux.exe'), '');
+    // os.tmpdir() reads the environment on every call, so the helper lands in
+    // a scratch dir rather than the real %TEMP%.
+    scratchTemp = tempDir();
+    pointTempAt(scratchTemp);
+    spawnMock.mockReset();
+    vi.mocked(app.quit).mockReset();
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedTemp)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it('refuses a payload that is gone, without writing, spawning or quitting', async () => {
+    fs.unlinkSync(path.join(payload, 'wmux.exe'));
+    await expect(applyStagedPortableUpdate(staged())).rejects.toMatchObject({ code: 'PAYLOAD_MISSING' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(fs.readdirSync(scratchTemp)).toEqual([]);
+  });
+
+  it('does not quit when the helper cannot be written', async () => {
+    pointTempAt(path.join(scratchTemp, 'missing', 'dir'));
+    await expect(applyStagedPortableUpdate(staged())).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('does not quit when the helper fails to start', async () => {
+    const child = fakeChild();
+    spawnMock.mockReturnValue(child);
+    const pending = applyStagedPortableUpdate(staged());
+    setImmediate(() => child.emit('error', Object.assign(new Error('spawn EPERM'), { code: 'EPERM' })));
+    await expect(pending).rejects.toThrow('spawn EPERM');
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('quits once the helper has started, and survives a late child error', async () => {
+    const child = fakeChild();
+    spawnMock.mockReturnValue(child);
+    const pending = applyStagedPortableUpdate(staged());
+    expect(app.quit).not.toHaveBeenCalled();
+    setImmediate(() => child.emit('spawn'));
+    await expect(pending).resolves.toBeUndefined();
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    expect(child.unref).toHaveBeenCalledTimes(1);
+    // An EventEmitter with no 'error' listener throws; in main that is an
+    // uncaught exception after the quit has started.
+    expect(() => child.emit('error', new Error('late'))).not.toThrow();
+    expect(() => child.emit('error', new Error('later'))).not.toThrow();
+
+    const [, args, opts] = spawnMock.mock.calls[0];
+    expect(args.slice(0, 3)).toEqual(['/d', '/c', path.join(scratchTemp, `wmux-apply-update-${process.pid}.cmd`)]);
+    expect(args.slice(3)).toEqual([String(process.pid), payload, 'C:\\wmux', 'C:\\wmux\\wmux.exe']);
+    expect(opts).toMatchObject({ detached: true, windowsHide: true, stdio: 'ignore' });
   });
 });
