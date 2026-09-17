@@ -560,8 +560,6 @@ export const zhTW: Translation = {
   'app.claudeNeedsInput': 'Claude Code 需要你的輸入',
   'app.claudeFinishedIn': 'Claude Code 在 {workspace} 完成了',
   'app.claudeFinished': 'Claude Code 完成了',
-  'app.firstSessionTitle': '工作階段 1',
-  'app.sessionTitle': '工作階段 {n}',
   'app.sessionSaved': '已儲存工作階段「{name}」',
   'app.expandSidebar': '展開側邊欄（Ctrl+B）',
   'app.closeBrowserPanel': '關閉瀏覽器面板',

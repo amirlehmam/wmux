@@ -542,8 +542,6 @@ export const zh: Translation = {
   'app.claudeNeedsInput': 'Claude Code 需要您的操作',
   'app.claudeFinishedIn': 'Claude Code 已在 {workspace} 中完成',
   'app.claudeFinished': 'Claude Code 已完成',
-  'app.firstSessionTitle': '会话 1',
-  'app.sessionTitle': '会话 {n}',
   'app.sessionSaved': '会话 "{name}" 已保存',
   'app.expandSidebar': '展开侧边栏（Ctrl+B）',
   'app.closeBrowserPanel': '关闭浏览器面板',

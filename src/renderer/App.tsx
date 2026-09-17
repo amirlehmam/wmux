@@ -13,7 +13,7 @@ import Sidebar from './components/Sidebar/Sidebar';
 import { applyPrCommand } from './pr-metadata';
 import Titlebar from './components/Titlebar/Titlebar';
 import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcuts';
-import SettingsWindow from './components/Settings/SettingsWindow';
+import SettingsWindow, { type SettingsTab } from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import AgentNavigator from './components/AgentNavigator/AgentNavigator';
 import HubView from './components/Hub/hub-view';
@@ -523,6 +523,17 @@ export default function App() {
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Which tab Settings opens on. Only "Manage layouts…" sets one; every other
+  // opener clears it, so they keep opening on the default tab.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
+  const openSettings = useCallback((tab?: SettingsTab) => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  }, []);
+  const setSettingsOpenFromShortcut = useCallback((open: boolean) => {
+    if (open) openSettings();
+    else setSettingsOpen(false);
+  }, [openSettings]);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [agentNavigatorOpen, setAgentNavigatorOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
@@ -690,7 +701,7 @@ export default function App() {
       // marked, else the configured pane count/arrangement). Passing a shape in
       // is what let first launch, the sidebar `+` and the CLI disagree.
       if (useStore.getState().workspaces.length === 0) {
-        createWorkspace({ title: t('app.firstSessionTitle', 'Session 1') });
+        createWorkspace(undefined, t);
       }
     })();
   }, []);
@@ -1184,13 +1195,20 @@ export default function App() {
   }, []);
 
   const handleCreateWorkspace = useCallback(() => {
-    const wsCount = useStore.getState().workspaces.length;
-    const newId = createWorkspace({
-      title: t('app.sessionTitle', 'Session {n}').replace('{n}', String(wsCount + 1)),
-      // No splitTree: createWorkspace resolves the one shared answer (#212).
-    });
+    // No splitTree: createWorkspace resolves the one shared answer (#212). No
+    // title either: it names the workspace after the tabs it opens with.
+    const newId = createWorkspace(undefined, t);
     selectWorkspace(newId);
   }, [createWorkspace, selectWorkspace, t]);
+
+  // Same result as the palette's `New Workspace: {name}`.
+  const handleCreateWorkspaceFromLayout = useCallback((layoutId: string) => {
+    // null: the layout was deleted between the menu rendering and the click.
+    const newId = useStore.getState().createWorkspaceFromLayout(layoutId, t);
+    if (newId) selectWorkspace(newId);
+  }, [selectWorkspace, t]);
+
+  const handleManageLayouts = useCallback(() => openSettings('Workspace'), [openSettings]);
 
   const handleSaveSession = useCallback(async (name: string) => {
     const state = useStore.getState();
@@ -1468,7 +1486,7 @@ export default function App() {
     if (!paneIds.includes(zoomedPaneId)) setZoomedPaneId(null);
   }, [zoomedPaneId, activeWorkspace]);
 
-  useKeyboardShortcuts(focusedPaneId, setSettingsOpen, () => setBrowserOpen(o => !o), handleToggleNotifPanel, setFocusedPaneId, handleToggleZoom, () => handleToggleExplorer());
+  useKeyboardShortcuts(focusedPaneId, setSettingsOpenFromShortcut, () => setBrowserOpen(o => !o), handleToggleNotifPanel, setFocusedPaneId, handleToggleZoom, () => handleToggleExplorer());
 
   // Derive a title for the titlebar: active workspace title or blank
   const titlebarText = activeWorkspace?.title ?? '';
@@ -1476,12 +1494,12 @@ export default function App() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {tutorialOpen && <Tutorial onClose={handleTutorialClose} />}
-      {settingsOpen && <SettingsWindow onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsWindow initialTab={settingsTab} onClose={() => setSettingsOpen(false)} />}
       <Titlebar
         title={titlebarText}
         onHelpClick={() => setTutorialOpen(true)}
         onDevToolsClick={() => window.wmux?.system?.toggleDevTools?.()}
-        onSettingsClick={() => setSettingsOpen(true)}
+        onSettingsClick={() => openSettings()}
         onHubClick={() => setHubOpen(true)}
         hubEnabled={hubEnabled}
         notifications={notifications}
@@ -1502,6 +1520,8 @@ export default function App() {
             onSelect={selectWorkspace}
             onClose={requestCloseWorkspace}
             onCreate={handleCreateWorkspace}
+            onCreateFromLayout={handleCreateWorkspaceFromLayout}
+            onManageLayouts={handleManageLayouts}
             onRename={renameWorkspace}
             onReorder={reorderWorkspaces}
             onUpdateMetadata={handleUpdateMetadata}

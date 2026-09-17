@@ -548,8 +548,6 @@ export const sv: Translation = {
   'app.claudeNeedsInput': 'Claude Code behöver din indata',
   'app.claudeFinishedIn': 'Claude Code blev klar i {workspace}',
   'app.claudeFinished': 'Claude Code blev klar',
-  'app.firstSessionTitle': 'Session 1',
-  'app.sessionTitle': 'Session {n}',
   'app.sessionSaved': 'Session "{name}" sparad',
   'app.expandSidebar': 'Expandera sidopanelen (Ctrl+B)',
   'app.closeBrowserPanel': 'Stäng webbläsarpanelen',

@@ -559,8 +559,6 @@ export const ja: Translation = {
   'app.claudeNeedsInput': 'Claude Code があなたの入力を必要としています',
   'app.claudeFinishedIn': 'Claude Code が {workspace} で完了しました',
   'app.claudeFinished': 'Claude Code が完了しました',
-  'app.firstSessionTitle': 'セッション 1',
-  'app.sessionTitle': 'セッション {n}',
   'app.sessionSaved': 'セッション「{name}」を保存しました',
   'app.expandSidebar': 'サイドバーを展開 (Ctrl+B)',
   'app.closeBrowserPanel': 'ブラウザーパネルを閉じる',

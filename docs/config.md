@@ -101,7 +101,23 @@ script that depends on it.
 
 A **saved layout marked Default** (Settings → Workspace → Saved Layouts) wins
 over this section: it also carries each pane's shell, directory and startup
-commands, so it answers the same question more completely.
+commands, so it answers the same question more completely. Any other saved
+layout is one click away from the caret next to the sidebar `+`.
+
+A workspace created from a **saved layout** — picked from that menu or the
+command palette, or made from the Default layout — is named after the layout
+with an instance number: `Work-1`, then `Work-2`, and so on. The number is one
+past the highest `Work-N` currently open; a plain `Work` does not count.
+
+Any other new workspace with no title of its own is **named after the tabs it
+opens with**, in pane order: `api + api + notes.md + Prompts`. A terminal is named
+after its starting directory, else its shell; a markdown or code tab after its
+file; a tab with a custom title after that. The title is set once, at creation,
+and renamed like any other. When no tab has a name of its own — the plain
+`Terminal + Terminal + Terminal` of the shape above with no directory or shell —
+the workspace is called `Workspace N` instead. An explicit title always wins:
+`wmux new-workspace --title`, **Open folder as workspace**, and a restored
+session keep theirs.
 
 ## Browser start page
 

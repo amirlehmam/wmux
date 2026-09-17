@@ -559,8 +559,6 @@ export const cs: Translation = {
   'app.claudeNeedsInput': 'Claude Code potřebuje váš vstup',
   'app.claudeFinishedIn': 'Claude Code dokončil práci v {workspace}',
   'app.claudeFinished': 'Claude Code dokončil práci',
-  'app.firstSessionTitle': 'Relace 1',
-  'app.sessionTitle': 'Relace {n}',
   'app.sessionSaved': 'Relace „{name}“ uložena',
   'app.expandSidebar': 'Rozbalit postranní panel (Ctrl+B)',
   'app.closeBrowserPanel': 'Zavřít panel prohlížeče',
