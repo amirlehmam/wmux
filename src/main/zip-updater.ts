@@ -337,16 +337,21 @@ export function buildApplyUpdateCmd(): string {
     'goto relaunch',
     // A failed copy used to jump straight to :relaunch, which read as correct
     // because :relaunch was the next line anyway — and that is what made it
-    // silent. robocopy exits >= 8 when the install root is not writable or a
-    // leftover child still holds a DLL past /R:5; the old build then stays,
-    // %EXE% starts on the version the user already had, and the only thing on
-    // screen was "Installing the wmux update." followed by "Starting wmux...".
-    // So the failure gets its own label: it says what happened, and it keeps
-    // the payload, because the cleanup below would otherwise delete the ~150 MB
-    // the user would have to download again. The sweep reclaims it within the
-    // hour either way.
+    // silent: the only thing on screen was "Installing the wmux update."
+    // followed by "Starting wmux...". So the failure gets its own label.
+    //
+    // What it must NOT claim is a rollback. robocopy walks the payload file by
+    // file and `>= 8` means at least one of them failed, not that none of them
+    // landed — a DLL held by a leftover child past /R:5 fails while everything
+    // copied before it has already replaced its target. So the install can be a
+    // MIX of versions, which is the state worth telling the user about, and
+    // saying "starting on the previous version" would send them away believing
+    // nothing is wrong. The payload is kept (KEEPSRC skips the cleanup below)
+    // because finishing the job means running the update again; the sweep
+    // reclaims it within the hour either way.
     ':copyfailed',
-    'echo   Some files could not be replaced; wmux is starting on the previous version.',
+    'echo   Some files could not be replaced, so this update is incomplete.',
+    'echo   wmux is starting anyway. Please install the update again.',
     'set "KEEPSRC=1"',
     // The relaunch itself stays unconditional, including after a failed copy.
     // wmux has already quit by the time this runs, so bailing out here is the

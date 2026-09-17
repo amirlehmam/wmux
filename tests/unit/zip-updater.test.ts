@@ -155,12 +155,12 @@ describe('buildApplyUpdateCmd', () => {
 
   // The jump used to be `goto relaunch` with :relaunch on the very next line,
   // so the failure read as handled while doing nothing: the console said
-  // "Installing" then "Starting wmux...", the user got the version they
-  // already had, and the cleanup below deleted the ~150 MB payload they would
-  // have to download again to retry.
+  // "Installing" then "Starting wmux...", and the cleanup below deleted the
+  // ~150 MB payload needed to retry.
   it('says a failed copy out loud and keeps the payload', () => {
     const lines = cmd.split('\r\n');
-    expect(cmd).toContain('echo   Some files could not be replaced; wmux is starting on the previous version.');
+    const failedMsg = 'echo   Some files could not be replaced, so this update is incomplete.';
+    expect(cmd).toContain(failedMsg);
     expect(cmd).toContain('set "KEEPSRC=1"');
     expect(cmd).toContain('if not defined KEEPSRC rmdir /s /q "%SRC%" 2>nul');
     // A successful copy must not fall into the failure branch on its way to
@@ -168,9 +168,21 @@ describe('buildApplyUpdateCmd', () => {
     expect(lines[lines.indexOf(':copyfailed') - 1]).toBe('goto relaunch');
     // The message is the failure's own, printed before the relaunch line and
     // not instead of it.
-    const failed = lines.indexOf('echo   Some files could not be replaced; wmux is starting on the previous version.');
+    const failed = lines.indexOf(failedMsg);
     expect(failed).toBeGreaterThan(lines.indexOf(':copyfailed'));
     expect(failed).toBeLessThan(lines.indexOf(':relaunch'));
+  });
+
+  // robocopy walks the payload file by file, so `>= 8` means at least one file
+  // failed — not that none landed. The install can therefore be a MIX of
+  // versions, and a message promising the previous version sends the user away
+  // believing nothing is wrong. It must describe an incomplete update and say
+  // what to do about it.
+  it('does not promise a rollback the failed copy cannot deliver', () => {
+    expect(cmd).not.toMatch(/previous version/i);
+    expect(cmd).not.toMatch(/version you already had/i);
+    expect(cmd).toContain('this update is incomplete');
+    expect(cmd).toContain('Please install the update again.');
   });
 
   // Third inherited-variable exposure in the same script, and the one that is
