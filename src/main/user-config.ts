@@ -31,6 +31,7 @@
  *   [workspace]                # what a NEW workspace starts as (issue #212)
  *   panes  = 3                 # 1-8 terminal panes
  *   layout = "grid"            # grid | columns | rows | left | down | single
+ *   snapshot-minutes = 5       # snapshot the layout this often; 0 = never
  *
  *   [browser]
  *   dev-ports = [8501, 4321]   # extra dev-server ports, merged with built-in defaults
@@ -94,6 +95,11 @@ export interface UserConfig {
     panes?: number;
     /** How those panes are arranged. `single` normalises to panes = 1. */
     layout?: WorkspaceLayout;
+    /**
+     * How often the live layout is snapshotted as an `Auto-save …` session,
+     * in minutes; `0` switches it off (issue #238).
+     */
+    snapshotMinutes?: number;
   };
   /** Browser surface behavior — dev-server port detection & auto-navigation. */
   browser?: {
@@ -370,6 +376,8 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
  */
 const WORKSPACE_LAYOUTS: readonly WorkspaceLayout[] = ['grid', 'columns', 'rows', 'left', 'down'];
 const MAX_CONFIG_PANES = 8;
+/** Four hours. Beyond this the setting is indistinguishable from "never", which has its own value. */
+const MAX_SNAPSHOT_MINUTES = 240;
 
 function mapWorkspaceSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['workspace']> | undefined {
   const workspace = asTable(root.workspace);
@@ -401,6 +409,24 @@ function mapWorkspaceSection(root: TomlTable, errors: string[]): NonNullable<Use
       // An explicit count wins over `layout = "single"`, which is only a
       // shorthand for one — writing both means the user meant the number.
       out.panes = clamped;
+    }
+  }
+
+  // `snapshot-minutes` (issue #238). 0 is meaningful — it is "never" — so the
+  // range starts there rather than at the one-minute floor, and a negative or
+  // absurd value is reported and clamped the way `panes` is rather than
+  // dropped: someone who wrote it meant to change something.
+  const snapshotRaw = workspace['snapshot-minutes'];
+  if (snapshotRaw !== undefined) {
+    const minutes = asNumber(snapshotRaw);
+    if (minutes === undefined || !Number.isFinite(minutes)) {
+      errors.push('workspace.snapshot-minutes: expected a number');
+    } else {
+      const clamped = Math.min(Math.max(Math.round(minutes), 0), MAX_SNAPSHOT_MINUTES);
+      if (clamped !== minutes) {
+        errors.push(`workspace.snapshot-minutes: ${minutes} is outside 0-${MAX_SNAPSHOT_MINUTES}, using ${clamped}`);
+      }
+      out.snapshotMinutes = clamped;
     }
   }
 

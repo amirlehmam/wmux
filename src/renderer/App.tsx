@@ -137,6 +137,11 @@ function applyUserConfigWorkspace(state: any, workspace: any): void {
   const patch: any = {};
   if (typeof workspace.panes === 'number') patch.newWorkspacePanes = workspace.panes;
   if (typeof workspace.layout === 'string') patch.newWorkspaceLayout = workspace.layout;
+  // `snapshot-minutes` (#238) rides here rather than in a section of its own:
+  // it is a property of a workspace's lifetime, and main reads it out of the
+  // same pref block. 0 is a legitimate value — it means "never" — so the guard
+  // is on the TYPE, not on truthiness.
+  if (typeof workspace.snapshotMinutes === 'number') patch.sessionSnapshotMinutes = workspace.snapshotMinutes;
   if (Object.keys(patch).length) state.setWorkspacePrefs(patch);
 }
 

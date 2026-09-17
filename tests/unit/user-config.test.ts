@@ -239,6 +239,45 @@ describe('loadUserConfig [workspace] and [browser] default-url', () => {
     expect(loadUserConfig(tmpPath).workspace?.panes).toBe(2);
   });
 
+  // Issue #238: `session.json` only ever holds the layout you have now, so a
+  // mistake has nothing behind it. This is the config-file half of the setting.
+  it('maps snapshot-minutes', () => {
+    tmpPath = writeTmp('[workspace]\nsnapshot-minutes = 15\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace?.snapshotMinutes).toBe(15);
+    expect(out.errors).toEqual([]);
+  });
+
+  it('keeps 0, which means never rather than "unset"', () => {
+    tmpPath = writeTmp('[workspace]\nsnapshot-minutes = 0\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace?.snapshotMinutes).toBe(0);
+    expect(out.errors).toEqual([]);
+  });
+
+  it('clamps and reports a value outside the range instead of dropping it', () => {
+    // Someone who wrote a number meant to change something; silently ignoring
+    // it leaves them with the default and no idea why.
+    tmpPath = writeTmp('[workspace]\nsnapshot-minutes = -3\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace?.snapshotMinutes).toBe(0);
+    expect(out.errors.join(' ')).toContain('snapshot-minutes');
+  });
+
+  it('reports a non-number rather than guessing at it', () => {
+    tmpPath = writeTmp('[workspace]\nsnapshot-minutes = "often"\n');
+    const out = loadUserConfig(tmpPath);
+    expect(out.workspace?.snapshotMinutes).toBeUndefined();
+    expect(out.errors.join(' ')).toContain('snapshot-minutes');
+  });
+
+  it('leaves snapshotMinutes unset when the file does not mention it', () => {
+    // Unset must reach the pref default, not 0 — that would silently switch the
+    // feature off for everyone with a [workspace] section.
+    tmpPath = writeTmp('[workspace]\npanes = 2\n');
+    expect(loadUserConfig(tmpPath).workspace?.snapshotMinutes).toBeUndefined();
+  });
+
   it('clamps an out-of-range pane count AND says so', () => {
     // Silently opening one pane and dutifully spawning 40 shells are both worse
     // answers than 8 plus an explanation.

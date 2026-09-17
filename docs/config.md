@@ -53,6 +53,8 @@ palette = [
 # `wmux new-workspace` all use this.
 panes  = 3         # 1-8 terminal panes
 layout = "grid"    # grid | columns | rows | left | down | single
+# Snapshot the live layout this often, as an "Auto-save …" session. 0 = never.
+snapshot-minutes = 5
 
 [browser]
 # Start page for a workspace's browser panel. Needs a scheme.
@@ -98,6 +100,34 @@ says so. Before 2.8.0 the sidebar `+` always made three panes and
 `wmux new-workspace` always made one — both now follow this setting, and
 `wmux new-workspace --panes 1 --layout single` pins the old CLI shape for a
 script that depends on it.
+
+## Session snapshots
+
+`snapshot-minutes` (Settings → Workspace → *Snapshot sessions every*) decides how
+often wmux saves the live layout as a named session. `0` switches it off; the
+default is every 5 minutes.
+
+```toml
+[workspace]
+snapshot-minutes = 5
+```
+
+wmux already rewrites `session.json` every 30 seconds, but in place — so it only
+ever holds the layout you have *now*, which is no help at all once something has
+gone wrong. Snapshots land under **Load session** as `Auto-save <date> <time>`,
+and restore like any other saved session (layout only; PTYs respawn).
+
+Two properties worth knowing (issue #238):
+
+- **Three are kept, not one.** A single overwritten entry bounds recovery to
+  the state a few minutes ago — which, after an accident, is the state *after*
+  it. Three slots stay out of the way and keep some depth behind the mistake.
+- **Only a layout that actually changed uses a slot.** Workspaces, their titles
+  and their split trees count; a shell changing directory does not. So an idle
+  machine never rotates its own history out of the ring.
+
+Snapshots never become the session restored on your next launch — that pointer
+only ever follows a Save you asked for.
 
 A **saved layout marked Default** (Settings → Workspace → Saved Layouts) wins
 over this section: it also carries each pane's shell, directory and startup
