@@ -322,6 +322,8 @@ The guard is still a race: something could delete the payload in the gap between
 
 Two details added during implementation. `applyStagedZipOrReset` holds an `applyingZip` flag: applying now waits for `'spawn'`, and a second click in that gap would otherwise write and start a second helper for the same install. The flag stays set on success, since wmux is quitting. And the `'error'` listener is `on`, not `once`, so a second late error cannot become uncaught either.
 
+Changed after code review: a click on the `error` badge with a staged zip no longer applies straight away. It goes back through the install dialog, because that badge reads *Click to try again*, not *Restart*. After the retry of the same payload has failed too, `requestUpdateNow` answers `handled: false, reason: 'install_failed'`, and the renderer opens the release page. Otherwise a failure that repeats, like an antivirus blocking the helper every time, would make every click look dead.
+
 ### 6.6 Helper command line (D11)
 
 ```ts

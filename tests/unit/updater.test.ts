@@ -378,7 +378,7 @@ describe('portable zip install that cannot run (#3)', () => {
     expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps a good payload when the helper fails, and retries the install without downloading', async () => {
+  it('keeps a good payload when the helper fails, and offers the install again without downloading', async () => {
     const u = await freshUpdater();
     await downloadAndAnswer(u, 1); // Later
 
@@ -386,11 +386,49 @@ describe('portable zip install that cannot run (#3)', () => {
     await u.requestUpdateNow();
     await vi.waitFor(() => expect(u.getUpdateState()).toMatchObject({ phase: 'error', message: 'spawn EPERM' }));
 
+    // The error badge says "Click to try again", not "Restart": the retry asks
+    // before it quits wmux and every session in it.
     zipMocks.applyStagedPortableUpdate.mockResolvedValueOnce(undefined);
+    fakeDialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
     await expect(u.requestUpdateNow()).resolves.toEqual({ handled: true });
     await vi.waitFor(() => expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2));
+    expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2);
     expect(zipMocks.applyStagedPortableUpdate).toHaveBeenLastCalledWith(staged);
     expect(zipMocks.resolvePortableZipTarget).toHaveBeenCalledTimes(1);
+    expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not quit on a retry the user declines', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValueOnce(new Error('spawn EPERM'));
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    await u.requestUpdateNow(); // dialog answers Later (the beforeEach default)
+    await vi.waitFor(() => expect(fakeDialog.showMessageBox).toHaveBeenCalledTimes(2));
+    await flush();
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  // An antivirus that blocks the helper blocks it every time. Without a limit
+  // each click re-runs the same failing install, the badge never changes, and
+  // the release page — the fallback for exactly this — is never offered.
+  it('hands over to the release page once the retry has failed too', async () => {
+    const u = await freshUpdater();
+    await downloadAndAnswer(u, 1); // Later
+    zipMocks.applyStagedPortableUpdate.mockRejectedValue(new Error('spawn EPERM'));
+
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+    fakeDialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
+    await u.requestUpdateNow();
+    await vi.waitFor(() => expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(u.getUpdateState().phase).toBe('error'));
+
+    await expect(u.requestUpdateNow()).resolves.toEqual({ handled: false, reason: 'install_failed' });
+    await flush();
+    expect(zipMocks.applyStagedPortableUpdate).toHaveBeenCalledTimes(2);
     expect(zipMocks.runPortableZipUpdate).toHaveBeenCalledTimes(1);
   });
 

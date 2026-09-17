@@ -64,6 +64,9 @@ let installPrompted = false;
 let missingChannelFileWarned = false;
 let stagedZip: StagedZipUpdate | null = null;
 let applyingZip = false;
+// Failed installs of the CURRENT staged zip; reset whenever a new one is staged.
+let zipApplyFailures = 0;
+const MAX_ZIP_APPLY_ATTEMPTS = 2;
 
 function currentInstallIsPortable(): boolean {
   if (!app.isPackaged) return false;
@@ -209,13 +212,24 @@ export function canSelfUpdate(): boolean {
 export async function requestUpdateNow(): Promise<{ handled: boolean; reason?: string }> {
   if (!canSelfUpdate()) return { handled: false, reason: 'not_supported' };
 
-  // Already downloaded — this click is the install confirmation. A staged zip
-  // is also retried from `error`: that phase only holds a staged zip after an
-  // install that failed without touching the payload (every download failure
-  // clears it), so the click should install, not download 100 MB again.
-  if (stagedZip && (state.phase === 'ready' || state.phase === 'error')) {
+  // Already downloaded — this click is the install confirmation.
+  if (stagedZip && state.phase === 'ready') {
     const staged = stagedZip;
     setImmediate(() => { void applyStagedZipOrReset(staged); });
+    return { handled: true };
+  }
+  // `error` only holds a staged zip after an install that failed without
+  // touching the payload (every download failure clears it), so the click
+  // offers the install again rather than downloading 100 MB again. Through the
+  // dialog, not straight into a quit: this badge reads "Click to try again",
+  // not "Restart". And not forever — a failure that repeats (an antivirus that
+  // blocks the helper every time) would otherwise make every click look dead,
+  // so after the retry has also failed the release page takes over.
+  if (stagedZip && state.phase === 'error') {
+    if (zipApplyFailures >= MAX_ZIP_APPLY_ATTEMPTS) return { handled: false, reason: 'install_failed' };
+    const staged = stagedZip;
+    setState({ phase: 'ready', version: staged.version, percent: 100, message: undefined });
+    setImmediate(() => { void promptToInstall(staged.version); });
     return { handled: true };
   }
   if (state.phase === 'ready') {
@@ -270,6 +284,7 @@ async function requestPortableZipUpdate(): Promise<{ handled: boolean; reason?: 
       onProgress: (percent) => setState({ phase: 'downloading', version: target.version, percent }),
     }).then(async (staged) => {
       stagedZip = staged;
+      zipApplyFailures = 0;
       userDriven = false;
       setState({
         phase: 'ready',
@@ -348,6 +363,7 @@ async function applyStagedZipOrReset(staged: StagedZipUpdate): Promise<void> {
   } catch (err) {
     applyingZip = false;
     installPrompted = false;
+    zipApplyFailures += 1;
     if ((err as { code?: string } | undefined)?.code === 'PAYLOAD_MISSING') stagedZip = null;
     console.error('[updater] cannot apply staged zip update:', err);
     setState({ phase: 'error', message: String((err as Error)?.message ?? err) });
