@@ -18,6 +18,12 @@ import {
   pickZipAsset,
   findPayloadRoot,
   buildApplyUpdateCmd,
+  updateStampName,
+  updateZipName,
+  updateHelperName,
+  classifyUpdateLeftover,
+  isPidAlive,
+  sweepUpdateLeftovers,
 } from '../../src/main/zip-updater';
 
 function tempDir(): string {
@@ -144,5 +150,202 @@ describe('buildApplyUpdateCmd', () => {
     expect(cmd).toContain('set "SRC=%~2"');
     expect(cmd).toContain('set "DST=%~3"');
     expect(cmd).toContain('set "EXE=%~4"');
+  });
+});
+
+describe('update leftover names (#3)', () => {
+  it('classifies every name the update flow creates', () => {
+    expect(classifyUpdateLeftover(updateHelperName(4242))).toEqual({ kind: 'helper', pid: 4242 });
+    expect(classifyUpdateLeftover(updateZipName('2.12.0', 17))).toEqual({ kind: 'zip', pid: 17 });
+    expect(classifyUpdateLeftover(updateStampName('2.12.0', 17))).toEqual({ kind: 'extract-dir', pid: 17 });
+    expect(classifyUpdateLeftover(updateStampName('2.13.0-beta.1+build-7', 9))).toEqual({ kind: 'extract-dir', pid: 9 });
+  });
+
+  it('rejects near misses', () => {
+    for (const name of [
+      'wmux-apply-update-12.cmd.txt',
+      'wmux-apply-update-.cmd',
+      'wmux-apply-update-12.CMD',
+      'WMUX-apply-update-12.cmd',
+      'wmux-update-2.12.0.zip',
+      'wmux-update-2.12.0-',
+      'wmux-update-2.12.0-12.zip.part',
+      'wmux-update-2.12.0-12-old',
+      'wmux-update-2 12 0-12',
+      'xwmux-update-2.12.0-12',
+      'wmux-zip-abc',
+    ]) {
+      expect(classifyUpdateLeftover(name), name).toBeNull();
+    }
+  });
+
+  it('rejects a PID that is not a real one', () => {
+    expect(classifyUpdateLeftover('wmux-apply-update-0.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-4294967296.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-12345678901234567890.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-0123.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-4294967295.cmd')).toEqual({ kind: 'helper', pid: 4294967295 });
+  });
+});
+
+describe('isPidAlive', () => {
+  const failing = (code: string) => () => { throw Object.assign(new Error(code), { code }); };
+
+  it('reads only ESRCH as gone', () => {
+    expect(isPidAlive(1, () => undefined)).toBe(true);
+    expect(isPidAlive(1, failing('ESRCH'))).toBe(false);
+    expect(isPidAlive(1, failing('EPERM'))).toBe(true);
+    expect(isPidAlive(1, failing('EINVAL'))).toBe(true);
+  });
+
+  it('sends signal 0', () => {
+    const kill = vi.fn();
+    isPidAlive(77, kill);
+    expect(kill).toHaveBeenCalledWith(77, 0);
+  });
+});
+
+describe('sweepUpdateLeftovers (#3)', () => {
+  const HOUR = 60 * 60 * 1000;
+  const now = Date.now();
+  const dead = () => false;
+
+  function age(p: string, ms: number): void {
+    const t = new Date(now - ms);
+    fs.utimesSync(p, t, t);
+  }
+
+  function file(dir: string, name: string, ageMs: number): string {
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, 'x');
+    age(p, ageMs);
+    return p;
+  }
+
+  function folder(dir: string, name: string, ageMs: number): string {
+    const p = path.join(dir, name);
+    fs.mkdirSync(p);
+    fs.writeFileSync(path.join(p, 'wmux.exe'), '');
+    age(p, ageMs);
+    return p;
+  }
+
+  const sweep = (dir: string, isPidAliveFn: (pid: number) => boolean = dead) =>
+    sweepUpdateLeftovers(dir, { now: () => now, isPidAlive: isPidAliveFn });
+
+  it('removes old leftovers of a dead process and nothing else', async () => {
+    const dir = tempDir();
+    const helper = file(dir, updateHelperName(101), 2 * HOUR);
+    const zip = file(dir, updateZipName('2.12.0', 101), 2 * HOUR);
+    const extract = folder(dir, updateStampName('2.12.0', 101), 2 * HOUR);
+    const unrelated = file(dir, 'something-else.cmd', 2 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed.sort()).toEqual(
+      [updateHelperName(101), updateStampName('2.12.0', 101), updateZipName('2.12.0', 101)].sort(),
+    );
+    expect(result.failed).toEqual([]);
+    expect(fs.existsSync(helper)).toBe(false);
+    expect(fs.existsSync(zip)).toBe(false);
+    expect(fs.existsSync(extract)).toBe(false);
+    expect(fs.existsSync(unrelated)).toBe(true);
+  });
+
+  it('keeps leftovers whose PID is still alive', async () => {
+    const dir = tempDir();
+    const extract = folder(dir, updateStampName('2.12.0', 102), 5 * 24 * HOUR);
+    const result = await sweep(dir, (pid) => pid === 102);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(extract)).toBe(true);
+  });
+
+  it('keeps fresh leftovers and ones dated in the future', async () => {
+    const dir = tempDir();
+    const fresh = file(dir, updateHelperName(103), HOUR / 2);
+    const future = file(dir, updateHelperName(104), -HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(fresh)).toBe(true);
+    expect(fs.existsSync(future)).toBe(true);
+  });
+
+  it('keeps an entry whose type does not match its name', async () => {
+    const dir = tempDir();
+    const zipNamedDir = folder(dir, updateZipName('2.12.0', 105), 2 * HOUR);
+    const helperNamedDir = folder(dir, updateHelperName(105), 2 * HOUR);
+    const extractNamedFile = file(dir, updateStampName('2.12.0', 106), 2 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(zipNamedDir)).toBe(true);
+    expect(fs.existsSync(helperNamedDir)).toBe(true);
+    expect(fs.existsSync(extractNamedFile)).toBe(true);
+  });
+
+  // "Later", then "Install and restart" days afterwards: the payload is old
+  // and its PID is dead while a helper is still copying from it. Only the
+  // helper's mtime says the install is in progress.
+  it('keeps a payload while a fresh helper with the same PID exists', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(107), 60 * 1000);
+    const extract = folder(dir, updateStampName('2.12.0', 107), 3 * 24 * HOUR);
+    const zip = file(dir, updateZipName('2.12.0', 107), 3 * 24 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(extract)).toBe(true);
+    expect(fs.existsSync(zip)).toBe(true);
+  });
+
+  it('removes a payload and its helper once both are old', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(108), 2 * HOUR);
+    folder(dir, updateStampName('2.12.0', 108), 3 * 24 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed.sort()).toEqual([updateHelperName(108), updateStampName('2.12.0', 108)].sort());
+  });
+
+  it('does not let a fresh helper protect a payload with a different PID', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(109), 60 * 1000);
+    const extract = folder(dir, updateStampName('2.12.0', 110), 3 * 24 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([updateStampName('2.12.0', 110)]);
+    expect(fs.existsSync(extract)).toBe(false);
+  });
+
+  it('never follows or removes a junction', async () => {
+    const dir = tempDir();
+    const target = tempDir();
+    const inside = path.join(target, 'precious.txt');
+    fs.writeFileSync(inside, 'keep me');
+    const link = path.join(dir, updateStampName('2.12.0', 111));
+    fs.symlinkSync(target, link, 'junction');
+    const t = new Date(now - 2 * HOUR);
+    fs.lutimesSync(link, t, t);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(result.failed).toEqual([]);
+    expect(fs.existsSync(link)).toBe(true);
+    expect(fs.readFileSync(inside, 'utf8')).toBe('keep me');
+  });
+
+  it('records a failed remove and carries on', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(112), 2 * HOUR);
+    file(dir, updateHelperName(113), 2 * HOUR);
+    const realRm = fs.promises.rm;
+    let calls = 0;
+    const spy = vi.spyOn(fs.promises, 'rm').mockImplementation(async (p, opts) => {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+      return realRm(p, opts);
+    });
+    try {
+      const result = await sweep(dir);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0].code).toBe('EBUSY');
+      expect(result.removed).toHaveLength(1);
+      expect(fs.readdirSync(dir)).toEqual([result.failed[0].name]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

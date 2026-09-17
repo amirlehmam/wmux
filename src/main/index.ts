@@ -43,6 +43,7 @@ import {
 import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
 import { WindowManager, appIconCandidates } from './window-manager';
 import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
+import { sweepUpdateLeftovers, UPDATE_SWEEP_DELAY_MS } from './zip-updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
 import { getChangelog } from './changelog';
 import { initAgentIntegration } from './agent-integration';
@@ -57,6 +58,7 @@ import { reportExplorerCwd } from './explorer-roots';
 import { ensurePowerShellShim } from './powershell-shim';
 import { loadSettings } from './settings-store';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 // ─── browser.get_engine / browser.set_engine ────────────────────────────────
@@ -1145,6 +1147,30 @@ app.whenReady().then(() => {
   if (app.isPackaged) {
     initAutoUpdater();
     initUpdateChecker();
+
+    // Remove what past portable-zip updates left in %TEMP% (#3): the apply
+    // helper no longer deletes itself, and nothing else reclaims it. Outside
+    // initAutoUpdater() on purpose — that returns early on zip installs and
+    // under WMUX_DISABLE_UPDATER, and leftovers from an earlier update are
+    // still there either way. Delayed a minute because the helper that just
+    // started this process is still running `rmdir` on its payload, and to
+    // keep the I/O out of startup (#176). Unawaited and unref'd, so it never
+    // holds a quit back. Counts and error codes only in the log, never names.
+    if (process.platform === 'win32') {
+      setTimeout(() => {
+        sweepUpdateLeftovers(os.tmpdir())
+          .then(({ removed, failed }) => {
+            if (removed.length || failed.length) {
+              logDiagnostic('update-sweep', {
+                removed: removed.length,
+                failed: failed.length,
+                codes: [...new Set(failed.map((f) => f.code))].join(','),
+              });
+            }
+          })
+          .catch((err: Error) => logDiagnostic('update-sweep-error', { message: err?.message }));
+      }, UPDATE_SWEEP_DELAY_MS).unref();
+    }
   }
 
   // Late-mounted windows query the cached latest update info so the badge

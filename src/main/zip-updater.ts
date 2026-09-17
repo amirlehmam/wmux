@@ -86,6 +86,156 @@ export function findPayloadRoot(extractDir: string): string {
   throw new Error('zip does not contain wmux.exe');
 }
 
+// ── Update leftovers in %TEMP% (#3) ─────────────────────────────────────────
+// Every name the update flow creates in os.tmpdir() is built here, and the
+// sweep parses names with the inverse of these same builders, so what is
+// created and what may be removed cannot drift apart. All three names carry
+// the PID of the wmux that downloaded and applied the update.
+
+export function updateStampName(version: string, pid: number): string {
+  return `wmux-update-${version}-${pid}`;
+}
+
+export function updateZipName(version: string, pid: number): string {
+  return `${updateStampName(version, pid)}.zip`;
+}
+
+export function updateHelperName(pid: number): string {
+  return `wmux-apply-update-${pid}.cmd`;
+}
+
+export type UpdateLeftoverKind = 'helper' | 'extract-dir' | 'zip';
+
+const LEFTOVER_PATTERNS: ReadonlyArray<{ kind: UpdateLeftoverKind; re: RegExp }> = [
+  { kind: 'helper', re: /^wmux-apply-update-(\d+)\.cmd$/ },
+  { kind: 'zip', re: /^wmux-update-[0-9A-Za-z.+-]+-(\d+)\.zip$/ },
+  { kind: 'extract-dir', re: /^wmux-update-[0-9A-Za-z.+-]+-(\d+)$/ },
+];
+
+const MAX_PID = 0xffffffff;
+
+/**
+ * Which update leftover a %TEMP% entry name is, and the PID it carries — or
+ * null for anything else. Anchored and case-sensitive. A version containing a
+ * character outside the pattern is simply never swept: a pattern that is too
+ * narrow keeps a file, it never removes one.
+ */
+export function classifyUpdateLeftover(name: string): { kind: UpdateLeftoverKind; pid: number } | null {
+  for (const { kind, re } of LEFTOVER_PATTERNS) {
+    const m = re.exec(name);
+    if (!m) continue;
+    const pid = Number(m[1]);
+    // String round trip rejects leading zeros and anything past 2^53, where
+    // Number() has already rounded the digits into some other PID.
+    if (!Number.isSafeInteger(pid) || pid < 1 || pid > MAX_PID || String(pid) !== m[1]) return null;
+    return { kind, pid };
+  }
+  return null;
+}
+
+/**
+ * Whether a process with this PID exists. Signal 0 sends nothing, it only
+ * tests. Only ESRCH means "gone"; EPERM means it exists and belongs to someone
+ * else, and every other failure is an answer we cannot trust — all of those
+ * read as alive, so the caller keeps whatever it was about to remove.
+ */
+export function isPidAlive(
+  pid: number,
+  kill: (pid: number, signal: number) => void = (p, s) => { process.kill(p, s); },
+): boolean {
+  try {
+    kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code !== 'ESRCH';
+  }
+}
+
+/** How long after startup the sweep runs; see the call site in index.ts. */
+export const UPDATE_SWEEP_DELAY_MS = 60_000;
+const UPDATE_LEFTOVER_MAX_AGE_MS = 60 * 60 * 1000;
+
+export interface SweepDeps {
+  now: () => number;
+  isPidAlive: (pid: number) => boolean;
+  maxAgeMs: number;
+}
+
+export interface SweepResult {
+  removed: string[];
+  failed: { name: string; code: string }[];
+}
+
+interface LeftoverEntry {
+  name: string;
+  full: string;
+  kind: UpdateLeftoverKind;
+  pid: number;
+  stat: fs.Stats | null;
+}
+
+/** Age check that treats a negative or unreadable age as fresh. */
+function isOlderThan(stat: fs.Stats, now: number, maxAgeMs: number): boolean {
+  return now - stat.mtimeMs > maxAgeMs;
+}
+
+/**
+ * Removes update leftovers from `tmpDir`. Every rule fails towards keeping:
+ *
+ *   - a fresh entry (mtime within maxAgeMs, or in the future) may belong to a
+ *     helper that is still running — cmd reads a batch file line by line, so
+ *     deleting it mid-run skips its own `rmdir`;
+ *   - a zip or extract dir whose PID has a fresh helper beside it is kept
+ *     whatever its own age: after "Later" the payload can be days old by the
+ *     time a helper starts copying from it, and only the helper's mtime is set
+ *     at apply time;
+ *   - a live PID may be a running wmux holding the payload as a staged update;
+ *   - symlinks and junctions are never followed or removed, and an entry whose
+ *     type does not match its name is left alone.
+ *
+ * A failed remove is recorded and the sweep carries on.
+ */
+export async function sweepUpdateLeftovers(tmpDir: string, deps: Partial<SweepDeps> = {}): Promise<SweepResult> {
+  const now = (deps.now ?? Date.now)();
+  const alive = deps.isPidAlive ?? ((pid: number) => isPidAlive(pid));
+  const maxAgeMs = deps.maxAgeMs ?? UPDATE_LEFTOVER_MAX_AGE_MS;
+  const result: SweepResult = { removed: [], failed: [] };
+
+  // Pass 1: collect matching entries and the PIDs a fresh helper protects.
+  // opendir iterates, so a %TEMP% with tens of thousands of entries is never
+  // held in memory — only the handful that match.
+  const entries: LeftoverEntry[] = [];
+  const protectedPids = new Set<number>();
+  for await (const dirent of await fs.promises.opendir(tmpDir)) {
+    const leftover = classifyUpdateLeftover(dirent.name);
+    if (!leftover) continue;
+    const full = path.join(tmpDir, dirent.name);
+    const stat = await fs.promises.lstat(full).catch(() => null);
+    if (leftover.kind === 'helper' && (!stat || !isOlderThan(stat, now, maxAgeMs))) {
+      protectedPids.add(leftover.pid);
+    }
+    entries.push({ name: dirent.name, full, ...leftover, stat });
+  }
+
+  // Pass 2: the first rule that says keep wins.
+  for (const entry of entries) {
+    const { stat } = entry;
+    if (!stat || stat.isSymbolicLink()) continue;
+    const typeMatches = entry.kind === 'extract-dir' ? stat.isDirectory() : stat.isFile();
+    if (!typeMatches) continue;
+    if (!isOlderThan(stat, now, maxAgeMs)) continue;
+    if (entry.kind !== 'helper' && protectedPids.has(entry.pid)) continue;
+    if (alive(entry.pid)) continue;
+    try {
+      await fs.promises.rm(entry.full, { recursive: entry.kind === 'extract-dir', force: true });
+      result.removed.push(entry.name);
+    } catch (err) {
+      result.failed.push({ name: entry.name, code: (err as NodeJS.ErrnoException)?.code ?? 'UNKNOWN' });
+    }
+  }
+  return result;
+}
+
 export interface StagedZipUpdate {
   version: string;
   extractDir: string;
@@ -130,7 +280,8 @@ export function buildApplyUpdateCmd(): string {
     // are built to flag, and a plausible contributor to reports of the
     // updater triggering a heavy AV scan/lockdown. %TEMP% is NOT reclaimed
     // on its own (only Storage Sense does that, and it is off by default),
-    // so the leftover .cmd, one per update, stays behind.
+    // so the leftover .cmd is removed by sweepUpdateLeftovers() instead —
+    // from a later wmux process, long after this script has exited.
   ].join('\r\n');
 }
 
@@ -309,9 +460,8 @@ export async function runPortableZipUpdate(opts: {
   }
 
   const { version, asset } = opts.target;
-  const stamp = `wmux-update-${version}-${process.pid}`;
-  const zipPath = path.join(os.tmpdir(), `${stamp}.zip`);
-  const extractDir = path.join(os.tmpdir(), stamp);
+  const zipPath = path.join(os.tmpdir(), updateZipName(version, process.pid));
+  const extractDir = path.join(os.tmpdir(), updateStampName(version, process.pid));
   if (fs.existsSync(extractDir)) fs.rmSync(extractDir, { recursive: true, force: true });
   fs.mkdirSync(extractDir, { recursive: true });
 
@@ -333,7 +483,7 @@ export async function runPortableZipUpdate(opts: {
 }
 
 export function applyStagedPortableUpdate(staged: StagedZipUpdate): void {
-  const helper = path.join(os.tmpdir(), `wmux-apply-update-${process.pid}.cmd`);
+  const helper = path.join(os.tmpdir(), updateHelperName(process.pid));
   fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
   const cmd = process.env.ComSpec || system32('cmd.exe');
   const child = spawn(cmd, [
