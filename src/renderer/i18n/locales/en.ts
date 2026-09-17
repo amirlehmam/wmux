@@ -548,6 +548,15 @@ export const en = {
   'settings.workspacePanel.confirmAppClose': 'Confirm before closing wmux',
   'settings.workspacePanel.confirmAppCloseHint':
     "Ask before the window's × button or Alt+F4 quits wmux — closing the window ends every terminal session in it, agents included. Updates, restarts and Windows shutdown never prompt.",
+  'settings.workspacePanel.sessionSnapshot': 'Snapshot sessions every',
+  'settings.workspacePanel.sessionSnapshotOff': 'Never',
+  'settings.workspacePanel.sessionSnapshot5': '5 minutes',
+  'settings.workspacePanel.sessionSnapshot10': '10 minutes',
+  'settings.workspacePanel.sessionSnapshot15': '15 minutes',
+  'settings.workspacePanel.sessionSnapshot30': '30 minutes',
+  'settings.workspacePanel.sessionSnapshot60': '60 minutes',
+  'settings.workspacePanel.sessionSnapshotHint':
+    'Keeps the last three layouts that were different, as "Auto-save …" entries under Load session — so a pane closed by mistake, or by an agent, can be brought back. Only a layout that actually changed uses a slot, so an idle machine keeps its history.',
   'settings.workspacePanel.restoreClaudeSessions': 'Resume Claude Code sessions on restore',
   'settings.workspacePanel.restoreClaudeSessionsHint': 'When wmux restores a session, re-launch each terminal that was running Claude Code with `claude --resume`, in the directory it was in. Off by default: every such pane starts an agent at once. Panes whose conversation Claude no longer has are skipped, and a Claude you exited cleanly is not resumed.',
   'settings.workspacePanel.autoOpenDiff': 'Auto-open diff tab on agent edits',

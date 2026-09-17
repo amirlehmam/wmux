@@ -438,6 +438,22 @@ export interface WorkspacePrefs {
    */
   newWorkspacePanes: number;
   newWorkspaceLayout: WorkspaceLayout;
+  /**
+   * How often the live layout is snapshotted as a named session, in minutes;
+   * `0` switches it off (issue #238).
+   *
+   * `session.json` is rewritten in place every 30 seconds, so it only ever
+   * holds the current state — right for restore-on-launch, useless after a
+   * mistake. The reporter lost 28 browser panes to a cleanup script and got
+   * most of them back only because an OLDER file happened to survive.
+   *
+   * Read in MAIN, off settings.json, at save time (`index.ts`), which is why
+   * it is a number of minutes rather than a computed interval: main must be
+   * able to make sense of whatever is in the file, including a hand-edited one.
+   * Snapshots go into a three-slot ring of `Auto-save …` sessions, and only a
+   * layout that actually CHANGED spends a slot.
+   */
+  sessionSnapshotMinutes: number;
 }
 
 export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
@@ -454,6 +470,9 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   detectAgentScreens: true,
   newWorkspacePanes: 3,
   newWorkspaceLayout: 'grid',
+  // On by default, unlike the two confirmation guards above: those change what
+  // a click does, and this only writes a file the user never has to look at.
+  sessionSnapshotMinutes: 5,
 };
 
 // ─── Terminal settings ────────────────────────────────────────────────────────

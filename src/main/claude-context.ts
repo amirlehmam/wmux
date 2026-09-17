@@ -599,7 +599,13 @@ function writeJsonAtomic(filePath: string, value: unknown): void {
     fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf-8');
     fs.renameSync(tmp, filePath);
   } catch (err) {
-    try { fs.unlinkSync(tmp); } catch {}
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      // The temp file is already gone, or is locked by whatever just failed the
+      // write. Either way the original config is untouched, which is the only
+      // thing this cleanup is protecting.
+    }
     throw err;
   }
 }

@@ -314,7 +314,14 @@ export class CDPProxy {
           // runs afterwards. A failure here is the page's to report through
           // its own lifecycle events, not this command's.
           if (action.sideEffect) {
-            try { await wc.debugger.sendCommand(action.sideEffect.method, action.sideEffect.params); } catch {}
+            try {
+              await wc.debugger.sendCommand(action.sideEffect.method, action.sideEffect.params);
+            } catch {
+              // Swallowed on purpose: the command has already been answered.
+              // A navigation that fails is the page's to report through its own
+              // lifecycle events, and a late error frame against a settled id is
+              // a message the client has no callback left for.
+            }
           }
         }
       });

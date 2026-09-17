@@ -245,6 +245,31 @@ export default function WorkspaceSettings() {
       </p>
 
       <div className="settings-row">
+        <label className="settings-label" htmlFor="session-snapshot-minutes">
+          {t('settings.workspacePanel.sessionSnapshot', 'Snapshot sessions every')}
+        </label>
+        <select
+          id="session-snapshot-minutes"
+          className="settings-select"
+          value={String(workspacePrefs.sessionSnapshotMinutes)}
+          onChange={(e) => setWorkspacePrefs({ sessionSnapshotMinutes: Number(e.target.value) })}
+        >
+          <option value="0">{t('settings.workspacePanel.sessionSnapshotOff', 'Never')}</option>
+          <option value="5">{t('settings.workspacePanel.sessionSnapshot5', '5 minutes')}</option>
+          <option value="10">{t('settings.workspacePanel.sessionSnapshot10', '10 minutes')}</option>
+          <option value="15">{t('settings.workspacePanel.sessionSnapshot15', '15 minutes')}</option>
+          <option value="30">{t('settings.workspacePanel.sessionSnapshot30', '30 minutes')}</option>
+          <option value="60">{t('settings.workspacePanel.sessionSnapshot60', '60 minutes')}</option>
+        </select>
+      </div>
+      <p className="settings-hint">
+        {t(
+          'settings.workspacePanel.sessionSnapshotHint',
+          'Keeps the last three layouts that were different, as "Auto-save …" entries under Load session — so a pane closed by mistake, or by an agent, can be brought back. Only a layout that actually changed uses a slot, so an idle machine keeps its history.',
+        )}
+      </p>
+
+      <div className="settings-row">
         <label className="settings-label">{t('settings.workspacePanel.restoreClaudeSessions', 'Resume Claude Code sessions on restore')}</label>
         <input
           type="checkbox"

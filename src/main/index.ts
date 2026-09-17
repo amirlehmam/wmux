@@ -21,7 +21,17 @@ import { PortScanner } from './port-scanner';
 import { CDPProxy } from './cdp-proxy';
 import { IPC_CHANNELS, SurfaceId, BrowserEngine } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken, getAppUserModelId } from '../shared/instance';
-import { loadSession, saveSession, handleVersionChange, savedVersion, SessionData } from './session-persistence';
+import {
+  loadSession,
+  saveSession,
+  handleVersionChange,
+  savedVersion,
+  SessionData,
+  DEFAULT_SNAPSHOT_MINUTES,
+  layoutFingerprint,
+  shouldSnapshot,
+  writeSessionSnapshot,
+} from './session-persistence';
 import { noteIconRevision } from './icon-cache';
 import { installGpuWatchdog } from './gpu-watchdog';
 import { getAgentState, reportAgentSession } from './agent-state';
@@ -411,6 +421,56 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 // "forget windows that no longer exist" would erase the whole file (issue #118).
 let isQuitting = false;
 const AUTO_SAVE_INTERVAL_MS = 30_000;
+
+// ─── Scheduled layout snapshots (issue #238) ─────────────────────────────────
+//
+// No timer of its own. The 30-second auto-save cycle above already asks every
+// window for its state and hands the merged result to `saveSession`, which is
+// exactly the data a snapshot is made of — so the snapshot rides that tick and
+// decides whether this is the one. A second timer would mean a second, slightly
+// different idea of what the current layout is, and would have to ask the
+// renderer for it all over again.
+//
+// Both of these are per-run: a snapshot on the first tick after launch is a
+// feature, not a bug — that is the state the last run left behind, which is
+// precisely what a person goes looking for after losing something.
+let lastSnapshotAt = 0;
+let lastSnapshotFingerprint = '';
+
+/**
+ * The `sessionSnapshotMinutes` pref, read off settings.json at tick time the way
+ * `confirmAppClose` and `gpuWatchdog` are — the renderer persists it there
+ * synchronously, so no IPC and no restart. An absent key means an install that
+ * predates the feature, which gets the default rather than nothing.
+ */
+function snapshotIntervalMinutes(): number {
+  try {
+    const prefs = loadSettings()['wmux-workspace-prefs'] as { sessionSnapshotMinutes?: unknown } | undefined;
+    const raw = prefs?.sessionSnapshotMinutes;
+    return typeof raw === 'number' ? raw : DEFAULT_SNAPSHOT_MINUTES;
+  } catch {
+    return DEFAULT_SNAPSHOT_MINUTES;
+  }
+}
+
+/** Snapshot this save, if the clock and the layout both say it is worth one. */
+function maybeSnapshotSession(data: SessionData): void {
+  const fingerprint = layoutFingerprint(data);
+  const now = Date.now();
+  if (!shouldSnapshot({
+    now,
+    lastAt: lastSnapshotAt,
+    intervalMinutes: snapshotIntervalMinutes(),
+    fingerprint,
+    lastFingerprint: lastSnapshotFingerprint,
+  })) return;
+  if (!writeSessionSnapshot(data, now)) return;
+  // Only a snapshot that actually reached disk moves the clock. Otherwise a
+  // failing write would sit out the whole interval and try again in five
+  // minutes, having protected nothing in between.
+  lastSnapshotAt = now;
+  lastSnapshotFingerprint = fingerprint;
+}
 
 function scheduleAutoSave(): void {
   if (autoSaveTimer !== null) {
@@ -977,11 +1037,15 @@ app.whenReady().then(() => {
       if (!isQuitting) {
         sessionWindows.retainOnly(windowManager.getAllWindows().map((w) => w.id));
       }
-      saveSession({ version: 1, windows: sessionWindows.toArray() });
+      const merged: SessionData = { version: 1, windows: sessionWindows.toArray() };
+      saveSession(merged);
+      maybeSnapshotSession(merged);
     } else {
       // Unattributable sender (a window created outside WindowManager). Better
       // to persist its state alone than to drop the save entirely.
-      saveSession({ version: 1, windows: [state] });
+      const lone: SessionData = { version: 1, windows: [state] };
+      saveSession(lone);
+      maybeSnapshotSession(lone);
     }
     scheduleAutoSave();
   });
