@@ -25,6 +25,18 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 // this PID to exit, robocopies the payload over the install root, and
 // relaunches.
 //
+// That helper is VISIBLE, and it says what it is. `detached: true` implies
+// DETACHED_PROCESS, and Windows ignores CREATE_NO_WINDOW next to it, so the
+// `windowsHide: true` on the spawn below buys nothing: cmd.exe allocates a
+// console of its own (measured — a detached spawn adds a conhost.exe, an
+// otherwise identical non-detached one does not). A user reported the result
+// as an empty console titled `findstr.exe /I /C:" <pid> "`, with no way to
+// tell whether it wanted input or wanted closing. Hiding it is the wrong fix
+// twice over: dropping `detached` risks the helper dying with wmux, which is
+// the one failure the user cannot recover from (wmux has already quit), and a
+// hidden detached script that overwrites an unsigned exe and relaunches it is
+// the dropper shape #3 is about. So the window states its purpose instead.
+//
 // The helper does NOT strip Mark of the Web, and that step must not be
 // reintroduced (#3).
 // There is nothing to strip: net.request + createWriteStream write no
@@ -38,7 +50,7 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 //   download — Electron net.request (Chromium). Always present in a packaged build.
 //   extract  — %SystemRoot%\System32\tar.exe (Windows 10 1803+, which Electron 43
 //              already requires), then Windows PowerShell Expand-Archive.
-//   apply    — cmd.exe + robocopy/tasklist/timeout/findstr, all via System32.
+//   apply    — cmd.exe + robocopy/tasklist/waitfor/findstr, all via System32.
 
 const UNINSTALLER_NAME = 'Uninstall wmux.exe';
 
@@ -251,6 +263,11 @@ export function buildApplyUpdateCmd(): string {
   return [
     '@echo off',
     'setlocal EnableExtensions',
+    // The console belongs to this script (see the header), so it introduces
+    // itself. The title is re-set inside the loop because Windows renames a
+    // console after whichever child is currently running in it — which is how
+    // this window came to be reported as "findstr.exe".
+    'title wmux update',
     'set "SYS=%SystemRoot%\\System32"',
     'set "PID=%~1"',
     'set "SRC=%~2"',
@@ -258,11 +275,28 @@ export function buildApplyUpdateCmd(): string {
     'set "EXE=%~4"',
     'if not defined PID exit /b 1',
     'if not exist "%SRC%\\wmux.exe" exit /b 1',
+    'echo.',
+    'echo   Installing the wmux update.',
+    'echo   This window closes by itself. Leave it open; nothing to type here.',
+    'echo.',
+    'echo   Waiting for wmux to close...',
     ':wait',
-    '"%SYS%\\timeout.exe" /t 1 /nobreak >nul',
+    'title wmux update',
+    // waitfor, not timeout: this script is spawned with stdio 'ignore', so its
+    // stdin is NUL, and timeout.exe refuses a redirected stdin outright
+    // ("ERROR: Input redirection is not supported") — measured at 66 ms for a
+    // /t 3, which turned the wait into a tasklist spin with no pause at all.
+    // waitfor honours /t with NUL stdin (2.1 s measured for /t 2) and times out
+    // by design, so its own "Timed out waiting" goes to nul. Not `ping -n`,
+    // which is the textbook batch-sleep idiom in droppers — the one shape this
+    // helper is trying not to have. Where waitfor.exe is absent the loop
+    // degrades to the spin it already had, never to a wrong answer.
+    '"%SYS%\\waitfor.exe" /t 1 wmuxUpdateWait >nul 2>nul',
     '"%SYS%\\tasklist.exe" /FI "PID eq %PID%" 2>nul | "%SYS%\\findstr.exe" /I /C:" %PID% " >nul',
     'if not errorlevel 1 goto wait',
-    '"%SYS%\\timeout.exe" /t 2 /nobreak >nul',
+    '"%SYS%\\waitfor.exe" /t 2 wmuxUpdateWait >nul 2>nul',
+    'title wmux update',
+    'echo   Copying files...',
     '"%SYS%\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
     'if %ERRORLEVEL% GEQ 8 goto relaunch',
     // The relaunch is unconditional, including after a failed copy. wmux has
@@ -272,6 +306,7 @@ export function buildApplyUpdateCmd(): string {
     // holding a DLL past /R:5) usually leaves the old build in place, so
     // %EXE% still starts — on the old version, which beats not starting.
     ':relaunch',
+    'echo   Starting wmux...',
     'start "" "%EXE%"',
     'rmdir /s /q "%SRC%"',
     // Deliberately does NOT delete itself (no `del "%~f0"`). A hidden,
@@ -550,6 +585,12 @@ export async function applyStagedPortableUpdate(staged: StagedZipUpdate): Promis
   ]), {
     detached: true,
     stdio: 'ignore',
+    // `windowsHide` does NOT hide this one: DETACHED_PROCESS makes Windows
+    // ignore CREATE_NO_WINDOW, so cmd.exe opens a console anyway (see the
+    // header). It stays because dropping `detached` to make it work would
+    // put the helper's life back in wmux's hands, and the helper outliving
+    // wmux is the whole point. The console is where `buildApplyUpdateCmd`'s
+    // title and messages land.
     windowsHide: true,
     windowsVerbatimArguments: true,
   });

@@ -155,6 +155,32 @@ describe('buildApplyUpdateCmd', () => {
     expect(cmd).not.toMatch(/del\s+"%~f0"/i);
   });
 
+  // The console cannot be hidden (DETACHED_PROCESS makes Windows ignore
+  // CREATE_NO_WINDOW), so it has to say what it is: a user reported an empty
+  // window titled "findstr.exe" and could not tell whether it wanted input.
+  it('names itself and says the window closes on its own', () => {
+    expect(cmd).toContain('title wmux update');
+    expect(cmd).toMatch(/echo\s+Installing the wmux update\./);
+    expect(cmd).toMatch(/This window closes by itself/);
+    // Windows renames a console after the child running in it, so the title is
+    // re-set inside the wait loop and not only once at the top.
+    expect(cmd.match(/title wmux update/g)?.length).toBeGreaterThan(1);
+    expect(cmd.indexOf('title wmux update')).toBeLessThan(cmd.indexOf(':wait'));
+  });
+
+  // timeout.exe refuses a redirected stdin, and the helper is spawned with
+  // stdio 'ignore' — so it exited at once and the wait became a tasklist spin.
+  // waitfor honours /t with NUL stdin. `ping -n` is the dropper batch-sleep
+  // idiom and is deliberately not the replacement.
+  it('pauses the wait loop with waitfor, not timeout or ping', () => {
+    expect(cmd).not.toMatch(/timeout\.exe/i);
+    expect(cmd).not.toMatch(/ping(\.exe)?\s+-n/i);
+    expect(cmd).toContain('"%SYS%\\waitfor.exe" /t 1 wmuxUpdateWait >nul 2>nul');
+    // The pause runs before the liveness probe, so its own exit code can never
+    // stand in for tasklist's.
+    expect(cmd.indexOf('waitfor.exe')).toBeLessThan(cmd.indexOf('tasklist.exe'));
+  });
+
   it('does not embed caller paths — those arrive as arguments', () => {
     expect(cmd).not.toMatch(/C:\\/);
     expect(cmd).toContain('set "PID=%~1"');
