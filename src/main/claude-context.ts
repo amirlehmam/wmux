@@ -582,180 +582,136 @@ export function removeChromeDevtoolsConfig(): void {
   }
 }
 
-/**
- * Recursively copies a directory tree from src to dest.
- * Creates dest and any intermediate directories as needed.
- */
-function copyDirSync(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDirSync(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
 
 /**
- * Auto-installs the wmux-orchestrator plugin into Claude Code's plugin cache.
- * - Copies resources/wmux-orchestrator/ → ~/.claude/plugins/cache/wmux-orchestrator/{version}/
- * - Registers in ~/.claude/plugins/installed_plugins.json
- * - Enables in ~/.claude/settings.json
- * Skips if already installed at the same version.
- */
-export function ensureOrchestratorPlugin(): void {
-  try {
-    // 1. Locate plugin source directory
-    let pluginSrcDir: string;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { app } = require('electron') as typeof import('electron');
-      if (app.isPackaged) {
-        pluginSrcDir = path.join(process.resourcesPath, 'wmux-orchestrator');
-      } else {
-        pluginSrcDir = path.resolve(path.join(__dirname, '../../resources/wmux-orchestrator'));
-      }
-    } catch {
-      pluginSrcDir = path.resolve(path.join(__dirname, '../../resources/wmux-orchestrator'));
-    }
-
-    const pluginJsonSrc = path.join(pluginSrcDir, '.claude-plugin', 'plugin.json');
-    if (!fs.existsSync(pluginJsonSrc)) {
-      console.warn('[wmux] wmux-orchestrator plugin not found at', pluginSrcDir);
-      return;
-    }
-
-    // 2. Read version from plugin.json
-    let pluginMeta: any;
-    try {
-      pluginMeta = JSON.parse(fs.readFileSync(pluginJsonSrc, 'utf-8'));
-    } catch {
-      console.warn('[wmux] Failed to parse wmux-orchestrator plugin.json');
-      return;
-    }
-    const version: string = pluginMeta.version || '0.0.0';
-
-    // 3. Copy to ~/.claude/plugins/cache/wmux-orchestrator/{version}/
-    const claudeDir = path.join(os.homedir(), '.claude');
-    const cacheDir = path.join(claudeDir, 'plugins', 'cache', 'wmux-orchestrator', version);
-    const targetPluginJson = path.join(cacheDir, '.claude-plugin', 'plugin.json');
-
-    // Check if already installed at same version
-    if (fs.existsSync(targetPluginJson)) {
-      try {
-        const existing = JSON.parse(fs.readFileSync(targetPluginJson, 'utf-8'));
-        if (existing.version === version) {
-          // Already installed at same version — skip copy, but still ensure registration
-          ensurePluginRegistered(cacheDir, version, claudeDir);
-          return;
-        }
-      } catch {
-        // Corrupted target — re-install
-      }
-    }
-
-    // Remove old version directory if it exists (clean install)
-    if (fs.existsSync(cacheDir)) {
-      fs.rmSync(cacheDir, { recursive: true, force: true });
-    }
-
-    // Copy entire plugin directory
-    copyDirSync(pluginSrcDir, cacheDir);
-    console.log(`[wmux] Installed wmux-orchestrator v${version} to plugin cache`);
-
-    // 4–5. Register and enable
-    ensurePluginRegistered(cacheDir, version, claudeDir);
-  } catch (err) {
-    console.warn('[wmux] Failed to install wmux-orchestrator plugin:', err);
-  }
-}
-
-/**
- * Registers the orchestrator plugin in installed_plugins.json and enables it in settings.json.
- */
-function ensurePluginRegistered(installPath: string, version: string, claudeDir: string): void {
-  const pluginKey = 'wmux-orchestrator@wmux';
-
-  // Register in installed_plugins.json
-  try {
-    const installedPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
-    let installed: any = {};
-    if (fs.existsSync(installedPath)) {
-      try { installed = JSON.parse(fs.readFileSync(installedPath, 'utf-8')); } catch { installed = {}; }
-    } else {
-      fs.mkdirSync(path.dirname(installedPath), { recursive: true });
-    }
-
-    const now = new Date().toISOString();
-    const existing = installed[pluginKey];
-    if (!existing || existing.version !== version || existing.installPath !== installPath) {
-      installed[pluginKey] = {
-        scope: 'user',
-        installPath,
-        version,
-        installedAt: existing?.installedAt || now,
-        lastUpdated: now,
-      };
-      fs.writeFileSync(installedPath, JSON.stringify(installed, null, 2), 'utf-8');
-      console.log('[wmux] Registered wmux-orchestrator in installed_plugins.json');
-    }
-  } catch (err) {
-    console.warn('[wmux] Failed to register plugin in installed_plugins.json:', err);
-  }
-
-  // Enable in settings.json
-  try {
-    const settingsPath = path.join(claudeDir, 'settings.json');
-    if (!fs.existsSync(settingsPath)) return;
-
-    const raw = fs.readFileSync(settingsPath, 'utf-8');
-    let settings: any;
-    try { settings = JSON.parse(raw); } catch { return; }
-
-    if (!settings.enabledPlugins) settings.enabledPlugins = {};
-    if (settings.enabledPlugins[pluginKey] !== true) {
-      settings.enabledPlugins[pluginKey] = true;
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-      console.log('[wmux] Enabled wmux-orchestrator in settings.json');
-    }
-  } catch (err) {
-    console.warn('[wmux] Failed to enable plugin in settings.json:', err);
-  }
-}
-
-/**
- * Uninstall the orchestrator plugin wmux auto-installed (issue #132): remove its
- * plugin-cache directory, its registration, and its enabled flag.
+ * The bundled wmux-orchestrator plugin, DEPRECATED in 2.12.0 (issue #239).
  *
- * Only the `wmux-orchestrator@wmux` key is touched, and only the cache path
- * wmux itself wrote to — a plugin the user installed by hand from the standalone
- * repo lives under a different install path and survives.
+ * wmux used to copy `resources/wmux-orchestrator/` into Claude Code's plugin
+ * cache and hand-write `~/.claude/plugins/installed_plugins.json` to register
+ * it. That never worked, and #239 is the careful report of why: the file uses a
+ * v2 schema — `{ version: 2, plugins: { "<plugin>@<marketplace>": [ … ] } }` —
+ * and wmux wrote its entry at the TOP LEVEL, as an object rather than an array,
+ * under a cache layout (`cache/<plugin>/<version>`) that is not Claude's
+ * (`cache/<marketplace>/<plugin>/<version>`) either. Claude Code therefore never
+ * listed the plugin, never loaded its skills or commands, and marked the copied
+ * tree `.orphaned_at` for garbage collection — while `enabledPlugins` said
+ * `true` and wmux logged a successful install.
+ *
+ * The obvious repair is to ship a real local marketplace and register through a
+ * supported path, and that is the right fix for a plugin worth keeping. This one
+ * is not: parallel agent orchestration is now something Claude Code does itself,
+ * far better than a shell-script wave planner driving panes from the outside.
+ * So the plugin is retired rather than re-plumbed, and wmux writes NOTHING into
+ * Claude Code's plugin machinery any more.
+ *
+ * What remains is the inverse, below. Deprecating a feature that spent releases
+ * writing into someone else's config is not "stop writing" — it is "stop
+ * writing, and take back what was written", the same rule #132 set for every
+ * other integration. Anyone who still wants the orchestrator can install it as
+ * a normal plugin from github.com/amirlehmam/wmux-orchestrator; wmux's sidebar
+ * orchestration panel keeps reading its state file either way.
+ */
+
+/** The key wmux used in both `installed_plugins.json` and `enabledPlugins`. */
+const ORCHESTRATOR_PLUGIN_KEY = 'wmux-orchestrator@wmux';
+
+/**
+ * Whether a top-level `installed_plugins.json` value is the malformed entry
+ * wmux wrote — and so is safe to delete without asking anyone.
+ *
+ * Two independent things say "wmux wrote this". It sits at the top level, where
+ * Claude Code puts nothing (its own entries live under `plugins`), and it is a
+ * bare object, where Claude Code stores an ARRAY of install records. A value
+ * that is an array is left alone on principle: it is not a shape wmux ever
+ * produced, so whatever put it there is better placed than this function to
+ * decide it should go.
+ */
+export function isWmuxOrchestratorRegistration(entry: unknown): boolean {
+  return !!entry && typeof entry === 'object' && !Array.isArray(entry);
+}
+
+/**
+ * Take wmux's orchestrator entries out of a parsed `installed_plugins.json`.
+ *
+ * Pure, and returns whether anything changed, because the caller must not
+ * rewrite a file it had no reason to touch — a needless write to Claude Code's
+ * own state file is exactly the kind of uninvited edit #132 was filed about.
+ *
+ * `plugins[ORCHESTRATOR_PLUGIN_KEY]` is deliberately NOT removed. That is where
+ * a plugin installed the supported way lands, which is precisely what the
+ * deprecation notice tells people to do instead — so removing it would uninstall
+ * the replacement while cleaning up the thing it replaced.
+ */
+export function pruneOrchestratorRegistration(installed: unknown): { next: any; changed: boolean } {
+  if (!installed || typeof installed !== 'object' || Array.isArray(installed)) {
+    return { next: installed, changed: false };
+  }
+  const next = installed as Record<string, unknown>;
+  if (!isWmuxOrchestratorRegistration(next[ORCHESTRATOR_PLUGIN_KEY])) {
+    return { next, changed: false };
+  }
+  delete next[ORCHESTRATOR_PLUGIN_KEY];
+  return { next, changed: true };
+}
+
+/**
+ * Whether `enabledPlugins["wmux-orchestrator@wmux"]` is still wmux's to clear.
+ *
+ * It is not, once the plugin is properly installed under `plugins` — at that
+ * point the flag is what keeps a user's own, hand-installed orchestrator
+ * switched on, and clearing it would silently disable it. The flag only goes
+ * when there is no real installation behind it, which is the state every
+ * install wmux created is in.
+ */
+export function orchestratorFlagIsStale(settings: unknown, installed: unknown): boolean {
+  const s = settings as { enabledPlugins?: Record<string, unknown> } | null | undefined;
+  if (!s?.enabledPlugins || !(ORCHESTRATOR_PLUGIN_KEY in s.enabledPlugins)) return false;
+  const registry = (installed ?? {}) as { plugins?: Record<string, unknown> };
+  const properly = registry.plugins?.[ORCHESTRATOR_PLUGIN_KEY];
+  return !(Array.isArray(properly) ? properly.length > 0 : !!properly);
+}
+
+/**
+ * Remove every trace of the auto-installed orchestrator plugin: the cache tree
+ * wmux copied, its malformed registration, and the enabled flag that pointed at
+ * neither.
+ *
+ * Runs on EVERY launch that reaches {@link applyConsent} now, not only when the
+ * feature is switched off — a deprecated integration has no "on". It is
+ * idempotent and silent when there is nothing of wmux's to find, which is the
+ * state of a fresh install and of every user who declined #132's prompt.
+ *
+ * `cache/wmux-orchestrator/` is wmux's own invention: Claude Code nests a plugin
+ * under its marketplace (`cache/<marketplace>/<plugin>/<version>`), so nothing
+ * but wmux ever wrote this path, and a hand-installed copy is somewhere else.
  */
 export function removeOrchestratorPlugin(): void {
-  const pluginKey = 'wmux-orchestrator@wmux';
   const claudeDir = path.join(os.homedir(), '.claude');
+  const installedPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
 
   try {
     const cacheRoot = path.join(claudeDir, 'plugins', 'cache', 'wmux-orchestrator');
     if (fs.existsSync(cacheRoot)) {
       fs.rmSync(cacheRoot, { recursive: true, force: true });
-      console.log('[wmux] Removed wmux-orchestrator from the plugin cache');
+      console.log('[wmux] Removed the deprecated wmux-orchestrator plugin from the Claude Code cache');
     }
   } catch (err) {
     console.warn('[wmux] Failed to remove orchestrator plugin cache:', err);
   }
 
+  // Read once and reuse: the enabled-flag decision below needs to know whether a
+  // real installation exists, and that answer lives in this same file.
+  let installed: any = null;
   try {
-    const installedPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
-    if (fs.existsSync(installedPath)) {
-      const installed = JSON.parse(fs.readFileSync(installedPath, 'utf-8'));
-      if (installed[pluginKey]) {
-        delete installed[pluginKey];
-        fs.writeFileSync(installedPath, JSON.stringify(installed, null, 2), 'utf-8');
+    if (fs.existsSync(installedPath)) installed = JSON.parse(fs.readFileSync(installedPath, 'utf-8'));
+  } catch { installed = null; }
+
+  try {
+    if (installed) {
+      const { next, changed } = pruneOrchestratorRegistration(installed);
+      if (changed) {
+        fs.writeFileSync(installedPath, JSON.stringify(next, null, 2), 'utf-8');
+        console.log('[wmux] Removed the wmux-orchestrator entry from installed_plugins.json');
       }
     }
   } catch (err) {
@@ -766,12 +722,12 @@ export function removeOrchestratorPlugin(): void {
     const settingsPath = path.join(claudeDir, 'settings.json');
     if (!fs.existsSync(settingsPath)) return;
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-    if (settings.enabledPlugins?.[pluginKey] === undefined) return;
-    delete settings.enabledPlugins[pluginKey];
+    if (!orchestratorFlagIsStale(settings, installed)) return;
+    delete settings.enabledPlugins[ORCHESTRATOR_PLUGIN_KEY];
     if (Object.keys(settings.enabledPlugins).length === 0) delete settings.enabledPlugins;
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
-    console.log('[wmux] Disabled wmux-orchestrator in ~/.claude/settings.json');
+    console.log('[wmux] Cleared the stale wmux-orchestrator flag in ~/.claude/settings.json');
   } catch (err) {
-    console.warn('[wmux] Failed to disable orchestrator plugin:', err);
+    console.warn('[wmux] Failed to clear the orchestrator plugin flag:', err);
   }
 }

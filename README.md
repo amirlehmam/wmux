@@ -140,8 +140,8 @@ Terminal tabs display a shell-specific label — <b>PowerShell</b>, <b>bash</b>,
 </tr>
 <tr>
 <td width="40%" valign="middle">
-<h3>wmux-orchestrator plugin</h3>
-Bundled Claude Code plugin that decomposes complex tasks into parallel agents coordinated through dependency-aware waves. Each agent runs in its own visible terminal pane with automated review and auto-fix. Activated via <code>/wmux:orchestrate</code> — no daemon, no config, no API keys.
+<h3>wmux-orchestrator plugin <sub>(deprecated)</sub></h3>
+A Claude Code plugin that decomposes complex tasks into parallel agents coordinated through dependency-aware waves, each in its own visible terminal pane. <b>wmux no longer installs it</b> — Claude Code orchestrates parallel agents natively now, and does it better. It lives on as a standalone plugin you can install yourself; wmux's sidebar still shows the run it reports.
 </td>
 <td width="60%">
 <img src="./docs/assets/wmux-terminals.png" alt="Multiple agents running in split terminal panes" width="100%" />
@@ -267,28 +267,37 @@ The sidebar shows exactly what each agent is doing — the git branch it is on, 
 
 Since 2.0 that no longer depends on the agent cooperating. wmux identifies which agent a pane is running and, for the ones that report nothing of their own, reads their on-screen UI to tell blocked from working — so Codex and Aider sit in the same roster as Claude Code. The ranking is the point: with ten workspaces open, the question is never "what is agent #7 doing", it is "which one of these has stopped and is waiting on me", and that answer is one banner and one keystroke away.
 
-On first launch, wmux auto-configures itself: it injects a minimal informational block into `~/.claude/CLAUDE.md`, adds a `PostToolUse` hook to `~/.claude/settings.json`, installs the wmux-orchestrator Claude Code plugin, and starts a CDP proxy on `localhost:9222`. No API keys needed — everything runs through the user's existing Claude Code session.
+On first launch wmux asks before it touches anything outside its own directory, and what it then writes is listed feature by feature in Settings → General: a marked block in `~/.claude/CLAUDE.md`, hooks in `~/.claude/settings.json`, a `chrome-devtools` MCP entry pointed at its own browser panel, and a CDP proxy on `localhost:9222`. No API keys needed — everything runs through the user's existing Claude Code session. Every one of those has an uninstall, and turning a feature off runs it.
 
 Everything is automatable through the `wmux` CLI or the named pipe directly. The protocol matches cmux, so tools built for one work with the other.
 
-## wmux-orchestrator
+## wmux-orchestrator (deprecated in 2.12.0)
 
-wmux ships with a bundled Claude Code plugin that enables parallel multi-agent orchestration. Activate it with `/wmux:orchestrate` in any Claude Code session.
+**wmux no longer installs a Claude Code plugin.** Since 2.12.0 it removes the one
+it used to install, and takes its entry out of `~/.claude/plugins/installed_plugins.json`
+on the way.
 
-**What it does:**
-1. Analyzes your codebase and decomposes the task into independent work units
-2. Assigns each unit to a Claude Code agent in its own wmux terminal pane
-3. Runs agents in dependency-aware waves — later waves wait for earlier ones to finish
-4. A reviewer agent inspects the combined output and triggers auto-fixes if needed
+Two reasons. It never worked: wmux hand-wrote Claude Code's internal plugin
+registry in a shape that file does not use, so Claude Code never listed the
+plugin, never loaded its skills or commands, and marked the copied files
+orphaned — while wmux logged a successful install (issue #239, reported in
+full detail by [@mkh63d](https://github.com/mkh63d)). And it is no longer worth
+repairing: Claude Code now runs parallel agents natively, which is a better
+answer than a shell-script wave planner driving panes from the outside.
 
-**Plugin commands:**
-```
-/wmux:orchestrate   Decompose and run a complex task across parallel agents
-```
+What is unaffected:
 
-The plugin is auto-installed into `~/.claude/plugins/cache/` on wmux startup. It also works without wmux — agents fall back to native Claude Code subagents.
+- **The sidebar orchestration panel.** It reads a run's `state.json` and does
+  not care who wrote it, so an orchestrator you install yourself still lights
+  it up.
+- **`wmux agent spawn` / `spawn-batch`.** Putting an agent in a visible pane
+  was never the plugin's job — it is a CLI verb, and it stays.
+- **The OpenCode plugin**, which is a different file in a different place and
+  installs correctly. It is still what the Settings → General *Orchestrator
+  plugin* toggle controls.
 
-Also published standalone: [plugin.wmux.org](https://plugin.wmux.org) · [github.com/amirlehmam/wmux-orchestrator](https://github.com/amirlehmam/wmux-orchestrator)
+The plugin itself remains available standalone, installable the supported way:
+[plugin.wmux.org](https://plugin.wmux.org) · [github.com/amirlehmam/wmux-orchestrator](https://github.com/amirlehmam/wmux-orchestrator)
 
 ## Shell Integration
 
@@ -648,7 +657,7 @@ src/
   shell-integration/  # PowerShell, CMD, WSL scripts
 
 resources/
-  wmux-orchestrator/  # Bundled Claude Code plugin (auto-installed on startup)
+  wmux-orchestrator/  # Claude Code plugin, deprecated — no longer installed (#239)
   themes/             # Ghostty + wmux theme files
   sounds/             # Notification sounds
 ```

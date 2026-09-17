@@ -47,7 +47,12 @@ const FEATURES: Array<{ key: Feature; labelKey: TranslationKey; labelFallback: s
     key: 'orchestrator',
     labelKey: 'settings.integration.orchestrator',
     labelFallback: 'Orchestrator plugin',
-    pathHint: '~/.claude/plugins/ · ~/.config/opencode/plugin/',
+    // OpenCode only since 2.12.0. The Claude Code plugin this also used to
+    // install is deprecated (issue #239) and is uninstalled whichever way this
+    // toggle is set, so naming ~/.claude/plugins/ here would promise a write
+    // that no longer happens — and the hint is the only place a user can see
+    // what a checkbox actually touches.
+    pathHint: '~/.config/opencode/plugin/',
   },
   {
     key: 'browserMcp',

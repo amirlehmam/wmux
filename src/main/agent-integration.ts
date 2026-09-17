@@ -7,7 +7,10 @@
  * context file, writes ~/.kiro/steering/wmux.md, registers eight hook families
  * in ~/.claude/settings.json, installs a status extension into
  * ~/.pi/agent/extensions/, points chrome-devtools-mcp at its own CDP proxy, and
- * installs Claude Code and OpenCode orchestrator plugins.
+ * installs an OpenCode orchestrator plugin.
+ *
+ * It also used to install a Claude Code plugin, which is deprecated and gone
+ * (issue #239). Its uninstall is not: see `removeOrchestratorPlugin`.
  *
  * All of that used to happen unconditionally on every launch, with no prompt and
  * no record of a decision — so deleting any of it was futile, because the next
@@ -30,7 +33,6 @@ import {
   ensureClaudeContext,
   ensureClaudeHooks,
   ensureChromeDevtoolsConfig,
-  ensureOrchestratorPlugin,
   removeClaudeContext,
   removeClaudeHooks,
   removeChromeDevtoolsConfig,
@@ -100,8 +102,8 @@ export const INTEGRATION_CONSENT_DETAIL =
   '      SessionStart, UserPromptSubmit, PreToolUse and SessionEnd\n' +
   '  • ~/.pi/agent/extensions/wmux.js\n' +
   '      a pi extension that reports this pane\'s status to the sidebar\n' +
-  '  • ~/.claude/plugins/ and ~/.config/opencode/plugin/wmux.js\n' +
-  '      the wmux-orchestrator plugins\n' +
+  '  • ~/.config/opencode/plugin/wmux.js\n' +
+  '      the wmux orchestrator plugin for OpenCode\n' +
   '  • ~/.claude/settings.json\n' +
   '      a pinned chrome-devtools-mcp pointed at the browser panel instead of its own Chrome\n\n' +
   '"Not now" asks again next launch. "Never" writes nothing and removes anything ' +
@@ -167,8 +169,17 @@ function applyFeature(feature: IntegrationFeature, enabled: boolean): void {
       else { removeClaudeHooks(); removePiExtension(); }
       break;
     case 'orchestrator':
-      if (enabled) { ensureOrchestratorPlugin(); ensureOpencodePlugin(); }
-      else { removeOrchestratorPlugin(); removeOpencodePlugin(); }
+      // The Claude Code half of this feature is DEPRECATED (issue #239) and has
+      // no `enabled` branch left: the bundled plugin never loaded — wmux wrote
+      // Claude Code's `installed_plugins.json` in a shape it does not read — and
+      // parallel orchestration is now something Claude Code does natively and
+      // better. Its removal runs in BOTH branches on purpose: a retired
+      // integration that cleans up only when you switch it off leaves its
+      // wreckage on every machine where the toggle is still on, which is exactly
+      // where it already is. Only OpenCode's plugin still has an `enabled` side.
+      removeOrchestratorPlugin();
+      if (enabled) ensureOpencodePlugin();
+      else removeOpencodePlugin();
       break;
     case 'browserMcp':
       if (enabled) ensureChromeDevtoolsConfig();
