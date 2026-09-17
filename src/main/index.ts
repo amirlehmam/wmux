@@ -1168,7 +1168,16 @@ app.whenReady().then(() => {
               });
             }
           })
-          .catch((err: Error) => logDiagnostic('update-sweep-error', { message: err?.message }));
+          // A code, never the message: the sweep walks %TEMP%, so an opendir
+          // failure carries that path — and the path carries the Windows
+          // username. Same reason `wmux crash-report` never reads the Event Log
+          // properties that hold one (#174). `sweepUpdateLeftovers` spells its
+          // per-entry failures the same way.
+          .catch((err: unknown) =>
+            logDiagnostic('update-sweep-error', {
+              code: (err as NodeJS.ErrnoException)?.code ?? 'UNKNOWN',
+            }),
+          );
       }, UPDATE_SWEEP_DELAY_MS).unref();
     }
   }
