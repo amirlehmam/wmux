@@ -515,7 +515,13 @@ function agentSpawnBatch(args: string[]): Promise<any> {
   if (jsonIdx === -1) { console.error('Usage: wmux agent spawn-batch --json \'[...]\''); process.exit(1); }
   const parsed = JSON.parse(args[jsonIdx + 1]);
   const strategy = args.find((a, i) => args[i - 1] === '--strategy') || 'distribute';
-  return sendV2('agent.spawn_batch', { agents: parsed, strategy });
+  // `--workspace`, so a batch can target a workspace that is not the focused
+  // one — `agent spawn` has had the flag all along and this did not, which made
+  // the batch half of #242 unreachable from the CLI even after main learned to
+  // honour it. An orchestrator building panes in one workspace while the user
+  // works in another is the case both exist for.
+  const workspaceId = args.find((a, i) => args[i - 1] === '--workspace');
+  return sendV2('agent.spawn_batch', { agents: parsed, strategy, workspaceId });
 }
 
 const AGENT_CMDS: Record<string, (args: string[]) => Promise<any>> = {
@@ -1780,7 +1786,7 @@ const COMMAND_SPECS = {
   agent: {
     usage: [
       'wmux agent spawn --cmd <C> [--label L] [--cwd D] [--pane P] [--workspace W] [--replace-tab]',
-      'wmux agent spawn-batch --json \'[...]\' [--strategy distribute|stack|split]',
+      'wmux agent spawn-batch --json \'[...]\' [--strategy distribute|stack|split] [--workspace W]',
       'wmux agent status <agentId> | list [--workspace <id>] | kill <agentId>',
     ].join('\n'),
     value: ['--cmd', '--label', '--cwd', '--pane', '--workspace', '--json', '--strategy'],

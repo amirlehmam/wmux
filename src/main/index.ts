@@ -15,11 +15,18 @@ import {
   teardownAgentBrowser,
 } from './agent-browser-runtime';
 import { handleBridgeV2 } from './v2-bridge';
-import { distributeAgents } from './agent-manager';
+import { distributeAgents, PaneLoadInfo } from './agent-manager';
+import {
+  resolveSpawnTarget,
+  resolveSpawnWorkspace,
+  resolveSpawnPaneLoads,
+  SpawnTargetError,
+  type SpawnTargetLookups,
+} from './agent-spawn-target';
 import { PipeServer } from './pipe-server';
 import { PortScanner } from './port-scanner';
 import { CDPProxy } from './cdp-proxy';
-import { IPC_CHANNELS, SurfaceId, BrowserEngine } from '../shared/types';
+import { IPC_CHANNELS, SurfaceId, BrowserEngine, PaneId, WorkspaceId } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken, getAppUserModelId } from '../shared/instance';
 import {
   loadSession,
@@ -287,6 +294,49 @@ function routeSpecialV2(
   if (handleAgentStateV2(request.method, request.params, respond, respondError)) return true;
   return handleBridgeV2(request.method, request.params, respond, respondError);
 }
+
+// The impure half of agent-spawn-target.ts (#242): every question it asks is a
+// round trip into a renderer, because the split tree lives in the Zustand store
+// and main has no copy of it.
+//
+// Two rules, both the ones `engineForSurface` in v2-browser.ts learned:
+//
+//  - ASK EVERY WINDOW, first real answer wins. A workspace is not a window
+//    (#143), so the first window's store knows nothing about a pane in the
+//    second — and here a miss is not a benign fallback, it is the -32602 the
+//    caller gets told their live pane does not exist.
+//  - `?.` and a `.catch` on every call, so a renderer that is reloading, a
+//    destroyed webContents, or a window that predates these globals degrades to
+//    "this window doesn't have it" instead of failing the whole spawn.
+const spawnTargetLookups: SpawnTargetLookups = {
+  async workspaceForPane(paneId: string): Promise<string | null> {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      const owner = await win.webContents
+        .executeJavaScript(`window.__wmux_getWorkspaceIdForPane?.(${JSON.stringify(paneId)}) ?? null`)
+        .catch(() => null);
+      if (owner) return owner as string;
+    }
+    return null;
+  },
+  async activeWorkspaceId(): Promise<string | null> {
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+    if (!win) return null;
+    return await win.webContents
+      .executeJavaScript('window.__wmux_getActiveWorkspaceId?.() ?? null')
+      .catch(() => null);
+  },
+  async paneLoads(workspaceId: string): Promise<PaneLoadInfo[]> {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      const loads = await win.webContents
+        .executeJavaScript(`window.__wmux_getPaneLoads?.(${JSON.stringify(workspaceId)}) ?? []`)
+        .catch(() => []);
+      if (Array.isArray(loads) && loads.length > 0) return loads as PaneLoadInfo[];
+    }
+    return [];
+  },
+};
 
 // Pick which pane each agent in a batch lands in, per distribution strategy.
 function resolveAgentAssignments(strategy: string, count: number, paneLoads: any[]): string[] {
@@ -1727,26 +1777,32 @@ app.whenReady().then(() => {
         (async () => {
           try {
             const params = request.params;
-            let workspaceId = params.workspaceId;
-            if (!workspaceId) {
-              const wins = BrowserWindow.getAllWindows();
-              if (wins.length > 0) {
-                workspaceId = await wins[0].webContents.executeJavaScript('window.__wmux_getActiveWorkspaceId?.()');
-              }
+            // The pane and the workspace are resolved TOGETHER (#242). They used
+            // to be independent — active workspace here, `params.paneId`
+            // verbatim there — so a pane from a non-active workspace was filed
+            // under the active one and every lookup through that record then
+            // failed on a live, running agent. See agent-spawn-target.ts.
+            let target;
+            try {
+              target = await resolveSpawnTarget(params, spawnTargetLookups);
+            } catch (err) {
+              if (err instanceof SpawnTargetError) { respondError(err.code, err.message); return; }
+              throw err;
             }
-            if (!workspaceId) { respondError(-32000, 'No active workspace'); return; }
-
-            let paneId = params.paneId;
-            if (!paneId) {
-              const paneLoads = await BrowserWindow.getAllWindows()[0]?.webContents.executeJavaScript('window.__wmux_getPaneLoads?.()');
-              if (paneLoads && paneLoads.length > 0) paneId = distributeAgents(1, paneLoads)[0];
-            }
-            if (!paneId) { respondError(-32000, 'No panes available'); return; }
+            const { paneId, workspaceId } = target;
 
             // Accept both 'cmd' and 'prompt' field names (plugins may use either)
             const cmd = params.cmd || params.prompt;
             if (!cmd) { respondError(-32602, 'Missing required field: cmd'); return; }
-            const result = agentManager.spawn({ cmd, label: params.label, cwd: params.cwd, env: params.env, paneId, workspaceId });
+            // Cast to the branded ids: both were just CONFIRMED against a live
+            // split tree by resolveSpawnTarget — the pane because a window
+            // claimed it, the workspace because it is either that pane's owner
+            // or a renderer's own active id. That is a stronger guarantee than
+            // the old code had, which passed `params.paneId` through as `any`.
+            const result = agentManager.spawn({
+              cmd, label: params.label, cwd: params.cwd, env: params.env,
+              paneId: paneId as PaneId, workspaceId: workspaceId as WorkspaceId,
+            });
 
             const win = BrowserWindow.getAllWindows()[0];
             if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
@@ -1764,15 +1820,19 @@ app.whenReady().then(() => {
         (async () => {
           try {
             const { agents: agentParams, strategy = 'distribute', workspaceId: wsId } = request.params;
-            let workspaceId = wsId;
-            if (!workspaceId) {
-              const wins = BrowserWindow.getAllWindows();
-              if (wins.length > 0) workspaceId = await wins[0].webContents.executeJavaScript('window.__wmux_getActiveWorkspaceId?.()');
+            // The batch half of #242: the panes must come from the workspace
+            // this batch is being filed under, not from whichever one happens
+            // to be active. `--workspace` used to be honoured for the record
+            // and ignored for the panes.
+            let workspaceId: string;
+            let paneLoads;
+            try {
+              workspaceId = await resolveSpawnWorkspace(wsId, spawnTargetLookups);
+              paneLoads = await resolveSpawnPaneLoads(workspaceId, spawnTargetLookups);
+            } catch (err) {
+              if (err instanceof SpawnTargetError) { respondError(err.code, err.message); return; }
+              throw err;
             }
-            if (!workspaceId) { respondError(-32000, 'No active workspace'); return; }
-
-            const paneLoads = await BrowserWindow.getAllWindows()[0]?.webContents.executeJavaScript('window.__wmux_getPaneLoads?.()') || [];
-            if (paneLoads.length === 0) { respondError(-32000, 'No panes available'); return; }
 
             const assignments = resolveAgentAssignments(strategy, agentParams.length, paneLoads);
             const win = BrowserWindow.getAllWindows()[0];
