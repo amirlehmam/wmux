@@ -14,6 +14,16 @@
      `--color-scheme` override matches itself. Unset until the theme resolves,
      and identical to today's rendering for opaque themes. */
   background: var(--wmux-term-bg, transparent);
+  /* Touch pan → wheel (issue #243). wmux owns the vertical pan gesture here and
+     translates it into a wheel event, so the platform must not also claim it:
+     with anything but `none`, Chromium treats a vertical drag as its own scroll
+     gesture, stops the pointermove stream being cancelable, and the translation
+     has nothing left to work with. Nothing is given up — the element this sits
+     on has no native scroller to pan (xterm 6.0's viewport is a wheel-only
+     overlay, which is the bug), and pinch-zoom over a terminal is not a wmux
+     gesture. Taps still synthesize their compatibility mouse events, so focus
+     and click are unaffected. */
+  touch-action: none;
 }
 
 .terminal-pane__container .xterm {

@@ -27,6 +27,7 @@ import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-rendere
 import { resetTerminalModes } from '../utils/terminal-reset';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
+import { createTouchPanTracker } from '../utils/touch-pan';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isLetterKey, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
@@ -958,6 +959,75 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     wheelHost.addEventListener('wheel', onWheelCapture, { capture: true, passive: false });
     cleanupFnsRef.current.push(() => {
       wheelHost.removeEventListener('wheel', onWheelCapture, { capture: true } as any);
+    });
+
+    // Touch pan → wheel (issue #243). A finger dragged over a pane scrolled
+    // nothing: xterm 6.0.0 replaced its native overflow scroller with a
+    // wheel-only overlay and shipped no touch replacement, and wmux added no
+    // fallback of its own.
+    //
+    // This SYNTHESIZES a wheel event rather than calling scrollLines, and that
+    // is the whole design. `handleTerminalWheel` just above already decides
+    // between scrollback, SGR wheel reports and arrow keys for a pager on the
+    // alt screen; routing the gesture through it means a finger behaves
+    // identically to the wheel in every pane, including the alt-screen agent
+    // TUIs (opencode, Claude Code, Codex) that upstream's own fix would still
+    // leave inert — the alternate buffer has no scrollback for it to move.
+    //
+    // POINTER events, not Touch events: Electron delivers pointer events
+    // reliably while the Touch Events API is not guaranteed to be enabled.
+    // `pointerType === 'touch'` is the gate, so a mouse or a pen never reaches
+    // any of this and the wheel path is untouched on a machine with no
+    // touchscreen.
+    //
+    // `clientX/clientY` are carried onto the synthetic event because
+    // `handleTerminalWheel` reads them: with mouse tracking on it reports the
+    // wheel at the pointer's CELL, and an event without coordinates would
+    // report every flick at the top-left corner.
+    //
+    // preventDefault is called only while actually panning — `{ passive: false }`
+    // is what makes that legal. A horizontal drag is deliberately left alone so
+    // that whatever the platform does with it (a selection, today nothing) is
+    // not taken away by this.
+    const touchHost = terminalRef.current;
+    const panTracker = createTouchPanTracker();
+    const onTouchPanDown = (ev: PointerEvent) => {
+      if (ev.pointerType !== 'touch') return;
+      panTracker.down(ev.pointerId, ev.clientX, ev.clientY);
+    };
+    const onTouchPanMove = (ev: PointerEvent) => {
+      if (ev.pointerType !== 'touch') return;
+      const deltaY = panTracker.move(ev.pointerId, ev.clientX, ev.clientY);
+      if (!panTracker.panning) return;
+      ev.preventDefault();
+      if (deltaY === 0) return;
+      touchHost.dispatchEvent(new WheelEvent('wheel', {
+        deltaY,
+        deltaMode: 0, // DOM_DELTA_PIXEL — wheelDeltaToLines owns the cell maths
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+        bubbles: true,
+        cancelable: true,
+      }));
+    };
+    const onTouchPanEnd = (ev: PointerEvent) => {
+      if (ev.pointerType !== 'touch') return;
+      panTracker.up(ev.pointerId);
+    };
+    touchHost.addEventListener('pointerdown', onTouchPanDown, { passive: true });
+    touchHost.addEventListener('pointermove', onTouchPanMove, { passive: false });
+    touchHost.addEventListener('pointerup', onTouchPanEnd, { passive: true });
+    // pointercancel fires when the platform takes the gesture over (a system
+    // edge swipe, the pointer leaving the window). Without it the tracker keeps
+    // a finger down forever and the NEXT one is read as a second contact and
+    // rejected — the feature would work exactly once.
+    touchHost.addEventListener('pointercancel', onTouchPanEnd, { passive: true });
+    cleanupFnsRef.current.push(() => {
+      touchHost.removeEventListener('pointerdown', onTouchPanDown);
+      touchHost.removeEventListener('pointermove', onTouchPanMove);
+      touchHost.removeEventListener('pointerup', onTouchPanEnd);
+      touchHost.removeEventListener('pointercancel', onTouchPanEnd);
+      panTracker.reset();
     });
 
 
