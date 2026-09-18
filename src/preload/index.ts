@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import * as os from 'os';
-import { IPC_CHANNELS, type InsertionResult } from '../shared/types';
+import { IPC_CHANNELS, type InsertionResult, type UpdateTriggerResult } from '../shared/types';
 
 contextBridge.exposeInMainWorld('wmux', {
   pty: {
@@ -225,9 +225,11 @@ contextBridge.exposeInMainWorld('wmux', {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_AVAILABLE, handler);
     },
     // Issue #125 — download and install without leaving the app. Resolves
-    // { handled: false } when this build can't self-update, which is the
-    // renderer's cue to fall back to openRelease().
-    install: (): Promise<{ handled: boolean; reason?: string }> =>
+    // `handled: false` when this build can't self-update, which is the
+    // renderer's cue to fall back to openRelease() — with `url` when main knows
+    // which page that is. The shape is the shared UpdateTriggerResult so this
+    // bridge cannot go on under-declaring what main returns.
+    install: (): Promise<UpdateTriggerResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL),
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_STATE),
     onState: (callback: (state: { phase: string; version: string | null; percent: number; message?: string }) => void) => {

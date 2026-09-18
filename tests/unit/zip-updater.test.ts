@@ -1,7 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+const spawnMock = vi.hoisted(() => vi.fn());
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return { ...actual, spawn: spawnMock };
+});
 
 vi.mock('electron', () => ({
   app: {
@@ -18,7 +26,16 @@ import {
   pickZipAsset,
   findPayloadRoot,
   buildApplyUpdateCmd,
+  updateStampName,
+  updateZipName,
+  updateHelperName,
+  classifyUpdateLeftover,
+  isPidAlive,
+  sweepUpdateLeftovers,
+  applyStagedPortableUpdate,
+  buildHelperArgs,
 } from '../../src/main/zip-updater';
+import { app } from 'electron';
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-zip-'));
@@ -104,23 +121,181 @@ describe('findPayloadRoot', () => {
 describe('buildApplyUpdateCmd', () => {
   const cmd = buildApplyUpdateCmd();
 
-  it('waits for the old process, copies, unblocks, and relaunches', () => {
+  it('waits for the old process, copies, relaunches, and removes the payload', () => {
     expect(cmd).toContain('robocopy.exe');
-    expect(cmd).toContain('Unblock-File');
     expect(cmd).toMatch(/start "" "%EXE%"/);
     expect(cmd).toContain('tasklist.exe');
+    expect(cmd).toContain('rmdir /s /q "%SRC%"');
     expect(cmd).toContain('%SystemRoot%\\System32');
+  });
+
+  // Issue #3: a hidden PowerShell recursively running Unblock-File is a MOTW
+  // bypass pattern (T1553.005) and stripped nothing — the payload never had a
+  // :Zone.Identifier stream, and executables are unblocked in-process on launch.
+  it('does not run PowerShell or strip Mark of the Web', () => {
+    expect(cmd).not.toMatch(/powershell/i);
+    expect(cmd).not.toMatch(/Unblock-File/i);
   });
 
   // wmux has already quit by the time the helper runs, so a robocopy failure
   // that exits without relaunching leaves the user with no wmux at all. The
   // failure branch has to fall through to the same relaunch as the happy path.
   it('still relaunches when robocopy fails', () => {
-    expect(cmd).toContain('if %ERRORLEVEL% GEQ 8 goto relaunch');
+    const lines = cmd.split('\r\n');
+    expect(cmd).toContain('if errorlevel 8 goto copyfailed');
     expect(cmd).toContain(':relaunch');
-    expect(cmd).not.toMatch(/GEQ 8 exit/);
+    expect(cmd).not.toMatch(/errorlevel 8 exit/);
+    // The failure branch sits between the copy and the relaunch and falls into
+    // it, rather than jumping over it or off the end of the script.
+    expect(lines.indexOf(':copyfailed')).toBeGreaterThan(lines.indexOf(':copy'));
+    expect(lines.indexOf(':copyfailed')).toBeLessThan(lines.indexOf(':relaunch'));
     // The relaunch must come after the label, not only on the success path.
     expect(cmd.indexOf(':relaunch')).toBeLessThan(cmd.indexOf('start "" "%EXE%"'));
+  });
+
+  // The jump used to be `goto relaunch` with :relaunch on the very next line,
+  // so the failure read as handled while doing nothing: the console said
+  // "Installing" then "Starting wmux...", and the cleanup below deleted the
+  // ~150 MB payload needed to retry.
+  it('says a failed copy out loud and keeps the payload', () => {
+    const lines = cmd.split('\r\n');
+    const failedMsg = 'echo   Some files could not be replaced, so this update is incomplete.';
+    expect(cmd).toContain(failedMsg);
+    expect(cmd).toContain('set "KEEPSRC=1"');
+    expect(cmd).toContain('if not defined KEEPSRC rmdir /s /q "%SRC%" 2>nul');
+    // A successful copy must not fall into the failure branch on its way to
+    // the relaunch, or every update would claim to have failed.
+    expect(lines[lines.indexOf(':copyfailed') - 1]).toBe('goto relaunch');
+    // The message is the failure's own, printed before the relaunch line and
+    // not instead of it.
+    const failed = lines.indexOf(failedMsg);
+    expect(failed).toBeGreaterThan(lines.indexOf(':copyfailed'));
+    expect(failed).toBeLessThan(lines.indexOf(':relaunch'));
+  });
+
+  // robocopy walks the payload file by file, so `>= 8` means at least one file
+  // failed — not that none landed. The install can therefore be a MIX of
+  // versions, and a message promising the previous version sends the user away
+  // believing nothing is wrong. It must describe an incomplete update and say
+  // what to do about it.
+  it('does not promise a rollback the failed copy cannot deliver', () => {
+    expect(cmd).not.toMatch(/previous version/i);
+    expect(cmd).not.toMatch(/version you already had/i);
+    expect(cmd).toContain('this update is incomplete');
+    expect(cmd).toContain('Please install the update again.');
+  });
+
+  // Third inherited-variable exposure in the same script, and the one that is
+  // not a variable wmux named: with command extensions, cmd resolves
+  // %ERRORLEVEL% to the dynamic exit status only while no variable of that name
+  // exists. An inherited ERRORLEVEL=0 sends a failed robocopy down the success
+  // path, where the cleanup deletes the payload needed to retry.
+  it('reads robocopy status from cmd, not from an expansion a variable can shadow', () => {
+    expect(cmd).toContain('if errorlevel 8 goto copyfailed');
+    expect(cmd).not.toContain('%ERRORLEVEL%');
+  });
+
+  // The helper inherits wmux's environment, and `setlocal` copies it rather
+  // than emptying it, so a SKIPCOPY or KEEPSRC already living out there would
+  // decide a branch this script never set: an inherited KEEPSRC silently keeps
+  // every payload, an inherited SKIPCOPY skips every copy — an update that
+  // reports success and installs nothing.
+  it('clears both branch flags before anything reads them', () => {
+    const lines = cmd.split('\r\n');
+    for (const flag of ['SKIPCOPY', 'KEEPSRC']) {
+      const cleared = lines.indexOf(`set "${flag}="`);
+      expect(cleared).toBeGreaterThan(-1);
+      // Cleared before the first line that reads it, not merely present.
+      const firstRead = lines.findIndex((l) => l.includes(`%${flag}%`) || l.includes(`defined ${flag}`));
+      expect(firstRead).toBeGreaterThan(cleared);
+    }
+  });
+
+  // Same invariant, one line earlier, and it was the line breaking it. wmux
+  // checks the payload with existsSync and only then spawns this helper and
+  // quits, so the helper's own check runs on the far side of app.quit(): an
+  // antivirus or a temp cleaner removing the payload inside that window hit
+  // `exit /b 1` here, after wmux was already gone. Going to :relaunch gets the
+  // user their old install back instead of nothing.
+  it('relaunches instead of exiting when the payload is gone', () => {
+    const lines = cmd.split('\r\n');
+    expect(cmd).not.toContain('if not exist "%SRC%\\wmux.exe" exit /b 1');
+    expect(cmd).toContain('if not exist "%SRC%\\wmux.exe" set "SKIPCOPY=');
+    expect(lines).toContain('if not defined SKIPCOPY goto copy');
+    // The skip jumps to the label, not off the end of the script, and lands
+    // before the copy block rather than falling through into it.
+    expect(lines.indexOf('goto relaunch')).toBeGreaterThan(lines.indexOf('if not defined SKIPCOPY goto copy'));
+    expect(lines.indexOf('goto relaunch')).toBeLessThan(lines.indexOf(':copy'));
+    expect(lines.indexOf(':copy')).toBeLessThan(lines.indexOf(':relaunch'));
+  });
+
+  // The only thing no relaunch can fix is having no exe to relaunch, so that
+  // is the only bail-out left. A missing pid costs the wait, not the restart.
+  it('bails out only when there is no exe to start', () => {
+    expect(cmd.match(/exit \/b 1/g)).toEqual(['exit /b 1']);
+    expect(cmd).toContain('if not defined EXE exit /b 1');
+    expect(cmd).not.toContain('if not defined PID exit /b 1');
+  });
+
+  // The wait is cheap and it is the only thing stopping `start "" "%EXE%"`
+  // from racing a wmux that has not finished quitting, so the degraded path
+  // skips the copy and nothing else.
+  it('still waits for the old process before a degraded relaunch', () => {
+    const lines = cmd.split('\r\n');
+    expect(lines.indexOf('if not defined SKIPCOPY goto copy')).toBeGreaterThan(lines.indexOf(':wait'));
+    expect(cmd.indexOf('if not defined SKIPCOPY goto copy')).toBeGreaterThan(cmd.indexOf('tasklist.exe'));
+  });
+
+  // This console is the user's whole view of the update: a window that says
+  // "Installing" and then starts the build they already had, with no line in
+  // between, reads as the update having worked.
+  it('says on screen when it skipped the copy, and why', () => {
+    expect(cmd).toContain('echo   Skipping the update: %SKIPCOPY%.');
+    expect(cmd).toContain('set "SKIPCOPY=the downloaded files are no longer on disk"');
+  });
+
+  // /q suppresses the confirmation prompt, not the error: with the payload
+  // already gone, the relaunch path's rmdir prints "The system cannot find
+  // the file specified." straight into that same console.
+  it('does not let the cleanup rmdir complain about a payload that is gone', () => {
+    expect(cmd).toContain('rmdir /s /q "%SRC%" 2>nul');
+  });
+
+  // Self-deleting scripts are a classic dropper/malware signature; not
+  // self-deleting removes one plausible trigger for AV behavioral scans
+  // (e.g. Norton SONAR) hanging the system on update.
+  // Matching `del "%~f0"` caught one spelling of a signature that has several:
+  // `del /f /q "%~f0"` and the `(goto) 2>nul & del "%~f0"` idiom both walked
+  // past it. The helper has no legitimate reason to name its own file at all,
+  // so the thing to refuse is `%~f0`, not any particular command around it.
+  it('does not self-delete', () => {
+    expect(cmd).not.toContain('%~f0');
+  });
+
+  // The console cannot be hidden (DETACHED_PROCESS makes Windows ignore
+  // CREATE_NO_WINDOW), so it has to say what it is: a user reported an empty
+  // window titled "findstr.exe" and could not tell whether it wanted input.
+  it('names itself and says the window closes on its own', () => {
+    expect(cmd).toContain('title wmux update');
+    expect(cmd).toMatch(/echo\s+Installing the wmux update\./);
+    expect(cmd).toMatch(/This window closes by itself/);
+    // Windows renames a console after the child running in it, so the title is
+    // re-set inside the wait loop and not only once at the top.
+    expect(cmd.match(/title wmux update/g)?.length).toBeGreaterThan(1);
+    expect(cmd.indexOf('title wmux update')).toBeLessThan(cmd.indexOf(':wait'));
+  });
+
+  // timeout.exe refuses a redirected stdin, and the helper is spawned with
+  // stdio 'ignore' — so it exited at once and the wait became a tasklist spin.
+  // waitfor honours /t with NUL stdin. `ping -n` is the dropper batch-sleep
+  // idiom and is deliberately not the replacement.
+  it('pauses the wait loop with waitfor, not timeout or ping', () => {
+    expect(cmd).not.toMatch(/timeout\.exe/i);
+    expect(cmd).not.toMatch(/ping(\.exe)?\s+-n/i);
+    expect(cmd).toContain('"%SYS%\\waitfor.exe" /t 1 wmuxUpdateWait >nul 2>nul');
+    // The pause runs before the liveness probe, so its own exit code can never
+    // stand in for tasklist's.
+    expect(cmd.indexOf('waitfor.exe')).toBeLessThan(cmd.indexOf('tasklist.exe'));
   });
 
   it('does not embed caller paths — those arrive as arguments', () => {
@@ -129,5 +304,371 @@ describe('buildApplyUpdateCmd', () => {
     expect(cmd).toContain('set "SRC=%~2"');
     expect(cmd).toContain('set "DST=%~3"');
     expect(cmd).toContain('set "EXE=%~4"');
+  });
+});
+
+describe('update leftover names (#3)', () => {
+  it('classifies every name the update flow creates', () => {
+    expect(classifyUpdateLeftover(updateHelperName(4242))).toEqual({ kind: 'helper', pid: 4242 });
+    expect(classifyUpdateLeftover(updateZipName('2.12.0', 17))).toEqual({ kind: 'zip', pid: 17 });
+    expect(classifyUpdateLeftover(updateStampName('2.12.0', 17))).toEqual({ kind: 'extract-dir', pid: 17 });
+    expect(classifyUpdateLeftover(updateStampName('2.13.0-beta.1+build-7', 9))).toEqual({ kind: 'extract-dir', pid: 9 });
+  });
+
+  it('rejects near misses', () => {
+    for (const name of [
+      'wmux-apply-update-12.cmd.txt',
+      'wmux-apply-update-.cmd',
+      'wmux-apply-update-12.CMD',
+      'WMUX-apply-update-12.cmd',
+      'wmux-update-2.12.0.zip',
+      'wmux-update-2.12.0-',
+      'wmux-update-2.12.0-12.zip.part',
+      'wmux-update-2.12.0-12-old',
+      'wmux-update-2 12 0-12',
+      'xwmux-update-2.12.0-12',
+      'wmux-zip-abc',
+    ]) {
+      expect(classifyUpdateLeftover(name), name).toBeNull();
+    }
+  });
+
+  it('rejects a PID that is not a real one', () => {
+    expect(classifyUpdateLeftover('wmux-apply-update-0.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-4294967296.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-12345678901234567890.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-0123.cmd')).toBeNull();
+    expect(classifyUpdateLeftover('wmux-apply-update-4294967295.cmd')).toEqual({ kind: 'helper', pid: 4294967295 });
+  });
+});
+
+describe('isPidAlive', () => {
+  const failing = (code: string) => () => { throw Object.assign(new Error(code), { code }); };
+
+  it('reads only ESRCH as gone', () => {
+    expect(isPidAlive(1, () => undefined)).toBe(true);
+    expect(isPidAlive(1, failing('ESRCH'))).toBe(false);
+    expect(isPidAlive(1, failing('EPERM'))).toBe(true);
+    expect(isPidAlive(1, failing('EINVAL'))).toBe(true);
+  });
+
+  it('sends signal 0', () => {
+    const kill = vi.fn();
+    isPidAlive(77, kill);
+    expect(kill).toHaveBeenCalledWith(77, 0);
+  });
+});
+
+describe('sweepUpdateLeftovers (#3)', () => {
+  const HOUR = 60 * 60 * 1000;
+  const now = Date.now();
+  const dead = () => false;
+
+  function age(p: string, ms: number): void {
+    const t = new Date(now - ms);
+    fs.utimesSync(p, t, t);
+  }
+
+  function file(dir: string, name: string, ageMs: number): string {
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, 'x');
+    age(p, ageMs);
+    return p;
+  }
+
+  function folder(dir: string, name: string, ageMs: number): string {
+    const p = path.join(dir, name);
+    fs.mkdirSync(p);
+    fs.writeFileSync(path.join(p, 'wmux.exe'), '');
+    age(p, ageMs);
+    return p;
+  }
+
+  const sweep = (dir: string, isPidAliveFn: (pid: number) => boolean = dead) =>
+    sweepUpdateLeftovers(dir, { now: () => now, isPidAlive: isPidAliveFn });
+
+  it('removes old leftovers of a dead process and nothing else', async () => {
+    const dir = tempDir();
+    const helper = file(dir, updateHelperName(101), 2 * HOUR);
+    const zip = file(dir, updateZipName('2.12.0', 101), 2 * HOUR);
+    const extract = folder(dir, updateStampName('2.12.0', 101), 2 * HOUR);
+    const unrelated = file(dir, 'something-else.cmd', 2 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed.sort()).toEqual(
+      [updateHelperName(101), updateStampName('2.12.0', 101), updateZipName('2.12.0', 101)].sort(),
+    );
+    expect(result.failed).toEqual([]);
+    expect(fs.existsSync(helper)).toBe(false);
+    expect(fs.existsSync(zip)).toBe(false);
+    expect(fs.existsSync(extract)).toBe(false);
+    expect(fs.existsSync(unrelated)).toBe(true);
+  });
+
+  it('keeps leftovers whose PID is still alive', async () => {
+    const dir = tempDir();
+    const extract = folder(dir, updateStampName('2.12.0', 102), 5 * 24 * HOUR);
+    const result = await sweep(dir, (pid) => pid === 102);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(extract)).toBe(true);
+  });
+
+  it('keeps fresh leftovers and ones dated in the future', async () => {
+    const dir = tempDir();
+    const fresh = file(dir, updateHelperName(103), HOUR / 2);
+    const future = file(dir, updateHelperName(104), -HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(fresh)).toBe(true);
+    expect(fs.existsSync(future)).toBe(true);
+  });
+
+  it('keeps an entry whose type does not match its name', async () => {
+    const dir = tempDir();
+    const zipNamedDir = folder(dir, updateZipName('2.12.0', 105), 2 * HOUR);
+    const helperNamedDir = folder(dir, updateHelperName(105), 2 * HOUR);
+    const extractNamedFile = file(dir, updateStampName('2.12.0', 106), 2 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(zipNamedDir)).toBe(true);
+    expect(fs.existsSync(helperNamedDir)).toBe(true);
+    expect(fs.existsSync(extractNamedFile)).toBe(true);
+  });
+
+  // "Later", then "Install and restart" days afterwards: the payload is old
+  // and its PID is dead while a helper is still copying from it. Only the
+  // helper's mtime says the install is in progress.
+  it('keeps a payload while a fresh helper with the same PID exists', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(107), 60 * 1000);
+    const extract = folder(dir, updateStampName('2.12.0', 107), 3 * 24 * HOUR);
+    const zip = file(dir, updateZipName('2.12.0', 107), 3 * 24 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(fs.existsSync(extract)).toBe(true);
+    expect(fs.existsSync(zip)).toBe(true);
+  });
+
+  it('removes a payload and its helper once both are old', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(108), 2 * HOUR);
+    folder(dir, updateStampName('2.12.0', 108), 3 * 24 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed.sort()).toEqual([updateHelperName(108), updateStampName('2.12.0', 108)].sort());
+  });
+
+  it('does not let a fresh helper protect a payload with a different PID', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(109), 60 * 1000);
+    const extract = folder(dir, updateStampName('2.12.0', 110), 3 * 24 * HOUR);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([updateStampName('2.12.0', 110)]);
+    expect(fs.existsSync(extract)).toBe(false);
+  });
+
+  it('never follows or removes a junction', async () => {
+    const dir = tempDir();
+    const target = tempDir();
+    const inside = path.join(target, 'precious.txt');
+    fs.writeFileSync(inside, 'keep me');
+    const link = path.join(dir, updateStampName('2.12.0', 111));
+    fs.symlinkSync(target, link, 'junction');
+    const t = new Date(now - 2 * HOUR);
+    fs.lutimesSync(link, t, t);
+    const result = await sweep(dir);
+    expect(result.removed).toEqual([]);
+    expect(result.failed).toEqual([]);
+    expect(fs.existsSync(link)).toBe(true);
+    expect(fs.readFileSync(inside, 'utf8')).toBe('keep me');
+  });
+
+  // The junction above never reaches the symlink guard: Windows lstat answers
+  // isSymbolicLink() true and isDirectory() false, so the `typeMatches` rule
+  // one line down already rejects it and the test above passes with the guard
+  // deleted. The guard is there for a stat that answers BOTH — so that is the
+  // stat the sweep has to be handed for the guard to be the thing under test.
+  it('does not remove a link whose stat also claims to be a real directory', async () => {
+    const dir = tempDir();
+    const target = tempDir();
+    const inside = path.join(target, 'precious.txt');
+    fs.writeFileSync(inside, 'keep me');
+    const link = path.join(dir, updateStampName('2.12.0', 114));
+    fs.symlinkSync(target, link, 'junction');
+
+    const realLstat = fs.promises.lstat;
+    const lstatSpy = vi.spyOn(fs.promises, 'lstat').mockImplementation(async (p) => {
+      if (String(p) !== link) return realLstat(p);
+      return {
+        mtimeMs: now - 2 * HOUR,
+        isDirectory: () => true,
+        isFile: () => false,
+        isSymbolicLink: () => true,
+      } as unknown as fs.Stats;
+    });
+    // Mocked rather than only watched: without the guard this call is real, and
+    // a test that proves the bug by deleting the link is not one to run twice.
+    const rmSpy = vi.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+    try {
+      const result = await sweep(dir);
+      expect(rmSpy).not.toHaveBeenCalled();
+      expect(result.removed).toEqual([]);
+      expect(result.failed).toEqual([]);
+    } finally {
+      rmSpy.mockRestore();
+      lstatSpy.mockRestore();
+    }
+    expect(fs.existsSync(link)).toBe(true);
+    expect(fs.readFileSync(inside, 'utf8')).toBe('keep me');
+  });
+
+  it('records a failed remove and carries on', async () => {
+    const dir = tempDir();
+    file(dir, updateHelperName(112), 2 * HOUR);
+    file(dir, updateHelperName(113), 2 * HOUR);
+    const realRm = fs.promises.rm;
+    let calls = 0;
+    const spy = vi.spyOn(fs.promises, 'rm').mockImplementation(async (p, opts) => {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+      return realRm(p, opts);
+    });
+    try {
+      const result = await sweep(dir);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0].code).toBe('EBUSY');
+      expect(result.removed).toHaveLength(1);
+      expect(fs.readdirSync(dir)).toEqual([result.failed[0].name]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+// A quit whose helper never runs leaves the user with no wmux and nothing to
+// restart it (#3). Every failure wmux can still see must reject BEFORE quit.
+describe('applyStagedPortableUpdate', () => {
+  const savedTemp = { TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR };
+  let payload: string;
+  let scratchTemp: string;
+
+  function fakeChild(): EventEmitter & { unref: ReturnType<typeof vi.fn> } {
+    return Object.assign(new EventEmitter(), { unref: vi.fn() });
+  }
+
+  function staged() {
+    return { version: '9.9.9', extractDir: payload, installDir: 'C:\\wmux', exePath: 'C:\\wmux\\wmux.exe' };
+  }
+
+  function pointTempAt(dir: string): void {
+    process.env.TEMP = dir;
+    process.env.TMP = dir;
+    process.env.TMPDIR = dir;
+  }
+
+  beforeEach(() => {
+    payload = tempDir();
+    fs.writeFileSync(path.join(payload, 'wmux.exe'), '');
+    // os.tmpdir() reads the environment on every call, so the helper lands in
+    // a scratch dir rather than the real %TEMP%.
+    scratchTemp = tempDir();
+    pointTempAt(scratchTemp);
+    spawnMock.mockReset();
+    vi.mocked(app.quit).mockReset();
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedTemp)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it('refuses a payload that is gone, without writing, spawning or quitting', async () => {
+    fs.unlinkSync(path.join(payload, 'wmux.exe'));
+    await expect(applyStagedPortableUpdate(staged())).rejects.toMatchObject({ code: 'PAYLOAD_MISSING' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(fs.readdirSync(scratchTemp)).toEqual([]);
+  });
+
+  it('does not quit when the helper cannot be written', async () => {
+    pointTempAt(path.join(scratchTemp, 'missing', 'dir'));
+    await expect(applyStagedPortableUpdate(staged())).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('does not quit when a path would be rewritten on the helper command line', async () => {
+    const withPercentPair = { ...staged(), installDir: 'C:\\tools\\%OS%\\wmux', exePath: 'C:\\tools\\%OS%\\wmux\\wmux.exe' };
+    await expect(applyStagedPortableUpdate(withPercentPair)).rejects.toThrow(/expand/);
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+    // The same assertion its two siblings make, and the one this test was
+    // missing: the refusal used to be evaluated as an argument to spawn(), so
+    // the helper had already been written to the path it was about to declare
+    // unusable. An install under a `%…%` path left one .cmd per click, and the
+    // sweep keeps those for an hour.
+    expect(fs.readdirSync(scratchTemp)).toEqual([]);
+  });
+
+  it('does not quit when the helper fails to start', async () => {
+    const child = fakeChild();
+    spawnMock.mockReturnValue(child);
+    const pending = applyStagedPortableUpdate(staged());
+    setImmediate(() => child.emit('error', Object.assign(new Error('spawn EPERM'), { code: 'EPERM' })));
+    await expect(pending).rejects.toThrow('spawn EPERM');
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('quits once the helper has started, and survives a late child error', async () => {
+    const child = fakeChild();
+    spawnMock.mockReturnValue(child);
+    const pending = applyStagedPortableUpdate(staged());
+    expect(app.quit).not.toHaveBeenCalled();
+    setImmediate(() => child.emit('spawn'));
+    await expect(pending).resolves.toBeUndefined();
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    expect(child.unref).toHaveBeenCalledTimes(1);
+    // An EventEmitter with no 'error' listener throws; in main that is an
+    // uncaught exception after the quit has started.
+    expect(() => child.emit('error', new Error('late'))).not.toThrow();
+    expect(() => child.emit('error', new Error('later'))).not.toThrow();
+
+    const [, args, opts] = spawnMock.mock.calls[0];
+    const helper = path.join(scratchTemp, `wmux-apply-update-${process.pid}.cmd`);
+    expect(args).toEqual(buildHelperArgs(helper, [String(process.pid), payload, 'C:\\wmux', 'C:\\wmux\\wmux.exe']));
+    expect(opts).toMatchObject({ detached: true, windowsHide: true, stdio: 'ignore', windowsVerbatimArguments: true });
+  });
+});
+
+// `cmd /c` strips the first and last quote of a line that starts with one and
+// holds more than two, so a %TEMP% with a space ("C:\Users\First Last\...")
+// turned the helper path into `C:\Users\First` and the update did nothing
+// after wmux had already quit.
+describe('buildHelperArgs', () => {
+  it('wraps every piece in quotes inside one outer pair, under /s', () => {
+    const args = buildHelperArgs('C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-apply-update-7.cmd', [
+      '7', 'C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-update-9.9.9-7', 'C:\\Program Files\\wmux', 'C:\\Program Files\\wmux\\wmux.exe',
+    ]);
+    expect(args).toEqual([
+      '/d', '/s', '/c',
+      '""C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-apply-update-7.cmd" "7" ' +
+        '"C:\\Users\\First Last\\AppData\\Local\\Temp\\wmux-update-9.9.9-7" "C:\\Program Files\\wmux" ' +
+        '"C:\\Program Files\\wmux\\wmux.exe""',
+    ]);
+  });
+
+  it('refuses a piece that would add a quote of its own', () => {
+    expect(() => buildHelperArgs('C:\\t\\h.cmd', ['1', 'C:\\a" & calc & "', 'C:\\w', 'C:\\w\\wmux.exe'])).toThrow(/double quote/);
+  });
+
+  // cmd expands a defined %NAME% even inside quotes, so `C:\x\%OS%\y` would
+  // reach the helper as `C:\x\Windows_NT\y` and the install would do nothing.
+  it('refuses a %…% pair anywhere, including the helper path', () => {
+    expect(() => buildHelperArgs('C:\\t\\h.cmd', ['1', 'C:\\x\\%OS%\\y', 'C:\\w', 'C:\\w\\wmux.exe'])).toThrow(/expand/);
+    expect(() => buildHelperArgs('C:\\Users\\a%b%c\\Temp\\h.cmd', ['1', 'C:\\p', 'C:\\w', 'C:\\w\\wmux.exe'])).toThrow(/expand/);
+  });
+
+  it('allows a lone percent sign, which cmd leaves alone', () => {
+    expect(buildHelperArgs('C:\\t\\h.cmd', ['1', 'C:\\100%\\p', 'C:\\w', 'C:\\w\\wmux.exe'])[3]).toContain('"C:\\100%\\p"');
   });
 });

@@ -22,15 +22,35 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 //
 // Apply cannot overwrite a running wmux.exe, so after the zip is extracted
 // we write a tiny cmd helper, detach it, and quit. The helper waits for
-// this PID to exit, robocopies the payload over the install root, strips
-// Mark of the Web, and relaunches.
+// this PID to exit, robocopies the payload over the install root, and
+// relaunches.
+//
+// That helper is VISIBLE, and it says what it is. `detached: true` implies
+// DETACHED_PROCESS, and Windows ignores CREATE_NO_WINDOW next to it, so the
+// `windowsHide: true` on the spawn below buys nothing: cmd.exe allocates a
+// console of its own (measured — a detached spawn adds a conhost.exe, an
+// otherwise identical non-detached one does not). A user reported the result
+// as an empty console titled `findstr.exe /I /C:" <pid> "`, with no way to
+// tell whether it wanted input or wanted closing. Hiding it is the wrong fix
+// twice over: dropping `detached` risks the helper dying with wmux, which is
+// the one failure the user cannot recover from (wmux has already quit), and a
+// hidden detached script that overwrites an unsigned exe and relaunches it is
+// the dropper shape #3 is about. So the window states its purpose instead.
+//
+// The helper does NOT strip Mark of the Web, and that step must not be
+// reintroduced (#3).
+// There is nothing to strip: net.request + createWriteStream write no
+// :Zone.Identifier stream, so neither the zip nor its extracted payload has
+// one, and executables under the install dir are already unblocked in-process
+// by stripMotw() in index.ts on every launch. A hidden PowerShell recursively
+// running Unblock-File is, on the other hand, a MOTW-bypass pattern (MITRE
+// T1553.005) and the strongest behavioural-AV signal the helper used to emit.
 //
 // No extra runtime downloads (no curl, no npm unzip, no Invoke-WebRequest):
 //   download — Electron net.request (Chromium). Always present in a packaged build.
 //   extract  — %SystemRoot%\System32\tar.exe (Windows 10 1803+, which Electron 43
 //              already requires), then Windows PowerShell Expand-Archive.
-//   apply    — cmd.exe + robocopy/tasklist/timeout/findstr, all via System32.
-//   MOTW     — Unblock-File is best-effort; a missing PowerShell does not block relaunch.
+//   apply    — cmd.exe + robocopy/tasklist/waitfor/findstr, all via System32.
 
 const UNINSTALLER_NAME = 'Uninstall wmux.exe';
 
@@ -79,6 +99,156 @@ export function findPayloadRoot(extractDir: string): string {
   throw new Error('zip does not contain wmux.exe');
 }
 
+// ── Update leftovers in %TEMP% (#3) ─────────────────────────────────────────
+// Every name the update flow creates in os.tmpdir() is built here, and the
+// sweep parses names with the inverse of these same builders, so what is
+// created and what may be removed cannot drift apart. All three names carry
+// the PID of the wmux that downloaded and applied the update.
+
+export function updateStampName(version: string, pid: number): string {
+  return `wmux-update-${version}-${pid}`;
+}
+
+export function updateZipName(version: string, pid: number): string {
+  return `${updateStampName(version, pid)}.zip`;
+}
+
+export function updateHelperName(pid: number): string {
+  return `wmux-apply-update-${pid}.cmd`;
+}
+
+export type UpdateLeftoverKind = 'helper' | 'extract-dir' | 'zip';
+
+const LEFTOVER_PATTERNS: ReadonlyArray<{ kind: UpdateLeftoverKind; re: RegExp }> = [
+  { kind: 'helper', re: /^wmux-apply-update-(\d+)\.cmd$/ },
+  { kind: 'zip', re: /^wmux-update-[0-9A-Za-z.+-]+-(\d+)\.zip$/ },
+  { kind: 'extract-dir', re: /^wmux-update-[0-9A-Za-z.+-]+-(\d+)$/ },
+];
+
+const MAX_PID = 0xffffffff;
+
+/**
+ * Which update leftover a %TEMP% entry name is, and the PID it carries — or
+ * null for anything else. Anchored and case-sensitive. A version containing a
+ * character outside the pattern is simply never swept: a pattern that is too
+ * narrow keeps a file, it never removes one.
+ */
+export function classifyUpdateLeftover(name: string): { kind: UpdateLeftoverKind; pid: number } | null {
+  for (const { kind, re } of LEFTOVER_PATTERNS) {
+    const m = re.exec(name);
+    if (!m) continue;
+    const pid = Number(m[1]);
+    // String round trip rejects leading zeros and anything past 2^53, where
+    // Number() has already rounded the digits into some other PID.
+    if (!Number.isSafeInteger(pid) || pid < 1 || pid > MAX_PID || String(pid) !== m[1]) return null;
+    return { kind, pid };
+  }
+  return null;
+}
+
+/**
+ * Whether a process with this PID exists. Signal 0 sends nothing, it only
+ * tests. Only ESRCH means "gone"; EPERM means it exists and belongs to someone
+ * else, and every other failure is an answer we cannot trust — all of those
+ * read as alive, so the caller keeps whatever it was about to remove.
+ */
+export function isPidAlive(
+  pid: number,
+  kill: (pid: number, signal: number) => void = (p, s) => { process.kill(p, s); },
+): boolean {
+  try {
+    kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code !== 'ESRCH';
+  }
+}
+
+/** How long after startup the sweep runs; see the call site in index.ts. */
+export const UPDATE_SWEEP_DELAY_MS = 60_000;
+const UPDATE_LEFTOVER_MAX_AGE_MS = 60 * 60 * 1000;
+
+export interface SweepDeps {
+  now: () => number;
+  isPidAlive: (pid: number) => boolean;
+  maxAgeMs: number;
+}
+
+export interface SweepResult {
+  removed: string[];
+  failed: { name: string; code: string }[];
+}
+
+interface LeftoverEntry {
+  name: string;
+  full: string;
+  kind: UpdateLeftoverKind;
+  pid: number;
+  stat: fs.Stats | null;
+}
+
+/** Age check that treats a negative or unreadable age as fresh. */
+function isOlderThan(stat: fs.Stats, now: number, maxAgeMs: number): boolean {
+  return now - stat.mtimeMs > maxAgeMs;
+}
+
+/**
+ * Removes update leftovers from `tmpDir`. Every rule fails towards keeping:
+ *
+ *   - a fresh entry (mtime within maxAgeMs, or in the future) may belong to a
+ *     helper that is still running — cmd reads a batch file line by line, so
+ *     deleting it mid-run skips its own `rmdir`;
+ *   - a zip or extract dir whose PID has a fresh helper beside it is kept
+ *     whatever its own age: after "Later" the payload can be days old by the
+ *     time a helper starts copying from it, and only the helper's mtime is set
+ *     at apply time;
+ *   - a live PID may be a running wmux holding the payload as a staged update;
+ *   - symlinks and junctions are never followed or removed, and an entry whose
+ *     type does not match its name is left alone.
+ *
+ * A failed remove is recorded and the sweep carries on.
+ */
+export async function sweepUpdateLeftovers(tmpDir: string, deps: Partial<SweepDeps> = {}): Promise<SweepResult> {
+  const now = (deps.now ?? Date.now)();
+  const alive = deps.isPidAlive ?? ((pid: number) => isPidAlive(pid));
+  const maxAgeMs = deps.maxAgeMs ?? UPDATE_LEFTOVER_MAX_AGE_MS;
+  const result: SweepResult = { removed: [], failed: [] };
+
+  // Pass 1: collect matching entries and the PIDs a fresh helper protects.
+  // opendir iterates, so a %TEMP% with tens of thousands of entries is never
+  // held in memory — only the handful that match.
+  const entries: LeftoverEntry[] = [];
+  const protectedPids = new Set<number>();
+  for await (const dirent of await fs.promises.opendir(tmpDir)) {
+    const leftover = classifyUpdateLeftover(dirent.name);
+    if (!leftover) continue;
+    const full = path.join(tmpDir, dirent.name);
+    const stat = await fs.promises.lstat(full).catch(() => null);
+    if (leftover.kind === 'helper' && (!stat || !isOlderThan(stat, now, maxAgeMs))) {
+      protectedPids.add(leftover.pid);
+    }
+    entries.push({ name: dirent.name, full, ...leftover, stat });
+  }
+
+  // Pass 2: the first rule that says keep wins.
+  for (const entry of entries) {
+    const { stat } = entry;
+    if (!stat || stat.isSymbolicLink()) continue;
+    const typeMatches = entry.kind === 'extract-dir' ? stat.isDirectory() : stat.isFile();
+    if (!typeMatches) continue;
+    if (!isOlderThan(stat, now, maxAgeMs)) continue;
+    if (entry.kind !== 'helper' && protectedPids.has(entry.pid)) continue;
+    if (alive(entry.pid)) continue;
+    try {
+      await fs.promises.rm(entry.full, { recursive: entry.kind === 'extract-dir', force: true });
+      result.removed.push(entry.name);
+    } catch (err) {
+      result.failed.push({ name: entry.name, code: (err as NodeJS.ErrnoException)?.code ?? 'UNKNOWN' });
+    }
+  }
+  return result;
+}
+
 export interface StagedZipUpdate {
   version: string;
   extractDir: string;
@@ -93,33 +263,152 @@ export function buildApplyUpdateCmd(): string {
   return [
     '@echo off',
     'setlocal EnableExtensions',
+    // The console belongs to this script (see the header), so it introduces
+    // itself. The title is re-set inside the loop because Windows renames a
+    // console after whichever child is currently running in it — which is how
+    // this window came to be reported as "findstr.exe".
+    'title wmux update',
     'set "SYS=%SystemRoot%\\System32"',
     'set "PID=%~1"',
     'set "SRC=%~2"',
     'set "DST=%~3"',
     'set "EXE=%~4"',
-    'if not defined PID exit /b 1',
-    'if not exist "%SRC%\\wmux.exe" exit /b 1',
+    // The one thing this helper cannot work around is having no exe to
+    // start, so that is the only line here that exits without reaching
+    // :relaunch. Everything else is decided into SKIPCOPY and settled at
+    // the branch below, because wmux calls existsSync on the payload
+    // BEFORE it spawns this script and quits right after — the two checks
+    // sit on opposite sides of app.quit(), so an antivirus or a temp
+    // cleaner taking %SRC% away in between used to hit a bare `exit /b 1`
+    // here, with wmux already gone and nothing left to restart it.
+    'if not defined EXE exit /b 1',
+    // Both flags are cleared before use: this script inherits wmux's
+    // environment, so a variable of either name already living there would
+    // otherwise decide a branch nobody here set.
+    'set "SKIPCOPY="',
+    'set "KEEPSRC="',
+    // No pid is no way to know when the old wmux let go of its files, and
+    // copying over a live install is how a half-written wmux.exe happens.
+    'if not defined PID set "SKIPCOPY=there is no wmux process to wait for"',
+    'if not exist "%SRC%\\wmux.exe" set "SKIPCOPY=the downloaded files are no longer on disk"',
+    'echo.',
+    'echo   Installing the wmux update.',
+    'echo   This window closes by itself. Leave it open; nothing to type here.',
+    'echo.',
+    'echo   Waiting for wmux to close...',
     ':wait',
-    '"%SYS%\\timeout.exe" /t 1 /nobreak >nul',
+    'title wmux update',
+    // waitfor, not timeout: this script is spawned with stdio 'ignore', so its
+    // stdin is NUL, and timeout.exe refuses a redirected stdin outright
+    // ("ERROR: Input redirection is not supported") — measured at 66 ms for a
+    // /t 3, which turned the wait into a tasklist spin with no pause at all.
+    // waitfor honours /t with NUL stdin (2.1 s measured for /t 2) and times out
+    // by design, so its own "Timed out waiting" goes to nul. Not `ping -n`,
+    // which is the textbook batch-sleep idiom in droppers — the one shape this
+    // helper is trying not to have. Where waitfor.exe is absent the loop
+    // degrades to the spin it already had, never to a wrong answer.
+    '"%SYS%\\waitfor.exe" /t 1 wmuxUpdateWait >nul 2>nul',
     '"%SYS%\\tasklist.exe" /FI "PID eq %PID%" 2>nul | "%SYS%\\findstr.exe" /I /C:" %PID% " >nul',
     'if not errorlevel 1 goto wait',
-    '"%SYS%\\timeout.exe" /t 2 /nobreak >nul',
+    '"%SYS%\\waitfor.exe" /t 2 wmuxUpdateWait >nul 2>nul',
+    'title wmux update',
+    // The wait happens whatever SKIPCOPY says. It costs a second or two
+    // and it is what keeps `start "" "%EXE%"` from racing a wmux that has
+    // not finished quitting; only the copy is worth skipping. The reason
+    // is printed rather than swallowed, because this console is the user's
+    // whole view of the update, and a window that says "Installing" and
+    // then quietly starts the build they already had reads as a success.
+    'if not defined SKIPCOPY goto copy',
+    'echo   Skipping the update: %SKIPCOPY%.',
+    'goto relaunch',
+    ':copy',
+    'echo   Copying files...',
     '"%SYS%\\robocopy.exe" "%SRC%" "%DST%" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /NC /NS',
-    'if %ERRORLEVEL% GEQ 8 goto relaunch',
-    // MOTW strip is best-effort: a constrained PowerShell must not block relaunch.
-    'if exist "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" "%SYS%\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -NonInteractive -Command "Get-ChildItem -LiteralPath $env:DST -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1',
-    // The relaunch is unconditional, including after a failed copy. wmux has
-    // already quit by the time this runs, so bailing out here is the one
-    // outcome the user cannot recover from without finding wmux.exe by hand.
-    // A robocopy failure (install root not writable, a leftover child still
-    // holding a DLL past /R:5) usually leaves the old build in place, so
-    // %EXE% still starts — on the old version, which beats not starting.
+    // `if errorlevel 8`, not `if %ERRORLEVEL% GEQ 8`: with command extensions
+    // cmd only resolves that expansion to the dynamic exit status while no
+    // variable of the same name exists, and `setlocal` copies the inherited
+    // environment rather than emptying it. An inherited ERRORLEVEL=0 would send
+    // a failed robocopy down the success path, where the cleanup below deletes
+    // the payload the user needs to retry — the exact harm :copyfailed exists to
+    // prevent. Same inherited-variable exposure the two flags above are cleared
+    // for, and the wait loop already uses this form. `if errorlevel N` is
+    // ">= N", so the threshold is unchanged.
+    'if errorlevel 8 goto copyfailed',
+    'goto relaunch',
+    // A failed copy used to jump straight to :relaunch, which read as correct
+    // because :relaunch was the next line anyway — and that is what made it
+    // silent: the only thing on screen was "Installing the wmux update."
+    // followed by "Starting wmux...". So the failure gets its own label.
+    //
+    // What it must NOT claim is a rollback. robocopy walks the payload file by
+    // file and `>= 8` means at least one of them failed, not that none of them
+    // landed — a DLL held by a leftover child past /R:5 fails while everything
+    // copied before it has already replaced its target. So the install can be a
+    // MIX of versions, which is the state worth telling the user about, and
+    // saying "starting on the previous version" would send them away believing
+    // nothing is wrong. The payload is kept (KEEPSRC skips the cleanup below)
+    // because finishing the job means running the update again; the sweep
+    // reclaims it within the hour either way.
+    ':copyfailed',
+    'echo   Some files could not be replaced, so this update is incomplete.',
+    'echo   wmux is starting anyway. Please install the update again.',
+    'set "KEEPSRC=1"',
+    // The relaunch itself stays unconditional, including after a failed copy.
+    // wmux has already quit by the time this runs, so bailing out here is the
+    // one outcome the user cannot recover from without finding wmux.exe by hand.
     ':relaunch',
+    'echo   Starting wmux...',
     'start "" "%EXE%"',
-    'rmdir /s /q "%SRC%"',
-    'del "%~f0"',
+    // 2>nul because a missing %SRC% is now a path that reaches this line:
+    // /q suppresses the confirmation prompt and nothing else, so rmdir on
+    // a directory that is already gone still prints "The system cannot
+    // find the file specified." into a console kept readable on purpose.
+    'if not defined KEEPSRC rmdir /s /q "%SRC%" 2>nul',
+    // Deliberately does NOT delete itself (no `del "%~f0"`). A hidden,
+    // detached script that silently overwrites an unsigned .exe, launches
+    // it, and then erases its own file is a textbook dropper/self-cleanup
+    // signature — exactly what AV behavioral engines (e.g. Norton SONAR)
+    // are built to flag, and a plausible contributor to reports of the
+    // updater triggering a heavy AV scan/lockdown. %TEMP% is NOT reclaimed
+    // on its own (only Storage Sense does that, and it is off by default),
+    // so the leftover .cmd is removed by sweepUpdateLeftovers() instead —
+    // from a later wmux process, long after this script has exited.
   ].join('\r\n');
+}
+
+/**
+ * cmd.exe arguments that run `helper` with `args`, for a VERBATIM spawn.
+ *
+ * Handing the pieces to spawn() separately is not enough. Node quotes each one
+ * that contains a space, and `cmd /c` then applies its own rule to the result:
+ * when the command line starts with a quote and holds more than two, it strips
+ * the first and the LAST quote on the line. A %TEMP% with a space in it — any
+ * Windows account named "First Last" — made the helper path arrive as
+ * `C:\Users\First`, "is not recognized", and cmd.exe exited having done
+ * nothing, after wmux had already quit into the update. cmd.exe itself had
+ * started, so no spawn error could report it.
+ *
+ * `/s` plus one outer pair of quotes is the documented way out: cmd strips
+ * exactly that pair and leaves every inner quote alone. That only holds if
+ * nothing inside adds a quote of its own, which a Windows path cannot contain;
+ * one that somehow does is refused rather than allowed to re-split the line.
+ *
+ * Quotes do not stop the other rewrite cmd performs on a command line: a
+ * `%NAME%` naming a defined variable is expanded inside them (measured:
+ * `"C:\x\%OS%\y"` arrives as `C:\x\Windows_NT\y`). `%` is legal in a Windows
+ * path, and a path that changes on the way in is the same silent no-restart
+ * as the space was. A lone `%` survives, so only a pair is refused — here,
+ * while wmux is still running to say so.
+ */
+export function buildHelperArgs(helper: string, args: string[]): string[] {
+  const parts = [helper, ...args];
+  if (parts.some((p) => p.includes('"'))) {
+    throw new Error('update helper argument contains a double quote');
+  }
+  if (parts.some((p) => /%[^%]*%/.test(p))) {
+    throw new Error('update helper argument contains a %…% pair that cmd.exe would expand');
+  }
+  return ['/d', '/s', '/c', `"${parts.map((p) => `"${p}"`).join(' ')}"`];
 }
 
 function system32(name: string): string {
@@ -297,9 +586,8 @@ export async function runPortableZipUpdate(opts: {
   }
 
   const { version, asset } = opts.target;
-  const stamp = `wmux-update-${version}-${process.pid}`;
-  const zipPath = path.join(os.tmpdir(), `${stamp}.zip`);
-  const extractDir = path.join(os.tmpdir(), stamp);
+  const zipPath = path.join(os.tmpdir(), updateZipName(version, process.pid));
+  const extractDir = path.join(os.tmpdir(), updateStampName(version, process.pid));
   if (fs.existsSync(extractDir)) fs.rmSync(extractDir, { recursive: true, force: true });
   fs.mkdirSync(extractDir, { recursive: true });
 
@@ -320,20 +608,58 @@ export async function runPortableZipUpdate(opts: {
   }
 }
 
-export function applyStagedPortableUpdate(staged: StagedZipUpdate): void {
-  const helper = path.join(os.tmpdir(), `wmux-apply-update-${process.pid}.cmd`);
-  fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
-  const cmd = process.env.ComSpec || system32('cmd.exe');
-  const child = spawn(cmd, [
-    '/d', '/c', helper,
+/**
+ * Hands the swap to the detached helper and quits — but only once the helper
+ * is actually running. Every failure wmux can still observe rejects WITHOUT
+ * quitting, because a quit whose helper never runs leaves the user with no
+ * wmux and nothing to restart it (#3):
+ *
+ *   - the payload is gone (Storage Sense, a temp cleanup, days after "Later"):
+ *     rejects with code PAYLOAD_MISSING, and only a fresh download can help;
+ *   - the helper cannot be written, or cmd.exe fails to start (an antivirus
+ *     blocking either): rejects with that error, and the payload is still good.
+ *
+ * The 'error' listener stays attached after 'spawn', so a late error on the
+ * child is a no-op rather than an uncaught exception in main.
+ */
+export async function applyStagedPortableUpdate(staged: StagedZipUpdate): Promise<void> {
+  if (!fs.existsSync(path.join(staged.extractDir, 'wmux.exe'))) {
+    throw Object.assign(
+      new Error('the downloaded update is no longer on disk — download it again'),
+      { code: 'PAYLOAD_MISSING' },
+    );
+  }
+  const helper = path.join(os.tmpdir(), updateHelperName(process.pid));
+  // buildHelperArgs runs BEFORE the write, so a refusal leaves %TEMP% exactly
+  // as it found it — like the other two pre-flight failures above. Evaluating
+  // it inline as a spawn() argument still refused the update, but only after
+  // writeFileSync had dropped a helper on a path the refusal had just declared
+  // unusable, and sweepUpdateLeftovers keeps that file for an hour. An install
+  // under a `%…%` path clicks "Install and restart" repeatedly, so it is one
+  // stray .cmd per click.
+  const helperArgs = buildHelperArgs(helper, [
     String(process.pid),
     staged.extractDir,
     staged.installDir,
     staged.exePath,
-  ], {
+  ]);
+  fs.writeFileSync(helper, buildApplyUpdateCmd(), 'utf8');
+  const cmd = process.env.ComSpec || system32('cmd.exe');
+  const child = spawn(cmd, helperArgs, {
     detached: true,
     stdio: 'ignore',
+    // `windowsHide` does NOT hide this one: DETACHED_PROCESS makes Windows
+    // ignore CREATE_NO_WINDOW, so cmd.exe opens a console anyway (see the
+    // header). It stays because dropping `detached` to make it work would
+    // put the helper's life back in wmux's hands, and the helper outliving
+    // wmux is the whole point. The console is where `buildApplyUpdateCmd`'s
+    // title and messages land.
     windowsHide: true,
+    windowsVerbatimArguments: true,
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.on('error', reject);
   });
   child.unref();
   app.quit();
