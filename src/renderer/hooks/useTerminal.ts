@@ -28,6 +28,7 @@ import { resetTerminalModes } from '../utils/terminal-reset';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
 import { createTouchPanTracker } from '../utils/touch-pan';
+import { wheelForward, type WheelSource } from '../utils/wheel-forward';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isLetterKey, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
@@ -568,10 +569,34 @@ function pointerCell(
   return { col, row };
 }
 
+// Marks a wheel event as SYNTHESIZED from a touch pan (issue #245). The
+// touch-pan handler below dispatches real `WheelEvent`s so a finger inherits
+// every behaviour the wheel has (#243) — but the two gestures do NOT agree on
+// how many app-level reports a line is worth, and `wheelForward` needs to be
+// told which one it is looking at.
+//
+// A private property rather than `ev.isTrusted`, which answers "who dispatched
+// this" and not "what gesture is this": the next synthetic wheel from anywhere
+// else would silently inherit touch semantics. The producer and the consumer
+// are forty lines apart in this file, so this is a local protocol and not a
+// module.
+const TOUCH_WHEEL = Symbol('wmux:touch-wheel');
+function markTouchWheel(ev: WheelEvent): WheelEvent {
+  (ev as unknown as Record<symbol, boolean>)[TOUCH_WHEEL] = true;
+  return ev;
+}
+function wheelSource(ev: WheelEvent): WheelSource {
+  return (ev as unknown as Record<symbol, boolean>)[TOUCH_WHEEL] ? 'touch' : 'wheel';
+}
+
 // Forward a wheel scroll to the PTY for an app that owns the screen (alt buffer
 // or mouse-tracking): SGR wheel reports (button 64=up/65=down) at the pointer
 // cell when mouse tracking is on, else arrow keys (matching xterm's native
 // _handlePassiveWheel fallback for non-mouse pagers like less/man).
+//
+// HOW MANY reports that is lives in `wheel-forward.ts` and is not obvious — one
+// per EVENT for a mouse-tracking app, one per LINE for everything else. See
+// that file; getting it wrong is #245.
 function writeWheelToPty(
   ev: WheelEvent,
   terminal: Terminal,
@@ -580,15 +605,12 @@ function writeWheelToPty(
   count: number,
   mouseTracking: boolean,
 ): void {
-  let seq: string;
-  if (mouseTracking) {
-    const { col, row } = pointerCell(ev, terminal, host);
-    const btn = count < 0 ? 64 : 65; // 64 = wheel-up, 65 = wheel-down
-    seq = `\x1b[<${btn};${col};${row}M`;
-  } else {
-    seq = count < 0 ? '\x1b[A' : '\x1b[B'; // arrow keys for non-mouse pagers
-  }
-  for (let i = 0; i < Math.abs(count); i++) window.wmux.pty.write(ptyId, seq);
+  const { col, row } = mouseTracking
+    ? pointerCell(ev, terminal, host)
+    : { col: 0, row: 0 }; // unused by the arrow branch
+  const write = wheelForward({ lines: count, mouseTracking, source: wheelSource(ev), col, row });
+  if (!write) return;
+  for (let i = 0; i < write.repeats; i++) window.wmux.pty.write(ptyId, write.seq);
 }
 
 // Capture-phase wheel handler. We always take ownership (xterm's own forwarding
@@ -1001,14 +1023,17 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (!panTracker.panning) return;
       ev.preventDefault();
       if (deltaY === 0) return;
-      touchHost.dispatchEvent(new WheelEvent('wheel', {
+      // markTouchWheel: a finger and a detent disagree about how many app-level
+      // reports one line is worth, and only the dispatcher knows which this is
+      // (#245). Everything else about the event is deliberately identical.
+      touchHost.dispatchEvent(markTouchWheel(new WheelEvent('wheel', {
         deltaY,
         deltaMode: 0, // DOM_DELTA_PIXEL — wheelDeltaToLines owns the cell maths
         clientX: ev.clientX,
         clientY: ev.clientY,
         bubbles: true,
         cancelable: true,
-      }));
+      })));
     };
     const onTouchPanEnd = (ev: PointerEvent) => {
       if (ev.pointerType !== 'touch') return;
