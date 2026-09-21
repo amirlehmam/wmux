@@ -60,6 +60,26 @@ describe('terminal link handling', () => {
     expect(openInWmuxBrowser).not.toHaveBeenCalled();
   });
 
+  // The OSC 8 provider and WebLinksAddon both fire activateTerminalLink for one
+  // click, handing it the SAME MouseEvent object. That identity is the guard:
+  // the echo is dropped, so one physical click opens once.
+  it('opens once when the same event object activates twice', () => {
+    const event = mouseEvent();
+    activateTerminalLink(event, 'https://example.com/dup');
+    activateTerminalLink(event, 'https://example.com/dup');
+
+    expect(openInWmuxBrowser).toHaveBeenCalledTimes(1);
+  });
+
+  // Two separate gestures are two events, even on the same uri — a genuine
+  // re-click must reopen.
+  it('opens twice for separate events on the same uri', () => {
+    activateTerminalLink(mouseEvent(), 'https://example.com/again');
+    activateTerminalLink(mouseEvent(), 'https://example.com/again');
+
+    expect(openInWmuxBrowser).toHaveBeenCalledTimes(2);
+  });
+
   it('uses the same activation function for OSC 8 links', () => {
     expect(terminalLinkHandler.activate).toBe(activateTerminalLink);
   });
