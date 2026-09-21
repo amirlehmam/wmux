@@ -7,6 +7,7 @@ import { logDiagnostic } from './crash-diagnostics';
 import { planQuit } from './quit-sequence';
 import { handleBrowserV2 } from './v2-browser';
 import { pickBrowserSurface } from './browser-engine-surface';
+import { windowOpenPolicy, willNavigatePolicy } from './webview-navigation';
 import {
   agentBrowserNeedsTeardown,
   agentBrowserTeardownDeps,
@@ -866,24 +867,24 @@ function hardenWebContents(): void {
 
     // Open new-window requests externally rather than spawning in-app windows
     // with full privileges. Only http/https go to the OS browser; deny the rest.
+    // This and will-navigate below share ONE policy (webview-navigation.ts) so
+    // the "open http(s) externally" rule can't drift between them.
     contents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) {
-        shell.openExternal(url).catch(() => {});
-      }
-      return { action: 'deny' };
+      const { openExternal, response } = windowOpenPolicy(url);
+      if (openExternal) shell.openExternal(url).catch(() => {});
+      return response;
     });
 
     // The main app window (loads localhost in dev, file:// in prod) must never
     // be navigated to remote content. Webviews host their own contents and are
-    // exempt — their navigation is the whole point.
+    // exempt — their navigation is the whole point. This handles same-frame
+    // navigations only; new-window requests never reach it (setWindowOpenHandler
+    // above owns those), so a single gesture is launched by one path, never both.
     if (type !== 'webview') {
       contents.on('will-navigate', (e, url) => {
-        const isDevServer = url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
-        const isLocalFile = url.startsWith('file://');
-        if (!isDevServer && !isLocalFile) {
-          e.preventDefault();
-          if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
-        }
+        const { preventDefault, openExternal } = willNavigatePolicy(url);
+        if (preventDefault) e.preventDefault();
+        if (openExternal) shell.openExternal(url).catch(() => {});
       });
     }
   });
