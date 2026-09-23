@@ -27,6 +27,7 @@ import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-rendere
 import { resetTerminalModes } from '../utils/terminal-reset';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
+import { anchorViewportLikeConpty, captureViewportTop } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
 import { wheelForward, type WheelSource } from '../utils/wheel-forward';
 import { trimTrailingWhitespace } from '../utils/copy-text';
@@ -782,7 +783,15 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     if (!replayHoldRef.current.request()) return;
     if (fitAddonRef.current) {
       try {
+        // A change of COLUMNS reflows, and xterm and ConPTY anchor a reflow at
+        // opposite ends of the viewport — the prompt strands a row per line
+        // that wrapped or unwrapped (moving the window between monitors). Rows
+        // alone already agree under windowsPty. See utils/conpty-anchor.ts.
+        const term = xtermRef.current;
+        const next = fitAddonRef.current.proposeDimensions();
+        const top = term && next && next.cols !== term.cols ? captureViewportTop(term) : undefined;
         fitAddonRef.current.fit();
+        if (term) anchorViewportLikeConpty(term, top);
       } catch {
         // ignore fit errors (e.g. terminal not yet visible)
       }
