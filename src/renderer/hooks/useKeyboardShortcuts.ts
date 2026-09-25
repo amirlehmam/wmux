@@ -330,7 +330,7 @@ export function useKeyboardShortcuts(
         const res = await window.wmux?.system?.pickFolder?.();
         if (!res || res.canceled || !res.path) return;
         const segments = String(res.path).split(/[\\/]/).filter(Boolean);
-        createWorkspace({ cwd: res.path, title: segments[segments.length - 1] || res.path });
+        selectWorkspace(createWorkspace({ cwd: res.path, title: segments[segments.length - 1] || res.path }));
       })();
     };
 
@@ -341,7 +341,7 @@ export function useKeyboardShortcuts(
     //    new actions just add an entry. `find`/`copyMode` are handled at the
     //    PaneWrapper level and short-circuited before this lookup. ─────────────
     const handlers: Partial<Record<ShortcutAction, () => void>> = {
-      newWorkspace: () => createWorkspace(undefined, t),
+      newWorkspace: () => selectWorkspace(createWorkspace(undefined, t)),
       newWindow: () => window.wmux?.window?.create?.(),
       // Routed through the close guard (issue #90): prompts when the opt-in
       // confirmWorkspaceClose pref is on, closes immediately otherwise.
@@ -442,7 +442,14 @@ export function useKeyboardShortcuts(
     };
 
     function handleKeyDown(e: KeyboardEvent): void {
-      if (!isSafeToIntercept(e)) return;
+      // isSafeToIntercept protects shell muscle-memory keys (Ctrl+R, Ctrl+A...)
+      // from being stolen — a concern that only exists while a terminal has
+      // focus, matching xterm's own claimsKeyEvent check in useTerminal.ts.
+      // Applied unconditionally here it also blocked non-whitelisted bare-Ctrl
+      // bindings (openFolder's default Ctrl+O) from firing ANYWHERE, including
+      // the sidebar and Settings, where there is no shell to protect.
+      const overTerminal = !!(e.target as { closest?: (s: string) => unknown } | null)?.closest?.('.xterm');
+      if (overTerminal && !isSafeToIntercept(e)) return;
 
       const inEditor = isEditableTarget(e.target as HTMLElement | null);
       const shortcutEntries = Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][];
