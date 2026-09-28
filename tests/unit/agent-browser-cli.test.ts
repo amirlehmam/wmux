@@ -7,6 +7,7 @@ import {
   resetAgentBrowserCache,
   runAgentBrowser,
   unwrapAgentData,
+  NEGATIVE_TTL_MS,
 } from '../../src/main/agent-browser-cli';
 
 /** A fake filesystem probe: only the listed absolute paths "exist". */
@@ -65,6 +66,46 @@ describe('resolveAgentBrowserBinary', () => {
       exists: existsIn([npmPkgBinary]),
     });
     expect(norm(found)).toBe(npmPkgBinary);
+  });
+
+  it("finds the npm package's native binary under nvm-windows' %NVM_SYMLINK% prefix", () => {
+    // The reported machine: `npm prefix -g` = C:\nvm4w\nodejs, so the native
+    // binary lives there while the shim in that dir is only .cmd/.ps1 — which
+    // AGENT_BROWSER_NAMES deliberately never considers. Without probing
+    // NVM_SYMLINK this whole install reads as "not installed".
+    const bin = 'C:/nvm4w/nodejs/node_modules/agent-browser/bin/agent-browser-win32-x64.exe';
+    const found = resolveAgentBrowserBinary({
+      env: { APPDATA: 'C:/Users/x/AppData/Roaming', NVM_SYMLINK: 'C:/nvm4w/nodejs' },
+      platform: 'win32',
+      arch: 'x64',
+      exists: existsIn([bin]),
+    });
+    expect(norm(found)).toBe(bin);
+  });
+
+  it("finds the npm package's native binary under a system Node prefix", () => {
+    const bin = 'C:/Program Files/nodejs/node_modules/agent-browser/bin/agent-browser-win32-x64.exe';
+    const found = resolveAgentBrowserBinary({
+      env: { ProgramFiles: 'C:/Program Files' },
+      platform: 'win32',
+      arch: 'x64',
+      exists: existsIn([bin]),
+    });
+    expect(norm(found)).toBe(bin);
+  });
+
+  it("finds the npm package's native binary under a posix prefix's lib/node_modules", () => {
+    // The posix entries used to be spelled as the full lib/node_modules path
+    // and then had node_modules joined on top, so this branch could never
+    // match outside win32.
+    const bin = '/usr/local/lib/node_modules/agent-browser/bin/agent-browser-darwin-arm64';
+    const found = resolveAgentBrowserBinary({
+      env: {},
+      platform: 'darwin',
+      arch: 'arm64',
+      exists: existsIn([bin]),
+    });
+    expect(norm(found)).toBe(bin);
   });
 
   it('prefers the npm package native binary over a bare shim/binary on PATH', () => {
@@ -172,6 +213,62 @@ describe('agentBrowserPath (memoisation)', () => {
 
     const forced = agentBrowserPath('C:/tools/agent-browser.cmd', true, deps);
     expect(norm(forced)).toBe('C:/tools/agent-browser.cmd');
+  });
+
+  it('a cached "not installed" lapses after the negative TTL — the install-poll case', () => {
+    // The setup card polls status() every 2s while `npm i -g agent-browser`
+    // runs in a pane. If the memoised null never lapsed, the poll never
+    // flipped, timed out at 15 minutes and offered Install again.
+    let installed = false;
+    let calls = 0;
+    const exists = (p: string) => { calls++; return installed && p === 'C:/tools/agent-browser.cmd'; };
+    const deps = { env: {}, platform: 'win32', arch: 'x64', exists };
+
+    const t0 = 1_000_000;
+    expect(agentBrowserPath('C:/tools/agent-browser.cmd', false, { ...deps, now: t0 })).toBeNull();
+    const callsAfterFirst = calls;
+
+    // Still inside the TTL: served from cache, the filesystem untouched.
+    agentBrowserPath('C:/tools/agent-browser.cmd', false, { ...deps, now: t0 + NEGATIVE_TTL_MS - 1 });
+    expect(calls).toBe(callsAfterFirst);
+
+    // The install lands; once the TTL lapses the SAME caller — no `force` —
+    // must see the binary.
+    installed = true;
+    const found = agentBrowserPath('C:/tools/agent-browser.cmd', false, { ...deps, now: t0 + NEGATIVE_TTL_MS + 1 });
+    expect(norm(found)).toBe('C:/tools/agent-browser.cmd');
+  });
+
+  it('a found path is never re-probed — positive answers do not expire', () => {
+    let gone = false;
+    let calls = 0;
+    const exists = (p: string) => { calls++; return !gone && p === 'C:/tools/agent-browser.cmd'; };
+    const deps = { env: {}, platform: 'win32', arch: 'x64', exists };
+
+    const t0 = 1_000_000;
+    expect(norm(agentBrowserPath('C:/tools/agent-browser.cmd', false, { ...deps, now: t0 }))).toBe('C:/tools/agent-browser.cmd');
+    const callsAfterFirst = calls;
+
+    // Even a binary that vanished later keeps answering from cache; a
+    // disappearance shows up as spawnFailed on the next RUN, not as a probe.
+    gone = true;
+    const still = agentBrowserPath('C:/tools/agent-browser.cmd', false, { ...deps, now: t0 + 60_000 });
+    expect(calls).toBe(callsAfterFirst);
+    expect(norm(still)).toBe('C:/tools/agent-browser.cmd');
+  });
+
+  it('resetAgentBrowserCache expires a negative answer immediately, without waiting out the TTL', () => {
+    let installed = false;
+    const exists = (p: string) => installed && p === 'C:/tools/agent-browser.cmd';
+    const deps = { env: {}, platform: 'win32', arch: 'x64', exists };
+
+    const t0 = 1_000_000;
+    expect(agentBrowserPath('C:/tools/agent-browser.cmd', false, { ...deps, now: t0 })).toBeNull();
+
+    installed = true;
+    resetAgentBrowserCache();
+    const found = agentBrowserPath('C:/tools/agent-browser.cmd', false, { ...deps, now: t0 + 1 });
+    expect(norm(found)).toBe('C:/tools/agent-browser.cmd');
   });
 });
 

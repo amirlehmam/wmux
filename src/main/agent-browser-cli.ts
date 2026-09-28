@@ -58,24 +58,51 @@ export function platformBinaryName(platform: string, arch: string): string {
 }
 
 /**
- * Directories that could be an npm global root, i.e. contain
- * `node_modules/agent-browser/bin/<platformBinaryName>`.
+ * Candidate npm global prefixes — the `{prefix}` of
+ * `{prefix}/[lib/]node_modules/agent-browser/bin/<platformBinaryName>`.
  *
- * On Windows the npm global root and the shim dir are the same folder
- * (`%APPDATA%\npm`). On posix they usually are not — the bin symlinks live in
- * `{prefix}/bin` while packages live in `{prefix}/lib/node_modules` — so this
- * list is intentionally separate from `searchDirs`.
+ * On Windows there is no single prefix: `%APPDATA%\npm` is the default, but
+ * nvm-windows points the active Node at `%NVM_SYMLINK%` (a dir the user picks
+ * — `C:\Program Files\nodejs` by default, `C:\nvm4w\nodejs` in the wild), the
+ * winget/system installer uses `%ProgramFiles%\nodejs`, and the per-user
+ * installer uses `%LOCALAPPDATA%\Programs\nodejs`. Only the first was ever
+ * probed here, so a healthy `npm i -g agent-browser` under nvm or a system
+ * Node read as "not installed" however often wmux re-asked — the
+ * "installed, still prompting" report. The `.cmd`/`.ps1` shim those prefixes
+ * put in their root does not help: `AGENT_BROWSER_NAMES` deliberately never
+ * considers it.
+ *
+ * On posix the prefixes are fixed dirs and packages live in
+ * `{prefix}/lib/node_modules`, not `{prefix}/node_modules` — the entries used
+ * to be spelled as the full `lib/node_modules` path and then had
+ * `node_modules` joined on top, so this branch could never match on posix.
+ *
+ * Intentionally separate from `searchDirs`: that list hunts a bare shim/binary
+ * on PATH, this one hunts the package's own native binary.
  */
-function npmGlobalRootDirs(env: NodeJS.ProcessEnv, platform: string): string[] {
+function npmGlobalPrefixes(env: NodeJS.ProcessEnv, platform: string): string[] {
   const dirs: (string | undefined)[] = platform === 'win32'
-    ? [env.APPDATA && path.join(env.APPDATA, 'npm')]
+    ? [
+        env.APPDATA && path.join(env.APPDATA, 'npm'),
+        env.NVM_SYMLINK,
+        env.ProgramFiles && path.join(env.ProgramFiles, 'nodejs'),
+        env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'nodejs'),
+      ]
     : [
-        '/usr/local/lib/node_modules',
-        '/usr/lib/node_modules',
-        '/opt/homebrew/lib/node_modules',
-        env.HOME && path.join(env.HOME, '.npm-global', 'lib', 'node_modules'),
+        '/usr/local',
+        '/usr',
+        '/opt/homebrew',
+        env.HOME && path.join(env.HOME, '.npm-global'),
       ];
-  return dirs.filter((d): d is string => typeof d === 'string' && d.length > 0);
+  // NVM_SYMLINK often IS `%ProgramFiles%\nodejs`; probe each prefix once.
+  return [...new Set(dirs.filter((d): d is string => typeof d === 'string' && d.length > 0))];
+}
+
+/** The npm package's native binary under one prefix — per-platform layout. */
+function npmPackageBinary(prefix: string, nativeName: string, platform: string): string {
+  return platform === 'win32'
+    ? path.join(prefix, 'node_modules', 'agent-browser', 'bin', nativeName)
+    : path.join(prefix, 'lib', 'node_modules', 'agent-browser', 'bin', nativeName);
 }
 
 /**
@@ -142,8 +169,8 @@ export function resolveAgentBrowserBinary(opts: ResolveOptions): string | null {
   if (configured) return exists(configured) ? configured : null;
 
   const nativeName = platformBinaryName(platform, arch);
-  for (const root of npmGlobalRootDirs(env, platform)) {
-    const candidate = path.join(root, 'node_modules', 'agent-browser', 'bin', nativeName);
+  for (const prefix of npmGlobalPrefixes(env, platform)) {
+    const candidate = npmPackageBinary(prefix, nativeName, platform);
     if (exists(candidate)) return candidate;
   }
 
@@ -168,38 +195,72 @@ function statExists(p: string): boolean {
 // `cachedFor` records the `configured` value the cached answer was resolved
 // against. `cachedPath === undefined` means "never resolved yet" (distinct
 // from a resolved-to-null "not installed"), matching `cachedFor` being
-// meaningless until then.
+// meaningless until then. `cachedAt` is when the current answer was probed;
+// it only drives a negative one (see NEGATIVE_TTL_MS).
 let cachedFor: string | undefined;
 let cachedPath: string | null | undefined;
+let cachedAt = 0;
+
+/**
+ * How long a "not installed" answer may be served from cache.
+ *
+ * A negative answer is the one that goes stale: `npm i -g agent-browser` runs
+ * in a pane WHILE wmux is running, and the setup card polls `status()` every
+ * two seconds waiting for exactly that transition. Before this TTL the poll
+ * read a memoised `null` forever — it never flipped, gave up after 15 minutes
+ * and offered Install again, and only a restart ever detected the binary (the
+ * "installed, still prompting" report; `resetAgentBrowserCache` existed but
+ * had no call site in `src/`).
+ *
+ * A positive answer does NOT expire: it cannot become more true, and a binary
+ * that later disappears surfaces as `spawnFailed` on the next run, which
+ * callers already treat as "re-resolve" rather than as a CLI error.
+ *
+ * 5s flips the card within a poll or two of the install finishing while
+ * keeping the #176 pane-path cost bounded: at most one filesystem sweep per
+ * window, and only while the answer is still "not installed".
+ */
+export const NEGATIVE_TTL_MS = 5_000;
 
 export interface AgentBrowserPathDeps {
   env?: NodeJS.ProcessEnv;
   platform?: string;
   arch?: string;
   exists?: (p: string) => boolean;
+  /** Test seam: the clock the negative TTL is measured against. Defaults to `Date.now()`. */
+  now?: number;
 }
 
 /**
  * Memoised resolution against the real machine.
  *
- * Two distinct triggers invalidate the cache, and they are not the same thing:
+ * Three distinct triggers invalidate the cache, and they are not the same thing:
  *   - `configured` changing (e.g. the user edits the agent-browser path in
  *     Settings) is a CACHE KEY change — the old answer was correct for the old
  *     key and is simply the wrong answer to today's question, so this is
  *     handled unconditionally, with no flag needed from the caller.
- *   - `force` is for the same key producing a new answer at the same location
- *     (a binary just got installed, or `npm i -g agent-browser` ran) — that is
- *     a fresh probe of unchanged inputs, which only an explicit caller request
- *     should trigger.
+ *   - a cached "not installed" lapsing after NEGATIVE_TTL_MS is the same
+ *     fresh-probe-of-unchanged-inputs case as `force`, but the caller is the
+ *     setup card's poll and must not know it has to ask — so it happens
+ *     by itself.
+ *   - `force` remains for an immediate re-probe without waiting out the TTL
+ *     (a binary just got installed, or `npm i -g agent-browser` ran).
  * Correctness of the first case must not rest on every caller remembering to
- * pass `force`; only the second case is optional.
+ * pass `force`; only the third is optional.
  *
  * `deps` is a test seam (mirrors passing `exists`/`env`/`platform` into
  * `resolveAgentBrowserBinary` directly) — real callers omit it and get
  * `process.env`/`process.platform`/`process.arch`/a real `fs.statSync` probe.
  */
 export function agentBrowserPath(configured?: string, force = false, deps: AgentBrowserPathDeps = {}): string | null {
-  if (!force && cachedPath !== undefined && cachedFor === configured) return cachedPath;
+  const now = deps.now ?? Date.now();
+  const fresh =
+    cachedPath !== undefined &&
+    cachedFor === configured &&
+    // A found path is valid until the binary moves; a null only until it
+    // might have been installed (see NEGATIVE_TTL_MS).
+    (cachedPath !== null || now - cachedAt < NEGATIVE_TTL_MS);
+  if (!force && fresh) return cachedPath ?? null;
   cachedFor = configured;
   cachedPath = resolveAgentBrowserBinary({
     configured,
@@ -208,13 +269,15 @@ export function agentBrowserPath(configured?: string, force = false, deps: Agent
     arch: deps.arch ?? process.arch,
     exists: deps.exists ?? statExists,
   });
+  cachedAt = now;
   return cachedPath;
 }
 
-/** Test seam: drop the memoised answer (mirrors `node-runtime.ts`'s `resetNodeRuntimeCache`). */
+/** Drop the memoised answer, including the negative TTL (mirrors `node-runtime.ts`'s `resetNodeRuntimeCache`). */
 export function resetAgentBrowserCache(): void {
   cachedFor = undefined;
   cachedPath = undefined;
+  cachedAt = 0;
 }
 
 export interface RunResult {

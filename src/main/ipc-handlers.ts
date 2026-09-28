@@ -800,9 +800,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   /**
-   * Cheap enough to call on every entry into agent mode — `agentBrowserPath()`
-   * is memoised (#176) and `isAvailable` is a boolean field, so neither touches
-   * the filesystem or a socket here.
+   * Cheap enough to call on every entry into agent mode and from the setup
+   * card's 2s install poll — `agentBrowserPath()` is memoised (#176) with a
+   * short TTL on "not installed", so a pane-side install finishing mid-run is
+   * noticed without a restart (and without a sweep per tick), and
+   * `isAvailable` is a boolean field.
    */
   ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_STATUS, () => ({
     installed: agentBrowserPath() !== null,
