@@ -116,6 +116,61 @@ describe('detectScreen — Codex', () => {
       agent: null, reason: 'no-agent-signature',
     });
   });
+
+  it('reads a running turn as working', () => {
+    const out = read('codex-working');
+    expect(out).toMatchObject({ agent: 'codex', state: 'working', ruleId: 'codex.working.status' });
+    expect(out.evidence.join('\n')).toContain('Working (3m 52s');
+  });
+
+  /**
+   * The bug v1 shipped. Codex keeps `? for shortcuts` in the footer for the
+   * whole turn, so the idle rule on its own matched every working screen and
+   * the sidebar said "Idle" until the turn ended.
+   */
+  it('does not read a working screen as idle even though the footer is drawn', () => {
+    const codex = BUNDLED_MANIFESTS.find((m) => m.agent === 'codex')!;
+    const onlyIdle: Manifest = {
+      ...codex,
+      rules: codex.rules.filter((r) => r.id === 'codex.idle.composer'),
+    };
+    expect(detectScreen(screen('codex-working'), [onlyIdle]).state).toBe('unknown');
+  });
+
+  /** Every shape the status row takes, from Codex's own renderer and its snapshots. */
+  it.each([
+    ['a reasoning header instead of "Working"', '• Mapping the app structure (1m 03s • esc to interrupt)'],
+    ['the first second of a turn', '• Working (0s • esc to interrupt)'],
+    ['a remapped interrupt key', 'Working (0s • f12 to interrupt)'],
+    ['a narrow pane truncating the hint', '• Working (0s • esc…'],
+    ['a turn past the hour', '• Working (1h 02m 03s • esc to interrupt)'],
+  ])('reads the status row with %s as working', (_label, statusRow) => {
+    const out = detectScreen({
+      lines: [statusRow, '', '› Ask Codex to do anything', '', '  ? for shortcuts'],
+    }, BUNDLED_MANIFESTS);
+    expect(out).toMatchObject({ agent: 'codex', state: 'working', ruleId: 'codex.working.status' });
+  });
+
+  /**
+   * A finished turn leaves its separator in the transcript: the same clock and
+   * the same bullet as the status row, but no parenthesis (shape from Codex's
+   * own separators_tests.rs). Reading it as a run would pin the pane to
+   * "Running" after every turn.
+   */
+  it('reads the composer after a finished turn as idle', () => {
+    const out = detectScreen({
+      lines: [
+        '  Worked for 3m 52s • 2:32 PM',
+        '',
+        '• Added the health check route and its test.',
+        '',
+        '› Ask Codex to do anything',
+        '',
+        '  ? for shortcuts',
+      ],
+    }, BUNDLED_MANIFESTS);
+    expect(out).toMatchObject({ agent: 'codex', state: 'idle', ruleId: 'codex.idle.composer' });
+  });
 });
 
 describe('detectScreen — OpenCode', () => {
