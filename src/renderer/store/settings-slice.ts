@@ -616,6 +616,14 @@ export interface TerminalPrefs {
    * in. Only CHANGING this default later would reach nobody.
    */
   oscTitleTabs: boolean;
+  /**
+   * SGR wheel reports sent per cell of finger travel when a touch pan is
+   * forwarded to a mouse-tracking app (issue #267). 1 is one report per cell,
+   * which tracks the finger only where the app moves one row per report;
+   * opencode moves `scroll_speed` (3) rows, so 0.33 there. Scrollback, the
+   * arrow-key branch, the mouse wheel and the fling are not affected.
+   */
+  touchPanGain: number;
   /** User-defined color schemes, addressable by name in per-pane overrides. */
   userColorSchemes: Record<string, UserColorScheme>;
 }
@@ -628,6 +636,7 @@ export const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   cursorBlink: true,
   scrollbackLines: 5000,
   oscTitleTabs: true,
+  touchPanGain: 1,
   userColorSchemes: {},
 };
 

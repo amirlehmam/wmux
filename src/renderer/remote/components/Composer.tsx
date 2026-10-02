@@ -46,9 +46,13 @@ interface Props {
   prompt: number | null;
   maxText: number;
   t: RemoteT;
+  /** The key bar's Enter: what the button is while blocked with an empty box (#266). */
+  onEnter(): void;
+  /** That Enter is armed, i.e. its first tap was held back and the next one sends. */
+  enterArmed: boolean;
 }
 
-export function Composer({ client, s, blocked, prompt, maxText, t }: Readonly<Props>) {
+export function Composer({ client, s, blocked, prompt, maxText, t, onEnter, enterArmed }: Readonly<Props>) {
   const [state, dispatch] = useReducer(composerReducer, s, (id: string) => initialComposer(loadDraft(safeStorage(), id)));
   const stateRef = useRef<ComposerState>(state);
   stateRef.current = state;
@@ -111,7 +115,11 @@ export function Composer({ client, s, blocked, prompt, maxText, t }: Readonly<Pr
     send: t.t('composer.send'),
     insert: t.t('composer.insert'),
     sending: t.t('composer.sending'),
+    enter: `${t.t('keys.enter')} ↵`,
   }[label];
+  const asEnter = label === 'enter';
+  let sendClass = blocked ? 'rc-btn rc-btn--warn rc-composer__send' : 'rc-btn rc-btn--primary rc-composer__send';
+  if (asEnter && enterArmed) sendClass = 'rc-btn rc-composer__send rc-composer__send--armed';
 
   let failure: string | null = null;
   if (state.phase === 'failed') {
@@ -165,9 +173,9 @@ export function Composer({ client, s, blocked, prompt, maxText, t }: Readonly<Pr
         />
         <button
           type="button"
-          className={blocked ? 'rc-btn rc-btn--warn rc-composer__send' : 'rc-btn rc-btn--primary rc-composer__send'}
-          disabled={!canSubmit(state, blocked)}
-          onClick={submit}
+          className={sendClass}
+          disabled={!asEnter && !canSubmit(state, blocked)}
+          onClick={asEnter ? onEnter : submit}
         >
           {labelText}
         </button>

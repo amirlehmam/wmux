@@ -79,6 +79,8 @@ export interface UserConfig {
     scrollbackLines?: number;
     /** Label a tab with the program's OSC 0/2 window title (issue #221). */
     oscTitleTabs?: boolean;
+    /** Reports per cell of a touch pan forwarded to a mouse-tracking app (issue #267). */
+    touchPanGain?: number;
     userColorSchemes?: Record<string, UserColorScheme>;
   };
   /** App UI theme (issue #67) — separate from the terminal color scheme. */
@@ -340,6 +342,12 @@ function mapTerminalSection(root: TomlTable, errors: string[]): NonNullable<User
 
   const oscTitleTabs = asBool(terminal['osc-title-tabs'] ?? terminal.oscTitleTabs);
   if (oscTitleTabs !== undefined) t.oscTitleTabs = oscTitleTabs;
+
+  const touchPanGain = asNumber(terminal['touch-pan-gain'] ?? terminal.touchPanGain);
+  if (touchPanGain !== undefined) {
+    if (touchPanGain > 0) t.touchPanGain = touchPanGain;
+    else errors.push(`terminal.touch-pan-gain: ${touchPanGain} must be greater than 0`);
+  }
 
   const colors = asTable(terminal.colors);
   if (colors) mapTerminalColors(t, colors, errors);

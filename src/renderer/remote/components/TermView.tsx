@@ -20,6 +20,10 @@
  * never becomes wheel reports to the PTY. The alternate screen has no
  * scrollback, so there the hint points at PgUp/PgDn on the key bar.
  *
+ * The grid can be TALLER than the box (the rows are the desktop's, the font
+ * follows the width). The box is then a window over it, pinned to the bottom
+ * rows, and the same finger slides it — see vertical-clip.ts (#265).
+ *
  * Terminal output never touches React state: `term.data` goes straight from
  * the socket listener into `term.write`. A setState per chunk would re-render
  * the whole attach screen at PTY speed, which is #141 on a phone CPU.
@@ -32,6 +36,7 @@ import { createTouchPanTracker } from '../../utils/touch-pan';
 import { createFlingVelocityTracker, startFling, stepFling, type Fling } from '../../utils/touch-fling';
 import { fontForMode, mirrorPans, type FitMode } from '../fit';
 import type { RemoteT } from '../i18n';
+import { isPinned, panClip, pinClip, reclip, UNCLIPPED, type ClipState } from '../vertical-clip';
 import type { WsClient } from '../ws-client';
 
 /** A URL this view will offer to open, or null. Everything that is not plain http(s) is refused. */
@@ -122,6 +127,8 @@ export function TermView({ client, s, mode, fontScale, dark, t, operator, onLink
   const layoutRef = useRef({ mode, fontScale });
   layoutRef.current = { mode, fontScale };
   const refitRef = useRef<(() => void) | null>(null);
+  /** The window over a grid taller than the box (#265). Not state: it moves at pan speed. */
+  const clipRef = useRef<ClipState>(UNCLIPPED);
 
   const [status, setStatus] = useState<TermStatus>('loading');
   const [exitCode, setExitCode] = useState(0);
@@ -131,6 +138,8 @@ export function TermView({ client, s, mode, fontScale, dark, t, operator, onLink
   const [hint, setHint] = useState(false);
   /** `fit` hit the floor font and the grid is still wider than the screen: pan sideways. */
   const [clipped, setClipped] = useState(false);
+  /** The window was dragged off the grid's bottom rows: offer the way back. */
+  const [raised, setRaised] = useState(false);
 
   useEffect(() => { onStatusRef.current?.(status); }, [status]);
 
@@ -175,6 +184,19 @@ export function TermView({ client, s, mode, fontScale, dark, t, operator, onLink
       setClipped(mirrorPans(m, wrap.clientWidth, term.cols, drawn));
     };
     refitRef.current = refit;
+    // The grid's height is not ours to choose, so the box may be shorter than
+    // it. Re-measured on every layout change; a pinned window stays pinned,
+    // which is what keeps the agent's input row above the phone keyboard.
+    const applyClip = () => {
+      const next = reclip(clipRef.current, wrap.scrollHeight - wrap.clientHeight);
+      clipRef.current = next;
+      if (wrap.scrollTop !== next.offset) wrap.scrollTop = next.offset;
+      setRaised(!isPinned(next));
+    };
+    const relayout = () => {
+      refit();
+      applyClip();
+    };
     const trackBottom = () => {
       const b = term.buffer.active;
       setAtBottom(b.viewportY >= b.baseY);
@@ -192,7 +214,9 @@ export function TermView({ client, s, mode, fontScale, dark, t, operator, onLink
         case 'term.reset':
           term.reset();
           term.resize(msg.cols, msg.rows);
-          refit();
+          // A new screen starts on its bottom rows, wherever the last one was left.
+          clipRef.current = pinClip(clipRef.current);
+          relayout();
           term.write(msg.data);
           setError(null);
           setStatus('live');
@@ -214,8 +238,12 @@ export function TermView({ client, s, mode, fontScale, dark, t, operator, onLink
       }
     });
 
-    const ro = new ResizeObserver(refit);
+    // The box AND the grid: a font or row change resizes the grid without
+    // touching the box, and the window has to follow either.
+    const ro = new ResizeObserver(relayout);
     ro.observe(wrap);
+    const screen = host.querySelector('.xterm-screen');
+    if (screen) ro.observe(screen);
     client.attach(s);
 
     return () => {
@@ -261,9 +289,19 @@ export function TermView({ client, s, mode, fontScale, dark, t, operator, onLink
     };
     // Pixels in, whole lines out, remainder carried — so a slow drag still
     // scrolls, one line per cell of travel, instead of rounding to nothing.
-    const scrollPx = (px: number) => {
+    const scrollPx = (delta: number) => {
       const term = termRef.current;
       if (!term) return;
+      // The window over a too-tall grid moves first (towards older content) or
+      // last (back down); what is left over is the scrollback's.
+      const b = term.buffer.active;
+      const clip = panClip(clipRef.current, delta, b.viewportY >= b.baseY);
+      if (clip.state !== clipRef.current) {
+        clipRef.current = clip.state;
+        wrap.scrollTop = clip.state.offset;
+        setRaised(!isPinned(clip.state));
+      }
+      const px = clip.rest;
       carry += px;
       const h = cellHeight();
       const lines = Math.trunc(carry / h);
@@ -359,8 +397,17 @@ export function TermView({ client, s, mode, fontScale, dark, t, operator, onLink
       {altLive && hint && (
         <button type="button" className="rc-term__hint" onClick={() => setHint(false)}>{t.t(altHintKey(operator))}</button>
       )}
-      {!atBottom && !alt && (
-        <button type="button" className="rc-term__pill rc-term__jump" onClick={() => termRef.current?.scrollToBottom()}>
+      {((!atBottom && !alt) || raised) && (
+        <button
+          type="button"
+          className="rc-term__pill rc-term__jump"
+          onClick={() => {
+            termRef.current?.scrollToBottom();
+            clipRef.current = pinClip(clipRef.current);
+            if (wrapRef.current) wrapRef.current.scrollTop = clipRef.current.offset;
+            setRaised(false);
+          }}
+        >
           {t.t('attach.jumpBottom')} ↓
         </button>
       )}

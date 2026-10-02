@@ -69,6 +69,8 @@ export const sv: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Datorn svarade inte i tid.',
   'attach.errGone': 'Den här terminalen har stängts.',
   'attach.closedTerminal': 'Stängd terminal',
+  'attach.hideKeys': 'Dölj tangenter och meddelanderuta',
+  'attach.showKeys': 'Visa tangenter och meddelanderuta',
 
   'keys.more': 'Fler tangenter',
   'keys.armed': 'Tryck igen för att skicka',

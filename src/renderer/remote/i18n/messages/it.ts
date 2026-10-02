@@ -69,6 +69,8 @@ export const it: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Il computer non ha risposto in tempo.',
   'attach.errGone': 'Questo terminale è stato chiuso.',
   'attach.closedTerminal': 'Terminale chiuso',
+  'attach.hideKeys': 'Nascondi i tasti e la casella del messaggio',
+  'attach.showKeys': 'Mostra i tasti e la casella del messaggio',
 
   'keys.more': 'Altri tasti',
   'keys.armed': 'Tocca di nuovo per inviare',

@@ -70,6 +70,8 @@ export const cs: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Počítač neodpověděl včas.',
   'attach.errGone': 'Tento terminál byl zavřen.',
   'attach.closedTerminal': 'Zavřený terminál',
+  'attach.hideKeys': 'Skrýt klávesy a pole zprávy',
+  'attach.showKeys': 'Zobrazit klávesy a pole zprávy',
 
   'keys.more': 'Další klávesy',
   'keys.armed': 'Klepněte znovu pro odeslání',

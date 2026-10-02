@@ -153,6 +153,8 @@ button { cursor: pointer; }
   border-radius: 10px;
 }
 .rc-bar__btn--text { font-size: 14px; font-weight: 600; padding: 0 10px; color: var(--accent); }
+.rc-bar__btn--keys { flex: none; color: var(--accent); }
+.rc-bar__btn--off { color: var(--muted); opacity: 0.6; }
 
 .rc-chip {
   flex: none;
@@ -389,6 +391,8 @@ button { cursor: pointer; }
   opacity: 0.92;
 }
 
+/* Nothing in it (a viewer, or the keys hidden): no border, no padding strip. */
+.rc-attach__stack:empty { display: none; }
 .rc-attach__stack {
   flex: none;
   display: flex;
@@ -458,6 +462,7 @@ button { cursor: pointer; }
   line-height: 1.35;
 }
 .rc-composer__send { flex: none; }
+.rc-composer__send--armed { background: var(--danger); border-color: var(--danger); color: #fff; }
 .rc-composer__error { margin: 0; font-size: 13px; color: var(--danger); }
 
 /* ── Prefs ───────────────────────────────────────────────────────────── */

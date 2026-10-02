@@ -89,11 +89,20 @@ export function canSubmit(s: ComposerState, blocked: boolean): boolean {
   return !(blocked && s.draft.length === 0);
 }
 
-export type ComposerLabel = 'send' | 'insert' | 'sending';
+export type ComposerLabel = 'send' | 'insert' | 'sending' | 'enter';
 
+/**
+ * What the button IS. `enter` (#266): the agent is waiting on an answer and
+ * the box is empty, so there is nothing to insert — and the button used to sit
+ * there disabled, in the one place a phone user looks for "send", while the
+ * agent's own menu said "enter select". It is the key bar's Enter instead: the
+ * same frame, the same arming, the same server guards (see AttachScreen), so
+ * this adds a place to press it and no new way to answer.
+ */
 export function composerLabel(s: ComposerState, blocked: boolean): ComposerLabel {
   if (s.phase === 'sending') return 'sending';
-  return blocked ? 'insert' : 'send';
+  if (!blocked) return 'send';
+  return s.draft.length === 0 && s.phase !== 'confirm' ? 'enter' : 'insert';
 }
 
 function onSubmit(s: ComposerState, nonce: string, blocked: boolean, maxText?: number): ComposerState {

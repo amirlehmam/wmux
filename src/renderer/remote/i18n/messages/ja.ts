@@ -68,6 +68,8 @@ export const ja: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'コンピューターが時間内に応答しませんでした。',
   'attach.errGone': 'このターミナルは閉じられました。',
   'attach.closedTerminal': '閉じたターミナル',
+  'attach.hideKeys': 'キーとメッセージ欄を隠す',
+  'attach.showKeys': 'キーとメッセージ欄を表示',
 
   'keys.more': 'その他のキー',
   'keys.armed': 'もう一度タップで送信',

@@ -46,6 +46,16 @@ export function attachHeaderChips(hasStateWord: boolean, status: WsStatus): ('st
   return chips;
 }
 
+/**
+ * The header toggle's label (#265). The key bar and the composer are ~110 px
+ * of a phone screen; someone who is only WATCHING an agent gets that back, and
+ * the choice buttons of a blocked agent stay either way — hiding the keys must
+ * not hide the question.
+ */
+export function controlsToggleKey(shown: boolean): 'attach.hideKeys' | 'attach.showKeys' {
+  return shown ? 'attach.hideKeys' : 'attach.showKeys';
+}
+
 /** Composer, keys and choices only while there is a live terminal to type into. */
 export function acceptsInput(operator: boolean, termStatus: TermStatus): boolean {
   return operator && termStatus !== 'exit' && termStatus !== 'error';
@@ -74,6 +84,9 @@ export function AttachScreen({ client, s, entry, status, operator, maxText, font
   const armPrompt = useRef<number | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [termStatus, setTermStatus] = useState<TermStatus>('loading');
+  // Per attach, never remembered: a composer that stayed hidden from last week
+  // reads as a console that cannot type.
+  const [controls, setControls] = useState(true);
   const vv = useVisualViewport();
 
   // Disarm when the window lapses, so the red key goes back to normal by itself.
@@ -151,6 +164,17 @@ export function AttachScreen({ client, s, entry, status, operator, maxText, font
         <button type="button" className="rc-bar__btn rc-bar__btn--text" onClick={toggleMode} aria-pressed={mode === 'pan'}>
           {mode === 'fit' ? t.t('attach.pan') : t.t('attach.fit')}
         </button>
+        {canType && (
+          <button
+            type="button"
+            className={controls ? 'rc-bar__btn rc-bar__btn--keys' : 'rc-bar__btn rc-bar__btn--keys rc-bar__btn--off'}
+            onClick={() => setControls((c) => !c)}
+            aria-pressed={controls}
+            aria-label={t.t(controlsToggleKey(controls))}
+          >
+            ⌨
+          </button>
+        )}
       </header>
 
       <TermView client={client} s={s} mode={mode} fontScale={fontScale} dark={dark} t={t} operator={operator} onLink={setLink} onStatus={setTermStatus} />
@@ -160,8 +184,20 @@ export function AttachScreen({ client, s, entry, status, operator, maxText, font
           <ChoiceRow choices={entry.choices} onAnswer={(id) => onAnswer(s, id, entry.promptId)} />
         )}
         {blocked && entry?.answerPending && <p className="rc-attach__pending">{t.t('card.answerPending')}</p>}
-        {canType && <KeyBar armed={arm?.key ?? null} armedFor={arm?.force.at(-1) ?? null} t={t} onKey={sendKey} />}
-        {canType && <Composer key={s} client={client} s={s} blocked={blocked} prompt={entry?.promptId ?? null} maxText={maxText} t={t} />}
+        {canType && controls && <KeyBar armed={arm?.key ?? null} armedFor={arm?.force.at(-1) ?? null} t={t} onKey={sendKey} />}
+        {canType && controls && (
+          <Composer
+            key={s}
+            client={client}
+            s={s}
+            blocked={blocked}
+            prompt={entry?.promptId ?? null}
+            maxText={maxText}
+            t={t}
+            onEnter={() => sendKey('enter')}
+            enterArmed={arm?.key === 'enter'}
+          />
+        )}
       </div>
 
       {link && (

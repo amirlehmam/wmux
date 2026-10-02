@@ -80,6 +80,7 @@ function applyUserConfigTerminal(state: ReturnType<typeof useStore.getState>, te
   if (terminal.cursorStyle !== undefined) patch.cursorStyle = terminal.cursorStyle;
   if (terminal.cursorBlink !== undefined) patch.cursorBlink = terminal.cursorBlink;
   if (terminal.scrollbackLines !== undefined) patch.scrollbackLines = terminal.scrollbackLines;
+  if (terminal.touchPanGain !== undefined) patch.touchPanGain = terminal.touchPanGain;
   if (terminal.userColorSchemes) {
     // Merge: file-defined schemes replace by-name but don't clobber others.
     patch.userColorSchemes = {

@@ -68,6 +68,8 @@ export const ko: Readonly<Record<string, string>> = {
   'attach.errTimeout': '컴퓨터가 제시간에 응답하지 않았습니다.',
   'attach.errGone': '이 터미널은 닫혔습니다.',
   'attach.closedTerminal': '닫힌 터미널',
+  'attach.hideKeys': '키와 메시지 입력란 숨기기',
+  'attach.showKeys': '키와 메시지 입력란 표시',
 
   'keys.more': '키 더 보기',
   'keys.armed': '한 번 더 탭하면 보냅니다',

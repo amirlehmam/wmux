@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { UserColorScheme } from '../../store/settings-slice';
 import { backdropCaps } from '../../utils/backdrop-caps';
+import { normalizeTouchPanGain, TOUCH_PAN_GAIN_MAX, TOUCH_PAN_GAIN_MIN } from '../../utils/wheel-forward';
 import type { ThemeConfig } from '../../../shared/types';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
@@ -434,6 +435,25 @@ export default function TerminalSettings() {
           onChange={(e) => setTerminalPrefs({ scrollbackLines: Number(e.target.value) })}
         />
       </div>
+
+      <div className="settings-divider" />
+      <h3 className="settings-section-title">{t('settings.terminalPanel.touchSection', 'Touch')}</h3>
+
+      <div className="settings-row">
+        <label className="settings-label">{t('settings.terminalPanel.touchPanGain', 'Touch pan gain')}</label>
+        <input
+          type="number"
+          className="settings-input settings-input--narrow"
+          value={terminalPrefs.touchPanGain}
+          min={TOUCH_PAN_GAIN_MIN}
+          max={TOUCH_PAN_GAIN_MAX}
+          step={0.05}
+          onChange={(e) => setTerminalPrefs({ touchPanGain: normalizeTouchPanGain(Number(e.target.value)) })}
+        />
+      </div>
+      <p className="settings-hint">
+        {t('settings.terminalPanel.touchPanGainHint', 'Scroll steps sent per row of finger travel when a touch drag scrolls a full-screen app (opencode, tmux). 1 suits an app that moves one row per step; use 1 ÷ the app’s own scroll speed to make the content follow your finger: 0.33 for opencode’s default of 3. The mouse wheel, scrollback and the flick after a drag are not affected.')}
+      </p>
     </div>
   );
 }

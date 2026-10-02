@@ -14,6 +14,10 @@ font-size        = 14
 cursor-style     = "block"        # block | underline | bar
 cursor-blink     = true
 scrollback-lines = 10000
+# Touchscreens: scroll steps sent per row of finger travel when a drag scrolls
+# a full-screen app. 1 / the app's own scroll speed makes the content follow
+# the finger (opencode's scroll_speed is 3). Wheel and flick are unaffected.
+touch-pan-gain   = 0.33
 
 [terminal.colors]
 # Default scheme for every new pane. Any bundled theme name works

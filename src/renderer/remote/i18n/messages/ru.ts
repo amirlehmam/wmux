@@ -71,6 +71,8 @@ export const ru: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Компьютер не ответил вовремя.',
   'attach.errGone': 'Этот терминал закрыт.',
   'attach.closedTerminal': 'Закрытый терминал',
+  'attach.hideKeys': 'Скрыть клавиши и поле сообщения',
+  'attach.showKeys': 'Показать клавиши и поле сообщения',
 
   'keys.more': 'Ещё клавиши',
   'keys.armed': 'Нажмите ещё раз, чтобы отправить',

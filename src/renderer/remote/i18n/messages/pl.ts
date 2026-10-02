@@ -71,6 +71,8 @@ export const pl: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Komputer nie odpowiedział na czas.',
   'attach.errGone': 'Ten terminal został zamknięty.',
   'attach.closedTerminal': 'Zamknięty terminal',
+  'attach.hideKeys': 'Ukryj klawisze i pole wiadomości',
+  'attach.showKeys': 'Pokaż klawisze i pole wiadomości',
 
   'keys.more': 'Więcej klawiszy',
   'keys.armed': 'Stuknij ponownie, aby wysłać',

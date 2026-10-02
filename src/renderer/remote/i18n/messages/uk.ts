@@ -71,6 +71,8 @@ export const uk: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Комп’ютер не відповів вчасно.',
   'attach.errGone': 'Цей термінал закрито.',
   'attach.closedTerminal': 'Закритий термінал',
+  'attach.hideKeys': 'Сховати клавіші та поле повідомлення',
+  'attach.showKeys': 'Показати клавіші та поле повідомлення',
 
   'keys.more': 'Більше клавіш',
   'keys.armed': 'Торкніться ще раз, щоб надіслати',

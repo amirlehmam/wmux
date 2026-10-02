@@ -69,6 +69,8 @@ export const nl: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'De computer reageerde niet op tijd.',
   'attach.errGone': 'Deze terminal is gesloten.',
   'attach.closedTerminal': 'Gesloten terminal',
+  'attach.hideKeys': 'Toetsen en berichtvak verbergen',
+  'attach.showKeys': 'Toetsen en berichtvak tonen',
 
   'keys.more': 'Meer toetsen',
   'keys.armed': 'Tik nogmaals om te verzenden',

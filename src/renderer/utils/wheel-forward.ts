@@ -50,10 +50,46 @@
  * per-event report would tie pan speed to the frame rate. wmux cannot know the
  * app's rows-per-report multiplier, so one report per cell crossed is the
  * closest it can get — and it is exact wherever that multiplier is 1.
+ *
+ * Where it is not 1 (opencode's `scroll_speed` is 3) the screen outruns the
+ * finger, and no value of the app's own setting serves both gestures: the wheel
+ * wants 3 rows per detent, the finger wants 1 row per cell (#267). So the PAN
+ * has a gain, `terminalPrefs.touchPanGain` — reports per cell crossed, 1/3 for
+ * that app — and `touchPanReports` carries the fraction so a slow drag still
+ * moves. Two things it deliberately does not touch: scrollback and the arrow
+ * branch (already 1:1, nothing multiplies them), and the FLING, which is its
+ * own source for exactly this reason — its distance was tuned as shipped
+ * (#248) and a gain that slowed the tracking pan would otherwise shorten the
+ * glide by the same factor.
  */
 
 /** Which gesture produced the wheel event — see the Touch note above. */
-export type WheelSource = 'wheel' | 'touch';
+export type WheelSource = 'wheel' | 'touch' | 'fling';
+
+export const TOUCH_PAN_GAIN_MIN = 0.05;
+export const TOUCH_PAN_GAIN_MAX = 4;
+
+/**
+ * The pan gain as something safe to multiply by. The value arrives from a
+ * hand-edited TOML file and from a persisted pref blob, so anything that is
+ * not a positive finite number is the default (1 — one report per cell), and
+ * the rest is clamped: 0 would make a finger inert with no visible cause.
+ */
+export function normalizeTouchPanGain(gain: unknown): number {
+  if (typeof gain !== 'number' || !Number.isFinite(gain) || gain <= 0) return 1;
+  return Math.min(TOUCH_PAN_GAIN_MAX, Math.max(TOUCH_PAN_GAIN_MIN, gain));
+}
+
+/**
+ * Lines of finger travel → whole reports, with the fraction carried to the
+ * next event. Signed throughout, so reversing direction first spends the
+ * carry it built up rather than jumping.
+ */
+export function touchPanReports(lines: number, gain: number, carry: number): { reports: number; carry: number } {
+  const total = carry + lines * normalizeTouchPanGain(gain);
+  const reports = Math.trunc(total);
+  return { reports, carry: total - reports };
+}
 
 export interface WheelForwardOptions {
   /** Whole lines this event is worth, sign preserved. 0 means "sub-line". */
@@ -80,8 +116,9 @@ export function wheelForward(opts: WheelForwardOptions): WheelForward | null {
     const btn = lines < 0 ? 64 : 65; // 64 = wheel-up, 65 = wheel-down
     return {
       seq: `\x1b[<${btn};${col};${row}M`,
-      // One step per EVENT for a real wheel; one per LINE for a finger.
-      repeats: source === 'touch' ? Math.abs(lines) : 1,
+      // One step per EVENT for a real wheel; one per LINE for a finger (and
+      // for the fling that continues it).
+      repeats: source === 'wheel' ? 1 : Math.abs(lines),
     };
   }
 

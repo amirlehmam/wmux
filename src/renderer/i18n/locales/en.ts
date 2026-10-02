@@ -532,6 +532,10 @@ export const en = {
     'Label a terminal tab with the window title its program sets — Claude Code announces the conversation title this way. A tab you renamed yourself always keeps its name. Turn this off if your shell sets the title to its full path.',
   'settings.terminalPanel.scrollbackSection': 'Scrollback',
   'settings.terminalPanel.scrollbackLines': 'Scrollback lines',
+  'settings.terminalPanel.touchSection': 'Touch',
+  'settings.terminalPanel.touchPanGain': 'Touch pan gain',
+  'settings.terminalPanel.touchPanGainHint':
+    'Scroll steps sent per row of finger travel when a touch drag scrolls a full-screen app (opencode, tmux). 1 suits an app that moves one row per step; use 1 ÷ the app’s own scroll speed to make the content follow your finger: 0.33 for opencode’s default of 3. The mouse wheel, scrollback and the flick after a drag are not affected.',
   'settings.terminalPanel.bg': 'bg',
   'settings.terminalPanel.fg': 'fg',
   'settings.terminalPanel.cursorAbbr': 'cursor',

@@ -30,7 +30,7 @@ import { ReplayHold } from '../utils/replay-hold';
 import { anchorViewportLikeConpty, captureViewportTop } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
 import { createFlingVelocityTracker, startFling, stepFling, type Fling } from '../utils/touch-fling';
-import { wheelForward, type WheelSource } from '../utils/wheel-forward';
+import { touchPanReports, wheelForward, type WheelSource } from '../utils/wheel-forward';
 import { trimTrailingWhitespace } from '../utils/copy-text';
 import { handleShiftEnter, isLetterKey, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
@@ -595,13 +595,19 @@ function pointerCell(
 // are forty lines apart in this file, so this is a local protocol and not a
 // module.
 const TOUCH_WHEEL = Symbol('wmux:touch-wheel');
-function markTouchWheel(ev: WheelEvent): WheelEvent {
-  (ev as unknown as Record<symbol, boolean>)[TOUCH_WHEEL] = true;
+type TouchWheelSource = Exclude<WheelSource, 'wheel'>;
+function markTouchWheel(ev: WheelEvent, source: TouchWheelSource): WheelEvent {
+  (ev as unknown as Record<symbol, TouchWheelSource>)[TOUCH_WHEEL] = source;
   return ev;
 }
 function wheelSource(ev: WheelEvent): WheelSource {
-  return (ev as unknown as Record<symbol, boolean>)[TOUCH_WHEEL] ? 'touch' : 'wheel';
+  return (ev as unknown as Record<symbol, TouchWheelSource | undefined>)[TOUCH_WHEEL] ?? 'wheel';
 }
+
+// The fraction of a report a gained touch pan has not sent yet (#267), per
+// surface. A module map like `wheelLineAccum`, and cleared when a finger lands
+// so one gesture never starts with the previous one's remainder.
+const touchReportCarry = new Map<string, number>();
 
 // Forward a wheel scroll to the PTY for an app that owns the screen (alt buffer
 // or mouse-tracking): SGR wheel reports (button 64=up/65=down) at the pointer
@@ -618,11 +624,22 @@ function writeWheelToPty(
   ptyId: string,
   count: number,
   mouseTracking: boolean,
+  surfaceId: string | undefined,
 ): void {
   const { col, row } = mouseTracking
     ? pointerCell(ev, terminal, host)
     : { col: 0, row: 0 }; // unused by the arrow branch
-  const write = wheelForward({ lines: count, mouseTracking, source: wheelSource(ev), col, row });
+  const source = wheelSource(ev);
+  let lines = count;
+  // The pan gain (#267): only a finger PAN into a mouse-tracking app. Read at
+  // event time so a Settings change applies to the next drag, not the next pane.
+  if (mouseTracking && source === 'touch') {
+    const key = surfaceId ?? '__no-surface__';
+    const gained = touchPanReports(count, useStore.getState().terminalPrefs.touchPanGain, touchReportCarry.get(key) ?? 0);
+    touchReportCarry.set(key, gained.carry);
+    lines = gained.reports;
+  }
+  const write = wheelForward({ lines, mouseTracking, source, col, row });
   if (!write) return;
   for (let i = 0; i < write.repeats; i++) window.wmux.pty.write(ptyId, write.seq);
 }
@@ -657,7 +674,7 @@ function handleTerminalWheel(
   ev.stopPropagation();
   if (!ptyId) return;
   const count = wheelDeltaToLines(ev, terminal, host, surfaceId);
-  if (count !== 0) writeWheelToPty(ev, terminal, host, ptyId, count, isMouseEnabled);
+  if (count !== 0) writeWheelToPty(ev, terminal, host, ptyId, count, isMouseEnabled, surfaceId);
 }
 
 // Initial PTY resize after attach, retried via rAF until xterm's renderer has
@@ -1064,7 +1081,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // (#245). Everything else about the event is deliberately identical. The
     // fling below goes through this SAME function, so momentum is a pan that
     // continues rather than a second scrolling mechanism.
-    const dispatchTouchWheel = (deltaY: number, clientX: number, clientY: number) => {
+    const dispatchTouchWheel = (deltaY: number, clientX: number, clientY: number, source: 'touch' | 'fling' = 'touch') => {
       touchHost.dispatchEvent(markTouchWheel(new WheelEvent('wheel', {
         deltaY,
         deltaMode: 0, // DOM_DELTA_PIXEL — wheelDeltaToLines owns the cell maths
@@ -1072,7 +1089,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         clientY,
         bubbles: true,
         cancelable: true,
-      })));
+      }), source));
     };
 
     // Momentum after a flick (issue #248). The physics — release velocity,
@@ -1107,7 +1124,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       fling = step.next;
       // Fractional pixels are fine: wheelDeltaToLines accumulates them per
       // surface, exactly as it does for a slow pan.
-      if (step.deltaY !== 0) dispatchTouchWheel(step.deltaY, flingX, flingY);
+      // Tagged 'fling', not 'touch': the pan gain must not shorten the glide (#267).
+      if (step.deltaY !== 0) dispatchTouchWheel(step.deltaY, flingX, flingY, 'fling');
       if (fling) flingRaf = requestAnimationFrame(flingFrame);
     };
     cancelFlingRef.current = cancelFling;
@@ -1117,7 +1135,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (ev.pointerType !== 'touch') return;
       // Only a FIRST finger starts a new velocity history; a second one is a
       // pinch and the tracker is about to reject it anyway.
-      if (panTracker.phase === 'idle') flingVelocity.reset();
+      if (panTracker.phase === 'idle') {
+        flingVelocity.reset();
+        touchReportCarry.delete(surfaceId ?? '__no-surface__');
+      }
       panTracker.down(ev.pointerId, ev.clientX, ev.clientY);
     };
     const onTouchPanMove = (ev: PointerEvent) => {

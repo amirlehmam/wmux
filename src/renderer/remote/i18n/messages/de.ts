@@ -74,6 +74,8 @@ export const de: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Der Computer hat nicht rechtzeitig geantwortet.',
   'attach.errGone': 'Dieses Terminal wurde geschlossen.',
   'attach.closedTerminal': 'Geschlossenes Terminal',
+  'attach.hideKeys': 'Tasten und Nachrichtenfeld ausblenden',
+  'attach.showKeys': 'Tasten und Nachrichtenfeld einblenden',
 
   'keys.more': 'Weitere Tasten',
   'keys.armed': 'Zum Senden erneut tippen',

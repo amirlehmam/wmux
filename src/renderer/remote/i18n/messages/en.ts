@@ -79,6 +79,8 @@ export const en = {
   'attach.errTimeout': 'The computer did not answer in time.',
   'attach.errGone': 'This terminal has closed.',
   'attach.closedTerminal': 'Closed terminal',
+  'attach.hideKeys': 'Hide keys and message box',
+  'attach.showKeys': 'Show keys and message box',
 
   'keys.more': 'More keys',
   'keys.armed': 'Tap again to send',

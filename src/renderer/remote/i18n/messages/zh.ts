@@ -68,6 +68,8 @@ export const zh: Readonly<Record<string, string>> = {
   'attach.errTimeout': '电脑未能及时响应。',
   'attach.errGone': '此终端已关闭。',
   'attach.closedTerminal': '已关闭的终端',
+  'attach.hideKeys': '隐藏按键和消息框',
+  'attach.showKeys': '显示按键和消息框',
 
   'keys.more': '更多按键',
   'keys.armed': '再次点按以发送',

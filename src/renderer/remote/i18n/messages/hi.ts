@@ -69,6 +69,8 @@ export const hi: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'कंप्यूटर ने समय पर जवाब नहीं दिया।',
   'attach.errGone': 'यह टर्मिनल बंद हो गया है।',
   'attach.closedTerminal': 'बंद टर्मिनल',
+  'attach.hideKeys': 'कुंजियाँ और संदेश बॉक्स छिपाएँ',
+  'attach.showKeys': 'कुंजियाँ और संदेश बॉक्स दिखाएँ',
 
   'keys.more': 'और कुंजियाँ',
   'keys.armed': 'भेजने के लिए फिर से टैप करें',

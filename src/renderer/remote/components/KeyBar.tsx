@@ -18,15 +18,23 @@ import type { RemoteT } from '../i18n';
 /** `aria`: a translated name; `ctrl`: the letter of a Ctrl chord, spoken through `keys.ctrl`. */
 interface KeyDef { key: RemoteKey; label: string; aria?: RemoteMessageKey; ctrl?: string }
 
-const PRIMARY: readonly KeyDef[] = [
+/**
+ * The ORDER is the feature (#266): the row is wider than a phone and scrolls,
+ * so only its first few keys exist for someone who has not found that out.
+ * Enter used to be eighth of a row that shows seven, and a menu the arrows
+ * could walk had no visible way to be confirmed. Up, Down, Enter sit together
+ * and ahead of everything that is not needed to answer a prompt; they fit
+ * unscrolled on a 320 px screen.
+ */
+export const PRIMARY: readonly KeyDef[] = [
   { key: 'esc', label: 'Esc' },
-  { key: 'tab', label: 'Tab' },
-  { key: 'shift-tab', label: '⇧Tab' },
   { key: 'up', label: '↑', aria: 'keys.up' },
   { key: 'down', label: '↓', aria: 'keys.down' },
+  { key: 'enter', label: '↵', aria: 'keys.enter' },
+  { key: 'tab', label: 'Tab' },
   { key: 'left', label: '←', aria: 'keys.left' },
   { key: 'right', label: '→', aria: 'keys.right' },
-  { key: 'enter', label: '↵', aria: 'keys.enter' },
+  { key: 'shift-tab', label: '⇧Tab' },
   { key: 'ctrl-c', label: '^C', ctrl: 'C' },
   { key: 'y', label: 'y' },
   { key: 'n', label: 'n' },

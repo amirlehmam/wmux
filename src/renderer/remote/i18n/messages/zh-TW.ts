@@ -68,6 +68,8 @@ export const zhTW: Readonly<Record<string, string>> = {
   'attach.errTimeout': '電腦未能及時回應。',
   'attach.errGone': '此終端機已關閉。',
   'attach.closedTerminal': '已關閉的終端機',
+  'attach.hideKeys': '隱藏按鍵與訊息框',
+  'attach.showKeys': '顯示按鍵與訊息框',
 
   'keys.more': '更多按鍵',
   'keys.armed': '再點一下即可送出',

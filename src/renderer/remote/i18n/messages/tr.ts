@@ -69,6 +69,8 @@ export const tr: Readonly<Record<string, string>> = {
   'attach.errTimeout': 'Bilgisayar zamanında yanıt vermedi.',
   'attach.errGone': 'Bu terminal kapatıldı.',
   'attach.closedTerminal': 'Kapatılmış terminal',
+  'attach.hideKeys': 'Tuşları ve mesaj kutusunu gizle',
+  'attach.showKeys': 'Tuşları ve mesaj kutusunu göster',
 
   'keys.more': 'Diğer tuşlar',
   'keys.armed': 'Göndermek için tekrar dokunun',
