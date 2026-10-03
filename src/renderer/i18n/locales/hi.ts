@@ -217,7 +217,7 @@ export const hi: Translation = {
   'workspaceRow.done': 'पूर्ण: {text}',
   'workspaceRow.orchestratingOne': 'ऑर्केस्ट्रेशन · {count} एजेंट चल रहा है',
   'workspaceRow.orchestratingMany': 'ऑर्केस्ट्रेशन · {count} एजेंट चल रहे हैं',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} चालू',
+  'workspaceRow.claudeRunning': '{working}/{total} चालू',
   'workspaceRow.toolCallsTitle': 'इस वर्कस्पेस में {count} टूल कॉल',
   'workspaceRow.closeWorkspace': 'वर्कस्पेस बंद करें',
   'workspaceRow.working': 'काम हो रहा है…',

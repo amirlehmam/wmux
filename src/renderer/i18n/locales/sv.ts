@@ -206,7 +206,7 @@ export const sv: Translation = {
   'workspaceRow.done': 'Klar: {text}',
   'workspaceRow.orchestratingOne': 'Orkestrerar · {count} agent',
   'workspaceRow.orchestratingMany': 'Orkestrerar · {count} agenter',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} körs',
+  'workspaceRow.claudeRunning': '{working}/{total} körs',
   'workspaceRow.toolCallsTitle': '{count} verktygsanrop i den här arbetsytan',
   'workspaceRow.closeWorkspace': 'Stäng arbetsytan',
   'workspaceRow.working': 'Arbetar…',

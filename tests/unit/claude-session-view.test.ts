@@ -19,6 +19,44 @@ const obs = (over: Partial<{ lastTool: string | null; lastUpdate: number; isDone
   agents: [], activeSkill: null, lastTool: null, lastUpdate: NOW, isDone: false, ...over,
 });
 
+describe('screen-detected sessions in sidebar detail rows', () => {
+  const tree = leaf('pane-1', [{ id: 'surf-a' }, { id: 'surf-b' }]);
+  it('shows a working Codex turn even when the restore handle declares unknown', () => {
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
+      { 'surf-a': { state: 'unknown' } },
+      { 'surf-a': { agent: 'codex', state: 'working' }, 'surf-b': { agent: 'codex', state: 'idle' } });
+    expect(out.working).toBe(1);
+    expect(out.sessions.map(s => [s.surfaceId, s.working, s.tool])).toEqual([
+      ['surf-a', true, null], ['surf-b', false, null],
+    ]);
+  });
+  it('keeps explicit declarations ahead of detection', () => {
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
+      { 'surf-a': { state: 'idle' }, 'surf-b': { state: 'blocked', blockedReason: 'Permission' } },
+      { 'surf-a': { agent: 'codex', state: 'working' }, 'surf-b': { agent: 'codex', state: 'working' } });
+    expect(out.working).toBe(0);
+    expect(out.blocked).toBe(1);
+    expect(out.sessions[1].blockedReason).toBe('Permission');
+  });
+  it('shows detected blocking without exposing old declared choices', () => {
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
+      { 'surf-a': { state: 'unknown', choices: [{ id: 'old', label: 'Old' }], answeredAt: NOW } },
+      { 'surf-a': { agent: 'codex', state: 'blocked' } });
+    expect(out.blocked).toBe(1);
+    expect(out.sessions[0]).toMatchObject({ blocked: true, choices: [], answerPending: false });
+  });
+  it('uses fresh hook activity when detection has no state', () => {
+    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Read', NOW) }, NOW, {},
+      { 'surf-a': { agent: 'claude', state: 'unknown' } });
+    expect(out.sessions[0]).toMatchObject({ working: true, tool: 'Read' });
+  });
+  it('does not let an old fresh tool label contradict detected idle', () => {
+    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Read', NOW) }, NOW, {},
+      { 'surf-a': { agent: 'codex', state: 'idle' } });
+    expect(out.sessions[0]).toMatchObject({ working: false, tool: null });
+  });
+});
+
 describe('claudeSessionsForWorkspace', () => {
   it('returns no sessions when neither hooks nor observer saw Claude', () => {
     const tree = leaf('pane-1', [{ id: 'surf-a' }]);
@@ -114,7 +152,7 @@ describe('claudeSessionsForWorkspace', () => {
       {},
       NOW,
     );
-    expect(out.sessions[0]).toMatchObject({ label: 'Claude', skill: 'debugging' });
+    expect(out.sessions[0]).toMatchObject({ label: 'Agent', skill: 'debugging' });
   });
 });
 

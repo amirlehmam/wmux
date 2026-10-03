@@ -208,7 +208,7 @@ export const fr: Translation = {
   'workspaceRow.done': 'Terminé : {text}',
   'workspaceRow.orchestratingOne': 'Orchestration · {count} agent',
   'workspaceRow.orchestratingMany': 'Orchestration · {count} agents',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} en cours',
+  'workspaceRow.claudeRunning': '{working}/{total} en cours',
   'workspaceRow.toolCallsTitle': '{count} appels d’outils dans cet espace de travail',
   'workspaceRow.closeWorkspace': "Fermer l'espace de travail",
   'workspaceRow.working': 'En cours…',

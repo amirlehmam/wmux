@@ -60,6 +60,24 @@ function expectStatus(text: string, status: string, dot: string) {
 }
 
 describe('workspace status shares the roster state (#235)', () => {
+  it('updates Codex detail rows and the provider-neutral summary through a whole turn', () => {
+    render({ a: { state: 'unknown' }, b: { state: 'unknown' }, c: { state: 'unknown' } });
+    const detail = () => [...container.querySelectorAll('.workspace-row__sessions .workspace-row__agent-detail')]
+      .map(el => el.textContent);
+    expect(detail()).toEqual(['Idle', 'Idle', 'Idle']);
+    act(() => store.setState({ agentDetections: {
+      a: { agent: 'codex', state: 'working' },
+      b: { agent: 'codex', state: 'idle' }, c: { agent: 'codex', state: 'idle' },
+    } }));
+    expectStatus('1/3 running', 'working', 'running');
+    expect(detail()).toEqual(['Running…', 'Idle', 'Idle']);
+    act(() => store.setState({ agentDetections: {
+      a: { agent: 'codex', state: 'idle' },
+      b: { agent: 'codex', state: 'idle' }, c: { agent: 'codex', state: 'idle' },
+    } }));
+    expectStatus('Idle', 'idle', 'idle');
+    expect(detail()).toEqual(['Idle', 'Idle', 'Idle']);
+  });
   it('updates the mounted row for a detected working remote tab without hook reports', () => {
     render();
     expectStatus('Idle', 'done', 'idle');

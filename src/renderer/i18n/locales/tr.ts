@@ -217,7 +217,7 @@ export const tr: Translation = {
   'workspaceRow.done': 'Bitti: {text}',
   'workspaceRow.orchestratingOne': 'Orkestrasyon · {count} ajan',
   'workspaceRow.orchestratingMany': 'Orkestrasyon · {count} ajan çalışıyor',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} çalışıyor',
+  'workspaceRow.claudeRunning': '{working}/{total} çalışıyor',
   'workspaceRow.toolCallsTitle': 'Bu çalışma alanında {count} araç çağrısı',
   'workspaceRow.closeWorkspace': 'Çalışma alanını kapat',
   'workspaceRow.working': 'Çalışılıyor…',

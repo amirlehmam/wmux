@@ -170,12 +170,12 @@ export async function runWmuxCodex(args = process.argv.slice(2)): Promise<number
     await relay.close();
   }
   await reports;
-  if (exitCode === 0 && relay.tracker.sessionId) {
+  if (exitCode === 0 && relay.sessionId) {
     // Only an orderly CLI exit forgets the handle. A crash, socket failure or
     // wmux shutdown retains it. Main also guards this RPC while quitting.
-    try { await wmuxRequest('pane.release_codex_session', { surfaceId, sessionId: relay.tracker.sessionId }); }
+    try { await wmuxRequest('pane.release_codex_session', { surfaceId, sessionId: relay.sessionId }); }
     catch { /* wmux has already closed */ }
-    console.log(`To resume later: codex resume ${relay.tracker.sessionId}`);
+    console.log(`To resume later: codex resume ${relay.sessionId}`);
   }
   return exitCode;
 }

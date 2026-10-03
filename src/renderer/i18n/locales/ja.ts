@@ -217,7 +217,7 @@ export const ja: Translation = {
   'workspaceRow.done': '完了: {text}',
   'workspaceRow.orchestratingOne': 'オーケストレーション中 · {count} エージェント',
   'workspaceRow.orchestratingMany': 'オーケストレーション中 · {count} エージェント',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} 実行中',
+  'workspaceRow.claudeRunning': '{working}/{total} 実行中',
   'workspaceRow.toolCallsTitle': 'このワークスペースで {count} 件のツール呼び出し',
   'workspaceRow.closeWorkspace': 'ワークスペースを閉じる',
   'workspaceRow.working': '作業中…',
