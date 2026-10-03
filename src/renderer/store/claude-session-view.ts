@@ -1,4 +1,5 @@
 import { SplitNode, SurfaceId, PaneId } from '../../shared/types';
+import { surfaceAgentState, type DetectionSnapshot } from './agent-rollup';
 
 /** One sidebar hook-activity entry — written by App.tsx from Claude Code hook events. */
 export interface HookActivityEntry {
@@ -35,7 +36,7 @@ export interface DeclaredAgentState {
   blockedSince?: number | null;
 }
 
-/** One Claude Code session (= one surface where Claude ran) inside a workspace. */
+/** One agent session inside a workspace (legacy name retained for callers). */
 export interface ClaudeSessionView {
   surfaceId: SurfaceId;
   paneId: PaneId;
@@ -115,41 +116,45 @@ function cwdBasename(cwd: string | undefined): string | null {
 }
 
 /**
- * Fold the three signals for one surface into what the sidebar shows.
+ * Fold declared state, screen detection and hook/observer activity for a surface.
  *
  * Declared state beats inference: the agent knows what it is doing, whereas
  * the 5s freshness window is only a guess for agents that never told us.
- * `unknown` — never reported, or explicitly released — falls back to the
- * heuristic rather than overriding it with a confident "idle".
+ * `unknown` falls through to screen detection, then to fresh hook/observer
+ * activity, matching the summary and tab dots rather than asserting idle.
  */
 function resolveActivity(
   hook: HookActivityEntry | undefined,
   observed: ObserverActivity | undefined,
   declared: DeclaredAgentState | undefined,
   now: number,
+  detection: DetectionSnapshot | undefined,
 ): Pick<ClaudeSessionView, 'working' | 'blocked' | 'blockedReason' | 'tool' | 'choices' | 'answerPending'> {
   const hookFresh = !!hook && now - hook.lastSeen < SESSION_ACTIVITY_TTL_MS;
   const obsFresh = !!observed && !observed.isDone && !!observed.lastTool
     && now - observed.lastUpdate < SESSION_ACTIVITY_TTL_MS;
 
-  const declaredKnown = !!declared && declared.state !== 'unknown';
-  const blocked = declared?.state === 'blocked';
-  const working = declaredKnown ? declared.state === 'working' : (hookFresh || obsFresh);
+  // Use the same declared > detected precedence as the workspace summary
+  // and tab dots. A saved Codex handle declares `unknown`, not `idle`.
+  const state = surfaceAgentState(declared, detection)?.state;
+  const blocked = state === 'blocked';
+  const working = state ? state === 'working' : (hookFresh || obsFresh);
 
   let tool: string | null = null;
-  if (obsFresh) tool = observed.lastTool;
-  else if (hookFresh && hook.lastTool) tool = hook.lastTool;
+  if (working && obsFresh) tool = observed.lastTool;
+  else if (working && hookFresh && hook.lastTool) tool = hook.lastTool;
 
   // Choices only ever ride along with a live block. An answered prompt keeps
   // showing "sent" until the agent confirms — wmux deliberately does not clear
   // `blocked` on its own say-so (see answerAgent in src/main/agent-state.ts).
-  const choices = blocked ? (declared?.choices ?? []) : [];
-  const answerPending = blocked && choices.length === 0 && !!declared?.answeredAt;
+  const declaredBlocked = declared?.state === 'blocked';
+  const choices = declaredBlocked ? (declared.choices ?? []) : [];
+  const answerPending = declaredBlocked && choices.length === 0 && !!declared.answeredAt;
 
   return {
     working,
     blocked,
-    blockedReason: blocked ? (declared?.blockedReason ?? null) : null,
+    blockedReason: declaredBlocked ? (declared.blockedReason ?? null) : null,
     tool,
     choices,
     answerPending,
@@ -157,8 +162,8 @@ function resolveActivity(
 }
 
 /**
- * Per-surface Claude session states of one workspace. A surface is a session
- * as soon as EITHER a hook event or observer activity was ever recorded for it
+ * Per-surface agent session states of one workspace. A surface is a session
+ * when it has declared state, a detected state, or hook/observer history
  * — entries never expire (a stale entry just reads as idle), mirroring the
  * intentional keep-forever semantics of hookActivity in App.tsx: "was active
  * but stopped" (idle) must stay distinguishable from "plain shell command"
@@ -170,6 +175,7 @@ export function claudeSessionsForWorkspace(
   hookActivity: Record<string, HookActivityEntry | undefined>,
   now: number,
   agentStates: Record<string, DeclaredAgentState | undefined> = {},
+  agentDetections: Record<string, DetectionSnapshot | undefined> = {},
 ): WorkspaceSessionsView {
   const surfaces: SurfaceEntry[] = [];
   collectTerminalSurfaces(splitTree, surfaces);
@@ -183,17 +189,18 @@ export function claudeSessionsForWorkspace(
     const hook = hookActivity[surfaceId];
     const observed = claudeActivity[surfaceId];
     const declared = agentStates[surfaceId];
+    const detection = agentDetections[surfaceId];
     // A declared state alone is enough to make a surface a session — an agent
     // that reports over the pipe need never trip a hook or the TUI scraper.
-    if (!hook && !observed && !declared) continue;
+    if (!hook && !observed && !declared && (!detection || detection.state === 'unknown')) continue;
 
-    const activity = resolveActivity(hook, observed, declared, now);
+    const activity = resolveActivity(hook, observed, declared, now, detection);
 
     sessions.push({
       surfaceId,
       paneId,
       // User-set tab title wins (rename must reflect here); cwd folder second.
-      label: customTitle ?? cwdBasename(currentCwd) ?? 'Claude',
+      label: customTitle ?? cwdBasename(currentCwd) ?? detection?.agent ?? 'Agent',
       ...activity,
       skill: observed?.activeSkill ?? null,
     });

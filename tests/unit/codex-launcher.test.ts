@@ -84,7 +84,7 @@ async function relay(onSession = vi.fn()) {
   const script = path.join(dir, 'server.cjs');
   writeFileSync(script, `require('readline').createInterface({input:process.stdin}).on('line',line=>{
     const request=JSON.parse(line);
-    process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:request.params.threadId,ephemeral:false}}})+'\\n');
+    setTimeout(()=>process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:request.params.threadId,ephemeral:false},pid:process.pid}})+'\\n'),request.params.delayMs||0);
   });`);
   const instance = await createCodexRelay({ executable: process.execPath, args: [script], cwd: dir, env: process.env, onSession });
   relays.push(instance);
@@ -112,7 +112,51 @@ describe('authenticated local relay', () => {
     await expect(connect(instance, instance.token, 'https://example.com')).rejects.toThrow('401');
     const socket = await connect(instance);
     expect(JSON.parse(await request(socket, A)).result.thread.id).toBe(A);
-    await expect(connect(instance)).rejects.toThrow('401');
+    await expect(connect(instance, 'wrong')).rejects.toThrow('401');
+    await expect(connect(instance, instance.token, 'https://example.com')).rejects.toThrow('401');
+  });
+  it('lets the session picker connect while the TUI is connected, with independent request IDs', async () => {
+    const found = vi.fn();
+    const instance = await relay(found);
+    const tui = await connect(instance);
+    const picker = await connect(instance);
+    const tuiReply = new Promise<string>(resolve => tui.once('message', data => resolve(data.toString())));
+    tui.send(wire({ id: 1, method: 'thread/resume', params: { threadId: A, delayMs: 100 } }));
+    const pickerReply = new Promise<string>(resolve => picker.once('message', data => resolve(data.toString())));
+    // A second connection may reuse id=1. Its read response must not consume
+    // the TUI's pending resume, even if it happens to contain a thread object.
+    picker.send(wire({ id: 1, method: 'thread/read', params: { threadId: B } }));
+    expect(JSON.parse(await pickerReply).result.thread.id).toBe(B);
+    expect(found).not.toHaveBeenCalled();
+    expect(JSON.parse(await tuiReply).result.thread.id).toBe(A);
+    expect(found.mock.calls).toEqual([[A]]);
+    picker.close();
+    expect(JSON.parse(await request(tui, B)).result.thread.id).toBe(B);
+  });
+  it('accepts a new connection after the picker disconnects', async () => {
+    const found = vi.fn();
+    const instance = await relay(found);
+    const picker = await connect(instance);
+    await new Promise<void>(resolve => { picker.once('close', () => resolve()); picker.close(); });
+    const tui = await connect(instance);
+    expect(JSON.parse(await request(tui, A)).result.thread.id).toBe(A);
+    expect(found.mock.calls).toEqual([[A]]);
+  });
+  it('retires a disconnected client backend without killing other clients, then closes all', async () => {
+    const instance = await relay();
+    const first = await connect(instance);
+    const second = await connect(instance);
+    const firstPid = JSON.parse(await request(first, A)).result.pid;
+    const secondPid = JSON.parse(await request(second, B)).result.pid;
+    expect(firstPid).not.toBe(secondPid);
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    first.close();
+    await vi.waitFor(() => expect(alive(firstPid)).toBe(false));
+    expect(alive(secondPid)).toBe(true);
+    expect(JSON.parse(await request(second, B)).result.thread.id).toBe(B);
+    await instance.close();
+    await vi.waitFor(() => expect(alive(secondPid)).toBe(false));
+    expect(instance.sessionId).toBe(B);
   });
   it('keeps simultaneous same-directory conversations separate and forwards responses unchanged', async () => {
     const foundA = vi.fn();
@@ -126,7 +170,7 @@ describe('authenticated local relay', () => {
     expect(foundB.mock.calls).toEqual([[B]]);
     await first.close();
     // Closing a transport does not generate a release event or erase recovery.
-    expect(first.tracker.sessionId).toBe(A);
+    expect(first.sessionId).toBe(A);
   });
 });
 

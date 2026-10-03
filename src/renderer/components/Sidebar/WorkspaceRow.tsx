@@ -204,8 +204,9 @@ export default function WorkspaceRow({
       hookActivity ?? {},
       Date.now(),
       agentStates ?? {},
+      agentDetections,
     ),
-    [workspace.splitTree, claudeActivity, hookActivity, agentStates, tick],
+    [workspace.splitTree, claudeActivity, hookActivity, agentStates, agentDetections, tick],
   );
   const sessions = sessionsView.sessions;
   const workingSessions = sessionsView.working;

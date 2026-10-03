@@ -217,7 +217,7 @@ export const cs: Translation = {
   'workspaceRow.done': 'Hotovo: {text}',
   'workspaceRow.orchestratingOne': 'Orchestrace · {count} agent',
   'workspaceRow.orchestratingMany': 'Orchestrace · {count} agentů',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} běží',
+  'workspaceRow.claudeRunning': '{working}/{total} běží',
   'workspaceRow.toolCallsTitle': '{count} volání nástrojů v tomto pracovním prostoru',
   'workspaceRow.closeWorkspace': 'Zavřít pracovní prostor',
   'workspaceRow.working': 'Pracuje…',

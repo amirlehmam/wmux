@@ -202,7 +202,7 @@ export const zh: Translation = {
   'workspaceRow.done': '已完成：{text}',
   'workspaceRow.orchestratingOne': '编排中 · {count} 个代理',
   'workspaceRow.orchestratingMany': '编排中 · {count} 个代理',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} 运行中',
+  'workspaceRow.claudeRunning': '{working}/{total} 运行中',
   'workspaceRow.toolCallsTitle': '此工作区共调用工具 {count} 次',
   'workspaceRow.closeWorkspace': '关闭工作区',
   'workspaceRow.working': '进行中…',

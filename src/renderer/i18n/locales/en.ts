@@ -267,7 +267,7 @@ export const en = {
   'workspaceRow.done': 'Done: {text}',
   'workspaceRow.orchestratingOne': 'Orchestrating · {count} agent',
   'workspaceRow.orchestratingMany': 'Orchestrating · {count} agents',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} running',
+  'workspaceRow.claudeRunning': '{working}/{total} running',
   'workspaceRow.toolCallsTitle': '{count} tool calls in this workspace',
   'workspaceRow.closeWorkspace': 'Close workspace',
   'workspaceRow.working': 'Working…',

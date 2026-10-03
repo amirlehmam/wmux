@@ -206,7 +206,7 @@ export const nl: Translation = {
   'workspaceRow.done': 'Klaar: {text}',
   'workspaceRow.orchestratingOne': 'Orkestratie · {count} agent',
   'workspaceRow.orchestratingMany': 'Orkestratie · {count} agenten',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} actief',
+  'workspaceRow.claudeRunning': '{working}/{total} actief',
   'workspaceRow.toolCallsTitle': '{count} tool-aanroepen in deze werkruimte',
   'workspaceRow.closeWorkspace': 'Werkruimte sluiten',
   'workspaceRow.working': 'Bezig…',
