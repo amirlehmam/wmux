@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
 import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys, sshDetector, agentIdentity, replayRemoteBindings } from './ipc-handlers';
 import { sequenceFrom, splitSequencedReport } from './ssh-detect';
 import { handleDetectionV2 } from './detection-rpc';
@@ -8,6 +8,7 @@ import { planQuit } from './quit-sequence';
 import { handleBrowserV2 } from './v2-browser';
 import { pickBrowserSurface } from './browser-engine-surface';
 import { windowOpenPolicy, willNavigatePolicy } from './webview-navigation';
+import { correctedDashboardHeaders, DASHBOARD_HEADER_FILTER } from './dashboard-content-type';
 import {
   agentBrowserNeedsTeardown,
   agentBrowserTeardownDeps,
@@ -1032,6 +1033,16 @@ function hardenWebContents(): void {
   });
 }
 
+// The agent-browser dashboard answers its own deep link as octet-stream, which
+// Chromium turns into a Save dialog over the window (#269). Webviews have no
+// partition, so they share the default session. See dashboard-content-type.ts.
+function fixDashboardContentType(): void {
+  session.defaultSession.webRequest.onHeadersReceived(DASHBOARD_HEADER_FILTER, (details, callback) => {
+    const responseHeaders = correctedDashboardHeaders(details.url, details.resourceType, details.responseHeaders);
+    callback(responseHeaders ? { responseHeaders } : {});
+  });
+}
+
 // Lifecycle truth for sidebar agent lines: hooks, not output parsing, decide
 // when agents are finished (spec 2026-07-22, issue #81 class). SubagentStop
 // marks a single parallel subagent done; Stop marks the whole surface done.
@@ -1200,6 +1211,7 @@ app.whenReady().then(() => {
   });
 
   hardenWebContents();
+  fixDashboardContentType();
 
   // Find out whether PowerShell will run the .ps1 shim before the renderer asks
   // for its first PTY (issue #154). Unawaited on purpose: the answer only
