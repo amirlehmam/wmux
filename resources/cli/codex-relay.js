@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_BACKENDS = void 0;
 exports.createCodexRelay = createCodexRelay;
 /** Per-terminal, authenticated loopback transport. No transcript is logged or saved. */
 const child_process_1 = require("child_process");
@@ -7,6 +8,8 @@ const crypto_1 = require("crypto");
 const readline_1 = require("readline");
 const ws_1 = require("ws");
 const codex_session_tracker_1 = require("./codex-session-tracker");
+/** The TUI plus its auxiliary picker connections; Codex opens one or two. */
+exports.MAX_BACKENDS = 8;
 async function createCodexRelay(options) {
     const token = (0, crypto_1.randomBytes)(32).toString('hex');
     const expected = Buffer.from(`Bearer ${token}`);
@@ -37,10 +40,23 @@ async function createCodexRelay(options) {
             const supplied = Buffer.from(req.headers.authorization ?? '');
             const allowed = !closing && !req.headers.origin &&
                 supplied.length === expected.length && (0, crypto_1.timingSafeEqual)(supplied, expected);
-            done(allowed, 401);
+            if (!allowed)
+                return done(false, 401);
+            // Each connection is a whole `codex app-server`. The token already keeps
+            // out everyone who could not spawn codex anyway; this bounds a client
+            // stuck in a reconnect loop.
+            if (backends.size >= exports.MAX_BACKENDS)
+                return done(false, 503);
+            done(true);
         },
     });
     server.on('connection', socket => {
+        // A handshake verified just before close() still lands here, after close()
+        // snapshotted `backends` — a child spawned now would outlive the relay.
+        if (closing) {
+            socket.terminate();
+            return;
+        }
         // Codex opens auxiliary clients for /resume and the startup picker.
         // Give each stdio client its own backend and request-ID namespace; simply
         // removing the one-client gate would cross-wire their JSON-RPC responses.

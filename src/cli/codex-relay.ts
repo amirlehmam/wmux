@@ -20,6 +20,9 @@ export interface CodexRelay {
   close(): Promise<void>;
 }
 
+/** The TUI plus its auxiliary picker connections; Codex opens one or two. */
+export const MAX_BACKENDS = 8;
+
 export async function createCodexRelay(options: CodexRelayOptions): Promise<CodexRelay> {
   const token = randomBytes(32).toString('hex');
   const expected = Buffer.from(`Bearer ${token}`);
@@ -49,10 +52,18 @@ export async function createCodexRelay(options: CodexRelayOptions): Promise<Code
       const supplied = Buffer.from(req.headers.authorization ?? '');
       const allowed = !closing && !req.headers.origin &&
         supplied.length === expected.length && timingSafeEqual(supplied, expected);
-      done(allowed, 401);
+      if (!allowed) return done(false, 401);
+      // Each connection is a whole `codex app-server`. The token already keeps
+      // out everyone who could not spawn codex anyway; this bounds a client
+      // stuck in a reconnect loop.
+      if (backends.size >= MAX_BACKENDS) return done(false, 503);
+      done(true);
     },
   });
   server.on('connection', socket => {
+    // A handshake verified just before close() still lands here, after close()
+    // snapshotted `backends` — a child spawned now would outlive the relay.
+    if (closing) { socket.terminate(); return; }
     // Codex opens auxiliary clients for /resume and the startup picker.
     // Give each stdio client its own backend and request-ID namespace; simply
     // removing the one-client gate would cross-wire their JSON-RPC responses.

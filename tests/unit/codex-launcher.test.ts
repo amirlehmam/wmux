@@ -6,7 +6,7 @@ import path from 'path';
 import { WebSocket } from 'ws';
 import { CodexSessionTracker } from '../../src/cli/codex-session-tracker';
 import { codexLaunchPlan } from '../../src/cli/wmux-codex';
-import { createCodexRelay, type CodexRelay } from '../../src/cli/codex-relay';
+import { createCodexRelay, MAX_BACKENDS, type CodexRelay } from '../../src/cli/codex-relay';
 
 const A = '11111111-2222-3333-4444-555555555555';
 const B = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -22,7 +22,8 @@ describe('Codex conversation capture', () => {
       tracker.request(wire({ id, method }));
       tracker.response(wire({ id, result: { thread: { id: thread } } }));
     }
-    expect(found.mock.calls).toEqual([[A], [B]]);
+    // Every root reply is reported; the relay dedupes on the id it saves.
+    expect(found.mock.calls).toEqual([[A], [A], [B]]);
   });
 
   it('ignores ephemeral threads requested internally when the first prompt is sent', () => {
@@ -132,6 +133,24 @@ describe('authenticated local relay', () => {
     expect(found.mock.calls).toEqual([[A]]);
     picker.close();
     expect(JSON.parse(await request(tui, B)).result.thread.id).toBe(B);
+  });
+  it('records the TUI switching back to a thread after a picker connection resumed another', async () => {
+    const found = vi.fn();
+    const instance = await relay(found);
+    const tui = await connect(instance);
+    const picker = await connect(instance);
+    await request(tui, A);
+    await request(picker, B);
+    await request(tui, A);
+    expect(found.mock.calls).toEqual([[A], [B], [A]]);
+    expect(instance.sessionId).toBe(A);
+    await request(tui, A);
+    expect(found).toHaveBeenCalledTimes(3);
+  });
+  it('refuses connections past the backend cap with 503', async () => {
+    const instance = await relay();
+    for (let i = 0; i < MAX_BACKENDS; i++) await connect(instance);
+    await expect(connect(instance)).rejects.toThrow('503');
   });
   it('accepts a new connection after the picker disconnects', async () => {
     const found = vi.fn();

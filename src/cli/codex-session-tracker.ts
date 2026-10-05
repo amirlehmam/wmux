@@ -27,7 +27,10 @@ export class CodexSessionTracker {
       if (!thread || thread.ephemeral === true || thread.parentThreadId ||
           (typeof thread.source === 'object' && thread.source?.subAgent)) return;
       if (typeof thread.id !== 'string' || !SESSION_ID.test(thread.id)) return;
-      if (this.sessionId === thread.id) return;
+      // No dedupe here: a relay runs one tracker per connection and keeps ONE
+      // saved id, so a tracker that skipped "the thread I saw last" would miss
+      // the TUI switching back to A after a picker connection resumed B. The
+      // caller dedupes against the id it actually saves.
       this.sessionId = thread.id;
       this.onSession(thread.id);
     } catch { /* An unrecognised response must never erase a saved handle. */ }
