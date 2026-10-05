@@ -16,39 +16,62 @@ export interface CodexRelayOptions {
 export interface CodexRelay {
   url: string;
   token: string;
-  tracker: CodexSessionTracker;
+  readonly sessionId: string | undefined;
   close(): Promise<void>;
 }
 
 export async function createCodexRelay(options: CodexRelayOptions): Promise<CodexRelay> {
   const token = randomBytes(32).toString('hex');
   const expected = Buffer.from(`Bearer ${token}`);
-  let connected = false;
   let closing = false;
-  let backend: ChildProcessWithoutNullStreams | undefined;
-  const tracker = new CodexSessionTracker(options.onSession);
+  let sessionId: string | undefined;
+  const backends = new Set<ChildProcessWithoutNullStreams>();
+  const stopping = new Map<ChildProcessWithoutNullStreams, Promise<void>>();
+
+  // A picker has its own connection and may close before the main TUI does.
+  // Retire only its backend, and bound shutdown even if stdin EOF is ignored.
+  const stopBackend = (child: ChildProcessWithoutNullStreams): Promise<void> => {
+    const pending = stopping.get(child);
+    if (pending) return pending;
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    const done = new Promise<void>(resolve => {
+      const timeout = setTimeout(() => { child.kill(); resolve(); }, 1500);
+      child.once('exit', () => { clearTimeout(timeout); resolve(); });
+      child.stdin.end();
+    });
+    stopping.set(child, done);
+    void done.then(() => { stopping.delete(child); });
+    return done;
+  };
   const server = new WebSocketServer({
     host: '127.0.0.1', port: 0, maxPayload: 100 * 1024 * 1024,
     verifyClient: ({ req }, done) => {
       const supplied = Buffer.from(req.headers.authorization ?? '');
-      const allowed = !connected && !closing && !req.headers.origin &&
+      const allowed = !closing && !req.headers.origin &&
         supplied.length === expected.length && timingSafeEqual(supplied, expected);
       done(allowed, 401);
     },
   });
   server.on('connection', socket => {
-    connected = true;
-    backend = spawn(options.executable, options.args, {
+    // Codex opens auxiliary clients for /resume and the startup picker.
+    // Give each stdio client its own backend and request-ID namespace; simply
+    // removing the one-client gate would cross-wire their JSON-RPC responses.
+    const tracker = new CodexSessionTracker(id => {
+      if (id === sessionId) return;
+      sessionId = id;
+      options.onSession(id);
+    });
+    const child = spawn(options.executable, options.args, {
       cwd: options.cwd, env: options.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const child = backend;
+    backends.add(child);
     // Codex writes diagnostics to its own logs. Do not mix backend stderr into
     // the terminal's TUI or retain potentially sensitive protocol content here.
     child.stderr.resume();
     child.stdin.on('error', () => socket.close(1011, 'Codex input closed'));
     child.stdout.on('error', () => socket.close(1011, 'Codex output closed'));
-    child.on('error', () => socket.close(1011, 'Could not start Codex app-server'));
-    child.on('exit', () => socket.close());
+    child.on('error', () => { backends.delete(child); socket.close(1011, 'Could not start Codex app-server'); });
+    child.on('exit', () => { backends.delete(child); socket.close(); });
     socket.on('message', raw => {
       const text = raw.toString();
       tracker.request(text);
@@ -62,8 +85,8 @@ export async function createCodexRelay(options: CodexRelayOptions): Promise<Code
       child.stdout.pause();
       socket.send(line, () => child.stdout.resume());
     });
-    socket.on('error', () => { child.stdin.end(); });
-    socket.on('close', () => { child.stdin.end(); });
+    socket.on('error', () => { void stopBackend(child); });
+    socket.on('close', () => { void stopBackend(child); });
   });
   await new Promise<void>((resolve, reject) => {
     server.once('listening', resolve);
@@ -72,19 +95,14 @@ export async function createCodexRelay(options: CodexRelayOptions): Promise<Code
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('No Codex relay address');
   return {
-    url: `ws://127.0.0.1:${address.port}`, token, tracker,
+    url: `ws://127.0.0.1:${address.port}`, token,
+    get sessionId() { return sessionId; },
     async close() {
       if (closing) return;
       closing = true;
       for (const socket of server.clients) socket.terminate();
       server.close();
-      if (!backend || backend.exitCode !== null || backend.signalCode !== null) return;
-      const child = backend;
-      await new Promise<void>(resolve => {
-        const timeout = setTimeout(() => { child.kill(); resolve(); }, 1500);
-        child.once('exit', () => { clearTimeout(timeout); resolve(); });
-        child.stdin.end();
-      });
+      await Promise.all([...backends].map(stopBackend));
     },
   };
 }

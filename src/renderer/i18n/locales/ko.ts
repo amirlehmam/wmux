@@ -223,7 +223,7 @@ export const ko: Translation = {
   // 한국어에는 복수형이 없어 두 키가 같은 문장이 됩니다 (둘 다 있어야 합니다).
   'workspaceRow.orchestratingOne': '오케스트레이션 중 · 에이전트 {count}개',
   'workspaceRow.orchestratingMany': '오케스트레이션 중 · 에이전트 {count}개',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} 실행 중',
+  'workspaceRow.claudeRunning': '{working}/{total} 실행 중',
   'workspaceRow.toolCallsTitle': '이 작업 공간의 도구 호출 {count}건',
   'workspaceRow.closeWorkspace': '작업 공간 닫기',
   'workspaceRow.working': '작업 중…',

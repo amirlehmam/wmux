@@ -251,7 +251,7 @@ export const zhTW: Translation = {
   'workspaceRow.done': '完成：{text}',
   'workspaceRow.orchestratingOne': '編排中 · {count} 個 agent',
   'workspaceRow.orchestratingMany': '編排中 · {count} 個 agent',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} 執行中',
+  'workspaceRow.claudeRunning': '{working}/{total} 執行中',
   'workspaceRow.toolCallsTitle': '這個工作區有 {count} 次工具呼叫',
   'workspaceRow.closeWorkspace': '關閉工作區',
   'workspaceRow.working': '工作中…',

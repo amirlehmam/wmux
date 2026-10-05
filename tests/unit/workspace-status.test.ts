@@ -72,7 +72,7 @@ describe('resolveStatusText — established precedence is unchanged', () => {
 
   it('multiple sessions still summarize rather than showing one row Running', () => {
     expect(resolveStatusText(inputs({ sessionCount: 3, workingSessions: 2 }), t))
-      .toBe('Claude · 2/3 running');
+      .toBe('2/3 running');
     // Every session stopped — the summary is the authority, not the shell.
     expect(resolveStatusText(inputs({ sessionCount: 3, workingSessions: 0, shellState: 'running' }), t))
       .toBe('Idle');
@@ -187,7 +187,7 @@ describe('mergedAgentSignals — the roster joins the older signals (issue #235)
     // The roster can see agents this workspace has no tracked SESSION for.
     // "3/2 running" reads as a bug rather than as detection working.
     const s = inputs({ sessionCount: 2, workingSessions: 0, agentCounts: counts({ working: 3 }) });
-    expect(resolveStatusText(s, t)).toBe('Claude · 2/2 running');
+    expect(resolveStatusText(s, t)).toBe('2/2 running');
   });
 
   it('takes the larger of the two sources rather than either alone', () => {

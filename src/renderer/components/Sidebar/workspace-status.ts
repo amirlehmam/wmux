@@ -93,7 +93,7 @@ function multiSessionText(s: StatusTextInputs, agent: MergedAgentSignals, t: T):
   // for, and "3/2 running" reads as a bug rather than as detection working.
   const working = Math.min(agent.working, s.sessionCount);
   if (working === 0) return t('workspaceRow.idle', 'Idle');
-  return t('workspaceRow.claudeRunning', 'Claude · {working}/{total} running')
+  return t('workspaceRow.claudeRunning', '{working}/{total} running')
     .replace('{working}', String(working))
     .replace('{total}', String(s.sessionCount));
 }

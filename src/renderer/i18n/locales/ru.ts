@@ -217,7 +217,7 @@ export const ru: Translation = {
   'workspaceRow.done': 'Готово: {text}',
   'workspaceRow.orchestratingOne': 'Оркестрация · {count} агент',
   'workspaceRow.orchestratingMany': 'Оркестрация · {count} агентов',
-  'workspaceRow.claudeRunning': 'Claude · {working}/{total} выполняется',
+  'workspaceRow.claudeRunning': '{working}/{total} выполняется',
   'workspaceRow.toolCallsTitle': '{count} вызовов инструментов в этой рабочей области',
   'workspaceRow.closeWorkspace': 'Закрыть рабочую область',
   'workspaceRow.working': 'Работа…',
