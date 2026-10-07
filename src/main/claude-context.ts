@@ -247,6 +247,7 @@ const stripWmux = (entries: any): any[] =>
 const WMUX_HOOK_EVENTS = [
   'PostToolUse', 'Notification', 'Stop', 'SubagentStop',
   'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'SessionEnd',
+  'SubagentStart',
 ] as const;
 
 /**
@@ -339,6 +340,15 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
   next.hooks.SubagentStop = [
     ...stripWmux(next.hooks.SubagentStop),
     { hooks: [{ type: 'command', command: makeEventCmd('SubagentStop') }] },
+  ];
+
+  // SubagentStart — a subagent was spawned (issue #272). Its `agent_id` is what
+  // lets the sidebar keep a BACKGROUND subagent's line alive after the parent's
+  // Stop, and end exactly that line on its own SubagentStop. Async: the line is
+  // display only, and a subagent launch should not wait on node booting.
+  next.hooks.SubagentStart = [
+    ...stripWmux(next.hooks.SubagentStart),
+    { hooks: [{ type: 'command', command: makeEventCmd('SubagentStart'), ...ASYNC }] },
   ];
 
   // ── Turn-opening events (issue #151) ───────────────────────────────────────

@@ -183,8 +183,13 @@ function salvageSessionId(raw) {
  * can act on anyway.
  */
 const NOTIFICATION_TYPE_RE = /^[a-z][a-z0-9_]{0,63}$/;
+/** An agent id or type: an identifier, never free text. Anything else is dropped. */
+const AGENT_IDENT_RE = /^[\w.:@-]{1,128}$/;
 function parsePayload(raw) {
-    const out = { file: '', message: '', sessionId: '', toolName: '', prompt: '', notificationType: '', subagent: false };
+    const out = {
+        file: '', message: '', sessionId: '', toolName: '', prompt: '', notificationType: '', subagent: false,
+        agentId: '', agentType: '',
+    };
     if (!raw.trim())
         return out;
     let data;
@@ -235,6 +240,11 @@ function parsePayload(raw) {
     if (typeof data.session_id === 'string')
         out.sessionId = data.session_id;
     out.subagent = typeof data.subagentType === 'string' && data.subagentType !== '';
+    if (typeof data.agent_id === 'string' && AGENT_IDENT_RE.test(data.agent_id)) {
+        out.agentId = data.agent_id;
+        if (typeof data.agent_type === 'string' && AGENT_IDENT_RE.test(data.agent_type))
+            out.agentType = data.agent_type;
+    }
     // UserPromptSubmit carries what the user actually typed, and wmux threw it
     // away — which is why the prompt-log features in issue #207 had no source of
     // truth for an agent pane. It cannot be recovered from the screen: an agent
@@ -279,6 +289,24 @@ function reportedEvent(fired, subagent) {
         return null;
     return turnEnd ? 'SubagentStop' : fired;
 }
+/** The `hook.event` params: only the fields that carry something. */
+function hookParams(fields) {
+    const { file, message, sessionId, prompt, notificationType, agentId, agentType } = fields;
+    const params = { at: firedAt };
+    const optional = {
+        event, tool, file, message, notificationType, prompt, agentId, agentType, surfaceId,
+        // Not under Grok (it sets GROK_HOOK_EVENT on every hook process). Grok
+        // 1.0.44 sends `session_id` alongside `sessionId`, and an id recorded here
+        // ends up on a `claude --resume` command line at restore — naming a session
+        // Claude has never seen.
+        sessionId: process.env.GROK_HOOK_EVENT ? '' : sessionId,
+    };
+    for (const [key, value] of Object.entries(optional)) {
+        if (value)
+            params[key] = value;
+    }
+    return params;
+}
 function sendHook() {
     if (sent)
         return;
@@ -291,35 +319,15 @@ function sendHook() {
     // caller opened it and never closes it, exiting would otherwise wait on a
     // stream nobody is going to end.
     process.stdin.pause();
-    const { file, message, sessionId, toolName, prompt, notificationType, subagent } = parsePayload(stdinData);
-    const reported = reportedEvent(event, subagent);
+    const fields = parsePayload(stdinData);
+    const reported = reportedEvent(event, fields.subagent);
     // Nothing to say, so no connection either: the pipe is never opened.
     if (reported === null)
         process.exit(0);
     event = reported;
-    if (!tool && toolName)
-        tool = toolName;
-    const params = { at: firedAt };
-    if (event)
-        params.event = event;
-    if (tool)
-        params.tool = tool;
-    if (file)
-        params.file = file;
-    if (message)
-        params.message = message;
-    if (notificationType)
-        params.notificationType = notificationType;
-    // Not under Grok (it sets GROK_HOOK_EVENT on every hook process). Grok 1.0.44
-    // sends `session_id` alongside `sessionId`, and an id recorded here ends up on
-    // a `claude --resume` command line at restore — naming a session Claude has
-    // never seen.
-    if (sessionId && !process.env.GROK_HOOK_EVENT)
-        params.sessionId = sessionId;
-    if (prompt)
-        params.prompt = prompt;
-    if (surfaceId)
-        params.surfaceId = surfaceId;
+    if (!tool && fields.toolName)
+        tool = fields.toolName;
+    const params = hookParams(fields);
     const client = net_1.default.connect(remote ? { host: remote.host, port: remote.port } : { path: pipePath }, () => {
         const msg = JSON.stringify({ method: 'hook.event', params, id: 1, token });
         client.write(msg + '\n');

@@ -1723,11 +1723,36 @@ async function cmdReportMetadata(args) {
         params.ttlMs = Number(ttl);
     print(await sendV2('pane.report_metadata', params));
 }
+/**
+ * A subagent of the calling pane — a background task, a worker, a planner —
+ * as a line under that pane's sidebar row (#272). Call it again with the same
+ * id to update the line (every call is a heartbeat), and with --done to finish
+ * it. Display only: it never changes the pane's declared blocked/working state.
+ */
+async function cmdReportSubagent(args) {
+    const surfaceId = reportingSurface(args, 'report-subagent');
+    const id = getFlag(args, '--id') ?? args[1];
+    if (!id || id.startsWith('--')) {
+        console.error('report-subagent: an id is required (wmux report-subagent <id> [--name N] [--detail D] [--done])');
+        process.exit(1);
+    }
+    const params = { surfaceId, id };
+    const name = getFlag(args, '--name');
+    if (name !== undefined)
+        params.name = name;
+    const detail = getFlag(args, '--detail');
+    if (detail !== undefined)
+        params.detail = detail;
+    if (args.includes('--done'))
+        params.done = true;
+    print(await sendV2('agent.subagent', params));
+}
 // Keys stay inferred (no Record<string, …> annotation) so spreading this into
 // COMMANDS still satisfies the exhaustive Record<CommandName, …> check.
 const AGENT_STATE_COMMANDS = {
     'report-agent': cmdReportAgent,
     'report-metadata': cmdReportMetadata,
+    'report-subagent': cmdReportSubagent,
     'report-session': async (args) => {
         const surfaceId = reportingSurface(args, 'report-session');
         print(await sendV2(getFlag(args, '--provider') === 'codex' ? 'pane.report_codex_session' : 'pane.report_agent_session', {
@@ -1976,6 +2001,11 @@ const COMMAND_SPECS = {
     'report-metadata': {
         usage: `wmux report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms] [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
         value: ['--model', '--tokens', '--context-pct', '--ttl', '--seq', '--surface'],
+    },
+    'report-subagent': {
+        usage: `wmux report-subagent <id> [--name N] [--detail D] [--done] [--surface <id>]   ${SURFACE_NOTE}`,
+        value: ['--id', '--name', '--detail', '--surface'],
+        bool: ['--done'],
     },
     'report-session': {
         usage: `wmux report-session <sessionId> [--provider claude|codex] [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
@@ -2285,6 +2315,7 @@ Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
                           [--run-depth N] [--seq N] [--surface <id>]
             report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms]
             report-session <id> | release-agent | agent-state [--surface <id>]
+            report-subagent <id> [--name N] [--detail D] [--done]   # a line under your pane
             (surface defaults to $WMUX_SURFACE_ID — an agent in a pane needs no id)
 Config:     config show|reload|path   (edits ~/.wmux/config.toml — see docs)
             reload-config             (shorthand for 'config reload')

@@ -199,10 +199,23 @@ interface HookPayloadFields {
   notificationType: string;
   /** Grok puts `subagentType` on events fired inside a subagent's own session. */
   subagent: boolean;
+  /**
+   * Claude Code's `agent_id` / `agent_type`: present only on a hook fired from
+   * INSIDE a subagent (and on SubagentStart/SubagentStop), absent on the main
+   * thread. They name the sidebar line under the parent pane (issue #272).
+   */
+  agentId: string;
+  agentType: string;
 }
 
+/** An agent id or type: an identifier, never free text. Anything else is dropped. */
+const AGENT_IDENT_RE = /^[\w.:@-]{1,128}$/;
+
 function parsePayload(raw: string): HookPayloadFields {
-  const out: HookPayloadFields = { file: '', message: '', sessionId: '', toolName: '', prompt: '', notificationType: '', subagent: false };
+  const out: HookPayloadFields = {
+    file: '', message: '', sessionId: '', toolName: '', prompt: '', notificationType: '', subagent: false,
+    agentId: '', agentType: '',
+  };
   if (!raw.trim()) return out;
   let data: Record<string, any>;
   try {
@@ -249,6 +262,10 @@ function parsePayload(raw: string): HookPayloadFields {
   // Forwarding it is what makes `claude --resume` possible on restore.
   if (typeof data.session_id === 'string') out.sessionId = data.session_id;
   out.subagent = typeof data.subagentType === 'string' && data.subagentType !== '';
+  if (typeof data.agent_id === 'string' && AGENT_IDENT_RE.test(data.agent_id)) {
+    out.agentId = data.agent_id;
+    if (typeof data.agent_type === 'string' && AGENT_IDENT_RE.test(data.agent_type)) out.agentType = data.agent_type;
+  }
   // UserPromptSubmit carries what the user actually typed, and wmux threw it
   // away — which is why the prompt-log features in issue #207 had no source of
   // truth for an agent pane. It cannot be recovered from the screen: an agent
@@ -293,6 +310,24 @@ function reportedEvent(fired: string, subagent: boolean): string | null {
   return turnEnd ? 'SubagentStop' : fired;
 }
 
+/** The `hook.event` params: only the fields that carry something. */
+function hookParams(fields: HookPayloadFields): Record<string, string | number> {
+  const { file, message, sessionId, prompt, notificationType, agentId, agentType } = fields;
+  const params: Record<string, string | number> = { at: firedAt };
+  const optional: Record<string, string> = {
+    event, tool, file, message, notificationType, prompt, agentId, agentType, surfaceId,
+    // Not under Grok (it sets GROK_HOOK_EVENT on every hook process). Grok
+    // 1.0.44 sends `session_id` alongside `sessionId`, and an id recorded here
+    // ends up on a `claude --resume` command line at restore — naming a session
+    // Claude has never seen.
+    sessionId: process.env.GROK_HOOK_EVENT ? '' : sessionId,
+  };
+  for (const [key, value] of Object.entries(optional)) {
+    if (value) params[key] = value;
+  }
+  return params;
+}
+
 function sendHook(): void {
   if (sent) return;
   sent = true;
@@ -302,26 +337,13 @@ function sendHook(): void {
   // stream nobody is going to end.
   process.stdin.pause();
 
-  const { file, message, sessionId, toolName, prompt, notificationType, subagent } = parsePayload(stdinData);
-  const reported = reportedEvent(event, subagent);
+  const fields = parsePayload(stdinData);
+  const reported = reportedEvent(event, fields.subagent);
   // Nothing to say, so no connection either: the pipe is never opened.
   if (reported === null) process.exit(0);
   event = reported;
-  if (!tool && toolName) tool = toolName;
-
-  const params: Record<string, string | number> = { at: firedAt };
-  if (event) params.event = event;
-  if (tool) params.tool = tool;
-  if (file) params.file = file;
-  if (message) params.message = message;
-  if (notificationType) params.notificationType = notificationType;
-  // Not under Grok (it sets GROK_HOOK_EVENT on every hook process). Grok 1.0.44
-  // sends `session_id` alongside `sessionId`, and an id recorded here ends up on
-  // a `claude --resume` command line at restore — naming a session Claude has
-  // never seen.
-  if (sessionId && !process.env.GROK_HOOK_EVENT) params.sessionId = sessionId;
-  if (prompt) params.prompt = prompt;
-  if (surfaceId) params.surfaceId = surfaceId;
+  if (!tool && fields.toolName) tool = fields.toolName;
+  const params = hookParams(fields);
 
   const client = net.connect(remote ? { host: remote.host, port: remote.port } : { path: pipePath }, () => {
     const msg = JSON.stringify({ method: 'hook.event', params, id: 1, token });

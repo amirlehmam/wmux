@@ -219,7 +219,9 @@ export function stateDotClassFor(s: StatusTextInputs, isClaudeActive: boolean): 
   if (s.statusOverride) return `workspace-row__state-dot--${s.statusOverride}`;
   const agent = mergedAgentSignals(s);
   if (agent.blocked > 0) return 'workspace-row__state-dot--blocked';
-  if (isClaudeActive || agent.working > 0) return 'workspace-row__state-dot--running';
+  // Mirrors Priority 0.5: a row reading "Orchestrating" (a background subagent
+  // still at work after its parent's turn ended, #272) must not wear an idle dot.
+  if (isClaudeActive || agent.working > 0 || s.runningAgentCount > 0) return 'workspace-row__state-dot--running';
   if (agent.idle) return 'workspace-row__state-dot--idle';
   if (s.shellState === 'running') return 'workspace-row__state-dot--running';
   if (s.shellState === 'interrupted') return 'workspace-row__state-dot--interrupted';

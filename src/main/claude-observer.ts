@@ -25,6 +25,30 @@ export interface AgentActivity {
   toolUses: number;
   tokens: string;
   done: boolean;
+  /**
+   * Set only on a DECLARED subagent (issue #272): one an agent named itself,
+   * through a Claude Code hook's `agent_id` or `wmux report-subagent`. A
+   * declared subagent's lifecycle is its own — only its own stop, or the
+   * session ending, finishes it. The parent's `Stop` does not: a BACKGROUND
+   * subagent outlives the turn that launched it, which is exactly the #272
+   * screenshot (the pane read "Idle" while its planner kept working).
+   * Screen-parsed agents carry no id and keep the old rules.
+   */
+  id?: string;
+  /** What a declared subagent says it is doing ("calling create_file"). */
+  detail?: string;
+  /** Last time a declared subagent reported anything — the renderer's ghost guard. */
+  touchedAt?: number;
+}
+
+/** One `reportSubagent` call. Every field but `id` is optional and sticky. */
+export interface SubagentReport {
+  id: string;
+  name?: string;
+  detail?: string;
+  done?: boolean;
+  /** Count one tool use (a hook fired from inside the subagent). */
+  toolUse?: boolean;
 }
 
 export interface ClaudeActivity {
@@ -132,7 +156,8 @@ function handleAgentBatchStart(activity: ClaudeActivity, trimmed: string): boole
   // frame re-enters here and resets the list, resurrecting already-finished
   // agents until the next hook event or the observer TTL. Backstopped by the
   // Stop hook and the 5-minute TTL in agent-view.
-  activity.agents = [];
+  // Declared subagents survive: a repainted frame is not their lifecycle.
+  activity.agents = activity.agents.filter(a => a.id);
   activity.isDone = false;
   return true;
 }
@@ -144,7 +169,7 @@ function handleAgentDetail(activity: ClaudeActivity, trimmed: string): boolean {
   const toolUses = parseInt(detailMatch[2], 10);
   const tokens = detailMatch[3];
 
-  const existing = activity.agents.find(a => a.name === name);
+  const existing = activity.agents.find(a => !a.id && a.name === name);
   if (existing) {
     existing.toolUses = toolUses;
     existing.tokens = tokens;
@@ -162,7 +187,8 @@ function handleAgentDone(activity: ClaudeActivity, trimmed: string): boolean {
   // repaints its TUI frame constantly, so a finished frame containing "⎿ Done"
   // reappears on every repaint — rebroadcasting each time would spam IPC and
   // keep lastUpdate artificially fresh (which linger/TTL logic reads).
-  const lastAgent = activity.agents[activity.agents.length - 1];
+  const parsed = activity.agents.filter(a => !a.id);
+  const lastAgent = parsed[parsed.length - 1];
   if (lastAgent && !lastAgent.done) {
     lastAgent.done = true;
     return true;
@@ -172,7 +198,7 @@ function handleAgentDone(activity: ClaudeActivity, trimmed: string): boolean {
 
 function handleAgentBatchDone(activity: ClaudeActivity, trimmed: string): boolean {
   if (!PATTERNS.agentBatchDoneDigit.test(trimmed) || !PATTERNS.agentBatchDoneTail.test(trimmed)) return false;
-  activity.agents.forEach(a => { a.done = true; });
+  activity.agents.forEach(a => { if (!a.id) a.done = true; });
   return true;
 }
 
@@ -211,7 +237,7 @@ function handleWorkflowAgent(activity: ClaudeActivity, trimmed: string): boolean
   // repaints identical frames constantly and rebroadcasting each one would
   // spam IPC and keep lastUpdate artificially fresh (same principle as the
   // handleAgentDone dedup).
-  const existing = activity.agents.find(a => a.name === name);
+  const existing = activity.agents.find(a => !a.id && a.name === name);
   if (existing) {
     if (existing.toolUses === toolUses && existing.tokens === tokens && existing.done === glyph.done) {
       return false;
@@ -315,7 +341,7 @@ export function markSubagentStop(surfaceId: SurfaceId): void {
   const activity = activities.get(surfaceId);
   if (!activity) return;
   for (let i = activity.agents.length - 1; i >= 0; i--) {
-    if (!activity.agents[i].done) {
+    if (!activity.agents[i].id && !activity.agents[i].done) {
       activity.agents[i].done = true;
       activity.lastUpdate = Date.now();
       broadcast(surfaceId, activity);
@@ -332,9 +358,83 @@ export function markSubagentStop(surfaceId: SurfaceId): void {
 export function markAllAgentsDone(surfaceId: SurfaceId): void {
   const activity = activities.get(surfaceId);
   if (!activity) return;
-  activity.agents.forEach(a => { a.done = true; });
+  // Declared subagents are left alone: the turn ending is not theirs (#272).
+  activity.agents.forEach(a => { if (!a.id) a.done = true; });
   activity.isDone = true;
   activity.lastTool = null;
+  activity.lastUpdate = Date.now();
+  broadcast(surfaceId, activity);
+}
+
+const MAX_SUBAGENT_ID = 128;
+const MAX_SUBAGENT_NAME = 64;
+const MAX_SUBAGENT_DETAIL = 120;
+
+function isUnpaintable(c: number): boolean {
+  const control = c < 0x20 || (c >= 0x7f && c < 0xa0);
+  const bidi = (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069) || c === 0x200e || c === 0x200f;
+  return control || bidi;
+}
+
+/**
+ * Text from a pipe caller, made safe to paint on one sidebar line: C0/C1 and
+ * the bidi controls become spaces (U+202E reorders a whole row — the #221
+ * lesson), whitespace collapses, and the result is capped in code points.
+ */
+export function sanitizeSubagentText(raw: unknown, max: number): string {
+  if (typeof raw !== 'string') return '';
+  const chars: string[] = [];
+  let pendingSpace = false;
+  for (const ch of raw) {
+    const blank = isUnpaintable(ch.codePointAt(0)!) || ch.trim() === '';
+    if (blank) { pendingSpace = chars.length > 0; continue; }
+    if (chars.length + (pendingSpace ? 2 : 1) > max) break;
+    if (pendingSpace) chars.push(' ');
+    pendingSpace = false;
+    chars.push(ch);
+  }
+  return chars.join('');
+}
+
+/**
+ * A declared subagent started, worked, or finished (issue #272). Upserts by
+ * `id`, so a producer can report as often as it likes — every report is also a
+ * heartbeat. Returns false, changing nothing, for a report with no usable id or
+ * a finish for an agent never seen starting (that would only paint a ✓ line).
+ */
+export function reportSubagent(surfaceId: SurfaceId, report: SubagentReport): boolean {
+  const id = sanitizeSubagentText(report.id, MAX_SUBAGENT_ID);
+  if (!id) return false;
+  const existing = activities.get(surfaceId)?.agents.find(a => a.id === id);
+  if (!existing && report.done) return false;
+  const activity = getOrCreate(surfaceId);
+  let agent = existing;
+  if (!agent) {
+    agent = { id, name: id, toolUses: 0, tokens: '', done: false };
+    activity.agents.push(agent);
+    if (activity.agents.length > MAX_TRACKED_AGENTS) activity.agents.shift();
+  }
+  const name = sanitizeSubagentText(report.name, MAX_SUBAGENT_NAME);
+  if (name) agent.name = name;
+  if (report.detail !== undefined) agent.detail = sanitizeSubagentText(report.detail, MAX_SUBAGENT_DETAIL);
+  if (report.toolUse) agent.toolUses++;
+  if (report.done !== undefined) agent.done = report.done;
+  const now = Date.now();
+  agent.touchedAt = now;
+  activity.lastUpdate = now;
+  broadcast(surfaceId, activity);
+  return true;
+}
+
+/** The session is over (SessionEnd, release-agent): nothing it declared runs on. */
+export function endDeclaredSubagents(surfaceId: SurfaceId): void {
+  const activity = activities.get(surfaceId);
+  if (!activity) return;
+  let changed = false;
+  for (const a of activity.agents) {
+    if (a.id && !a.done) { a.done = true; changed = true; }
+  }
+  if (!changed) return;
   activity.lastUpdate = Date.now();
   broadcast(surfaceId, activity);
 }

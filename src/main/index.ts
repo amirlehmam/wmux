@@ -57,7 +57,9 @@ import { sweepUpdateLeftovers, UPDATE_SWEEP_DELAY_MS } from './zip-updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
 import { getChangelog } from './changelog';
 import { initAgentIntegration } from './agent-integration';
-import { applyExternalActivity, markSubagentStop, markAllAgentsDone } from './claude-observer';
+import {
+  applyExternalActivity, markSubagentStop, markAllAgentsDone, reportSubagent, endDeclaredSubagents,
+} from './claude-observer';
 import { handleAgentStateV2, setAnswerWriter, deliverAnswer } from './agent-state-rpc';
 import { applyHookToAgentState, hookEventName } from './agent-hook-bridge';
 import { startOrchestrationWatcher } from './orchestration-watcher';
@@ -1046,11 +1048,55 @@ function fixDashboardContentType(): void {
 // Lifecycle truth for sidebar agent lines: hooks, not output parsing, decide
 // when agents are finished (spec 2026-07-22, issue #81 class). SubagentStop
 // marks a single parallel subagent done; Stop marks the whole surface done.
+//
+// With an `agentId` (Claude Code puts one on every hook fired from inside a
+// subagent) the subagent is DECLARED and tracked by id (#272): its tool events
+// keep its line alive and say what it is doing, and only its own SubagentStop
+// or the session ending finish it — never the parent's Stop, which a
+// background subagent outlives.
 function applyHookLifecycle(params: any): void {
   const sid = params?.surfaceId as SurfaceId | undefined;
   if (!sid) return;
-  if (params.event === 'SubagentStop') markSubagentStop(sid);
-  else if (params.event === 'Stop') markAllAgentsDone(sid);
+  const agentId = typeof params.agentId === 'string' ? params.agentId : '';
+  const name = typeof params.agentType === 'string' ? params.agentType : undefined;
+  if (params.event === 'SessionEnd') { endDeclaredSubagents(sid); return; }
+  if (!agentId) {
+    if (params.event === 'SubagentStop') markSubagentStop(sid);
+    else if (params.event === 'Stop') markAllAgentsDone(sid);
+    return;
+  }
+  if (params.event === 'SubagentStart') reportSubagent(sid, { id: agentId, name, done: false });
+  else if (params.event === 'SubagentStop') reportSubagent(sid, { id: agentId, name, done: true });
+  else if (params.event === 'PreToolUse') {
+    reportSubagent(sid, { id: agentId, name, detail: typeof params.tool === 'string' ? params.tool : undefined, toolUse: true });
+  }
+}
+
+/**
+ * `agent.subagent` — `wmux report-subagent` (#272). Any agent declares a
+ * subagent of its own (a background task, a worker, a planner) and gets a line
+ * under its pane in the sidebar. Display only: it never touches the declared
+ * run state, so a subagent can make a row read "Orchestrating" but can neither
+ * make it read "Needs you" nor clear one.
+ */
+function handleSubagentReport(
+  params: any,
+  respond: (result: unknown) => void,
+  respondError: (code: number, message: string) => void,
+): void {
+  const p = params || {};
+  if (!p.surfaceId) { respondError(-32602, 'surfaceId required'); return; }
+  const done = typeof p.done === 'boolean' ? p.done : undefined;
+  const tracked = reportSubagent(p.surfaceId as SurfaceId, {
+    id: p.id,
+    name: typeof p.name === 'string' ? p.name : undefined,
+    detail: typeof p.detail === 'string' ? p.detail : undefined,
+    done,
+  });
+  // A finish for a subagent wmux never saw start is not an error — the caller
+  // may well have started it before wmux did.
+  if (!tracked && !done) { respondError(-32602, 'id required'); return; }
+  respond({ ok: true, tracked });
 }
 
 /** Edit/Write hooks refresh the diff view; delays let the DiffPane mount first. */
@@ -2047,6 +2093,10 @@ app.whenReady().then(() => {
         respond({ ok: true });
         break;
       }
+
+      case 'agent.subagent':
+        handleSubagentReport(request.params, respond, respondError);
+        break;
 
       case 'diff.refresh': {
         // CLI can trigger a full diff refresh

@@ -299,3 +299,45 @@ describe('wmux-hook.js Notification kind (issue #253)', () => {
     expect(req.params.message).toBe('Claude needs your permission to use Bash');
   });
 });
+
+describe('wmux-hook.js subagent identity (issue #272)', () => {
+  let close: (() => Promise<void>) | undefined;
+
+  afterEach(async () => {
+    if (close) await close();
+    close = undefined;
+  });
+
+  it('forwards agent_id and agent_type from a hook fired inside a subagent', async () => {
+    const server = await startCapturingServer();
+    close = server.close;
+
+    await runHook(['--event', 'SubagentStart'], envFor(server.port), JSON.stringify({
+      hook_event_name: 'SubagentStart',
+      agent_id: 'a1b2c3',
+      agent_type: 'general-purpose',
+    }));
+
+    const req = await server.requests;
+    expect(req.params.event).toBe('SubagentStart');
+    expect(req.params.agentId).toBe('a1b2c3');
+    expect(req.params.agentType).toBe('general-purpose');
+  });
+
+  it('drops an agent_id that is not an identifier', async () => {
+    const server = await startCapturingServer();
+    close = server.close;
+
+    await runHook(['--event', 'PreToolUse'], envFor(server.port), JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      agent_id: 'not an id; rm -rf',
+      agent_type: 'Explore',
+    }));
+
+    const req = await server.requests;
+    expect(req.params.tool).toBe('Bash');
+    expect(req.params.agentId).toBeUndefined();
+    expect(req.params.agentType).toBeUndefined();
+  });
+});

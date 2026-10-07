@@ -18,12 +18,43 @@ export interface WorkspaceAgent {
 }
 
 /** Observer agent shape (subset of ClaudeActivity from src/main/claude-observer.ts). */
+interface ObserverAgent {
+  name: string;
+  toolUses: number;
+  tokens: string;
+  done: boolean;
+  /** Declared subagent (#272) — see AgentActivity in claude-observer.ts. */
+  id?: string;
+  detail?: string;
+  touchedAt?: number;
+}
+
 interface ObserverActivity {
-  agents: Array<{ name: string; toolUses: number; tokens: string; done: boolean }>;
+  agents: ObserverAgent[];
   lastUpdate: number;
 }
 
 const OBSERVER_TTL_MS = 5 * 60 * 1000; // stale observer data never renders (ghost guard)
+/**
+ * A declared subagent that has said nothing for this long is not drawn as
+ * running. Its stop can be lost (an Esc mid-subagent, a crashed producer), and
+ * since the parent's Stop no longer ends it, silence is the only evidence left.
+ * Longer than OBSERVER_TTL_MS because a subagent inside one slow tool is quiet
+ * for the whole of it; any report brings the line straight back.
+ */
+export const DECLARED_SUBAGENT_TTL_MS = 10 * 60 * 1000;
+
+function declaredLine(surfaceId: string, a: ObserverAgent, now: number): WorkspaceAgent | null {
+  if (!a.done && now - (a.touchedAt ?? 0) > DECLARED_SUBAGENT_TTL_MS) return null;
+  const parts = [a.toolUses > 0 ? `⚒${a.toolUses}` : '', a.detail ?? ''].filter(Boolean);
+  return {
+    key: `${surfaceId}#${a.id}`,
+    name: a.name,
+    detail: a.done ? '✓' : parts.join(' · '),
+    done: a.done,
+    toolUses: a.toolUses,
+  };
+}
 const MAX_LINES = 4;
 export const AGENT_LINGER_MS = 10_000;
 /** Key of the synthetic "+N more" summary line appended when the list overflows. */
@@ -39,7 +70,15 @@ function collectSurfacePanes(tree: SplitNode, out: Array<{ surfaceId: SurfaceId;
 }
 
 function observerLines(surfaceId: string, activity: ObserverActivity | undefined, now: number): WorkspaceAgent[] {
-  if (!activity || now - activity.lastUpdate > OBSERVER_TTL_MS) return [];
+  if (!activity) return [];
+  // Declared beats scraped, the #128 rule: once the pane names its subagents
+  // itself, the screen parser's guesses about the same agents (under other
+  // names — a description rather than a type) would only draw them twice.
+  const declared = activity.agents.filter(a => a.id);
+  if (declared.length > 0) {
+    return declared.map(a => declaredLine(surfaceId, a, now)).filter((l): l is WorkspaceAgent => l !== null);
+  }
+  if (now - activity.lastUpdate > OBSERVER_TTL_MS) return [];
   return activity.agents.map(a => ({
     key: `${surfaceId}:${a.name}`,
     name: a.name,
