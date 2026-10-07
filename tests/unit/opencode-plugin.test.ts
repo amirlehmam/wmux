@@ -66,21 +66,29 @@ describe('the plugin file itself', () => {
 
   it('carries a version marker, or wmux cannot know to reinstall it', () => {
     // pluginNeedsUpdate() compares this; an install stuck on v4 keeps #191.
-    expect(src).toMatch(/wmux-plugin-version:\s*5/);
+    // v5 → v6 is #271: every v5 install is the file OpenCode v2 rejects.
+    expect(src).toMatch(/wmux-plugin-version:\s*6/);
   });
 
-  it('exports WmuxPlugin and NOTHING else (#191)', () => {
-    // OpenCode's auto-discovery loader calls every export as a plugin factory,
-    // then invokes a `config` hook on the result. v3/v4 also exported four
-    // helpers, so it called `summarize(ctx)`, got a string back, and crashed
-    // OpenCode at startup on `null.config`. Helpers now hang off
+  it('exports WmuxPlugin and the default definition, NOTHING else (#191, #271)', async () => {
+    // OpenCode v1's legacy loader calls every export as a plugin factory, then
+    // invokes a `config` hook on the result. v3/v4 also exported four helpers,
+    // so it called `summarize(ctx)`, got a string back, and crashed OpenCode at
+    // startup on `null.config`. Helpers now hang off
     // WmuxPlugin.__wmuxInternals, which the loader never looks at.
-    const DECLARATORS = new Set(['export', 'default', 'const', 'let', 'var', 'function', 'class', 'async']);
-    const exports = src
-      .split('\n')
-      .filter((line) => line.startsWith('export'))
-      .map((line) => line.split(/\W+/).find((word) => word && !DECLARATORS.has(word)));
-    expect(exports).toEqual(['WmuxPlugin']);
+    const mod = await load();
+    expect(Object.keys(mod).sort()).toEqual(['WmuxPlugin', 'default']);
+  });
+
+  it('has the default definition BOTH OpenCode generations accept (#271)', async () => {
+    // v2 rejects the file unless `default` is `{ id, effect | setup }`; v1
+    // (>= 1.3.4) sees the `id`, calls `default.server` and stops calling every
+    // export — which is what keeps WmuxPlugin from being invoked twice.
+    const { default: def, WmuxPlugin } = await load();
+    expect(def.id).toBe('wmux');
+    expect(typeof def.setup).toBe('function');
+    expect(def.server).toBe(WmuxPlugin);
+    expect('effect' in def).toBe(false); // v2 would take the Effect branch instead
   });
 
   it('never logs to the console, which OpenCode\'s TUI swallows (#190)', () => {
@@ -342,6 +350,181 @@ describe('debug logging (#190)', () => {
     const p = await pluginWith({ WMUX_PLUGIN_DEBUG: path.join(os.tmpdir(), 'no', 'such', 'd.log') });
     await expect(p.event({ event: { type: 'question.asked' } })).resolves.not.toThrow();
     expect(verbs()[0][3]).toBe('--blocked');
+  });
+});
+
+/**
+ * A stand-in for OpenCode v2's promise `Context`, holding exactly the three
+ * domains the plugin touches. `push` feeds the event stream the way
+ * `ctx.event.subscribe` would.
+ */
+function fakeV2Context() {
+  const hooks: Record<string, (e: any) => unknown> = {};
+  const disposed: string[] = [];
+  const queue: any[] = [];
+  let wake: (() => void) | null = null;
+  let signal: AbortSignal | undefined;
+  const hook = (domain: string) => async (name: string, cb: (e: any) => unknown) => {
+    hooks[`${domain}.${name}`] = cb;
+    return {
+      dispose: async () => {
+        disposed.push(`${domain}.${name}`);
+      },
+    };
+  };
+  /** Resolves on the next push, or when the subscription is aborted. */
+  const nextWake = () =>
+    new Promise<void>((resolve) => {
+      wake = resolve;
+      signal?.addEventListener('abort', () => resolve(), { once: true });
+    });
+  const ctx = {
+    tool: { hook: hook('tool') },
+    shell: { hook: hook('shell') },
+    event: {
+      subscribe(options?: { signal?: AbortSignal }) {
+        signal = options?.signal;
+        return {
+          async *[Symbol.asyncIterator]() {
+            while (!signal?.aborted) {
+              if (queue.length) yield queue.shift();
+              else await nextWake();
+            }
+          },
+        };
+      },
+    },
+  };
+  /** Deliver one v2 event and let the plugin's loop handle it. */
+  const push = async (event: any) => {
+    queue.push(event);
+    wake?.();
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  };
+  return { ctx, hooks, disposed, push };
+}
+
+async function v2PluginWith(env: Record<string, string> = {}) {
+  Object.assign(process.env, {
+    WMUX: '1',
+    WMUX_SURFACE_ID: SURFACE,
+    WMUX_CLI: 'C:\\wmux\\resources\\cli\\wmux.js',
+    WMUX_NODE: process.execPath,
+    ...env,
+  });
+  const fake = fakeV2Context();
+  const { default: def } = await load();
+  const cleanup = await def.setup(fake.ctx);
+  return { ...fake, cleanup };
+}
+
+describe('OpenCode v2 (#271)', () => {
+  it('reports tool work through execute.before / execute.after', async () => {
+    const { hooks, cleanup } = await v2PluginWith();
+    await hooks['tool.execute.before']({ tool: 'bash', sessionID: 's', input: {} });
+    await hooks['tool.execute.after']({ tool: 'edit', sessionID: 's', status: 'completed' });
+    expect(verbs()).toEqual([
+      ['agent-activity', '--surface', SURFACE, '--active', '--tool', 'bash'],
+      ['hook', '--event', 'PostToolUse', '--tool', 'edit'],
+      ['agent-activity', '--surface', SURFACE, '--active', '--tool', 'edit'],
+    ]);
+    await cleanup();
+  });
+
+  it('exports the wmux env into shells through create.before', async () => {
+    const { hooks, cleanup } = await v2PluginWith();
+    const input = { command: 'ls', cwd: '.', timeout: 0, shell: 'pwsh', env: {} as Record<string, string> };
+    await hooks['shell.create.before'](input);
+    expect(input.env.WMUX).toBe('1');
+    expect(input.env.WMUX_SURFACE_ID).toBe(SURFACE);
+    await cleanup();
+  });
+
+  it('turns a v2 permission.asked into "Needs you", reading `data` not `properties`', async () => {
+    const { push, cleanup } = await v2PluginWith();
+    await push({ type: 'permission.asked', data: { id: 'p', sessionID: 's', action: 'bash', resources: [], message: 'Run rm -rf build?' } });
+    expect(verbs()).toEqual([['report-agent', '--surface', SURFACE, '--blocked', 'Run rm -rf build?']]);
+    calls.length = 0;
+    await push({ type: 'permission.replied', data: { sessionID: 's', requestID: 'p', reply: 'once' } });
+    expect(verbs()[0]).toEqual(['report-agent', '--surface', SURFACE, '--unblocked']);
+    await cleanup();
+  });
+
+  it('falls back to the permission action when there is no message', async () => {
+    const { askReason } = await internals();
+    expect(askReason({ type: 'permission.asked', properties: { action: 'webfetch', resources: [] } })).toBe('webfetch');
+  });
+
+  it('maps the end of a turn to done and a failed one to an error', async () => {
+    // v2's core never publishes the deprecated session.idle: a turn ends with
+    // exactly one session.execution.{succeeded,interrupted,failed}.
+    const { push, cleanup } = await v2PluginWith();
+    await push({ type: 'permission.asked', data: {} });
+    calls.length = 0;
+    await push({ type: 'session.execution.succeeded', data: { sessionID: 's' } });
+    // Idle is NOT an unblock, exactly as on v1.
+    expect(verbs()).toEqual([['agent-activity', '--surface', SURFACE, '--done']]);
+    calls.length = 0;
+    await push({ type: 'session.execution.failed', data: { sessionID: 's', error: {} } });
+    expect(verbs()).toEqual([
+      ['report-agent', '--surface', SURFACE, '--unblocked'],
+      ['agent-activity', '--surface', SURFACE, '--done'],
+    ]);
+    await cleanup();
+  });
+
+  it('clears the block on an interrupt, which abandons the ask with the turn', async () => {
+    const { push, cleanup } = await v2PluginWith();
+    await push({ type: 'permission.asked', data: {} });
+    calls.length = 0;
+    await push({ type: 'session.execution.interrupted', data: { sessionID: 's', reason: 'user' } });
+    expect(verbs()[0]).toEqual(['report-agent', '--surface', SURFACE, '--unblocked']);
+    await cleanup();
+  });
+
+  it('reads session.status only when it says idle', async () => {
+    const { fromV2Event } = await internals();
+    expect(fromV2Event({ type: 'session.status', data: { status: { type: 'idle' } } }).type).toBe('session.idle');
+    expect(fromV2Event({ type: 'session.status', data: { status: { type: 'busy' } } })).toBeNull();
+  });
+
+  it('pings on streaming deltas but never unblocks on them (#189)', async () => {
+    const { fromV2Event } = await internals();
+    expect(fromV2Event({ type: 'session.text.delta', data: {} }).type).toBe('message.part.updated');
+    const { push, cleanup } = await v2PluginWith();
+    await push({ type: 'permission.asked', data: {} });
+    calls.length = 0;
+    await push({ type: 'session.text.delta', data: { delta: 'x' } });
+    expect(verbs()).toEqual([['agent-activity', '--surface', SURFACE, '--active']]);
+    await cleanup();
+  });
+
+  it('does not treat filesystem.changed as an agent edit — the user saving a file must not clear "Needs you"', async () => {
+    const { fromV2Event } = await internals();
+    expect(fromV2Event({ type: 'filesystem.changed', data: { file: 'a.ts', event: 'change' } })).toBeNull();
+  });
+
+  it('registers nothing outside wmux', async () => {
+    const fake = fakeV2Context();
+    const { default: def } = await load();
+    expect(await def.setup(fake.ctx)).toBeUndefined();
+    expect(Object.keys(fake.hooks)).toEqual([]);
+  });
+
+  it('survives a context missing a domain rather than failing OpenCode startup', async () => {
+    Object.assign(process.env, { WMUX: '1', WMUX_SURFACE_ID: SURFACE, WMUX_CLI: 'x.js', WMUX_NODE: process.execPath });
+    const { default: def } = await load();
+    const cleanup = await def.setup({});
+    await expect(cleanup()).resolves.toBeUndefined();
+  });
+
+  it('cleanup stops the event loop and disposes every hook', async () => {
+    const { push, disposed, cleanup } = await v2PluginWith();
+    await cleanup();
+    expect(disposed.sort()).toEqual(['shell.create.before', 'tool.execute.after', 'tool.execute.before']);
+    calls.length = 0;
+    await push({ type: 'session.idle', data: {} });
+    expect(calls).toEqual([]);
   });
 });
 

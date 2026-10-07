@@ -1,4 +1,4 @@
-// wmux-plugin-version: 5
+// wmux-plugin-version: 6
 // wmux OpenCode plugin — bridges OpenCode hooks/events to the wmux sidebar.
 // Auto-installed by wmux to ~/.config/opencode/plugin/wmux.js.
 // No-ops entirely outside wmux (WMUX !== '1').
@@ -155,7 +155,8 @@ const REPLY_EVENTS = new Set([
 function askReason(event) {
   const p = (event && event.properties) || {};
   const nested = p.question || p.permission || {};
-  for (const c of [p.title, p.text, nested.title, nested.text, nested.type, p.pattern]) {
+  // `message` and `action` are OpenCode v2's permission fields (#271).
+  for (const c of [p.title, p.text, p.message, nested.title, nested.text, nested.type, p.pattern, p.action]) {
     if (typeof c === "string" && c.trim()) return c.trim().slice(0, 200);
   }
   return String(event.type).startsWith("permission")
@@ -325,6 +326,125 @@ export const WmuxPlugin = async () => {
 };
 
 /**
+ * OpenCode v2 event → the v1 shape `WmuxPlugin`'s `event` hook reads, or null
+ * for an event it has no use for (#271).
+ *
+ * v2 renamed most session events and moved the payload from `properties` to
+ * `data`. Translating here keeps ONE set of handlers for both generations, so a
+ * fix to the blocked/idle logic cannot land in one and miss the other.
+ *
+ * `filesystem.changed` is deliberately NOT mapped to v1's `file.edited`: it is a
+ * watcher event, so it also fires when the USER saves a file in their editor —
+ * and `file.edited` clears "Needs you". The diff view is still fed, by
+ * `tool.execute.after`, which v2 does route through `execute.after`.
+ */
+const V2_STREAMING_EVENTS = new Set([
+  "session.execution.started",
+  "session.text.delta",
+  "session.reasoning.delta",
+  "session.tool.input.delta",
+  "session.step.started",
+]);
+
+function fromV2Event(event) {
+  if (!event || typeof event.type !== "string") return null;
+  const properties = event.data || event.properties || {};
+  switch (event.type) {
+    case "session.idle": // deprecated in v2's schema and not published by its core; kept in case a bridge does
+    case "session.created":
+    case "permission.asked":
+    case "permission.replied":
+      return { type: event.type, properties };
+    // How a v2 turn actually ends: one terminal event per busy period.
+    case "session.execution.succeeded":
+      return { type: "session.idle", properties };
+    case "session.status":
+      return properties.status && properties.status.type === "idle" ? { type: "session.idle", properties } : null;
+    // An interrupt abandons any pending ask along with the turn, so it clears
+    // the block the way an error does, rather than idling past it.
+    case "session.execution.interrupted":
+    case "session.execution.failed":
+      return { type: "session.error", properties };
+    default:
+      // Activity pings only (throttled) — the v1 `message.part.updated` path,
+      // which never unblocks (#189).
+      return V2_STREAMING_EVENTS.has(event.type) ? { type: "message.part.updated", properties } : null;
+  }
+}
+
+/**
+ * OpenCode v2's `setup(ctx)`, adapting its hook and event API onto the very
+ * same handlers `WmuxPlugin` returns for v1 (#271).
+ *
+ * Every registration is guarded: a v2 build that renames one domain loses that
+ * signal, never the plugin, and never OpenCode's startup.
+ */
+async function setupV2(ctx) {
+  const log = makeLogger(resolveDebugLog(process.env.WMUX_PLUGIN_DEBUG));
+  const hooks = await WmuxPlugin();
+  if (!hooks.event) return; // outside wmux — WmuxPlugin already logged why
+
+  const registrations = [];
+  const register = async (domain, name, callback) => {
+    try {
+      const hook = ctx && ctx[domain] && ctx[domain].hook;
+      if (typeof hook !== "function") {
+        log(`v2: no ${domain}.hook`);
+        return;
+      }
+      registrations.push(await hook(name, callback));
+    } catch (err) {
+      log(`v2: ${domain}.${name} failed`, (err && err.message) || String(err));
+    }
+  };
+  await register("tool", "execute.before", (e) => hooks["tool.execute.before"]({ tool: e && e.tool }));
+  await register("tool", "execute.after", (e) => hooks["tool.execute.after"]({ tool: e && e.tool }));
+  await register("shell", "create.before", (e) => {
+    if (e && e.env) return hooks["shell.env"]({}, { env: e.env });
+  });
+
+  const controller = new AbortController();
+  const task = (async () => {
+    const subscribe = ctx && ctx.event && ctx.event.subscribe;
+    if (typeof subscribe !== "function") {
+      log("v2: no event.subscribe");
+      return;
+    }
+    for await (const raw of subscribe.call(ctx.event, { signal: controller.signal })) {
+      const event = fromV2Event(raw);
+      if (event) await hooks.event({ event });
+      else log("v2: unmapped event", raw && raw.type);
+    }
+  })().catch((err) => {
+    if (!controller.signal.aborted) log("v2: event stream ended", (err && err.message) || String(err));
+  });
+
+  return async () => {
+    controller.abort();
+    await task;
+    for (const r of registrations) {
+      try {
+        if (r && typeof r.dispose === "function") await r.dispose();
+      } catch {}
+    }
+  };
+}
+
+/**
+ * The one definition both OpenCode generations accept (#271).
+ *
+ * v2 requires `export default { id, effect | setup }` and rejects the file
+ * outright without it. v1 (since 1.3.4) reads the same default export: an `id`
+ * there switches it from "call every export" to "call `default.server`", so
+ * the named `WmuxPlugin` export is never invoked twice. v2's schema ignores
+ * `server`; v1 ignores `setup`.
+ *
+ * OpenCode 1.3.3 and older call every export as a factory, this object
+ * included — they cannot load a v2-compatible file at all.
+ */
+export default { id: "wmux", server: WmuxPlugin, setup: setupV2 };
+
+/**
  * The helpers above, reachable by wmux's own test suite (issue #191).
  *
  * They are a property rather than four exports because OpenCode's
@@ -336,6 +456,7 @@ export const WmuxPlugin = async () => {
  * crashed just the same, but the WMUX gate meant nobody testing wmux ever saw
  * the export loop as the cause.
  *
- * `WmuxPlugin` must stay the only export in this file. A test asserts it.
+ * `WmuxPlugin` and the default definition must stay the only exports in this
+ * file. A test asserts it.
  */
-WmuxPlugin.__wmuxInternals = { resolveNodeRuntime, resolveDebugLog, summarize, askReason };
+WmuxPlugin.__wmuxInternals = { resolveNodeRuntime, resolveDebugLog, summarize, askReason, fromV2Event };
