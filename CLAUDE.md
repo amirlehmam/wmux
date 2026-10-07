@@ -4,7 +4,7 @@ Electron-based Windows terminal multiplexer for AI agents. TypeScript, React 19,
 
 **Owner**: amirlehmam (GitHub) — speaks French, prefers fast pragmatic solutions, tests live.
 **Repo**: github.com/amirlehmam/wmux | **Site**: wmux.org (Netlify, static from `site/`)
-**Version**: 2.18.2
+**Version**: 2.19.0
 
 ---
 
@@ -565,6 +565,7 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 - `pane.report_agent`, `pane.report_agent_session`, `pane.report_metadata`, `pane.release_agent`, `pane.agent_state`
 - `pane.answer_agent` — the back-channel (issue #128). The only non-`report_*` method: it WRITES into a pane's PTY. Guarded — refuses unless the pane is currently `blocked`, and only ever sends a payload the agent itself declared
 - `hook.event`, `diff.refresh`
+- `agent.subagent` — `wmux report-subagent` (#272): a declared subagent line under the caller's pane, upserted by id in `claude-observer.ts`. Display only — it never touches the declared blocked/working state. Claude Code subagents arrive the same way with no CLI call: `wmux-hook.js` forwards the payload's `agent_id`/`agent_type` (present only inside a subagent, and on the `SubagentStart` hook wmux now registers), and `applyHookLifecycle` tracks them by id. A declared subagent is ended ONLY by its own stop or `SessionEnd`, never by the parent's `Stop` — a background subagent outlives the turn that launched it, which is the whole bug. Ghost guard: a running declared line silent for `DECLARED_SUBAGENT_TTL_MS` (10 min) is not drawn
 - `remote.status` — the Remote Console's ONLY pipe method (#254, I2), read-only: `{enabled, running, bind, port, publicUrl, deviceCount, connectedCount, lastError}`. Matched as the FIRST statement of `routeSpecialV2`, by exact name, and deliberately NOT in `PUBLIC_V2_METHODS`, so it needs the pipe token. Pairing, enabling, rebinding and revoking have no pipe method at all, on purpose — `tests/unit/remote-console-wiring.test.ts` pins that `index.ts` names exactly one `remote.` method
 
 ---
@@ -740,6 +741,7 @@ wmux report-agent --run-start | --run-end        # refcount, so nested subagents
 wmux report-agent --run-depth N [--seq N]        # absolute depth; --seq drops replays
 wmux report-metadata [--model M] [--tokens T] [--context-pct N] [--ttl ms]
 wmux report-session <id> | release-agent
+wmux report-subagent <id> [--name N] [--detail D] [--done]   # a line under your pane (#272); same id = update+heartbeat
 wmux agent-state [--surface <id>]                # no --surface → all panes + blocked list
 
 # Agents
