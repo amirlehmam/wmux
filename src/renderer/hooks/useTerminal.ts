@@ -27,7 +27,7 @@ import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-rendere
 import { resetTerminalModes } from '../utils/terminal-reset';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
-import { anchorViewportLikeConpty, captureViewportTop } from '../utils/conpty-anchor';
+import { anchorViewportLikeConpty, captureCursorLine, captureViewportTop, restoreCursorLine } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
 import { createFlingVelocityTracker, startFling, stepFling, type Fling } from '../utils/touch-fling';
 import { touchPanReports, wheelForward, type WheelSource } from '../utils/wheel-forward';
@@ -827,14 +827,22 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // alone already agree under windowsPty. See utils/conpty-anchor.ts.
         const term = xtermRef.current;
         const next = fitAddonRef.current.proposeDimensions();
-        const top = term && next && next.cols !== term.cols ? captureViewportTop(term) : undefined;
+        const reflows = !!term && !!next && next.cols !== term.cols;
+        const top = reflows ? captureViewportTop(term) : undefined;
+        // After captureViewportTop: a tail it orphans is where ConPTY's copy of
+        // the cursor's line starts (#273, see captureCursorLine).
+        const cursorLine = reflows ? captureCursorLine(term) : undefined;
         try {
           fitAddonRef.current.fit();
         } finally {
-          // Even when fit() throws: the anchor is what disposes the marker
-          // captureViewportTop registered, and a leaked marker rides every
-          // later reflow for the life of the terminal.
-          if (term) anchorViewportLikeConpty(term, top);
+          // Even when fit() throws: these are what dispose the markers the
+          // captures registered, and a leaked marker rides every later reflow
+          // for the life of the terminal. The cursor goes back first, because
+          // the anchor decides how far to scroll from the cursor's row.
+          if (term) {
+            restoreCursorLine(term, cursorLine);
+            anchorViewportLikeConpty(term, top);
+          }
         }
       } catch {
         // ignore fit errors (e.g. terminal not yet visible)
@@ -873,6 +881,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // cursor is on, and the prompt strands itself in the middle of old output.
       // See utils/windows-pty.ts for the mechanism.
       windowsPty: windowsPtyCompat(window.wmux?.system?.osRelease ?? ''),
+      // ConPTY reflows the cursor's line on a column change and sends nothing
+      // after it; xterm's default leaves that line at the width it was drawn
+      // at, so a prompt first drawn in a narrower pane stayed broken there
+      // (#273). Cursor placement: fit() → captureCursorLine.
+      reflowCursorLine: true,
     });
 
     xtermRef.current = terminal;

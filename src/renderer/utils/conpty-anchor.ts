@@ -1,4 +1,4 @@
-import type { IMarker, Terminal } from '@xterm/xterm';
+import type { IBuffer, IMarker, Terminal } from '@xterm/xterm';
 
 /**
  * Keeps xterm's normal buffer laid out the way ConPTY lays out ITS buffer when a
@@ -198,5 +198,91 @@ export function anchorViewportLikeConpty(terminal: Terminal, top: IMarker | unde
     // Leave xterm's own layout in place rather than fail a resize.
   } finally {
     top.dispose();
+  }
+}
+
+/**
+ * Where the cursor sits inside the logical line it is on (issue #273): a marker
+ * on the line's first row, and the cursor's offset in cells from its start.
+ */
+export interface CursorLineAnchor {
+  start: IMarker;
+  offset: number;
+}
+
+/**
+ * Cells a row of a wrapped line contributes to it. A row is full except when a
+ * wide character did not fit in its last cell and was carried to the next row,
+ * which leaves that cell empty — the same rule xterm's reflow measures by.
+ */
+function wrappedRowLength(buffer: IBuffer, y: number, cols: number): number {
+  const line = buffer.getLine(y);
+  const next = buffer.getLine(y + 1);
+  if (line && next?.isWrapped && line.getCell(cols - 1)?.getChars() === '' && next.getCell(0)?.getWidth() === 2) {
+    return cols - 1;
+  }
+  return cols;
+}
+
+/**
+ * Call BEFORE a resize that changes the column count, after captureViewportTop
+ * (so a tail it orphaned counts as the line's start, as it does for ConPTY).
+ *
+ * ConPTY reflows the line the cursor is on along with every other one, and sends
+ * nothing afterwards. xterm, by default, leaves the cursor's line alone —
+ * `reflowCursorLine` is off "because shells usually handle this themselves",
+ * which is a bash/zsh answer to SIGWINCH and not one PowerShell gives. So a
+ * prompt first drawn in a narrower pane stayed broken at that width forever,
+ * while PSReadLine, which positions with absolute CUPs off ConPTY's reflowed
+ * layout, typed into cells that were not where xterm showed them. Turning the
+ * option on moves the TEXT; it does not move the cursor, so this records where
+ * in the line the cursor was and restoreCursorLine puts it back there.
+ */
+export function captureCursorLine(terminal: Terminal): CursorLineAnchor | undefined {
+  try {
+    const active = terminal.buffer.active;
+    if (active.type !== 'normal') return undefined;
+    const cursorAbs = active.baseY + active.cursorY;
+    let startAbs = cursorAbs;
+    while (startAbs > 0 && active.getLine(startAbs)?.isWrapped) startAbs--;
+    let offset = active.cursorX;
+    for (let y = startAbs; y < cursorAbs; y++) offset += wrappedRowLength(active, y, terminal.cols);
+    const start = terminal.registerMarker(startAbs - cursorAbs);
+    return start ? { start, offset } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Call immediately AFTER the resize (before anchorViewportLikeConpty, which
+ * reads the cursor row), with what captureCursorLine returned.
+ */
+export function restoreCursorLine(terminal: Terminal, anchor: CursorLineAnchor | undefined): void {
+  if (!anchor) return;
+  try {
+    if (anchor.start.isDisposed || anchor.start.line < 0) return;
+    const active = terminal.buffer.active;
+    if (active.type !== 'normal') return;
+    const svc = bufferServiceOf(terminal) as (InternalService & { buffer: { x: number } }) | undefined;
+    if (!svc || typeof svc.buffer.x !== 'number') return;
+    const cols = terminal.cols;
+    let y = anchor.start.line;
+    let remaining = anchor.offset;
+    // Walk the reflowed line row by row. At exactly a row's length the cursor
+    // goes to the next row's start if the line continues there, and otherwise
+    // stays in the wrap-pending column at the end of this one.
+    while (remaining >= wrappedRowLength(active, y, cols) && active.getLine(y + 1)?.isWrapped) {
+      remaining -= wrappedRowLength(active, y, cols);
+      y++;
+    }
+    const row = y - svc.buffer.ybase;
+    if (row < 0 || row >= terminal.rows) return;
+    svc.buffer.y = row;
+    svc.buffer.x = Math.min(remaining, cols);
+  } catch {
+    // Leave the cursor where xterm put it rather than fail a resize.
+  } finally {
+    anchor.start.dispose();
   }
 }

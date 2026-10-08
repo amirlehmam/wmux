@@ -4,8 +4,10 @@ import * as path from 'path';
 import { Terminal } from '@xterm/xterm';
 import {
   anchorViewportLikeConpty,
+  captureCursorLine,
   captureViewportTop,
   conptyViewportTop,
+  restoreCursorLine,
   shiftViewport,
   type AnchorBufferService,
 } from '../../src/renderer/utils/conpty-anchor';
@@ -29,13 +31,15 @@ import {
 const COLS = 20;
 const ROWS = 6;
 
-function makeTerminal(): Terminal {
+function makeTerminal(cols = COLS, rows = ROWS, reflowCursorLine = true): Terminal {
   return new Terminal({
-    cols: COLS,
-    rows: ROWS,
+    cols,
+    rows,
     scrollback: 1000,
     allowProposedApi: true,
     windowsPty: { backend: 'conpty', buildNumber: 26200 },
+    // As useTerminal.ts sets it (#273).
+    reflowCursorLine,
   });
 }
 
@@ -58,8 +62,11 @@ async function filled(): Promise<Terminal> {
 }
 
 function resizeLikeWmux(t: Terminal, cols: number, rows: number): void {
-  const top = cols !== t.cols ? captureViewportTop(t) : undefined;
+  const reflows = cols !== t.cols;
+  const top = reflows ? captureViewportTop(t) : undefined;
+  const cursorLine = reflows ? captureCursorLine(t) : undefined;
   t.resize(cols, rows);
+  restoreCursorLine(t, cursorLine);
   anchorViewportLikeConpty(t, top);
 }
 
@@ -152,6 +159,88 @@ describe('re-anchoring to ConPTY after a column change', () => {
   });
 });
 
+/**
+ * Issue #273: a prompt first drawn in a narrower pane stayed broken at that
+ * width. Measured against a live bundled ConPTY: a pwsh prompt drawn at 45
+ * columns and widened to 120 gets NO output from ConPTY, and the next keystroke
+ * PSReadLine echoes is placed by an absolute CUP on ConPTY's REFLOWED layout
+ * (row 2, just after the prompt) — so the cursor's line has to reflow on
+ * xterm's side too, and the cursor has to land where ConPTY's did.
+ */
+describe('the line the cursor is on (#273)', () => {
+  // 113 cells: three rows at 45 columns, two at 100.
+  const PROMPT = 'PS D:\\' + 'a'.repeat(40) + '\\_1_project_managed_by_' + 'b'.repeat(30) + '\\phase2_land> ';
+
+  function rows(t: Terminal): string[] {
+    const b = t.buffer.active;
+    const out: string[] = [];
+    for (let y = 0; y < b.length; y++) out.push(b.getLine(y)?.translateToString(true) ?? '');
+    return out.filter((l) => l !== '');
+  }
+
+  function cursor(t: Terminal): [number, number] {
+    const b = t.buffer.active;
+    return [b.cursorX, b.baseY + b.cursorY];
+  }
+
+  it("is left at its old width by xterm's default — the bug (premise)", async () => {
+    const t = makeTerminal(45, 24, false);
+    await write(t, PROMPT);
+    resizeLikeWmux(t, 100, 24);
+    expect(rows(t)).toHaveLength(3);
+    t.dispose();
+  });
+
+  it('a widen rejoins the prompt and puts the cursor at its end', async () => {
+    const t = makeTerminal(45, 24);
+    await write(t, PROMPT);
+    resizeLikeWmux(t, 100, 24);
+    expect(rows(t)).toEqual([PROMPT.slice(0, 100), PROMPT.slice(100)]);
+    expect(cursor(t)).toEqual([PROMPT.length - 100, 1]);
+    t.dispose();
+  });
+
+  it('what is typed next lands right after the prompt', async () => {
+    const t = makeTerminal(45, 24);
+    await write(t, PROMPT);
+    resizeLikeWmux(t, 100, 24);
+    await write(t, 'Z');
+    expect(rows(t)[1]).toBe(PROMPT.slice(100) + 'Z');
+    t.dispose();
+  });
+
+  it('a narrow re-wraps the prompt and keeps the cursor at its end', async () => {
+    const t = makeTerminal(100, 24);
+    await write(t, PROMPT);
+    resizeLikeWmux(t, 45, 24);
+    expect(rows(t)).toEqual([PROMPT.slice(0, 45), PROMPT.slice(45, 90), PROMPT.slice(90)]);
+    expect(cursor(t)).toEqual([PROMPT.length - 90, 2]);
+    t.dispose();
+  });
+
+  it('a cursor mid-line keeps its place in the text across a round trip', async () => {
+    const t = makeTerminal(45, 24);
+    // Cursor back onto the 'h' of "hello", the way an arrow key would leave it.
+    await write(t, PROMPT + 'echo hello\x1b[5D');
+    const at = PROMPT.length + 'echo '.length;
+    resizeLikeWmux(t, 100, 24);
+    expect(cursor(t)).toEqual([at - 100, 1]);
+    resizeLikeWmux(t, 45, 24);
+    expect(cursor(t)).toEqual([at - 90, 2]);
+    t.dispose();
+  });
+
+  it('a cursor at the exact end of a full row stays in the wrap-pending column', async () => {
+    const t = makeTerminal(30, 24);
+    await write(t, 'x'.repeat(40));
+    resizeLikeWmux(t, 40, 24);
+    expect(cursor(t)).toEqual([40, 0]);
+    await write(t, 'Y');
+    expect(rows(t)).toEqual(['x'.repeat(40), 'Y']);
+    t.dispose();
+  });
+});
+
 describe('conptyViewportTop', () => {
   it('keeps the anchor on top when the cursor still fits', () => {
     expect(conptyViewportTop(10, 14, 6)).toBe(10);
@@ -233,10 +322,20 @@ describe('useTerminal wiring', () => {
     const body = fit.slice(0, fit.indexOf('\n  };'));
     const capture = body.indexOf('captureViewportTop(term)');
     const resize = body.indexOf('fitAddonRef.current.fit()');
+    const cursor = body.indexOf('captureCursorLine(term)');
+    const restore = body.indexOf('restoreCursorLine(term, cursorLine)');
     const anchor = body.indexOf('anchorViewportLikeConpty(term, top)');
     expect(capture).toBeGreaterThan(-1);
-    expect(resize).toBeGreaterThan(capture);
-    expect(anchor).toBeGreaterThan(resize);
+    // The cursor's line is measured after the top tail is orphaned, and put
+    // back before the anchor reads the cursor row to decide how far to scroll.
+    expect(cursor).toBeGreaterThan(capture);
+    expect(resize).toBeGreaterThan(cursor);
+    expect(restore).toBeGreaterThan(resize);
+    expect(anchor).toBeGreaterThan(restore);
     expect(body).toMatch(/next\.cols !== term\.cols/);
+  });
+
+  it('reflows the cursor line, as ConPTY does (#273)', () => {
+    expect(src).toMatch(/reflowCursorLine: true/);
   });
 });
