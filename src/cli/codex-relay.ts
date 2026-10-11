@@ -10,6 +10,8 @@ export interface CodexRelayOptions {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
+  /** Explicit --yolo from this launch only; never inferred from saved sessions. */
+  yolo?: boolean;
   onSession: (id: string) => void;
 }
 
@@ -22,6 +24,22 @@ export interface CodexRelay {
 
 /** The TUI plus its auxiliary picker connections; Codex opens one or two. */
 export const MAX_BACKENDS = 8;
+
+/** Remote TUI resume rejects CLI permission overrides, but app-server accepts
+ * them on thread requests. Keep this choice local to this launcher and let
+ * Codex validate/enforce it. Never rewrite turns or server approval replies. */
+function withYoloPermissions(text: string): string {
+  try {
+    const message = JSON.parse(text);
+    if (!message || !['thread/start', 'thread/resume', 'thread/fork'].includes(message.method) ||
+        (typeof message.id !== 'string' && typeof message.id !== 'number')) return text;
+    if (!message.params || typeof message.params !== 'object' || Array.isArray(message.params)) return text;
+    return JSON.stringify({
+      ...message,
+      params: { ...message.params, approvalPolicy: 'never', sandbox: 'danger-full-access', permissions: null },
+    });
+  } catch { return text; /* Protocol validation belongs to Codex. */ }
+}
 
 export async function createCodexRelay(options: CodexRelayOptions): Promise<CodexRelay> {
   const token = randomBytes(32).toString('hex');
@@ -84,7 +102,7 @@ export async function createCodexRelay(options: CodexRelayOptions): Promise<Code
     child.on('error', () => { backends.delete(child); socket.close(1011, 'Could not start Codex app-server'); });
     child.on('exit', () => { backends.delete(child); socket.close(); });
     socket.on('message', raw => {
-      const text = raw.toString();
+      const text = options.yolo ? withYoloPermissions(raw.toString()) : raw.toString();
       tracker.request(text);
       if (!child.stdin.write(text + '\n')) socket.pause();
     });

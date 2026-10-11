@@ -64,10 +64,43 @@ describe('Codex launch compatibility', () => {
   it('preserves quoted overrides and selects the correct backend configuration directory', () => {
     const cwd = process.cwd();
     const plan = codexLaunchPlan(['-c', 'model="a b"', '--enable=feature', '--cd', 'project', 'resume', A], cwd);
-    expect(plan).toEqual({ interactive: true, serverArgs: ['app-server', '--stdio', '-c', 'model="a b"', '--enable', 'feature'], cwd: path.join(cwd, 'project') });
+    expect(plan).toEqual({
+      interactive: true, serverArgs: ['app-server', '--stdio', '-c', 'model="a b"', '--enable', 'feature'],
+      clientArgs: ['-c', 'model="a b"', '--enable=feature', '--cd', 'project', 'resume', A],
+      cwd: path.join(cwd, 'project'), yolo: false,
+    });
   });
   it.each([[], ['resume', A], ['fork', A], ['--no-daemon'], ['--', '--help'], ['Explain > and < literally']])('integrates interactive launches %j', (...args) => {
     expect(codexLaunchPlan(args, process.cwd()).interactive).toBe(true);
+  });
+  it.each(['--yolo', '--dangerously-bypass-approvals-and-sandbox'])('routes %s to the local relay for new/resume/fork and pickers', flag => {
+    for (const command of [[], ['resume'], ['resume', '--last'], ['resume', A], ['fork', A]]) {
+      for (const args of [[flag, ...command], [...command, flag]]) {
+        const plan = codexLaunchPlan(args, process.cwd());
+        expect(plan.interactive).toBe(true);
+        expect(plan.yolo).toBe(true);
+        expect(plan.clientArgs).toEqual(command);
+        expect(plan.serverArgs).toEqual(['app-server', '--stdio']);
+      }
+    }
+  });
+  it.each([
+    ['--', '--yolo'], ['resume', A, '--', '--yolo'], ['--model', '--yolo'],
+    ['--config', 'model="--yolo"'], ['Explain --yolo'], ['--yolo=false'],
+  ])('does not interpret prompt text, option values or invalid flags as permission to bypass: %j', (...args) => {
+    const plan = codexLaunchPlan(args, process.cwd());
+    expect(plan.yolo).toBe(false);
+    expect(plan.clientArgs).toEqual(args);
+  });
+  it.each([
+    ['--yolo'], ['--dangerously-bypass-approvals-and-sandbox'], ['-a', 'on-request'],
+    ['--ask-for-approval=never'], ['-aon-request'], ['--sandbox', 'read-only'],
+    ['--approve-for-me'], ['--not-so-yolo'], ['--full-auto'], ['--add-dir', 'other'],
+    ['-c', 'approval_policy="on-request"'], ['-csandbox_mode="read-only"'],
+    ['--config=sandbox_workspace_write.network_access=true'], ['-c', '"sandbox_mode"="read-only"'],
+    ['--remote', 'ws://localhost:1234'], ['--profile', 'custom'], ['exec', 'prompt'],
+  ])('leaves mixed/unsupported yolo invocations to native argument validation: %j', (...extra) => {
+    expect(codexLaunchPlan(['--yolo', ...extra], process.cwd()).interactive).toBe(false);
   });
 });
 
@@ -79,15 +112,15 @@ afterEach(async () => {
   for (const relay of relays.splice(0)) await relay.close();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-async function relay(onSession = vi.fn()) {
+async function relay(onSession = vi.fn(), yolo = false) {
   const dir = mkdtempSync(path.join(tmpdir(), 'wmux-codex-relay-'));
   dirs.push(dir);
   const script = path.join(dir, 'server.cjs');
   writeFileSync(script, `require('readline').createInterface({input:process.stdin}).on('line',line=>{
     const request=JSON.parse(line);
-    setTimeout(()=>process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:request.params.threadId,ephemeral:false},pid:process.pid}})+'\\n'),request.params.delayMs||0);
+    setTimeout(()=>process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:request.params?.threadId,ephemeral:false},pid:process.pid,request,raw:line}})+'\\n'),request.params?.delayMs||0);
   });`);
-  const instance = await createCodexRelay({ executable: process.execPath, args: [script], cwd: dir, env: process.env, onSession });
+  const instance = await createCodexRelay({ executable: process.execPath, args: [script], cwd: dir, env: process.env, onSession, yolo });
   relays.push(instance);
   return instance;
 }
@@ -107,6 +140,49 @@ function request(socket: WebSocket, threadId: string) {
 }
 
 describe('authenticated local relay', () => {
+  it.each(['thread/start', 'thread/resume', 'thread/fork'])('applies explicit yolo to %s while retaining automatic session capture', async method => {
+    const found = vi.fn();
+    const instance = await relay(found, true);
+    const socket = await connect(instance);
+    const response = new Promise<string>(resolve => socket.once('message', data => resolve(data.toString())));
+    socket.send(wire({ id: 1, method, params: {
+      threadId: A, approvalPolicy: 'on-request', sandbox: 'read-only', permissions: 'read-only', model: 'test-model',
+    } }));
+    expect(JSON.parse(await response).result.request).toEqual({ id: 1, method, params: {
+      threadId: A, approvalPolicy: 'never', sandbox: 'danger-full-access', permissions: null, model: 'test-model',
+    } });
+    expect(found.mock.calls).toEqual([[A]]);
+    expect(instance.sessionId).toBe(A);
+  });
+  it('never re-applies yolo to turns, settings changes, approval replies or read-only requests', async () => {
+    const instance = await relay(vi.fn(), true);
+    const socket = await connect(instance);
+    for (const message of [
+      { id: 2, method: 'turn/start', params: { threadId: A, approvalPolicy: 'on-request', sandboxPolicy: { type: 'readOnly' } } },
+      { id: 3, method: 'thread/settings/update', params: { threadId: A, approvalPolicy: 'on-request' } },
+      { id: 4, method: 'thread/read', params: { threadId: A } },
+      { id: 5, result: { decision: 'decline' } },
+      { method: 'thread/resume', params: { threadId: A } },
+      { id: 6, method: 'thread/resume', params: [] },
+      { id: 7, method: 'thread/start', params: null },
+      { id: 8, method: 'thread/start' },
+    ]) {
+      const text = JSON.stringify(message, null, 2);
+      // The transport is line-delimited; use spaces to retain noncanonical JSON.
+      const raw = text.replace(/\n/g, ' ');
+      const response = new Promise<string>(resolve => socket.once('message', data => resolve(data.toString())));
+      socket.send(raw);
+      expect(JSON.parse(await response).result.raw).toBe(raw);
+    }
+  });
+  it('leaves plain automatic/manual resume byte-for-byte unchanged, even beside a yolo terminal', async () => {
+    const regular = await relay();
+    const yolo = await relay(vi.fn(), true);
+    const [a, b] = await Promise.all([connect(regular), connect(yolo)]);
+    const [regularReply, yoloReply] = await Promise.all([request(a, A), request(b, B)]);
+    expect(JSON.parse(regularReply).result.request.params).toEqual({ threadId: A });
+    expect(JSON.parse(yoloReply).result.request.params).toMatchObject({ approvalPolicy: 'never', sandbox: 'danger-full-access' });
+  });
   it('rejects unauthenticated clients and browser origins, then accepts the terminal', async () => {
     const instance = await relay();
     await expect(connect(instance, 'wrong')).rejects.toThrow('401');

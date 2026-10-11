@@ -10,7 +10,17 @@ Verified with native Windows Codex CLI 0.159.2, PowerShell 5.1, and wmux 2.16.0.
 
 Noninteractive commands (`exec`, `login`, `app-server`, etc.), help/version, explicit `--remote`, and invocations using profiles, managed worktrees or local model providers pass through to the native CLI. These invocations do not record a restore handle. Older CLIs without `--remote-auth-token-env` also run normally and show a notice that automatic recording is unavailable. Deleted or archived conversations remain subject to Codex's normal resume behavior.
 
-The integration uses Codex's experimental app-server transport. Compatibility should be checked when updating Codex. It does not modify Codex configuration, install hooks, or change hook trust, approval policies, or sandbox permissions.
+The integration uses Codex's experimental app-server transport. Compatibility should be checked when updating Codex. It does not modify Codex configuration, install hooks, or change hook trust. Approval and sandbox settings are unchanged unless the user explicitly selects `--yolo` for that launch.
+
+## Manual resume with `--yolo`
+
+With recording enabled, `codex resume --yolo`, `codex resume --last --yolo`, and `codex resume <conversation-id> --yolo` keep the normal picker/history and automatic restore tracking. The long spelling `--dangerously-bypass-approvals-and-sandbox` and placing the flag before `resume` work too. Starting a new conversation with `codex --yolo`, then using `/resume`, uses the same transport.
+
+Codex 0.162.1 rejects CLI permission overrides when its TUI resumes through `--remote`, including wmux's local relay. The helper therefore consumes the explicit flag and supplies `approvalPolicy: "never"` and `sandbox: "danger-full-access"` on the local app-server's thread start/resume/fork requests. Codex still validates and enforces these settings and returns the effective permissions to the TUI. Ordinary turns, settings changes and approval replies are not rewritten. The choice is scoped to this launcher; another terminal or a flag-free restore is not opted into `--yolo`.
+
+Mixed permission options (for example `--yolo -a on-request`, explicit sandbox options or permission-related `-c` overrides) are left to the native CLI unchanged to preserve its validation and precedence; these launches do not record an automatic restore handle. Existing native-only modes, disabled recording and relay startup failures also retain the original arguments.
+
+Automatic restore still runs plain `codex resume <conversation-id>`. Codex owns which settings persist between launches: in 0.162.1, a legacy sandbox choice can return to the configured default on a subsequent plain resume. wmux neither saves nor replays permission flags automatically; explicitly request `--yolo` again when needed.
 
 ## Implementation
 
@@ -27,3 +37,11 @@ The helper, TUI, and app-server stay under the terminal process tree, covered by
 Unit/integration coverage includes exact ID round trips for two tabs sharing a directory, independent Claude/Codex switches, unsafe ID rejection, internal ephemeral threads, response correlation, fork/resume changes, stale exit handling, authenticated transport, browser-origin rejection, and command-line passthrough. A native Windows test restored two distinct Codex conversations in one directory and nine existing Claude conversations to their original surfaces after both a normal close and a forced main-process crash. Each Codex pane displayed its own prior reply, no wmux hooks were configured, and the old Codex helper/TUI/app-server processes were gone after crash recovery. With Codex restore disabled, both Codex panes reopened as shells while all nine Claude IDs still matched. A normal Codex `/quit` removed its live and saved restore handle.
 
 Protocol reference: [OpenAI Codex app-server](https://learn.chatgpt.com/docs/app-server).
+
+The opt-in Windows integration test uses a real native Codex TUI/app-server with a temporary `CODEX_HOME` and a localhost-only failing model endpoint (no account or model inference). It seeds a read-only conversation, resumes it through the wmux launcher with `--yolo`, checks `/status` for Full Access, checks session reporting/release, and verifies the conversation remains resumable without changing the configured permission defaults. Verified with Codex 0.162.1:
+
+```powershell
+npm run build:main
+$env:WMUX_TEST_CODEX_EXE = 'C:\path\to\codex.exe'
+npx vitest run tests/integration/codex-yolo.test.ts
+```

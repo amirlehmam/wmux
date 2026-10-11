@@ -29,6 +29,12 @@ const NATIVE_ONLY_OPTIONS = new Set([
     '-h', '--help', '-V', '--version', '--remote', '--remote-auth-token-env',
     '-p', '--profile', '--worktree', '--oss', '--local-provider',
 ]);
+const YOLO_OPTIONS = new Set(['--yolo', '--dangerously-bypass-approvals-and-sandbox']);
+const PERMISSION_OPTIONS = new Set([
+    '-a', '--ask-for-approval', '-s', '--sandbox', '--approve-for-me', '--not-so-yolo',
+    '--full-auto', '--add-dir',
+]);
+const PERMISSION_CONFIG = /^(?:approval_policy|approvals_reviewer|sandbox_mode|sandbox_workspace_write|default_permissions|permissions|network)(?:\.|\s*=)/;
 /** Apply one value-taking option. Returns how many argv entries it consumed, or
  *  0 when its value is missing (which ends the scan as non-interactive). */
 function applyValueOption(plan, key, arg, next) {
@@ -43,14 +49,34 @@ function applyValueOption(plan, key, arg, next) {
     return inline ? 1 : 2;
 }
 function codexLaunchPlan(args, cwd) {
-    const plan = { interactive: true, serverArgs: ['app-server', '--stdio'], cwd };
+    const plan = { interactive: true, serverArgs: ['app-server', '--stdio'], clientArgs: [], cwd, yolo: false };
     let positional = false;
+    let otherPermissions = false;
     let i = 0;
     while (i < args.length && args[i] !== '--') {
         const arg = args[i];
         const key = arg.split('=')[0];
         if (NATIVE_ONLY_OPTIONS.has(key))
             plan.interactive = false;
+        if (YOLO_OPTIONS.has(arg)) {
+            // Do not hide duplicate-flag errors from Codex's own argument parser.
+            if (plan.yolo)
+                plan.interactive = false;
+            plan.yolo = true;
+            i++;
+            continue;
+        }
+        if (PERMISSION_OPTIONS.has(key) || /^-[as].+/.test(arg))
+            otherPermissions = true;
+        if (key === '-c' || key === '--config' || /^-c.+/.test(arg)) {
+            const value = key === '-c' || key === '--config'
+                ? (arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : args[i + 1])
+                : arg.slice(2);
+            // Quoted TOML keys and compound permission settings stay with the native
+            // parser: the relay must not guess their precedence against --yolo.
+            if (value && (PERMISSION_CONFIG.test(value.trim()) || /^["']/.test(value.trim())))
+                otherPermissions = true;
+        }
         if (key === '--strict-config')
             plan.serverArgs.push(arg);
         if (VALUE_OPTIONS.has(key)) {
@@ -59,6 +85,7 @@ function codexLaunchPlan(args, cwd) {
                 plan.interactive = false;
                 break;
             }
+            plan.clientArgs.push(...args.slice(i, i + consumed));
             i += consumed;
             continue;
         }
@@ -68,8 +95,14 @@ function codexLaunchPlan(args, cwd) {
             positional = true;
             plan.interactive &&= !NON_INTERACTIVE.has(arg);
         }
+        plan.clientArgs.push(arg);
         i++;
     }
+    plan.clientArgs.push(...args.slice(i));
+    // Preserve native validation/precedence for mixed permission choices, instead
+    // of silently removing an option that conflicts with --yolo.
+    if (plan.yolo && otherPermissions)
+        plan.interactive = false;
     return plan;
 }
 /** Authenticated local pipe only; never send environment variables or transcripts. */
@@ -177,7 +210,7 @@ async function runWmuxCodex(args = process.argv.slice(2)) {
     // Serialize reports so a delayed response cannot stamp an older thread last.
     let reports = Promise.resolve();
     const relay = await startRelay({
-        executable, args: plan.serverArgs, cwd: plan.cwd, env,
+        executable, args: plan.serverArgs, cwd: plan.cwd, env, yolo: plan.yolo,
         onSession: sessionId => {
             reports = reports.then(async () => {
                 try {
@@ -192,7 +225,7 @@ async function runWmuxCodex(args = process.argv.slice(2)) {
     let exitCode;
     try {
         exitCode = await runCli(executable, [
-            '--remote', relay.url, '--remote-auth-token-env', 'WMUX_CODEX_RELAY_TOKEN', ...args,
+            '--remote', relay.url, '--remote-auth-token-env', 'WMUX_CODEX_RELAY_TOKEN', ...plan.clientArgs,
         ], { ...env, WMUX_CODEX_RELAY_TOKEN: relay.token });
     }
     finally {
