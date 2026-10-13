@@ -25,6 +25,7 @@ import { buildLayout } from './office-layout';
 import type { OfficeLayout, TablePlacement } from './office-layout';
 import { createSim, stepSim } from './office-sim';
 import type { Character, SimRosterEntry, SimState } from './office-sim';
+import { simRosterState } from './office-sim';
 import { BODY_FRAMES, FURNITURE, FURNITURE_PALETTE, VARIANTS, rasterize, variantFor } from './sprites';
 import type { FrameName } from './sprites';
 import { MIN_SCALE, MAX_ZOOM, computeCamera, fitZoom, zoomAt } from './camera';
@@ -191,7 +192,7 @@ export default function HubView({ onClose, onFocusAgent }: {
   rosterRef.current = rollup.roster.map((e) => ({
     surfaceId: e.surfaceId,
     workspaceId: e.workspaceId,
-    state: e.state,
+    state: simRosterState(e.state),
     answerPending: e.answerPending,
     dwellMs: e.dwellMs,
   }));

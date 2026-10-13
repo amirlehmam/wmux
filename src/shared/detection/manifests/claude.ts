@@ -30,6 +30,13 @@ import { Manifest } from '../types';
  */
 const SPINNER = '[✳✴✵✶✷✸✹✺✻✼✽·✦✧]';
 
+/**
+ * The line Claude prints when a turn is over: "✻ Cooked for 2m 1s · done 3:44 PM".
+ * It shares the spinner glyph with the working line and differs by having no
+ * live-run parenthetical — which is why `working` never fires on it.
+ */
+const TURN_DONE = `^\\s*${SPINNER}\\s+\\S+ for \\d+[ms]\\b.*\\bdone\\b`;
+
 export const claudeManifest: Manifest = {
   agent: 'claude',
   version: 1,
@@ -86,6 +93,48 @@ export const claudeManifest: Manifest = {
       priority: 990,
       region: { id: 'bottom_non_empty_lines', count: 16 },
       all: [{ kind: 'contains', value: 'Do you trust the files in this folder?' }],
+    },
+
+    /**
+     * Question — the turn finished on an ordinary question for the user.
+     *
+     * All three halves are required, and together they say "current": the
+     * completed-turn marker says the run is over, the empty prompt says the
+     * user has not started answering, and the question itself must sit in the
+     * last three non-empty lines of the message that the LAST marker closes.
+     *
+     * That third half is anchored on purpose. "A `?` somewhere near the bottom"
+     * also matches a question from the previous turn that the user already
+     * answered, when the turn after it was short. Anchored above the last
+     * marker, an answered question is by construction above an older marker.
+     *
+     * The question mark must be followed by ordinary text or end the line. One
+     * followed by a closing quote is Claude QUOTING a question, and a line that
+     * starts with the prompt glyph is the user's own submitted text.
+     *
+     * Known limits, stated rather than papered over: a turn too short for
+     * Claude to print the marker is not seen at all, and a past question
+     * retold without quotes in the closing lines reads as current.
+     */
+    {
+      id: 'claude.question.pending',
+      state: 'question',
+      priority: 500,
+      region: { id: 'bottom_non_empty_lines', count: 12 },
+      all: [
+        { kind: 'lineRegex', value: TURN_DONE },
+        { kind: 'lineRegex', value: '^>\\s*$' },
+        {
+          kind: 'lineRegex',
+          value: '^\\s*[^>❯\\s].*\\?(\\s+[^\\s»"”]|\\s*$)',
+          region: {
+            id: 'non_empty_lines_above',
+            count: 3,
+            anchor: { kind: 'lineRegex', value: TURN_DONE },
+          },
+        },
+      ],
+      none: [{ kind: 'contains', value: 'esc to interrupt' }],
     },
 
     /**

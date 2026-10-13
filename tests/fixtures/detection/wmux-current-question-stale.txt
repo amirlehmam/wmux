@@ -1,0 +1,17 @@
+  Je fais ces modifications ?
+
+✻ Cooked for 2m 1s · done 3:44 PM
+
+> oui, seulement le document A
+
+● Compris. Le document A est mis à jour.
+  Le document B reste tel quel.
+  Aucun autre fichier n’est touché.
+  Le résultat est dans le dépôt local.
+
+✻ Baked for 22s · done 3:46 PM
+
+──────────────────────────────────────────────────────────────────────────────
+> 
+──────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

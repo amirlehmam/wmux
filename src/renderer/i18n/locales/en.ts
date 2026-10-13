@@ -266,6 +266,7 @@ export const en = {
   'workspaceRow.tool.generic': '{tool}...',
   // Sidebar — workspace row: status text chain
   'workspaceRow.needsYou': 'Needs you',
+  'workspaceRow.question': 'Question for you',
   'workspaceRow.needsYouCount': 'Needs you · {count}',
   'workspaceRow.idle': 'Idle',
   'workspaceRow.running': 'Running',
@@ -798,12 +799,14 @@ export const en = {
   'agentRoster.needYou': '{count} need you',
   'agentRoster.allBusy': '{count} working',
   'agentRoster.alsoWorking': '· {count} working',
+  'agentRoster.alsoAsking': '· {count} asking',
   'agentRoster.jumpHint': 'Go to the agent waiting longest — {label}',
   'agentRoster.noneBlocked': 'No agent is waiting on you',
   'agentRoster.openNavigator': 'All agents (Ctrl+Shift+A)',
   'agentNavigator.title': 'Agents',
   'agentNavigator.filterAll': 'all',
   'agentNavigator.filterBlocked': 'blocked',
+  'agentNavigator.filterQuestion': 'question',
   'agentNavigator.filterWorking': 'working',
   'agentNavigator.filterIdle': 'idle',
   'agentNavigator.filterUnknown': 'silent',
@@ -815,7 +818,7 @@ export const en = {
   'settings.workspacePanel.detectAgentScreens': 'Read agent screens to infer state',
   'settings.workspacePanel.detectAgentScreensHint': 'For agents that do not report state themselves (Codex, Gemini, Aider…), match their on-screen UI against bundled rules to tell blocked from working. Runs entirely on this machine and never overrides what an agent declares — panes whose agent reports are skipped without being read at all. Override the rules in %APPDATA%\\wmux\\agent-detection, and use `wmux detect explain` to see which rule fired.',
   'agentNavigator.silentProbed': 'detected — reports no state',
-  'agentNavigator.hint': '↑↓ move · enter jump · a/b/w/i/u filter · esc close',
+  'agentNavigator.hint': '↑↓ move · enter jump · a/b/q/w/i/u filter · esc close',
   'agentNavigator.workspacesWithAgents': 'workspaces',
 
   // ─── Agent office hub ───

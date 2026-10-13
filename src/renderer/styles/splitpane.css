@@ -571,15 +571,17 @@ body.wmux-dragging * {
    "needs you", amber working — because a user who learned it there must not
    have to relearn it here.
 
-   Only blocked and working are drawn. Idle needs no mark: a tab that is fine
-   should look like every other tab, and marking all four states would make the
-   one that matters harder to find, not easier. */
+   Only blocked, question and working are drawn. Idle needs no mark: a tab that
+   is fine should look like every other tab, and marking every state would make
+   the ones that matter harder to find, not easier. */
 .surface-tab[data-agent-state='blocked'],
+.surface-tab[data-agent-state='question'],
 .surface-tab[data-agent-state='working'] {
   padding-left: 4px;
 }
 
 .surface-tab[data-agent-state='blocked']::before,
+.surface-tab[data-agent-state='question']::before,
 .surface-tab[data-agent-state='working']::before {
   content: '';
   width: 5px;
@@ -597,6 +599,12 @@ body.wmux-dragging * {
 .surface-tab[data-agent-state='blocked']::before {
   background: var(--ui-agent-blocked);
   animation: pulse-blocked-dot 2s ease-in-out infinite;
+}
+
+/* A question waits for the user but blocks nothing: same dot, steady, and in
+   the sidebar's question colour rather than the permission prompt's violet. */
+.surface-tab[data-agent-state='question']::before {
+  background: var(--ui-agent-question, #4fb3d9);
 }
 
 /* An inactive blocked tab is the case this exists for, so it gets more than the

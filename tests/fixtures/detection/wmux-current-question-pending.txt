@@ -1,0 +1,12 @@
+  Correction proposée, en texte seulement :
+  - Dans le document A : ajouter un sous-point.
+  - Dans le document B : mettre à jour la liste.
+
+  Je fais ces modifications ?
+
+✻ Cooked for 2m 1s · done 3:44 PM
+
+────────────────────────────────────────────────────────── Project | session ─
+> 
+──────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

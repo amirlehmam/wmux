@@ -21,6 +21,20 @@ export interface SimRosterEntry {
   dwellMs: number;
 }
 
+/**
+ * The roster state as the office draws it.
+ *
+ * The office has no pose for an agent that finished its turn on a question, so
+ * one is drawn as `unknown` — the state that claims least. Not `blocked`: that
+ * pose means a permission prompt, and the hub would be saying something the
+ * agent did not. Deliberate degradation, pinned by a test, not an oversight.
+ */
+export function simRosterState(
+  state: SimRosterEntry['state'] | 'question',
+): SimRosterEntry['state'] {
+  return state === 'question' ? 'unknown' : state;
+}
+
 export type CharacterPhase =
   | 'walkingToDesk' | 'atDesk' | 'walkingToBreak' | 'resting'
   | 'walkingToPeer' | 'chatting' | 'leaving';

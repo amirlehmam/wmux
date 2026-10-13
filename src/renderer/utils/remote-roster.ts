@@ -28,7 +28,11 @@ export function toRemoteRosterSource(entry: AgentRosterEntry): RemoteRosterSourc
     workspaceTitle: entry.workspaceTitle,
     label: entry.label,
     kind: entry.kind,
-    state: entry.state,
+    // The phone protocol's state set is closed (RemoteRosterSource.state) and a
+    // question is not on it. It degrades to `unknown` — never to `blocked`,
+    // which would arm the phone's answer path for something that has no declared
+    // choices, and never widened here, where nothing validates the new value.
+    state: entry.state === 'question' ? 'unknown' : entry.state,
     stateSource: entry.stateSource,
     blockedReason: entry.blockedReason,
     choices: (entry.choices as ChoiceLike[]).map((c) =>

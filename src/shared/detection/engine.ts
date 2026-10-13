@@ -118,6 +118,17 @@ export function sliceRegion(input: DetectionInput, region: Region): string[] {
       return lines.filter((l) => l.trim().length > 0).slice(-count);
     case 'top_non_empty_lines':
       return lines.filter((l) => l.trim().length > 0).slice(0, count);
+    case 'non_empty_lines_above': {
+      // An anchor that names its own region would recurse; it is matched
+      // against plain lines, so the field is simply not consulted here.
+      if (!region.anchor) return [];
+      const recent = lines.slice(-LIMITS.MAX_REGION_LINES).filter((l) => l.trim().length > 0);
+      let last = -1;
+      for (let i = recent.length - 1; i >= 0; i--) {
+        if (matchLine([recent[i]], region.anchor) !== null) { last = i; break; }
+      }
+      return last < 0 ? [] : recent.slice(Math.max(0, last - count), last);
+    }
     default:
       return [];
   }
@@ -164,21 +175,24 @@ function evaluateRule(input: DetectionInput, rule: Rule): string[] | null {
   if (region.length === 0) return null;
 
   const evidence: string[] = [];
+  // A matcher may look at its own region; an empty one simply never hits.
+  const linesFor = (matcher: Matcher): string[] =>
+    (matcher.region ? sliceRegion(input, matcher.region) : region);
 
   for (const matcher of rule.all ?? []) {
-    const hit = matchLine(region, matcher);
+    const hit = matchLine(linesFor(matcher), matcher);
     if (!hit) return null;
     evidence.push(hit);
   }
 
   if (rule.any && rule.any.length > 0) {
-    const hit = rule.any.map((m) => matchLine(region, m)).find(Boolean);
+    const hit = rule.any.map((m) => matchLine(linesFor(m), m)).find(Boolean);
     if (!hit) return null;
     evidence.push(hit);
   }
 
   for (const matcher of rule.none ?? []) {
-    if (matchLine(region, matcher)) return null;
+    if (matchLine(linesFor(matcher), matcher)) return null;
   }
 
   // A rule with no matchers at all would fire on every screen — treat it as

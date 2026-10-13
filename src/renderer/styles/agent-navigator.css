@@ -124,6 +124,12 @@
   animation: pulse-blocked-dot 2s ease-in-out infinite;
 }
 
+/* A question waits on the user but blocks nothing: steady, and the sidebar's
+   question colour rather than the permission prompt's. */
+.agent-nav__row[data-state='question'] .agent-nav__row-dot {
+  background: var(--ui-agent-question, #4fb3d9);
+}
+
 .agent-nav__row[data-state='working'] .agent-nav__row-dot {
   background: #e8a33d;
   animation: pulse-dot 1.2s ease-in-out infinite;
@@ -227,6 +233,9 @@
 }
 .agent-nav__row[data-source='detected'][data-state='blocked'] .agent-nav__row-dot {
   color: var(--ui-agent-blocked);
+}
+.agent-nav__row[data-source='detected'][data-state='question'] .agent-nav__row-dot {
+  color: var(--ui-agent-question, #4fb3d9);
 }
 .agent-nav__row[data-source='detected'][data-state='working'] .agent-nav__row-dot {
   color: #e8a33d;

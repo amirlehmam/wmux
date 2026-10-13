@@ -761,7 +761,7 @@ export const zhTW: Translation = {
   'settings.workspacePanel.detectAgentScreens': '判讀 agent 畫面以推斷狀態',
   'settings.workspacePanel.detectAgentScreensHint': '對於不會自行回報狀態的 agent（Codex、Gemini、Aider…），用內建規則比對它們畫面上的介面，分辨是在等你還是在工作。完全在這台電腦上執行，也絕不覆蓋 agent 自己宣告的狀態——會自行回報的 agent 所在窗格會直接略過、完全不讀取。規則可在 %APPDATA%\\wmux\\agent-detection 覆寫，用 `wmux detect explain` 查看觸發了哪一條規則。',
   'agentNavigator.silentProbed': '已偵測——未回報狀態',
-  'agentNavigator.hint': '↑↓ 移動 · Enter 前往 · a/b/w/i/u 篩選 · Esc 關閉',
+  'agentNavigator.hint': '↑↓ 移動 · Enter 前往 · a/b/q/w/i/u 篩選 · Esc 關閉',
   'agentNavigator.workspacesWithAgents': '個工作區',
   // ─── agent 辦公室 ───
   'titlebar.hub': 'agent 辦公室',

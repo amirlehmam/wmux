@@ -32,7 +32,7 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
     [workspaces, agentStates, agentIdentities, agentDetections, now],
   );
 
-  const { blocked, working, total } = rollup.totals;
+  const { blocked, question, working, total } = rollup.totals;
 
   // Only tick while something is actually waiting: the dwell label is the only
   // thing here that changes on its own, and a blocked agent is the only state
@@ -67,6 +67,13 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
         {blocked > 0 && working > 0 && (
           <span className="agent-roster__secondary">
             {t('agentRoster.alsoWorking', '· {count} working').replace('{count}', String(working))}
+          </span>
+        )}
+        {/* Said, never jumped to: the main button goes to the oldest permission
+            prompt, and a question has no declared start to rank against one. */}
+        {question > 0 && (
+          <span className="agent-roster__secondary">
+            {t('agentRoster.alsoAsking', '· {count} asking').replace('{count}', String(question))}
           </span>
         )}
         {oldest && <span className="agent-roster__dwell">{formatDwell(oldest.dwellMs)}</span>}

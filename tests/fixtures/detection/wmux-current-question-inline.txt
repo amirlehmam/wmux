@@ -1,0 +1,13 @@
+  Correction proposée, en texte seulement :
+  - Dans le document A : ajouter un sous-point.
+  - Dans le document B : mettre à jour la liste.
+
+  Je fais ces modifications ? Rien n’est encore modifié : je n’ai fait que lire.
+
+✻ Cooked for 2m 1s · done 3:44 PM
+
+※ recap: Objectif : mettre à jour deux documents. J’attends votre feu vert. (disable recaps in /config)
+──────────────────────────────────────────────────────────────────────────────
+> 
+──────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

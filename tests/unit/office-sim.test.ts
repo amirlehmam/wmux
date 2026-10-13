@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildLayout, isBlocked } from '../../src/renderer/components/Hub/office-layout';
 import type { OfficeLayout } from '../../src/renderer/components/Hub/office-layout';
 import {
-  createSim, stepSim, MAX_CHARACTERS, HANDOFF_WINDOW_MS,
+  createSim, stepSim, MAX_CHARACTERS, HANDOFF_WINDOW_MS, simRosterState,
 } from '../../src/renderer/components/Hub/office-sim';
 import type { SimRosterEntry, SimState } from '../../src/renderer/components/Hub/office-sim';
 import { WorkspaceId } from '../../src/shared/types';
@@ -159,5 +159,15 @@ describe('stepSim', () => {
     const frozen = JSON.stringify(s0);
     stepSim(s0, [entry('a', 'ws-1', { state: 'blocked' })], LAYOUT, 100, rng);
     expect(JSON.stringify(s0)).toBe(frozen);
+  });
+});
+
+// The office has no pose for a question, so the hub draws it as `unknown`.
+describe('simRosterState', () => {
+  it('draws a question as unknown and passes every other state through', () => {
+    expect(simRosterState('question')).toBe('unknown');
+    for (const state of ['blocked', 'working', 'idle', 'unknown'] as const) {
+      expect(simRosterState(state)).toBe(state);
+    }
   });
 });

@@ -22,8 +22,14 @@
  *   2. Detection NEVER overrides declared state. See DetectionResult.
  */
 
-/** What a rule concludes. Detection cannot conclude `unknown` — that is absence of a conclusion. */
-export type DetectedState = 'blocked' | 'working' | 'idle';
+/**
+ * What a rule concludes. Detection cannot conclude `unknown` — that is absence of a conclusion.
+ *
+ * `question` is an ordinary business question the agent finished its turn on:
+ * distinct from `blocked` (a permission prompt, answered with a key) and from
+ * `idle` (nothing is waiting on the user).
+ */
+export type DetectedState = 'blocked' | 'question' | 'working' | 'idle';
 
 /**
  * How one matcher tests a region.
@@ -42,6 +48,13 @@ export interface Matcher {
   value: string;
   /** Default false. Applied by lowercasing both sides, not by a regex flag. */
   ignoreCase?: boolean;
+  /**
+   * Look somewhere other than the rule's own region, for this matcher only.
+   *
+   * A rule has one region, which cannot say "this line must sit just above
+   * that one". One matcher looking at an anchored region can.
+   */
+  region?: Region;
 }
 
 /**
@@ -57,6 +70,12 @@ export type RegionId =
   /** Bottom N lines with blanks dropped — agent UIs pad heavily. */
   | 'bottom_non_empty_lines'
   | 'top_non_empty_lines'
+  /**
+   * The N non-empty lines immediately ABOVE the last line `anchor` matches.
+   * Empty when nothing matches the anchor. This is how a rule reads "the end of
+   * the message that this marker closes" instead of "anywhere near the bottom".
+   */
+  | 'non_empty_lines_above'
   /** The OSC 0/2 terminal title, when the surface reported one. */
   | 'osc_title';
 
@@ -64,6 +83,8 @@ export interface Region {
   id: RegionId;
   /** Line count for the `*_lines` regions. Ignored by the others. */
   count?: number;
+  /** Required by `non_empty_lines_above`; ignored by the others. */
+  anchor?: Matcher;
 }
 
 export interface Rule {
@@ -134,6 +155,17 @@ export interface DetectionResult {
   manifestVersion: number | null;
   /** The lines that made the winning rule fire. Empty unless `matched`. */
   evidence: string[];
+  /**
+   * When and for which declared session the renderer PUBLISHED this verdict.
+   *
+   * Never set by the engine, which is pure and has no clock: the scan loop
+   * stamps its own copy. They exist because a stored verdict is only what the
+   * screen said the last time it was read, and a consumer that promotes one
+   * (a `question` over a declared `idle`) has to be able to tell that it
+   * belongs to the current turn and the current session.
+   */
+  observedAt?: number;
+  sessionId?: string | null;
 }
 
 /**

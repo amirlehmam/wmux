@@ -101,3 +101,31 @@ describe('toRemoteRosterSource', () => {
     expect(out.blockedReason).toBeNull();
   });
 });
+
+// The phone protocol's state set is closed (RemoteRosterSource.state) and has
+// no `question`. Until it gains one, a question degrades to `unknown` at this
+// boundary: the phone must never receive a value its protocol does not name,
+// and `unknown` is the one state that makes no claim the agent did not make.
+describe('a question degrades to unknown on the wire', () => {
+  it('never puts `question` on the wire, and sends `unknown` in its place', () => {
+    const out = toRemoteRosterSource(
+      entry({ state: 'question', stateSource: 'detected', blockedReason: null, choices: [] }),
+    );
+    expect(out.state).toBe('unknown');
+    expect(JSON.stringify(out)).not.toContain('question');
+  });
+
+  it('a question offers the phone no answer buttons — it is not a permission prompt', () => {
+    const out = toRemoteRosterSource(
+      entry({ state: 'question', stateSource: 'detected', blockedReason: null, choices: [] }),
+    );
+    expect(out.choices).toEqual([]);
+    expect(out.blockedReason).toBeNull();
+  });
+
+  it('leaves the four states the protocol does name exactly as they are', () => {
+    for (const state of ['blocked', 'working', 'idle', 'unknown'] as const) {
+      expect(toRemoteRosterSource(entry({ state })).state).toBe(state);
+    }
+  });
+});

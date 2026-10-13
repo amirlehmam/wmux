@@ -16,6 +16,7 @@ import { StateCreator } from 'zustand';
 import { SurfaceId } from '../../shared/types';
 import type { DeclaredAgentSnapshot, AgentIdentitySnapshot } from './agent-rollup';
 import type { DetectionResult } from '../../shared/detection/types';
+import { withIdleSince } from './agent-rollup';
 
 /** The AGENT_STATE payload, which carries its own surfaceId. */
 export interface AgentStatePayload extends DeclaredAgentSnapshot {
@@ -68,16 +69,25 @@ export const createAgentStateSlice: StateCreator<AgentStateSlice, [], [], AgentS
   setAgentState(payload: AgentStatePayload): void {
     if (!payload?.surfaceId) return;
     set((state) => ({
-      agentStates: { ...state.agentStates, [payload.surfaceId]: payload },
+      agentStates: {
+        ...state.agentStates,
+        // Stamps when this idle period began — see withIdleSince.
+        [payload.surfaceId]: withIdleSince(state.agentStates[payload.surfaceId], payload, Date.now()),
+      },
     }));
   },
 
   replaceAgentStates(payloads: AgentStatePayload[]): void {
-    const next: Record<string, AgentStatePayload> = {};
-    for (const p of payloads ?? []) {
-      if (p?.surfaceId) next[p.surfaceId] = p;
-    }
-    set({ agentStates: next });
+    set((state) => {
+      const next: Record<string, AgentStatePayload> = {};
+      const now = Date.now();
+      for (const p of payloads ?? []) {
+        // Seeded against what is already held, so a re-seed does not restart an
+        // idle period that a stored question was observed in.
+        if (p?.surfaceId) next[p.surfaceId] = withIdleSince(state.agentStates[p.surfaceId], p, now);
+      }
+      return { agentStates: next };
+    });
   },
 
   agentIdentities: {},
@@ -126,10 +136,13 @@ export const createAgentStateSlice: StateCreator<AgentStateSlice, [], [], AgentS
       // The loop re-scans several times a second. Returning the same object for
       // an unchanged verdict is what keeps every downstream useMemo from
       // recomputing at that rate (issue #141's lesson, one layer up).
+      // `observedAt` is part of the identity: the loop re-publishes an
+      // otherwise identical question only to renew that stamp.
       if (previous
         && previous.state === result.state
         && previous.agent === result.agent
-        && previous.ruleId === result.ruleId) {
+        && previous.ruleId === result.ruleId
+        && previous.observedAt === result.observedAt) {
         return state;
       }
 

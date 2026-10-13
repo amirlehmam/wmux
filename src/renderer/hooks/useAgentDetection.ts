@@ -28,6 +28,7 @@ import { detectScreen } from '../../shared/detection/engine';
 import { progressTurnState, withProgressTurn } from '../utils/progress-turn';
 import { BUNDLED_MANIFESTS } from '../../shared/detection/manifests';
 import type { DetectionResult, Manifest } from '../../shared/detection/types';
+import { detectionNeedsPublish, detectionPausedBy } from '../store/agent-rollup';
 
 /**
  * How much of the bottom of the buffer to read.
@@ -91,7 +92,9 @@ function shouldScan(
   declaredState: string | undefined,
   now: number,
 ): boolean {
-  if (declaredState && declaredState !== 'unknown') return false;
+  // Working and blocked pause the scan; idle no longer does, because an idle
+  // agent is where an unanswered question sits (see detectionPausedBy).
+  if (detectionPausedBy(declaredState)) return false;
   if (now - scan.firstSeenAt < STARTUP_GRACE_MS) return false;
 
   const seq = surfaceOutputSeq.get(surfaceId) ?? 0;
@@ -131,17 +134,23 @@ function scanSurface(
   );
 
   const previous = scan.lastResult;
-  scan.lastResult = result;
-  const changed = previous?.state !== result.state
+  const declared = store.agentStates[surfaceId];
+  if (!detectionNeedsPublish(previous, result, declared?.idleSince)) return;
+
+  // The store's copy says when it was read and for which session, so a
+  // consumer can tell a current question from one left over from an earlier
+  // turn. Stamped only on publish: an unchanged verdict keeps its first stamp.
+  const published: DetectionResult = { ...result, observedAt: now, sessionId: declared?.sessionId ?? null };
+  scan.lastResult = published;
+  store.setAgentDetection(surfaceId, published);
+
+  // Mirror to main only when the VERDICT moved, and without the stamps: the
+  // loop ticks several times a second, and main's copy has no use for a
+  // renewed timestamp or for a session id it already holds.
+  const verdictMoved = previous?.state !== result.state
     || previous?.agent !== result.agent
     || previous?.ruleId !== result.ruleId;
-  if (!changed) return;
-
-  store.setAgentDetection(surfaceId, result);
-  // Mirror to main only on a CHANGE. The loop ticks several times a second; an
-  // unconditional send would be one IPC message per pane per tick to keep a
-  // value that did not move.
-  window.wmux?.agentDetection?.report?.(surfaceId, result);
+  if (verdictMoved) window.wmux?.agentDetection?.report?.(surfaceId, result);
 }
 
 export function useAgentDetection(enabled: boolean): void {

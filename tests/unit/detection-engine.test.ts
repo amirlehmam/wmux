@@ -88,6 +88,56 @@ describe('detectScreen — Claude Code', () => {
   });
 });
 
+describe('detectScreen — current business question', () => {
+  it('reads a finished turn that ends on a question, over an empty prompt, as a question rather than idle', () => {
+    const out = read('wmux-current-question-pending');
+    expect(out).toMatchObject({ agent: 'claude', state: 'question', ruleId: 'claude.question.pending' });
+  });
+
+  // The shape of the screen that started this: the question is followed by
+  // more text on its own line, so "the line ends in ?" never saw it.
+  it('reads a question that is followed by more text on the same line', () => {
+    const out = read('wmux-current-question-inline');
+    expect(out).toMatchObject({ agent: 'claude', state: 'question', ruleId: 'claude.question.pending' });
+    expect(out.evidence.some((l) => l.includes('Je fais ces modifications ?'))).toBe(true);
+  });
+
+  // The question belongs to the PREVIOUS turn: the user answered it and a later
+  // turn finished without asking anything. It is still inside the bottom window.
+  it('does not read an answered question from an earlier turn as current', () => {
+    expect(read('wmux-current-question-stale').state).not.toBe('question');
+  });
+
+  it('does not read a quoted past question as current', () => {
+    expect(read('wmux-current-question-quoted').state).not.toBe('question');
+  });
+
+  // The user's own submitted prompt sits right above a short answer. It ends in
+  // a question mark and it is not Claude asking anything.
+  it('does not take the user\'s own submitted question for the agent\'s', () => {
+    const out = detectScreen({
+      lines: [
+        '> Tu peux relire le document A ?',
+        '',
+        '● C\'est relu, rien à signaler.',
+        '',
+        '✻ Baked for 22s · done 3:46 PM',
+        '',
+        '──────────────────────────────',
+        '> ',
+        '──────────────────────────────',
+        '  ⏵⏵ auto mode on (shift+tab to cycle)',
+      ],
+    }, BUNDLED_MANIFESTS);
+    expect(out.state).not.toBe('question');
+  });
+
+  it('does not read a question as current once the user has started typing an answer', () => {
+    const lines = screen('wmux-current-question-inline').lines.map((l) => (l === '> ' ? '> oui mais' : l));
+    expect(detectScreen({ lines }, BUNDLED_MANIFESTS).state).not.toBe('question');
+  });
+});
+
 describe('detectScreen — Codex', () => {
   it('identifies the composer and reads it as idle', () => {
     expect(read('codex-idle')).toMatchObject({
@@ -241,6 +291,14 @@ describe('sliceRegion', () => {
 
   it('top_non_empty_lines reads from the other end', () => {
     expect(sliceRegion(input, { id: 'top_non_empty_lines', count: 2 })).toEqual(['a', 'b']);
+  });
+
+  it('non_empty_lines_above reads just above the LAST anchor match, and nothing without one', () => {
+    const anchor = { kind: 'contains' as const, value: 'MARK' };
+    const lines = ['a', 'MARK 1', 'b', '', 'c', 'd', 'MARK 2', 'e'];
+    expect(sliceRegion({ lines }, { id: 'non_empty_lines_above', count: 2, anchor })).toEqual(['c', 'd']);
+    expect(sliceRegion({ lines: ['a', 'b'] }, { id: 'non_empty_lines_above', count: 2, anchor })).toEqual([]);
+    expect(sliceRegion({ lines }, { id: 'non_empty_lines_above', count: 2 })).toEqual([]);
   });
 
   it('osc_title yields the trimmed title, or nothing', () => {

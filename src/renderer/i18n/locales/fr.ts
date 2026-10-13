@@ -207,6 +207,7 @@ export const fr: Translation = {
   'workspaceRow.tool.generic': '{tool}...',
   // Sidebar — ligne d'espace de travail : chaîne du texte de statut
   'workspaceRow.needsYou': 'Besoin de vous',
+  'workspaceRow.question': 'Question pour vous',
   'workspaceRow.needsYouCount': 'Besoin de vous · {count}',
   'workspaceRow.idle': 'Inactif',
   'workspaceRow.running': 'En cours',
@@ -661,12 +662,14 @@ export const fr: Translation = {
   'agentRoster.needYou': '{count} vous attendent',
   'agentRoster.allBusy': '{count} en cours',
   'agentRoster.alsoWorking': '· {count} en cours',
+  'agentRoster.alsoAsking': '· {count} question(s)',
   'agentRoster.jumpHint': 'Aller à l’agent qui attend depuis le plus longtemps — {label}',
   'agentRoster.noneBlocked': 'Aucun agent ne vous attend',
   'agentRoster.openNavigator': 'Tous les agents (Ctrl+Maj+A)',
   'agentNavigator.title': 'Agents',
   'agentNavigator.filterAll': 'tous',
   'agentNavigator.filterBlocked': 'bloqués',
+  'agentNavigator.filterQuestion': 'questions',
   'agentNavigator.filterWorking': 'en cours',
   'agentNavigator.filterIdle': 'inactifs',
   'agentNavigator.filterUnknown': 'muets',
@@ -678,7 +681,7 @@ export const fr: Translation = {
   'settings.workspacePanel.detectAgentScreens': 'Lire l’écran des agents pour déduire leur état',
   'settings.workspacePanel.detectAgentScreensHint': 'Pour les agents qui ne déclarent pas leur état (Codex, Gemini, Aider…), compare leur interface à l’écran à des règles fournies pour distinguer bloqué de en cours. Tourne entièrement sur cette machine et n’écrase jamais ce qu’un agent déclare — les panes dont l’agent rapporte ne sont pas lus du tout. Règles surchargeables dans %APPDATA%\\wmux\\agent-detection ; `wmux detect explain` indique quelle règle a décidé.',
   'agentNavigator.silentProbed': 'détecté — ne déclare aucun état',
-  'agentNavigator.hint': '↑↓ naviguer · entrée aller · a/b/w/i/u filtrer · échap fermer',
+  'agentNavigator.hint': '↑↓ naviguer · entrée aller · a/b/q/w/i/u filtrer · échap fermer',
   'agentNavigator.workspacesWithAgents': 'espaces',
 
   // ─── Paramètres — Panneau des invites (issue #207) ───

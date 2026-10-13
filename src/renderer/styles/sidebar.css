@@ -312,6 +312,15 @@
   font-weight: 600;
 }
 
+/* "Question for you" — an agent ended its turn on an ordinary question. Its own
+   colour on purpose: violet is a permission prompt (work has stopped until a key
+   is pressed), amber is work in progress, and this is neither. Not bold and not
+   animated — it waits for the user, but nothing is blocked behind it. The
+   fallback is here rather than in the themes so an older theme still draws it. */
+.workspace-row__status--question {
+  color: var(--ui-agent-question, #4fb3d9);
+}
+
 .workspace-row__status--interrupted {
   color: #e53935;
 }
@@ -668,6 +677,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .workspace-row__state-dot--blocked { animation: none; }
+}
+
+/* Matches the "Question for you" status text beside it; steady, not pulsing. */
+.workspace-row__state-dot--question {
+  background: var(--ui-agent-question, #4fb3d9);
 }
 
 .workspace-row__state-dot--idle {
