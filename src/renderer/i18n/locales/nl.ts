@@ -253,6 +253,11 @@ export const nl: Translation = {
   'settings.notifications.soundSection': 'Geluid',
   'settings.notifications.sound': 'Meldingsgeluid',
   'settings.notifications.preview': 'Voorbeeld',
+  'settings.notifications.customSoundFile': 'Aangepast geluidsbestand',
+  'settings.notifications.noCustomSound': 'Geen bestand geselecteerd',
+  'settings.notifications.chooseSoundFile': 'Audiobestand kiezen',
+  'settings.notifications.customSoundTooLarge': 'Audiobestanden mogen maximaal 10 MB groot zijn.',
+  'settings.notifications.customSoundError': 'Dit audiobestand kan niet worden gebruikt.',
   // Instellingen — toetsenbordpaneel
   'settings.keyboard.title': 'Sneltoetsen',
   'settings.keyboard.resetAll': 'Alles resetten',
@@ -566,6 +571,7 @@ export const nl: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Aangepast bestand',
   'notificationSound.none': 'Geen',
   // SplitPane — profielbadge in het nieuw-tabblad-menu (losse toevoeging)
   'surfaceTab.profileBadge': 'project',

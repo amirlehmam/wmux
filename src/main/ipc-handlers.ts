@@ -85,6 +85,34 @@ const insertionQueue = new SurfaceInsertionQueue();
 const surfaceOwners = new Map<SurfaceId, number>();
 const observedWebContents = new Set<number>();
 
+const CUSTOM_NOTIFICATION_SOUND_EXTENSIONS = ['aac', 'flac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wav', 'webm'] as const;
+const MAX_CUSTOM_NOTIFICATION_SOUND_BYTES = 10 * 1024 * 1024;
+const CUSTOM_NOTIFICATION_SOUND_MIME_TYPES: Record<typeof CUSTOM_NOTIFICATION_SOUND_EXTENSIONS[number], string> = {
+  aac: 'audio/aac',
+  flac: 'audio/flac',
+  m4a: 'audio/mp4',
+  mp3: 'audio/mpeg',
+  oga: 'audio/ogg',
+  ogg: 'audio/ogg',
+  opus: 'audio/ogg',
+  wav: 'audio/wav',
+  webm: 'audio/webm',
+};
+
+function isCustomNotificationSoundExtension(extension: unknown): extension is typeof CUSTOM_NOTIFICATION_SOUND_EXTENSIONS[number] {
+  return typeof extension === 'string' && (CUSTOM_NOTIFICATION_SOUND_EXTENSIONS as readonly string[]).includes(extension);
+}
+
+function customNotificationSoundPath(extension: string): string {
+  return path.join(getAppDataDir(), 'notification-sounds', `custom.${extension}`);
+}
+
+async function customNotificationSoundDataUrl(soundPath: string, extension: typeof CUSTOM_NOTIFICATION_SOUND_EXTENSIONS[number]): Promise<string | null> {
+  const content = await fsp.readFile(soundPath);
+  if (content.byteLength > MAX_CUSTOM_NOTIFICATION_SOUND_BYTES) return null;
+  return `data:${CUSTOM_NOTIFICATION_SOUND_MIME_TYPES[extension]};base64,${content.toString('base64')}`;
+}
+
 /**
  * surfaceId → the webContents its PTY_DATA goes to, kept HERE and not only in
  * the Remote Console runtime (#254).
@@ -760,6 +788,47 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
 
   // Exposed so diagnostics (and the CLI) can report which path was read.
   ipcMain.handle('config:getUserConfigPath', async () => getConfigPath());
+
+  ipcMain.handle(IPC_CHANNELS.NOTIFICATION_SOUND_PICK, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = await dialog.showOpenDialog(win as BrowserWindow, {
+      title: 'Choose Notification Sound',
+      properties: ['openFile'],
+      filters: [{ name: 'Audio Files', extensions: [...CUSTOM_NOTIFICATION_SOUND_EXTENSIONS] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true };
+
+    const source = result.filePaths[0];
+    const extension = path.extname(source).slice(1).toLowerCase();
+    if (!isCustomNotificationSoundExtension(extension)) return { error: 'unsupported_type' };
+
+    try {
+      const stat = await fsp.stat(source);
+      if (!stat.isFile()) return { error: 'unreadable' };
+      if (stat.size > MAX_CUSTOM_NOTIFICATION_SOUND_BYTES) return { error: 'too_large' };
+
+      const destination = customNotificationSoundPath(extension);
+      await fsp.mkdir(path.dirname(destination), { recursive: true });
+      await fsp.copyFile(source, destination);
+      const dataUrl = await customNotificationSoundDataUrl(destination, extension);
+      if (!dataUrl) return { error: 'too_large' };
+      return { dataUrl, extension, name: path.basename(source) };
+    } catch {
+      return { error: 'unreadable' };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.NOTIFICATION_SOUND_GET, async (_event, extension: unknown) => {
+    if (!isCustomNotificationSoundExtension(extension)) return null;
+    const soundPath = customNotificationSoundPath(extension);
+    try {
+      const stat = await fsp.stat(soundPath);
+      if (!stat.isFile() || stat.size > MAX_CUSTOM_NOTIFICATION_SOUND_BYTES) return null;
+      return await customNotificationSoundDataUrl(soundPath, extension);
+    } catch {
+      return null;
+    }
+  });
 
   ipcMain.on(IPC_CHANNELS.NOTIFICATION_FIRE, (_event, data: { surfaceId: string; text: string; title?: string }) => {
     const window = BrowserWindow.fromWebContents(_event.sender);

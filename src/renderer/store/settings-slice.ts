@@ -647,7 +647,9 @@ export interface NotificationPrefs {
   taskbarFlash: boolean;
   paneRing: boolean;
   paneFlashAnimation: boolean;
-  sound: 'default' | 'chime' | 'ping' | 'marimba' | 'pop' | 'none';
+  sound: 'default' | 'chime' | 'ping' | 'marimba' | 'pop' | 'custom' | 'none';
+  customSoundExtension: string | null;
+  customSoundName: string | null;
   /** Notify when an in-pane agent (Claude Code) needs input/permission (issue #53). */
   agentInputNotify: boolean;
   /** Notify when an in-pane agent (Claude Code) finishes its turn / Stop hook (issue #53). */
@@ -660,6 +662,8 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   paneRing: true,
   paneFlashAnimation: true,
   sound: 'default',
+  customSoundExtension: null,
+  customSoundName: null,
   agentInputNotify: true,
   agentStopNotify: true,
 };

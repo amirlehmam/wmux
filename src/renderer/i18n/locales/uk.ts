@@ -264,6 +264,11 @@ export const uk: Translation = {
   'settings.notifications.soundSection': 'Звук',
   'settings.notifications.sound': 'Звук сповіщення',
   'settings.notifications.preview': 'Попередній перегляд',
+  'settings.notifications.customSoundFile': 'Власний звуковий файл',
+  'settings.notifications.noCustomSound': 'Файл не вибрано',
+  'settings.notifications.chooseSoundFile': 'Вибрати аудіофайл',
+  'settings.notifications.customSoundTooLarge': 'Розмір аудіофайлу не має перевищувати 10 МБ.',
+  'settings.notifications.customSoundError': 'Не вдалося використати цей аудіофайл.',
   // Налаштування — панель клавіатури
   'settings.keyboard.title': 'Сполучення клавіш',
   'settings.keyboard.resetAll': 'Скинути всі',
@@ -577,6 +582,7 @@ export const uk: Translation = {
   'notificationSound.ping': 'Пінг',
   'notificationSound.marimba': 'Маримба',
   'notificationSound.pop': 'Клац',
+  'notificationSound.custom': 'Власний файл',
   'notificationSound.none': 'Немає',
   // SplitPane — значок профілю в меню нових вкладок (пропущений текст)
   'surfaceTab.profileBadge': 'проєкт',

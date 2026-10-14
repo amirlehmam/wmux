@@ -594,6 +594,8 @@ export const IPC_CHANNELS = {
   NOTIFICATION_LIST: 'notification:list',
   NOTIFICATION_CLEAR: 'notification:clear',
   NOTIFICATION_JUMP: 'notification:jump',
+  NOTIFICATION_SOUND_PICK: 'notification:sound-pick',
+  NOTIFICATION_SOUND_GET: 'notification:sound-get',
   // Settings
   AGENT_ANSWER: 'agent:answer',
   /** Bootstrap for AGENT_STATE, which is delta-only — a new window starts blind. */
@@ -813,6 +815,11 @@ export interface UpdateTriggerResult {
   reason?: string;
   url?: string;
 }
+
+export type NotificationSoundPickResult =
+  | { canceled: true }
+  | { error: 'unsupported_type' | 'unreadable' | 'too_large' }
+  | { dataUrl: string; extension: string; name: string };
 
 // ─── Orchestration state (wmux-orchestrator plugin) ────────────────────────
 // Mirrors the shape written by the plugin into {TMPDIR}/wmux-orch-*/state.json.

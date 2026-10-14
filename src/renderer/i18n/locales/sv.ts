@@ -253,6 +253,11 @@ export const sv: Translation = {
   'settings.notifications.soundSection': 'Ljud',
   'settings.notifications.sound': 'Aviseringsljud',
   'settings.notifications.preview': 'Förhandslyssna',
+  'settings.notifications.customSoundFile': 'Egen ljudfil',
+  'settings.notifications.noCustomSound': 'Ingen fil har valts',
+  'settings.notifications.chooseSoundFile': 'Välj ljudfil',
+  'settings.notifications.customSoundTooLarge': 'Ljudfiler får vara högst 10 MB.',
+  'settings.notifications.customSoundError': 'Det gick inte att använda ljudfilen.',
   // Inställningar — tangentbordspanel
   'settings.keyboard.title': 'Kortkommandon',
   'settings.keyboard.resetAll': 'Återställ alla',
@@ -566,6 +571,7 @@ export const sv: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Egen fil',
   'notificationSound.none': 'Inget',
   // SplitPane — profilmärke i menyn för ny flik (missad sträng)
   'surfaceTab.profileBadge': 'projekt',

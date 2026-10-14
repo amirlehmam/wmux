@@ -264,6 +264,11 @@ export const tr: Translation = {
   'settings.notifications.soundSection': 'Ses',
   'settings.notifications.sound': 'Bildirim sesi',
   'settings.notifications.preview': 'Önizleme',
+  'settings.notifications.customSoundFile': 'Özel ses dosyası',
+  'settings.notifications.noCustomSound': 'Dosya seçilmedi',
+  'settings.notifications.chooseSoundFile': 'Ses dosyası seç',
+  'settings.notifications.customSoundTooLarge': 'Ses dosyaları en fazla 10 MB olmalıdır.',
+  'settings.notifications.customSoundError': 'Bu ses dosyası kullanılamadı.',
   // Ayarlar — Klavye paneli
   'settings.keyboard.title': 'Klavye Kısayolları',
   'settings.keyboard.resetAll': 'Tümünü Sıfırla',
@@ -577,6 +582,7 @@ export const tr: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Özel dosya',
   'notificationSound.none': 'Yok',
   // SplitPane — yeni sekme menüsü profil rozeti (kaçırılan metin)
   'surfaceTab.profileBadge': 'proje',

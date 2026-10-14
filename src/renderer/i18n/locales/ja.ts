@@ -264,6 +264,11 @@ export const ja: Translation = {
   'settings.notifications.soundSection': 'サウンド',
   'settings.notifications.sound': '通知音',
   'settings.notifications.preview': 'プレビュー',
+  'settings.notifications.customSoundFile': 'カスタムサウンドファイル',
+  'settings.notifications.noCustomSound': 'ファイルが選択されていません',
+  'settings.notifications.chooseSoundFile': '音声ファイルを選択',
+  'settings.notifications.customSoundTooLarge': '音声ファイルは10 MB以下にしてください。',
+  'settings.notifications.customSoundError': 'この音声ファイルを使用できませんでした。',
   // 設定 — キーボードパネル
   'settings.keyboard.title': 'キーボードショートカット',
   'settings.keyboard.resetAll': 'すべてリセット',
@@ -577,6 +582,7 @@ export const ja: Translation = {
   'notificationSound.ping': 'ピング',
   'notificationSound.marimba': 'マリンバ',
   'notificationSound.pop': 'ポップ',
+  'notificationSound.custom': 'カスタムファイル',
   'notificationSound.none': 'なし',
   // SplitPane — 新規タブメニューのプロファイルバッジ (取りこぼし)
   'surfaceTab.profileBadge': 'プロジェクト',

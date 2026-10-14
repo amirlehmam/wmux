@@ -253,6 +253,11 @@ export const pt: Translation = {
   'settings.notifications.soundSection': 'Som',
   'settings.notifications.sound': 'Som de notificação',
   'settings.notifications.preview': 'Pré-visualizar',
+  'settings.notifications.customSoundFile': 'Ficheiro de som personalizado',
+  'settings.notifications.noCustomSound': 'Nenhum ficheiro selecionado',
+  'settings.notifications.chooseSoundFile': 'Escolher ficheiro de áudio',
+  'settings.notifications.customSoundTooLarge': 'Os ficheiros de áudio devem ter, no máximo, 10 MB.',
+  'settings.notifications.customSoundError': 'Não foi possível usar esse ficheiro de áudio.',
   // Configurações — Painel Teclado
   'settings.keyboard.title': 'Atalhos de teclado',
   'settings.keyboard.resetAll': 'Redefinir tudo',
@@ -566,6 +571,7 @@ export const pt: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Ficheiro personalizado',
   'notificationSound.none': 'Nenhum',
   // SplitPane — selo de perfil no menu de nova aba (esquecido isolado)
   'surfaceTab.profileBadge': 'projeto',

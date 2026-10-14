@@ -253,6 +253,11 @@ export const it: Translation = {
   'settings.notifications.soundSection': 'Suono',
   'settings.notifications.sound': 'Suono di notifica',
   'settings.notifications.preview': 'Anteprima',
+  'settings.notifications.customSoundFile': 'File audio personalizzato',
+  'settings.notifications.noCustomSound': 'Nessun file selezionato',
+  'settings.notifications.chooseSoundFile': 'Scegli file audio',
+  'settings.notifications.customSoundTooLarge': 'I file audio devono avere una dimensione massima di 10 MB.',
+  'settings.notifications.customSoundError': 'Impossibile usare questo file audio.',
   // Impostazioni — Pannello Tastiera
   'settings.keyboard.title': 'Scorciatoie da tastiera',
   'settings.keyboard.resetAll': 'Ripristina tutto',
@@ -566,6 +571,7 @@ export const it: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'File personalizzato',
   'notificationSound.none': 'Nessuno',
   // SplitPane — badge profilo nel menu nuova scheda (buco isolato)
   'surfaceTab.profileBadge': 'progetto',

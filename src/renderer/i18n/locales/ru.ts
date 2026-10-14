@@ -264,6 +264,11 @@ export const ru: Translation = {
   'settings.notifications.soundSection': 'Звук',
   'settings.notifications.sound': 'Звук уведомления',
   'settings.notifications.preview': 'Предпросмотр',
+  'settings.notifications.customSoundFile': 'Пользовательский звуковой файл',
+  'settings.notifications.noCustomSound': 'Файл не выбран',
+  'settings.notifications.chooseSoundFile': 'Выбрать аудиофайл',
+  'settings.notifications.customSoundTooLarge': 'Размер аудиофайла не должен превышать 10 МБ.',
+  'settings.notifications.customSoundError': 'Не удалось использовать этот аудиофайл.',
   // Настройки — панель клавиатуры
   'settings.keyboard.title': 'Горячие клавиши',
   'settings.keyboard.resetAll': 'Сбросить все',
@@ -577,6 +582,7 @@ export const ru: Translation = {
   'notificationSound.ping': 'Пинг',
   'notificationSound.marimba': 'Маримба',
   'notificationSound.pop': 'Щелчок',
+  'notificationSound.custom': 'Свой файл',
   'notificationSound.none': 'Нет',
   // SplitPane — значок профиля в меню новых вкладок (пропущенный текст)
   'surfaceTab.profileBadge': 'проект',

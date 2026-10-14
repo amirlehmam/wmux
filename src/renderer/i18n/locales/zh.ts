@@ -249,6 +249,11 @@ export const zh: Translation = {
   'settings.notifications.soundSection': '声音',
   'settings.notifications.sound': '通知声音',
   'settings.notifications.preview': '预览',
+  'settings.notifications.customSoundFile': '自定义声音文件',
+  'settings.notifications.noCustomSound': '未选择文件',
+  'settings.notifications.chooseSoundFile': '选择音频文件',
+  'settings.notifications.customSoundTooLarge': '音频文件不能超过 10 MB。',
+  'settings.notifications.customSoundError': '无法使用此音频文件。',
   // 设置 — 键盘面板
   'settings.keyboard.title': '键盘快捷键',
   'settings.keyboard.resetAll': '全部重置',
@@ -560,6 +565,7 @@ export const zh: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': '马林巴',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': '自定义文件',
   'notificationSound.none': '无',
   // SplitPane — 新建标签菜单中的项目徽章（遗漏项）
   'surfaceTab.profileBadge': '项目',

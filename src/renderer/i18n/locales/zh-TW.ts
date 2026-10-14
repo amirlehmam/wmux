@@ -307,6 +307,11 @@ export const zhTW: Translation = {
   'settings.notifications.soundSection': '音效',
   'settings.notifications.sound': '通知音效',
   'settings.notifications.preview': '試聽',
+  'settings.notifications.customSoundFile': '自訂音效檔案',
+  'settings.notifications.noCustomSound': '未選擇檔案',
+  'settings.notifications.chooseSoundFile': '選擇音訊檔案',
+  'settings.notifications.customSoundTooLarge': '音訊檔案不得超過 10 MB。',
+  'settings.notifications.customSoundError': '無法使用此音訊檔案。',
   // 設定 — 鍵盤面板
   'settings.keyboard.title': '鍵盤快速鍵',
   'settings.keyboard.resetAll': '全部重設',
@@ -713,6 +718,7 @@ export const zhTW: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': '馬林巴',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': '自訂檔案',
   'notificationSound.none': '無',
   // SplitPane — 新增分頁選單的設定檔標記（先前漏掉的零星項）
   'surfaceTab.profileBadge': '專案',

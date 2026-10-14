@@ -256,6 +256,11 @@ export const fr: Translation = {
   'settings.notifications.soundSection': 'Son',
   'settings.notifications.sound': 'Son de notification',
   'settings.notifications.preview': 'Aperçu',
+  'settings.notifications.customSoundFile': 'Fichier audio personnalisé',
+  'settings.notifications.noCustomSound': 'Aucun fichier sélectionné',
+  'settings.notifications.chooseSoundFile': 'Choisir un fichier audio',
+  'settings.notifications.customSoundTooLarge': 'Les fichiers audio doivent faire 10 Mo ou moins.',
+  'settings.notifications.customSoundError': 'Impossible d’utiliser ce fichier audio.',
   // Paramètres — Panneau Clavier
   'settings.keyboard.title': 'Raccourcis clavier',
   'settings.keyboard.resetAll': 'Tout réinitialiser',
@@ -619,6 +624,7 @@ export const fr: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Fichier personnalisé',
   'notificationSound.none': 'Aucun',
   // SplitPane — badge de profil dans le menu nouvel onglet (oubli isolé)
   'surfaceTab.profileBadge': 'projet',

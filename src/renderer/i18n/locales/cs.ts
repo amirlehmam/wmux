@@ -264,6 +264,11 @@ export const cs: Translation = {
   'settings.notifications.soundSection': 'Zvuk',
   'settings.notifications.sound': 'Zvuk oznámení',
   'settings.notifications.preview': 'Přehrát ukázku',
+  'settings.notifications.customSoundFile': 'Vlastní zvukový soubor',
+  'settings.notifications.noCustomSound': 'Není vybrán žádný soubor',
+  'settings.notifications.chooseSoundFile': 'Vybrat zvukový soubor',
+  'settings.notifications.customSoundTooLarge': 'Zvukové soubory mohou mít maximálně 10 MB.',
+  'settings.notifications.customSoundError': 'Tento zvukový soubor nelze použít.',
   // Nastavení — panel Klávesnice
   'settings.keyboard.title': 'Klávesové zkratky',
   'settings.keyboard.resetAll': 'Obnovit vše',
@@ -577,6 +582,7 @@ export const cs: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Vlastní soubor',
   'notificationSound.none': 'Žádný',
   // SplitPane — odznak profilu v nabídce nové karty (dodatečný text)
   'surfaceTab.profileBadge': 'projekt',

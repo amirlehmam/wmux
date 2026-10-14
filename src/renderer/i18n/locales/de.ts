@@ -253,6 +253,11 @@ export const de: Translation = {
   'settings.notifications.soundSection': 'Ton',
   'settings.notifications.sound': 'Benachrichtigungston',
   'settings.notifications.preview': 'Vorschau',
+  'settings.notifications.customSoundFile': 'Eigene Audiodatei',
+  'settings.notifications.noCustomSound': 'Keine Datei ausgewählt',
+  'settings.notifications.chooseSoundFile': 'Audiodatei auswählen',
+  'settings.notifications.customSoundTooLarge': 'Audiodateien dürfen höchstens 10 MB groß sein.',
+  'settings.notifications.customSoundError': 'Diese Audiodatei konnte nicht verwendet werden.',
   // Einstellungen — Tastatur-Panel
   'settings.keyboard.title': 'Tastenkürzel',
   'settings.keyboard.resetAll': 'Alles zurücksetzen',
@@ -566,6 +571,7 @@ export const de: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Eigene Datei',
   'notificationSound.none': 'Kein',
   // SplitPane — Profil-Abzeichen im Neuer-Tab-Menü (isolierte Ergänzung)
   'surfaceTab.profileBadge': 'Projekt',

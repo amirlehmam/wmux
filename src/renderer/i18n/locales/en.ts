@@ -326,6 +326,11 @@ export const en = {
   'settings.notifications.soundSection': 'Sound',
   'settings.notifications.sound': 'Notification sound',
   'settings.notifications.preview': 'Preview',
+  'settings.notifications.customSoundFile': 'Custom sound file',
+  'settings.notifications.noCustomSound': 'No file selected',
+  'settings.notifications.chooseSoundFile': 'Choose audio file',
+  'settings.notifications.customSoundTooLarge': 'Audio files must be 10 MB or smaller.',
+  'settings.notifications.customSoundError': 'Could not use that audio file.',
   // Settings — Keyboard panel
   'settings.keyboard.title': 'Keyboard Shortcuts',
   'settings.keyboard.resetAll': 'Reset All',
@@ -752,6 +757,7 @@ export const en = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Custom file',
   'notificationSound.none': 'None',
   // SplitPane — new-tab menu profile badge (stray miss)
   'surfaceTab.profileBadge': 'project',

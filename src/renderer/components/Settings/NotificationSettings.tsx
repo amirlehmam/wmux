@@ -1,10 +1,33 @@
+import { useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
-import { NOTIFICATION_SOUND_LABELS, previewNotificationSound } from '../../notification-sound';
+import { NOTIFICATION_SOUND_LABELS, previewNotificationSound, setCustomNotificationSound } from '../../notification-sound';
 
 export default function NotificationSettings() {
   const t = useT();
   const { notificationPrefs, setNotificationPrefs } = useStore();
+  const [soundError, setSoundError] = useState<string | null>(null);
+
+  const chooseCustomSound = async () => {
+    setSoundError(null);
+    try {
+      const result = await window.wmux?.notification?.pickSound?.();
+      if (!result || result.canceled) return;
+      if (result.error) {
+        setSoundError(result.error);
+        return;
+      }
+      setCustomNotificationSound(result.dataUrl);
+      setNotificationPrefs({
+        sound: 'custom',
+        customSoundExtension: result.extension,
+        customSoundName: result.name,
+      });
+      previewNotificationSound('custom');
+    } catch {
+      setSoundError('unreadable');
+    }
+  };
 
   return (
     <div className="settings-section">
@@ -84,6 +107,7 @@ export default function NotificationSettings() {
             value={notificationPrefs.sound}
             onChange={(e) => {
               const sound = e.target.value as typeof notificationPrefs.sound;
+              setSoundError(null);
               setNotificationPrefs({ sound });
               previewNotificationSound(sound);
             }}
@@ -95,13 +119,36 @@ export default function NotificationSettings() {
           <button
             type="button"
             className="settings-button"
-            disabled={notificationPrefs.sound === 'none'}
+            disabled={notificationPrefs.sound === 'none' || (notificationPrefs.sound === 'custom' && !notificationPrefs.customSoundName)}
             onClick={() => previewNotificationSound(notificationPrefs.sound)}
           >
             {t('settings.notifications.preview', 'Preview')}
           </button>
         </div>
       </div>
+
+      <div className="settings-row">
+        <label className="settings-label">{t('settings.notifications.customSoundFile', 'Custom sound file')}</label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span
+            className="settings-hint"
+            title={notificationPrefs.customSoundName ?? undefined}
+            style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {notificationPrefs.customSoundName || t('settings.notifications.noCustomSound', 'No file selected')}
+          </span>
+          <button type="button" className="settings-button" onClick={() => void chooseCustomSound()}>
+            {t('settings.notifications.chooseSoundFile', 'Choose audio file')}
+          </button>
+        </div>
+      </div>
+      {soundError && (
+        <p className="settings-hint" role="alert">
+          {soundError === 'too_large'
+            ? t('settings.notifications.customSoundTooLarge', 'Audio files must be 10 MB or smaller.')
+            : t('settings.notifications.customSoundError', 'Could not use that audio file.')}
+        </p>
+      )}
     </div>
   );
 }

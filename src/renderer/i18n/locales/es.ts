@@ -254,6 +254,11 @@ export const es: Translation = {
   'settings.notifications.soundSection': 'Sonido',
   'settings.notifications.sound': 'Sonido de notificación',
   'settings.notifications.preview': 'Vista previa',
+  'settings.notifications.customSoundFile': 'Archivo de sonido personalizado',
+  'settings.notifications.noCustomSound': 'No se ha seleccionado ningún archivo',
+  'settings.notifications.chooseSoundFile': 'Elegir archivo de audio',
+  'settings.notifications.customSoundTooLarge': 'Los archivos de audio deben tener un máximo de 10 MB.',
+  'settings.notifications.customSoundError': 'No se pudo usar ese archivo de audio.',
   // Ajustes — Panel Teclado
   'settings.keyboard.title': 'Atajos de teclado',
   'settings.keyboard.resetAll': 'Restablecer todo',
@@ -567,6 +572,7 @@ export const es: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pop',
+  'notificationSound.custom': 'Archivo personalizado',
   'notificationSound.none': 'Ninguno',
   // SplitPane — insignia de perfil en el menú de nueva pestaña (hueco aislado)
   'surfaceTab.profileBadge': 'proyecto',

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import * as os from 'os';
-import { IPC_CHANNELS, type InsertionResult, type UpdateTriggerResult } from '../shared/types';
+import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, type UpdateTriggerResult } from '../shared/types';
 import type {
   RemoteConsoleBridge,
   RemoteConsoleStatus,
@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld('wmux', {
   notification: {
     fire: (data: { surfaceId: string; text: string; title?: string }) =>
       ipcRenderer.send(IPC_CHANNELS.NOTIFICATION_FIRE, data),
+    pickSound: () => ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_SOUND_PICK) as Promise<NotificationSoundPickResult>,
+    getCustomSoundDataUrl: (extension: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_SOUND_GET, extension) as Promise<string | null>,
     onFocusSurface: (callback: (surfaceId: string) => void) => {
       const handler = (_event: any, surfaceId: string) => callback(surfaceId);
       ipcRenderer.on('notification:focus-surface', handler);

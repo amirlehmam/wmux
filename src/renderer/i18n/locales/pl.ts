@@ -264,6 +264,11 @@ export const pl: Translation = {
   'settings.notifications.soundSection': 'Dźwięk',
   'settings.notifications.sound': 'Dźwięk powiadomienia',
   'settings.notifications.preview': 'Podgląd',
+  'settings.notifications.customSoundFile': 'Niestandardowy plik dźwiękowy',
+  'settings.notifications.noCustomSound': 'Nie wybrano pliku',
+  'settings.notifications.chooseSoundFile': 'Wybierz plik audio',
+  'settings.notifications.customSoundTooLarge': 'Pliki audio nie mogą przekraczać 10 MB.',
+  'settings.notifications.customSoundError': 'Nie można użyć tego pliku audio.',
   // Ustawienia — panel klawiatury
   'settings.keyboard.title': 'Skróty klawiszowe',
   'settings.keyboard.resetAll': 'Resetuj wszystkie',
@@ -577,6 +582,7 @@ export const pl: Translation = {
   'notificationSound.ping': 'Ping',
   'notificationSound.marimba': 'Marimba',
   'notificationSound.pop': 'Pstryk',
+  'notificationSound.custom': 'Własny plik',
   'notificationSound.none': 'Brak',
   // SplitPane — plakietka profilu w menu nowych kart (pominięty tekst)
   'surfaceTab.profileBadge': 'projekt',

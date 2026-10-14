@@ -264,6 +264,11 @@ export const hi: Translation = {
   'settings.notifications.soundSection': 'ध्वनि',
   'settings.notifications.sound': 'सूचना ध्वनि',
   'settings.notifications.preview': 'पूर्वावलोकन',
+  'settings.notifications.customSoundFile': 'कस्टम ध्वनि फ़ाइल',
+  'settings.notifications.noCustomSound': 'कोई फ़ाइल चयनित नहीं है',
+  'settings.notifications.chooseSoundFile': 'ऑडियो फ़ाइल चुनें',
+  'settings.notifications.customSoundTooLarge': 'ऑडियो फ़ाइल 10 MB या उससे छोटी होनी चाहिए।',
+  'settings.notifications.customSoundError': 'यह ऑडियो फ़ाइल उपयोग नहीं की जा सकी।',
   // सेटिंग्स — कीबोर्ड पैनल
   'settings.keyboard.title': 'कीबोर्ड शॉर्टकट',
   'settings.keyboard.resetAll': 'सभी रीसेट करें',
@@ -577,6 +582,7 @@ export const hi: Translation = {
   'notificationSound.ping': 'पिंग',
   'notificationSound.marimba': 'मारिम्बा',
   'notificationSound.pop': 'पॉप',
+  'notificationSound.custom': 'कस्टम फ़ाइल',
   'notificationSound.none': 'कोई नहीं',
   // SplitPane — नए-टैब मेन्यू प्रोफ़ाइल बैज (छूटा हुआ)
   'surfaceTab.profileBadge': 'प्रोजेक्ट',

@@ -270,6 +270,11 @@ export const ko: Translation = {
   'settings.notifications.soundSection': '소리',
   'settings.notifications.sound': '알림음',
   'settings.notifications.preview': '미리 듣기',
+  'settings.notifications.customSoundFile': '사용자 지정 사운드 파일',
+  'settings.notifications.noCustomSound': '선택된 파일 없음',
+  'settings.notifications.chooseSoundFile': '오디오 파일 선택',
+  'settings.notifications.customSoundTooLarge': '오디오 파일은 10MB 이하여야 합니다.',
+  'settings.notifications.customSoundError': '이 오디오 파일을 사용할 수 없습니다.',
   // 설정 — 키보드 패널
   'settings.keyboard.title': '키보드 단축키',
   'settings.keyboard.resetAll': '모두 초기화',
@@ -586,6 +591,7 @@ export const ko: Translation = {
   'notificationSound.ping': '핑',
   'notificationSound.marimba': '마림바',
   'notificationSound.pop': '팝',
+  'notificationSound.custom': '사용자 지정 파일',
   'notificationSound.none': '없음',
   // SplitPane — 새 탭 메뉴의 프로필 배지
   'surfaceTab.profileBadge': '프로젝트',
