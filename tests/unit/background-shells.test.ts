@@ -195,7 +195,6 @@ describe('status text with background shells (#276)', () => {
   const t = (_k: string, fallback?: string) => fallback ?? _k;
   const base: StatusTextInputs = {
     runningAgentCount: 0,
-    agentTotal: 0,
     sessionCount: 1,
     workingSessions: 0,
     blockedSessions: 0,

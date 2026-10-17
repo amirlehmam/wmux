@@ -22,7 +22,6 @@ export interface StatusTextInputs {
    */
   agentCounts?: AgentCounts;
   runningAgentCount: number;
-  agentTotal: number;
   /**
    * Shells left running in the background by this workspace's agents (#276).
    * Ranked just above "Idle" in every chain and below anything that says the
@@ -132,10 +131,10 @@ export function claudeStatusText(s: StatusTextInputs, t: T): string | null {
 
   // Priority 0.5: agents are running — show the orchestration summary
   if (s.runningAgentCount > 0) {
-    return (s.agentTotal > 1
+    return (s.runningAgentCount > 1
       ? t('workspaceRow.orchestratingMany', 'Orchestrating · {count} agents')
       : t('workspaceRow.orchestratingOne', 'Orchestrating · {count} agent')
-    ).replace('{count}', String(s.agentTotal));
+    ).replace('{count}', String(s.runningAgentCount));
   }
 
   // Priority 0.75: several Claude sessions in this workspace — summarize;

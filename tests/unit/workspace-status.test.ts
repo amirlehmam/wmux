@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import { mergedAgentSignals, resolveStatusText, stateDotClassFor, statusClassFor, StatusTextInputs } from '../../src/renderer/components/Sidebar/workspace-status';
+import { agentsForWorkspace } from '../../src/renderer/store/agent-view';
+import type { SplitNode } from '../../src/shared/types';
 
 /** The component passes the real translator; the fallback text is what we assert on. */
 const t = ((_key: string, fallback?: string) => fallback ?? _key) as never;
@@ -8,7 +10,6 @@ const t = ((_key: string, fallback?: string) => fallback ?? _key) as never;
 function inputs(over: Partial<StatusTextInputs> = {}): StatusTextInputs {
   return {
     runningAgentCount: 0,
-    agentTotal: 0,
     sessionCount: 0,
     workingSessions: 0,
     blockedSessions: 0,
@@ -53,6 +54,34 @@ describe('resolveStatusText — declared work outranks the shell', () => {
   });
 });
 
+describe('resolveStatusText — active subagents exclude completed history', () => {
+  it('updates the title as five agents finish, retaining their completion records', () => {
+    const now = 1_000_000;
+    const tree = {
+      type: 'leaf', paneId: 'pane-roster',
+      surfaces: [{ id: 'surf-roster', type: 'terminal' }], activeSurfaceIndex: 0,
+    } as SplitNode;
+    const agents = Array.from({ length: 5 }, (_, i) => ({
+      id: `child-${i}`, name: `child-${i}`, toolUses: 0, tokens: '',
+      done: false, touchedAt: now,
+    }));
+    const activity = { 'surf-roster': { agents, lastUpdate: now } };
+    for (const [finished, expected] of [
+      [0, 'Orchestrating · 5 agents'],
+      [2, 'Orchestrating · 3 agents'],
+      [4, 'Orchestrating · 1 agent'],
+      [5, 'Idle'],
+    ] as const) {
+      agents.forEach((agent, i) => { agent.done = i < finished; });
+      const view = agentsForWorkspace(tree, activity, new Map(), now);
+      expect(resolveStatusText(inputs({
+        runningAgentCount: view.running, claudeIsIdle: true,
+      }), t)).toBe(expected);
+    }
+    expect(agentsForWorkspace(tree, activity, new Map(), now).total).toBe(5);
+  });
+});
+
 describe('resolveStatusText — established precedence is unchanged', () => {
   it('a manual override beats everything', () => {
     expect(resolveStatusText(inputs({ statusOverride: 'idle', sessionCount: 1, workingSessions: 1 }), t)).toBe('Idle');
@@ -66,7 +95,7 @@ describe('resolveStatusText — established precedence is unchanged', () => {
   });
 
   it('orchestration summary outranks the session summary', () => {
-    const s = inputs({ runningAgentCount: 2, agentTotal: 3, sessionCount: 1, workingSessions: 1 });
+    const s = inputs({ runningAgentCount: 3, sessionCount: 1, workingSessions: 1 });
     expect(resolveStatusText(s, t)).toBe('Orchestrating · 3 agents');
   });
 

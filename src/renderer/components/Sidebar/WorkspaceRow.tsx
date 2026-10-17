@@ -357,7 +357,6 @@ export default function WorkspaceRow({
     statusOverride: workspace.statusOverride,
     agentCounts,
     runningAgentCount,
-    agentTotal: wsAgents.total,
     backgroundShellCount: wsAgents.shells,
     sessionCount: sessions.length,
     workingSessions,
