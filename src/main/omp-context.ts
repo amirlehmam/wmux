@@ -44,13 +44,44 @@ import { stripWmuxBlock, stripLegacyBlocks } from './claude-context';
 import { isWmuxPluginFile, pluginNeedsUpdate } from './agent-plugin-file';
 
 /**
- * ~/.omp/agent/AGENTS.md — omp's user-scope native context file.
+ * The omp agent directory — `~/.omp/agent` unless the env overrides omp itself
+ * honours are set in wmux's own environment:
+ *
+ * - `PI_CODING_AGENT_DIR` replaces the whole agent directory (default profile
+ *   only; a `~` prefix expands to home, otherwise the value is resolved).
+ * - `PI_CONFIG_DIR` replaces the user config root, so the agent directory
+ *   becomes `~/<PI_CONFIG_DIR>/agent`.
+ *
+ * `PI_CODING_AGENT_DIR` wins when both are set: it is the narrower override and
+ * omp applies it to `getAgentDir()` itself, whereas `PI_CONFIG_DIR` only moves
+ * the root the default is derived from. Values set per-shell after wmux
+ * launched are unknowable from here and fall back to the default — a miss,
+ * never a write to the wrong place.
+ */
+export function getOmpAgentDir(): string {
+  const agentOverride = process.env.PI_CODING_AGENT_DIR?.trim();
+  if (agentOverride) {
+    if (agentOverride === '~') return os.homedir();
+    if (agentOverride.startsWith('~/') || agentOverride.startsWith('~\\')) {
+      return path.join(os.homedir(), agentOverride.slice(2));
+    }
+    return path.resolve(agentOverride);
+  }
+  const configOverride = process.env.PI_CONFIG_DIR?.trim();
+  if (configOverride) {
+    return path.join(os.homedir(), configOverride, 'agent');
+  }
+  return path.join(os.homedir(), '.omp', 'agent');
+}
+
+/**
+ * `<agentDir>/AGENTS.md` — omp's user-scope native context file.
  *
  * Note the `agent` segment: `~/.omp/` is also the project-local directory name,
  * and only the user-level one is nested under `agent/`.
  */
-export function getOmpAgentsMdPath(): string {
-  return path.join(os.homedir(), '.omp', 'agent', 'AGENTS.md');
+export function getOmpAgentsMdPath(agentDir = getOmpAgentDir()): string {
+  return path.join(agentDir, 'AGENTS.md');
 }
 
 /** Ensures ~/.omp/agent/AGENTS.md contains the wmux block. */
@@ -67,7 +98,7 @@ export function ensureOmpContext(): void {
     // Don't churn the mtime when nothing changed — omp watches these files.
     if (next === existing) return;
     fs.writeFileSync(agentsPath, next, 'utf-8');
-    console.log('[wmux] Updated wmux context in ~/.omp/agent/AGENTS.md');
+    console.log('[wmux] Updated wmux context in', agentsPath);
   } catch (err) {
     console.warn('[wmux] Failed to update omp context:', err);
   }
@@ -93,10 +124,15 @@ export function removeOmpContext(): void {
     if (next === null || next === existing) return;
     if (next.trim() === '') fs.unlinkSync(agentsPath);
     else fs.writeFileSync(agentsPath, next, 'utf-8');
-    console.log('[wmux] Removed wmux context from ~/.omp/agent/AGENTS.md');
+    console.log('[wmux] Removed wmux context from', agentsPath);
   } catch (err) {
     console.warn('[wmux] Failed to remove omp context:', err);
   }
+}
+
+/** Where the extension lands: `<agentDir>/extensions/wmux.js`. */
+function getOmpExtensionPath(): string {
+  return path.join(getOmpAgentDir(), 'extensions', 'wmux.js');
 }
 
 /** Installs the status bridge without modifying a user's own wmux.js. */
@@ -108,7 +144,7 @@ export function ensureOmpExtension(): void {
       if (app.isPackaged) source = path.join(process.resourcesPath, 'omp-extension', 'wmux.js');
     } catch { /* Node unit tests use the development resource. */ }
     const src = fs.readFileSync(source, 'utf-8');
-    const dest = path.join(os.homedir(), '.omp', 'agent', 'extensions', 'wmux.js');
+    const dest = getOmpExtensionPath();
     const target = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf-8') : null;
     if (target !== null && !isWmuxPluginFile(target)) {
       console.warn('[wmux] Refusing to overwrite the user-owned omp extension:', dest);
@@ -125,7 +161,7 @@ export function ensureOmpExtension(): void {
 /** The inverse of ensureOmpExtension, restricted to wmux-owned files. */
 export function removeOmpExtension(): void {
   try {
-    const dest = path.join(os.homedir(), '.omp', 'agent', 'extensions', 'wmux.js');
+    const dest = getOmpExtensionPath();
     if (!fs.existsSync(dest) || !isWmuxPluginFile(fs.readFileSync(dest, 'utf-8'))) return;
     fs.unlinkSync(dest);
   } catch (err) {

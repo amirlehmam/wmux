@@ -38,7 +38,8 @@ export default function wmuxExtension(omp) {
   // injected runtime, never omp.exe (which cannot execute a CLI JavaScript file).
   function send(args) {
     queue = queue.then(() => {
-      const { promise, resolve } = Promise.withResolvers();
+      let resolve;
+      const promise = new Promise(r => { resolve = r; });
       try {
         execFile(runtime, [cli, ...args, '--surface', surface], {
           windowsHide: true,

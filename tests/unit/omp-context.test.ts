@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import {
   ensureOmpContext,
   removeOmpContext,
+  getOmpAgentDir,
   getOmpAgentsMdPath,
   ensureOmpExtension,
   removeOmpExtension,
@@ -25,7 +26,7 @@ const { AGENTS } = require_('../../resources/wmux-orchestrator/scripts/launch-ag
  */
 describe('#165 omp context', () => {
   let tmp: string;
-  let saved: { USERPROFILE?: string; HOME?: string };
+  let saved: { USERPROFILE?: string; HOME?: string; PI_CODING_AGENT_DIR?: string; PI_CONFIG_DIR?: string };
 
   // Same approach as the Kiro suite: os.homedir() reads USERPROFILE on Windows
   // and HOME elsewhere, so redirecting the env gives a real temp HOME with no
@@ -34,14 +35,21 @@ describe('#165 omp context', () => {
   // on disk.
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-omp-'));
-    saved = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+    saved = {
+      USERPROFILE: process.env.USERPROFILE,
+      HOME: process.env.HOME,
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
+      PI_CONFIG_DIR: process.env.PI_CONFIG_DIR,
+    };
     process.env.USERPROFILE = tmp;
     process.env.HOME = tmp;
+    delete process.env.PI_CODING_AGENT_DIR;
+    delete process.env.PI_CONFIG_DIR;
     expect(os.homedir()).toBe(tmp); // fail loudly if Node stops honouring this
   });
 
   afterEach(() => {
-    for (const key of ['USERPROFILE', 'HOME'] as const) {
+    for (const key of ['USERPROFILE', 'HOME', 'PI_CODING_AGENT_DIR', 'PI_CONFIG_DIR'] as const) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
     }
@@ -148,6 +156,60 @@ describe('#165 omp context', () => {
 
   it('does not overwrite or delete a user-owned extension', () => {
     const extension = path.join(tmp, '.omp', 'agent', 'extensions', 'wmux.js');
+    fs.mkdirSync(path.dirname(extension), { recursive: true });
+    fs.writeFileSync(extension, 'export default function mine() {}');
+    ensureOmpExtension();
+    removeOmpExtension();
+    expect(fs.readFileSync(extension, 'utf-8')).toBe('export default function mine() {}');
+  });
+
+  it('honours PI_CODING_AGENT_DIR for both the context file and the extension', () => {
+    const agentDir = path.join(tmp, 'elsewhere');
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    expect(getOmpAgentDir()).toBe(agentDir);
+    expect(getOmpAgentsMdPath()).toBe(path.join(agentDir, 'AGENTS.md'));
+
+    ensureOmpContext();
+    ensureOmpExtension();
+    expect(fs.readFileSync(path.join(agentDir, 'AGENTS.md'), 'utf-8')).toContain('wmux browser open');
+    const extension = path.join(agentDir, 'extensions', 'wmux.js');
+    expect(fs.readFileSync(extension, 'utf-8')).toContain('wmux-plugin-version:');
+    // Nothing is written into the default root while the override is set.
+    expect(fs.existsSync(path.join(tmp, '.omp'))).toBe(false);
+
+    removeOmpContext();
+    removeOmpExtension();
+    expect(fs.existsSync(path.join(agentDir, 'AGENTS.md'))).toBe(false);
+    expect(fs.existsSync(extension)).toBe(false);
+  });
+
+  it('expands a leading ~ in PI_CODING_AGENT_DIR the way omp does', () => {
+    process.env.PI_CODING_AGENT_DIR = '~/custom-omp';
+    expect(getOmpAgentDir()).toBe(path.join(tmp, 'custom-omp'));
+  });
+
+  it('nests the agent dir under PI_CONFIG_DIR, and PI_CODING_AGENT_DIR still wins', () => {
+    process.env.PI_CONFIG_DIR = '.omp-dev';
+    expect(getOmpAgentDir()).toBe(path.join(tmp, '.omp-dev', 'agent'));
+
+    process.env.PI_CODING_AGENT_DIR = path.join(tmp, 'elsewhere');
+    expect(getOmpAgentDir()).toBe(path.join(tmp, 'elsewhere'));
+  });
+
+  it('installs and removes the extension under PI_CONFIG_DIR without touching the default root', () => {
+    process.env.PI_CONFIG_DIR = '.omp-dev';
+    const agentDir = path.join(tmp, '.omp-dev', 'agent');
+    ensureOmpExtension();
+    const extension = path.join(agentDir, 'extensions', 'wmux.js');
+    expect(fs.readFileSync(extension, 'utf-8')).toContain('wmux-plugin-version:');
+    expect(fs.existsSync(path.join(tmp, '.omp', 'agent', 'extensions', 'wmux.js'))).toBe(false);
+    removeOmpExtension();
+    expect(fs.existsSync(extension)).toBe(false);
+  });
+
+  it('protects a user-owned extension under a custom agent dir too', () => {
+    process.env.PI_CODING_AGENT_DIR = path.join(tmp, 'elsewhere');
+    const extension = path.join(tmp, 'elsewhere', 'extensions', 'wmux.js');
     fs.mkdirSync(path.dirname(extension), { recursive: true });
     fs.writeFileSync(extension, 'export default function mine() {}');
     ensureOmpExtension();

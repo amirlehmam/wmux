@@ -48,9 +48,7 @@ async function start(kind = 'main', id = kind, parentId = 'main') {
   factory({ on: (name: string, handler: (event: Record<string, unknown>, context: unknown) => unknown) => handlers.set(name, handler) });
   const fire = async (name: string, event = {}) => {
     await handlers.get(name)?.(event, context);
-    const { promise, resolve } = Promise.withResolvers<void>();
-    setImmediate(resolve);
-    await promise;
+    await new Promise((r) => setImmediate(r));
   };
   await fire('session_start');
   shutdowns.push(() => fire('session_shutdown'));
@@ -89,9 +87,7 @@ describe('omp declared state', () => {
     expect(getAgentState(surface)?.state).toBe('working');
     context.getAsyncJobSnapshot = () => ({ running: [], recent: [], delivery: {} });
     await tick();
-    const { promise, resolve } = Promise.withResolvers<void>();
-    setImmediate(resolve);
-    await promise;
+    await new Promise((r) => setImmediate(r));
     expect(getAgentState(surface)?.state).toBe('idle');
   });
 
@@ -151,6 +147,23 @@ describe('omp declared state', () => {
       .toEqual(['ResearchAudit']);
     await second.fire('session_shutdown');
     expect(getActivity(surface)?.agents.filter(a => !a.done)).toEqual([]);
+  });
+
+  it('reusing a finished child id revives it, and it can finish again', async () => {
+    await start();
+    const first = await start('sub', 'Scout');
+    first.context.isIdle = () => false;
+    await first.fire('agent_start');
+    first.context.isIdle = () => true;
+    await first.fire('agent_end');
+    expect(getActivity(surface)!.agents.find(a => a.id === 'Scout')!.done).toBe(true);
+    const revived = await start('sub', 'Scout');
+    revived.context.isIdle = () => false;
+    await revived.fire('agent_start');
+    expect(getActivity(surface)!.agents.find(a => a.id === 'Scout')!.done).toBe(false);
+    revived.context.isIdle = () => true;
+    await revived.fire('agent_end');
+    expect(getActivity(surface)!.agents.find(a => a.id === 'Scout')!.done).toBe(true);
   });
 
   it('keeps a human prompt blocked even while activity is running', async () => {

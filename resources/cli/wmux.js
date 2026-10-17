@@ -1808,7 +1808,9 @@ async function cmdReportMetadata(args) {
  * A subagent of the calling pane — a background task, a worker, a planner —
  * as a line under that pane's sidebar row (#272). Call it again with the same
  * id to update the line (every call is a heartbeat), and with --done to finish
- * it. Display only: it never changes the pane's declared blocked/working state.
+ * it; a call without --done revives a finished id, so done is sent as an
+ * explicit boolean, never omitted. Display only: it never changes the pane's
+ * declared blocked/working state.
  */
 async function cmdReportSubagent(args) {
     const surfaceId = reportingSurface(args, 'report-subagent');
@@ -1824,8 +1826,7 @@ async function cmdReportSubagent(args) {
     const detail = getFlag(args, '--detail');
     if (detail !== undefined)
         params.detail = detail;
-    if (args.includes('--done'))
-        params.done = true;
+    params.done = args.includes('--done');
     print(await sendV2('agent.subagent', params));
 }
 // Keys stay inferred (no Record<string, …> annotation) so spreading this into
