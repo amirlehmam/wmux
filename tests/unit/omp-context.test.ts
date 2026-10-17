@@ -7,6 +7,8 @@ import {
   ensureOmpContext,
   removeOmpContext,
   getOmpAgentsMdPath,
+  ensureOmpExtension,
+  removeOmpExtension,
 } from '../../src/main/omp-context';
 import { CLI_BIN_PLACEHOLDER, injectWmuxBlock } from '../../src/main/agent-instructions';
 
@@ -133,6 +135,26 @@ describe('#165 omp context', () => {
     expect(injectWmuxBlock('', 'BLOCK', s => s)).toBe('BLOCK');
     expect(injectWmuxBlock('user text\n', 'BLOCK', s => s)).toBe('user text\n\nBLOCK');
   });
+  it('installs and removes only its own status extension', () => {
+    const extension = path.join(tmp, '.omp', 'agent', 'extensions', 'wmux.js');
+    ensureOmpExtension();
+    expect(fs.readFileSync(extension, 'utf-8')).toContain('wmux-plugin-version:');
+    const mtime = fs.statSync(extension).mtimeMs;
+    ensureOmpExtension();
+    expect(fs.statSync(extension).mtimeMs).toBe(mtime);
+    removeOmpExtension();
+    expect(fs.existsSync(extension)).toBe(false);
+  });
+
+  it('does not overwrite or delete a user-owned extension', () => {
+    const extension = path.join(tmp, '.omp', 'agent', 'extensions', 'wmux.js');
+    fs.mkdirSync(path.dirname(extension), { recursive: true });
+    fs.writeFileSync(extension, 'export default function mine() {}');
+    ensureOmpExtension();
+    removeOmpExtension();
+    expect(fs.readFileSync(extension, 'utf-8')).toBe('export default function mine() {}');
+  });
+
 });
 
 describe('#165 orchestrator can launch omp workers', () => {

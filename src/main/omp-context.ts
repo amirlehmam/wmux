@@ -30,34 +30,18 @@
  * spliced between markers exactly as it is for Claude Code and OpenCode, and
  * everything outside the markers is left alone.
  *
- * ── What is deliberately NOT installed ───────────────────────────────────────
- *
- * No hooks. omp has a genuinely good hook surface — `session_start`,
- * `turn_start`/`turn_end`, `agent_start`/`agent_end` and pre/post tool events
- * map onto wmux's declared-state protocol almost one for one — but it discovers
- * them from `.omp/hooks/` *inside a project*, walking up from cwd. There is no
- * global hook directory, so wiring the sidebar that way would mean writing into
- * every repository the user opens. That is precisely the complaint in #132, and
- * the Kiro decision applies unchanged: a status indicator is not worth it.
- *
- * omp reports state the same way any agent can without a plugin — the
- * instructions block documents `wmux report-agent`, and the declared-state
- * protocol (#128) takes it from there. An omp extension that does this
- * automatically is the right shape for a follow-up, since extensions CAN be
- * configured globally; it is a separate piece of work from teaching omp that
- * wmux exists.
- *
- * That follow-up landed for pi rather than for omp — see pi-context.ts and
- * resources/pi-extension/wmux.js (#231). pi auto-discovers extensions from
- * `~/.pi/agent/extensions/` globally, which is exactly the property this
- * paragraph is asking for; omp still lacks a global equivalent, so it still
- * gets no hooks.
+ * Status is reported by resources/omp-extension/wmux.js, installed under the
+ * separate "Status hooks" consent toggle. Omp discovers global extensions in
+ * ~/.omp/agent/extensions. Main-session snapshots keep async child jobs busy
+ * after the foreground turn ends; rebound child factories do not report.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import type * as Electron from 'electron';
 import { injectWmuxBlock, readRenderedInstructions } from './agent-instructions';
 import { stripWmuxBlock, stripLegacyBlocks } from './claude-context';
+import { isWmuxPluginFile, pluginNeedsUpdate } from './agent-plugin-file';
 
 /**
  * ~/.omp/agent/AGENTS.md — omp's user-scope native context file.
@@ -112,5 +96,39 @@ export function removeOmpContext(): void {
     console.log('[wmux] Removed wmux context from ~/.omp/agent/AGENTS.md');
   } catch (err) {
     console.warn('[wmux] Failed to remove omp context:', err);
+  }
+}
+
+/** Installs the status bridge without modifying a user's own wmux.js. */
+export function ensureOmpExtension(): void {
+  try {
+    let source = path.join(__dirname, '../../resources/omp-extension/wmux.js');
+    try {
+      const { app } = require('electron') as typeof Electron;
+      if (app.isPackaged) source = path.join(process.resourcesPath, 'omp-extension', 'wmux.js');
+    } catch { /* Node unit tests use the development resource. */ }
+    const src = fs.readFileSync(source, 'utf-8');
+    const dest = path.join(os.homedir(), '.omp', 'agent', 'extensions', 'wmux.js');
+    const target = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf-8') : null;
+    if (target !== null && !isWmuxPluginFile(target)) {
+      console.warn('[wmux] Refusing to overwrite the user-owned omp extension:', dest);
+      return;
+    }
+    if (!pluginNeedsUpdate(src, target)) return;
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, src, 'utf-8');
+  } catch (err) {
+    console.warn('[wmux] Failed to install the omp extension:', err);
+  }
+}
+
+/** The inverse of ensureOmpExtension, restricted to wmux-owned files. */
+export function removeOmpExtension(): void {
+  try {
+    const dest = path.join(os.homedir(), '.omp', 'agent', 'extensions', 'wmux.js');
+    if (!fs.existsSync(dest) || !isWmuxPluginFile(fs.readFileSync(dest, 'utf-8'))) return;
+    fs.unlinkSync(dest);
+  } catch (err) {
+    console.warn('[wmux] Failed to remove the omp extension:', err);
   }
 }

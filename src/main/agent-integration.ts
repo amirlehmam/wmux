@@ -45,7 +45,7 @@ import {
   removeOpencodePlugin,
 } from './opencode-context';
 import { ensureKiroContext, removeKiroContext } from './kiro-context';
-import { ensureOmpContext, removeOmpContext } from './omp-context';
+import { ensureOmpContext, removeOmpContext, ensureOmpExtension, removeOmpExtension } from './omp-context';
 import {
   ensureGrokContext,
   ensureGrokHooks,
@@ -111,6 +111,8 @@ export const INTEGRATION_CONSENT_DETAIL =
   '      SessionStart, UserPromptSubmit, PreToolUse and SessionEnd\n' +
   '  • ~/.pi/agent/extensions/wmux.js\n' +
   '      a pi extension that reports this pane\'s status to the sidebar\n' +
+  '  • ~/.omp/agent/extensions/wmux.js\n' +
+  '      an omp extension that reports foreground and background job state\n' +
   '  • ~/.config/opencode/plugin/wmux.js\n' +
   '      the wmux orchestrator plugin for OpenCode\n' +
   '  • ~/.claude/settings.json\n' +
@@ -176,8 +178,8 @@ function applyFeature(feature: IntegrationFeature, enabled: boolean): void {
       // pre-existing mismatch deliberately left alone — moving it would
       // silently re-enable a status bridge for every user who switched that
       // toggle off, which is the #132 complaint in reverse.
-      if (enabled) { ensureClaudeHooks(); ensurePiExtension(); ensureGrokHooks(); }
-      else { removeClaudeHooks(); removePiExtension(); removeGrokHooks(); }
+      if (enabled) { ensureClaudeHooks(); ensurePiExtension(); ensureOmpExtension(); ensureGrokHooks(); }
+      else { removeClaudeHooks(); removePiExtension(); removeOmpExtension(); removeGrokHooks(); }
       break;
     case 'orchestrator':
       // The Claude Code half of this feature is DEPRECATED (issue #239) and has
