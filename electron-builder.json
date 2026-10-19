@@ -62,6 +62,7 @@
     { "from": "src/codex-bin-ps", "to": "codex-bin-ps" },
     { "from": "resources/wmux-orchestrator", "to": "wmux-orchestrator" },
     { "from": "resources/opencode-plugin", "to": "opencode-plugin" },
+    { "from": "resources/agy-plugin", "to": "agy-plugin" },
     { "from": "resources/pi-extension", "to": "pi-extension" },
     { "from": "resources/omp-extension", "to": "omp-extension" }
   ]

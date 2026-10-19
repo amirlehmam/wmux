@@ -270,6 +270,7 @@ export default function PaneWrapper({
               claudeSessionId={surface.claudeSessionId}
               codexSessionId={surface.codexSessionId}
               opencodeSessionId={surface.opencodeSessionId}
+              agySessionId={surface.agySessionId}
               focused={isFocused && isActive}
               visible={isVisible}
               showFindBar={findBarVisible && isFocused && isActive}

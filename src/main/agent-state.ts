@@ -32,6 +32,7 @@ import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 import { isValidClaudeSessionId } from './claude-resume';
 import { isValidCodexSessionId } from './codex-resume';
 import { isValidOpencodeSessionId } from './opencode-resume';
+import { isValidAgyConversationId } from './agy-resume';
 import { resolveWireChoiceId } from '../shared/remote-console-protocol';
 
 export type AgentRunState = 'blocked' | 'working' | 'idle' | 'unknown';
@@ -442,14 +443,15 @@ export function reportAgent(surfaceId: SurfaceId, params: ReportAgentParams): Ag
 }
 
 /** Who a session handle belongs to — it decides the validator and the restore command. */
-export type AgentSessionProvider = 'claude' | 'codex' | 'opencode';
+export type AgentSessionProvider = 'claude' | 'codex' | 'opencode' | 'agy';
 const SESSION_VALIDATORS: Record<AgentSessionProvider, (id: unknown) => id is string> = {
   claude: isValidClaudeSessionId,
   codex: isValidCodexSessionId,
   opencode: isValidOpencodeSessionId,
+  agy: isValidAgyConversationId,
 };
 function isSessionProvider(value: unknown): value is AgentSessionProvider {
-  return value === 'claude' || value === 'codex' || value === 'opencode';
+  return value === 'claude' || value === 'codex' || value === 'opencode' || value === 'agy';
 }
 
 /** `pane.report_agent_session` — tie the pane to a resumable session handle. */
@@ -746,6 +748,33 @@ export function releaseAgent(surfaceId: SurfaceId, params: { seq?: number } = {}
   if (!record) return false;
   if (!acceptSeq(record, params.seq)) return false;
   forget(surfaceId);
+  return true;
+}
+
+/**
+ * The pane's shell is back at its prompt: an agy that was running there has
+ * exited, and with it the conversation the user chose to leave.
+ *
+ * agy has no session-end hook, so this is how wmux learns of the exit — the
+ * same signal that ends the pane's agent identity. Only an agy handle is
+ * released: any other provider's is that agent's own business, and arrives
+ * with its own release. `ranAgy` covers the agy that exited before it ever
+ * reported (a resumed conversation reports at its first message): there is no
+ * record to drop then, but the id restored into the tab must still not be
+ * reopened next time. It is known only where the shell reports the commands
+ * it runs (bash, WSL); the PowerShell integration reports ssh alone, so there
+ * such an agy keeps its id — the safe direction, a conversation reopened.
+ *
+ * The caller refuses this while wmux quits, as for every other release.
+ */
+export function releaseAgyAtPrompt(surfaceId: SurfaceId, ranAgy: boolean): boolean {
+  const record = records.get(surfaceId);
+  if (record?.sessionId && record.sessionProvider !== 'agy') return false;
+  if (!record?.sessionId && !ranAgy) return false;
+  // forget() announces a dropped session itself; with none, the restored id in
+  // session.json is what changes, so say so for a prompt save.
+  if (record) forget(surfaceId); else releasedSessions.add(surfaceId);
+  if (!record?.sessionId) notifySessionChanged();
   return true;
 }
 

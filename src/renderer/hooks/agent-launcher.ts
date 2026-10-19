@@ -15,7 +15,7 @@
 //
 // Pure: no Electron, no Node, exercised straight from vitest.
 
-export type ResumableAgent = 'claude' | 'codex' | 'opencode';
+export type ResumableAgent = 'claude' | 'codex' | 'opencode' | 'agy';
 
 /**
  * The agents wmux can resume, how each takes a stored handle, and the
@@ -30,6 +30,7 @@ const RESUMABLE = {
   claude: { executable: /^(claude|claude-code)\d*$/, args: (id: string) => `--resume ${id}` },
   codex: { executable: /^codex\d*$/, args: (id: string) => `resume ${id}` },
   opencode: { executable: /^opencode\d*$/, args: (id: string) => `-s ${id}` },
+  agy: { executable: /^agy\d*$/, args: (id: string) => `--conversation ${id}` },
 } satisfies Record<ResumableAgent, { executable: RegExp; args: (id: string) => string }>;
 
 /** The command typed when nothing in the pane launches an agent. */
@@ -37,6 +38,7 @@ const LAUNCH_COMMAND: Record<ResumableAgent, string> = {
   claude: 'claude --resume',
   codex: 'codex resume',
   opencode: 'opencode -s',
+  agy: 'agy --conversation',
 };
 
 /** Wrappers a launcher can hide behind: `npx -y opencode`, `pnpm dlx codex`. */

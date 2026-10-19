@@ -1,7 +1,7 @@
 /**
  * Consent gate for everything wmux writes outside its own directory (issue #132).
  *
- * wmux integrates with Claude Code, OpenCode, Kiro, omp, pi and Grok by editing files
+ * wmux integrates with Claude Code, OpenCode, Kiro, omp, pi, Grok and agy by editing files
  * in the user's home: it appends a block to ~/.claude/CLAUDE.md,
  * ~/.config/opencode/AGENTS.md, ~/.omp/agent/AGENTS.md and pi's user-scope
  * context file, writes ~/.kiro/steering/wmux.md, registers eight hook families
@@ -58,6 +58,7 @@ import {
   removePiContext,
   removePiExtension,
 } from './pi-context';
+import { ensureAgyPlugin, removeAgyPlugin } from './agy-context';
 import { loadSettings, saveSetting } from './settings-store';
 
 export type IntegrationDecision = 'unset' | 'granted' | 'declined';
@@ -113,6 +114,8 @@ export const INTEGRATION_CONSENT_DETAIL =
   '      a pi extension that reports this pane\'s status to the sidebar\n' +
   '  • ~/.omp/agent/extensions/wmux.js\n' +
   '      an omp extension that reports foreground and background job state\n' +
+  '  • ~/.gemini/config/plugins/wmux/ (only if the Antigravity CLI is installed)\n' +
+  '      an agy plugin of wmux\'s own that reports each pane\'s conversation\n' +
   '  • ~/.config/opencode/plugin/wmux.js\n' +
   '      the wmux orchestrator plugin for OpenCode\n' +
   '  • ~/.claude/settings.json\n' +
@@ -178,8 +181,10 @@ function applyFeature(feature: IntegrationFeature, enabled: boolean): void {
       // pre-existing mismatch deliberately left alone — moving it would
       // silently re-enable a status bridge for every user who switched that
       // toggle off, which is the #132 complaint in reverse.
-      if (enabled) { ensureClaudeHooks(); ensurePiExtension(); ensureOmpExtension(); ensureGrokHooks(); }
-      else { removeClaudeHooks(); removePiExtension(); removeOmpExtension(); removeGrokHooks(); }
+      // The agy plugin likewise: it reports which conversation a pane holds,
+      // the same job Claude's SessionStart hook does from this toggle.
+      if (enabled) { ensureClaudeHooks(); ensurePiExtension(); ensureOmpExtension(); ensureGrokHooks(); ensureAgyPlugin(); }
+      else { removeClaudeHooks(); removePiExtension(); removeOmpExtension(); removeGrokHooks(); removeAgyPlugin(); }
       break;
     case 'orchestrator':
       // The Claude Code half of this feature is DEPRECATED (issue #239) and has

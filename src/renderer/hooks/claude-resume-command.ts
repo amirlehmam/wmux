@@ -82,9 +82,19 @@ export function withClaudeResume(opts: {
   codexEnabled?: boolean;
   opencodeSessionId?: string;
   opencodeEnabled?: boolean;
+  agySessionId?: string;
+  agyEnabled?: boolean;
 }): string[] | undefined {
   const { base, surfaceId, claudeSessionId, enabled } = opts;
   if (!surfaceId) return base;
+  if (opts.agySessionId) {
+    // One provider per tab, as for Codex and OpenCode.
+    if (claudeSessionId || opts.codexSessionId || opts.opencodeSessionId || !opts.agyEnabled) return base;
+    // Mirrors AGY_CONVERSATION_ID_RE in src/main/agy-resume.ts — re-checked
+    // because session.json is a file the user can edit.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(opts.agySessionId)) return base;
+    return applyResume(base, surfaceId, 'agy', opts.agySessionId);
+  }
   if (opts.opencodeSessionId) {
     // Same rule as Codex: two providers' handles on one tab is a state nothing
     // wrote on purpose, and guessing would type an agent into another's TUI.

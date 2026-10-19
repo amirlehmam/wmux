@@ -2183,7 +2183,7 @@ const COMMAND_SPECS = {
     bool: ['--done'],
   },
   'report-session': {
-    usage: `wmux report-session <sessionId> [--provider claude|codex|opencode] [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
+    usage: `wmux report-session <sessionId> [--provider claude|codex|opencode|agy] [--seq N] [--surface <id>]   ${SURFACE_NOTE}`,
     value: ['--session', '--provider', '--seq', '--surface'],
   },
   'answer-agent': {

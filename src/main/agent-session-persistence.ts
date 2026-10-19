@@ -2,6 +2,8 @@ import { getAgentState, wasAgentReleased } from './agent-state';
 import { stampClaudeSessionIds } from './claude-resume';
 import { stampCodexSessionIds } from './codex-resume';
 import { stampOpencodeSessionIds } from './opencode-resume';
+import { stampAgySessionIds } from './agy-resume';
+import type { AgentSessionProvider } from './agent-state';
 import type { SurfaceId } from '../shared/types';
 
 /**
@@ -9,7 +11,7 @@ import type { SurfaceId } from '../shared/types';
  * report, or a deliberate exit, clears it; and silence keeps it — a restored
  * agent has not reported yet, and that is its recovery handle.
  */
-function providerLookup(provider: 'claude' | 'codex' | 'opencode') {
+function providerLookup(provider: AgentSessionProvider) {
   return (id: SurfaceId): string | null | undefined => {
     const agent = getAgentState(id);
     // An absent provider is Claude: that is what every report before #261 meant.
@@ -22,5 +24,6 @@ function providerLookup(provider: 'claude' | 'codex' | 'opencode') {
 export function stampAgentSessionIds<T>(tree: T): T {
   const claude = stampClaudeSessionIds(tree, providerLookup('claude'));
   const codex = stampCodexSessionIds(claude, providerLookup('codex'));
-  return stampOpencodeSessionIds(codex, providerLookup('opencode'));
+  const opencode = stampOpencodeSessionIds(codex, providerLookup('opencode'));
+  return stampAgySessionIds(opencode, providerLookup('agy'));
 }

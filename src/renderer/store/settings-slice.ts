@@ -524,6 +524,11 @@ export interface WorkspacePrefs {
    */
   restoreOpencodeSessions: boolean;
   /**
+   * Opt-in: reopen each tab's Antigravity CLI conversation with
+   * `agy --conversation <id>`. Off by default, like the others.
+   */
+  restoreAgySessions: boolean;
+  /**
    * How many terminal panes a new workspace opens with, and how they sit
    * (issue #212).
    *
@@ -575,6 +580,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   restoreClaudeSessions: false,
   restoreCodexSessions: false,
   restoreOpencodeSessions: false,
+  restoreAgySessions: false,
   detectAgentScreens: true,
   newWorkspacePanes: 3,
   newWorkspaceLayout: 'grid',

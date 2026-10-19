@@ -41,7 +41,7 @@ const FEATURES: Array<{ key: Feature; labelKey: TranslationKey; labelFallback: s
     key: 'hooks',
     labelKey: 'settings.integration.hooks',
     labelFallback: 'Status hooks',
-    pathHint: '~/.claude/settings.json · ~/.pi/agent/extensions/wmux.js · ~/.grok/hooks/wmux.json',
+    pathHint: '~/.claude/settings.json · ~/.pi/agent/extensions/wmux.js · ~/.grok/hooks/wmux.json · ~/.gemini/config/plugins/wmux/',
   },
   {
     key: 'orchestrator',

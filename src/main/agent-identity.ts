@@ -119,10 +119,15 @@ export class AgentIdentityTracker {
     this.command.set(surfaceId, { kind, source: 'command', at: now });
   }
 
-  /** The shell is back at its prompt, so whatever it was running has exited. */
-  clearReported(surfaceId: string, sequence?: number): void {
-    if (!this.acceptSequence(surfaceId, sequence)) return;
+  /**
+   * The shell is back at its prompt, so whatever it was running has exited.
+   * False when the report was older than one already applied: that prompt came
+   * BEFORE the current command, which is still running.
+   */
+  clearReported(surfaceId: string, sequence?: number): boolean {
+    if (!this.acceptSequence(surfaceId, sequence)) return false;
     this.command.delete(surfaceId);
+    return true;
   }
 
   /**

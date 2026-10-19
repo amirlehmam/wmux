@@ -56,7 +56,7 @@ import { hardenWebviewPreferences } from './webview-prefs';
 import { stampAgentSessionIds } from './agent-session-persistence';
 import { noteIconRevision } from './icon-cache';
 import { installGpuWatchdog } from './gpu-watchdog';
-import { getAgentState, currentPromptId, currentPromptView, reportAgentSession, isAnsweringInput, noteHumanInput, onAgentStateBroadcast, onAgentSessionChanged } from './agent-state';
+import { getAgentState, currentPromptId, currentPromptView, reportAgentSession, isAnsweringInput, noteHumanInput, onAgentStateBroadcast, onAgentSessionChanged, releaseAgyAtPrompt } from './agent-state';
 import {
   pruneDeadClaudeSessions,
   listKnownTranscriptIds,
@@ -1692,11 +1692,18 @@ app.whenReady().then(() => {
       const rawSequence = sequenced ? cmd.args[0] : undefined;
       if (state !== 'running') {
         sshDetector.clearReported(surfaceId, rawSequence);
+        const ran = agentIdentity.identify(surfaceId);
         // `sequenceFrom`, not `splitSequencedReport`: here the marker is the
         // WHOLE argument (`seq=7`), and splitSequencedReport deliberately reads
         // a bare marker with no payload as a payload.
-        agentIdentity.clearReported(surfaceId, sequenceFrom(rawSequence));
+        const cleared = agentIdentity.clearReported(surfaceId, sequenceFrom(rawSequence));
         broadcastAgentIdentity(surfaceId);
+        // agy has no session-end hook: its shell coming back is its exit. A
+        // quitting wmux kills the shell rather than returning to it, but keep
+        // the same refusal every other release has.
+        if (cleared && !isQuitting) {
+          releaseAgyAtPrompt(surfaceId as SurfaceId, ran?.source === 'command' && ran.kind === 'agy');
+        }
       }
       // The renderer's metadata protocol remains [state]; sequencing is a
       // main-process implementation detail used only by these two detectors.

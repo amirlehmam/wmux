@@ -92,6 +92,12 @@ export interface SurfaceRef {
    * when `workspacePrefs.restoreOpencodeSessions` is on.
    */
   opencodeSessionId?: string;
+  /**
+   * Antigravity CLI conversation to resume, stamped by `stampAgySessionIds`
+   * from what wmux's agy plugin reported. Restored as `agy --conversation <id>`
+   * when `workspacePrefs.restoreAgySessions` is on.
+   */
+  agySessionId?: string;
   /** Initial URL for a browser surface created from a quick-launch profile (issue #32). */
   url?: string;
   /**

@@ -312,6 +312,19 @@ export default function WorkspaceSettings() {
       </p>
 
       <div className="settings-row">
+        <label className="settings-label">{t('settings.workspacePanel.restoreAgySessions', 'Resume Antigravity CLI conversations on restore')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={workspacePrefs.restoreAgySessions}
+          onChange={(e) => setWorkspacePrefs({ restoreAgySessions: e.target.checked })}
+        />
+      </div>
+      <p className="settings-hint">
+        {t('settings.workspacePanel.restoreAgySessionsHint', "Reopens each restored tab's agy conversation with `agy --conversation`, in the directory it was in. Needs the wmux agy plugin (Status hooks on) and Node.js. A conversation is captured when it starts, or at its first message once resumed. An agy you quit back to the shell prompt is not reopened.")}
+      </p>
+
+      <div className="settings-row">
         <label className="settings-label">{t('settings.workspacePanel.detectAgentScreens', 'Read agent screens to infer state')}</label>
         <input
           type="checkbox"

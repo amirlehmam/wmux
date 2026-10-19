@@ -37,6 +37,9 @@ export const AGENT_ALIASES: Record<string, string[]> = {
   omp: ['omp'],
   pi: ['pi'],
   gemini: ['gemini'],
+  // Antigravity CLI. Its own kind, not gemini's: a different program, and the
+  // one whose exit releases a stored conversation (agent-state.ts).
+  agy: ['agy'],
   cursor: ['cursor', 'cursor-agent'],
   copilot: ['copilot'],
   aider: ['aider'],
