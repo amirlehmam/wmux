@@ -61,6 +61,7 @@ import {
   pruneDeadClaudeSessions,
   listKnownTranscriptIds,
 } from './claude-resume';
+import { pruneDeadOmpSessions } from './omp-resume';
 import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
 import { WindowManager, appIconCandidates } from './window-manager';
 import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
@@ -337,7 +338,7 @@ function routeSpecialV2(
   // The CLI exiting because wmux is shutting down must not erase recovery IDs.
   // A quitting wmux kills every PTY, and an agent that exits because of it did
   // not choose to end its conversation — keep the handle for restore.
-  if ((request.method === 'pane.release_codex_session' || request.method === 'pane.release_opencode_session') && isQuitting) {
+  if ((request.method === 'pane.release_codex_session' || request.method === 'pane.release_opencode_session' || request.method === 'pane.release_omp_session') && isQuitting) {
     respond({ released: false });
     return true;
   }
@@ -1336,6 +1337,21 @@ function pruneRestoredClaudeSessions(windows: SavedWindow[]): void {
     console.log(`[claude-resume] dropped ${dropped} session id(s) with no transcript`);
   }
 }
+function pruneRestoredOmpSessions(windows: SavedWindow[]): void {
+  if (windows.length === 0) return;
+  let dropped = 0;
+  for (const state of windows) {
+    for (const ws of state.workspaces ?? []) {
+      const result = pruneDeadOmpSessions(ws.splitTree);
+      ws.splitTree = result.tree;
+      dropped += result.dropped;
+    }
+  }
+  if (dropped > 0) {
+    console.log(`[omp-resume] dropped ${dropped} session id(s) with no session file`);
+  }
+}
+
 
 /**
  * Record what killed main, when JS is what killed it (issue #214).
@@ -1502,6 +1518,7 @@ app.whenReady().then(() => {
   const savedSession = loadSession();
   const savedWindows = (savedSession?.windows ?? []).slice(0, MAX_RESTORED_WINDOWS);
   pruneRestoredClaudeSessions(savedWindows);
+  pruneRestoredOmpSessions(savedWindows);
   if (savedWindows.length === 0) {
     sessionWindows.markStartup(windowManager.createWindow());
   } else {

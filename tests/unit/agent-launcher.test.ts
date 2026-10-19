@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { launchedAgent, lastAgentLauncher, mergeResume } from '../../src/renderer/hooks/agent-launcher';
+import { launchedAgent, lastAgentLauncher, mergeResume, quoteOmpArg } from '../../src/renderer/hooks/agent-launcher';
 
 describe('launchedAgent', () => {
   it.each([
@@ -17,6 +17,11 @@ describe('launchedAgent', () => {
     ['claude', 'claude'],
     ['claude-code', 'claude'],
     ['claude2 --model sonnet', 'claude'],
+    ['omp', 'omp'],
+    ['omp --profile work', 'omp'],
+    ['omp2', 'omp'],
+    ['"C:\\Program Files\\omp\\omp.exe" --profile work', 'omp'],
+    ['npx -y omp', 'omp'],
   ])('%s -> %s', (command, agent) => {
     expect(launchedAgent(command)).toBe(agent);
   });
@@ -84,5 +89,68 @@ describe('mergeResume', () => {
     const base = ['opencode2 --server x'];
     mergeResume(base, 'opencode', 'ses_abc');
     expect(base).toEqual(['opencode2 --server x']);
+  });
+
+  it('merges into an omp launcher, keeping profile and stripping --continue', () => {
+    const path = 'C:/Users/test/my project/session.jsonl';
+    expect(mergeResume(['omp --profile work --continue'], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --profile work --resume "${path}"`]);
+  });
+
+  it('preserves existing launcher options with quoted spaces and strips conflicting flags', () => {
+    const path = 'C:/Users/test/session.jsonl';
+    expect(mergeResume(['omp --config "C:\\my tools\\ov.yml" --profile work --resume'], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --config "C:\\my tools\\ov.yml" --profile work --resume "${path}"`]);
+    expect(mergeResume(['omp --resume "C:\\old path\\x.jsonl"'], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --resume "${path}"`]);
+    expect(mergeResume(["omp --session='C:\\old path\\x.jsonl'"], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --resume "${path}"`]);
+    expect(mergeResume(['omp -r "C:\\old path\\x.jsonl" --profile work'], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --profile work --resume "${path}"`]);
+    expect(mergeResume(['omp --session-dir "D:\\my sessions" --profile work'], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --session-dir "D:\\my sessions" --profile work --resume "${path}"`]);
+    expect(mergeResume(['omp --continue "my message"'], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp "my message" --resume "${path}"`]);
+  });
+
+  it('keeps double spaces and tabs inside a quoted launcher argument byte-for-byte', () => {
+    const path = 'C:/Users/test/session.jsonl';
+    const spaced = 'omp --config "C:\\my  tools\\ov.yml" --profile work';
+    expect(mergeResume([spaced], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --config "C:\\my  tools\\ov.yml" --profile work --resume "${path}"`]);
+    const tabbed = 'omp --config "C:\\my\ttools\\ov.yml"';
+    expect(mergeResume([tabbed], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --config "C:\\my\ttools\\ov.yml" --resume "${path}"`]);
+    // The same holds when a conflicting flag is removed next to it.
+    const withFlag = 'omp --continue --config "C:\\my  tools\\ov.yml"';
+    expect(mergeResume([withFlag], 'omp', path, 'cmd.exe'))
+      .toEqual([`omp --config "C:\\my  tools\\ov.yml" --resume "${path}"`]);
+  });
+
+  it('refuses to resume omp when --restore or --no-session is present', () => {
+    const path = 'C:/Users/test/session.jsonl';
+    expect(mergeResume(['omp --restore other.jsonl'], 'omp', path)).toBeNull();
+    expect(mergeResume(['omp --no-session'], 'omp', path)).toBeNull();
+  });
+  it('safely skips resume in cmd.exe when path contains percent sign, but powershell supports it verbatim', () => {
+    const percentPath = 'C:\\tmp\\100%done\\session.jsonl';
+    // cmd.exe cannot pass % without expansion -> returns null (safe skip)
+    expect(quoteOmpArg(percentPath, 'cmd.exe')).toBeNull();
+    expect(mergeResume(['omp'], 'omp', percentPath, 'cmd.exe')).toBeNull();
+
+    // powershell.exe single quotes protect % completely
+    expect(quoteOmpArg(percentPath, 'powershell.exe')).toBe(`'${percentPath}'`);
+    expect(mergeResume(['omp'], 'omp', percentPath, 'powershell.exe'))
+      .toEqual([`omp --resume '${percentPath}'`]);
+  });
+
+  it('quotes omp path safely for powershell and posix shells with verbatim special characters', () => {
+    const complexPath = "C:\\test\\my $var `test O'Connor\\session.jsonl";
+    expect(mergeResume(['omp'], 'omp', complexPath, 'powershell.exe'))
+      .toEqual([`omp --resume 'C:\\test\\my $var \`test O''Connor\\session.jsonl'`]);
+
+    const posixPath = "/home/user/my $var `test O'Connor/session.jsonl";
+    expect(mergeResume(['omp'], 'omp', posixPath, 'bash'))
+      .toEqual([`omp --resume '/home/user/my $var \`test O'\\''Connor/session.jsonl'`]);
   });
 });

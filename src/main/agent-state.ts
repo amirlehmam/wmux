@@ -32,6 +32,7 @@ import { IPC_CHANNELS, SurfaceId } from '../shared/types';
 import { isValidClaudeSessionId } from './claude-resume';
 import { isValidCodexSessionId } from './codex-resume';
 import { isValidOpencodeSessionId } from './opencode-resume';
+import { isValidOmpSessionId } from './omp-resume';
 import { resolveWireChoiceId } from '../shared/remote-console-protocol';
 
 export type AgentRunState = 'blocked' | 'working' | 'idle' | 'unknown';
@@ -442,14 +443,15 @@ export function reportAgent(surfaceId: SurfaceId, params: ReportAgentParams): Ag
 }
 
 /** Who a session handle belongs to — it decides the validator and the restore command. */
-export type AgentSessionProvider = 'claude' | 'codex' | 'opencode';
+export type AgentSessionProvider = 'claude' | 'codex' | 'opencode' | 'omp';
 const SESSION_VALIDATORS: Record<AgentSessionProvider, (id: unknown) => id is string> = {
   claude: isValidClaudeSessionId,
   codex: isValidCodexSessionId,
   opencode: isValidOpencodeSessionId,
+  omp: isValidOmpSessionId,
 };
 function isSessionProvider(value: unknown): value is AgentSessionProvider {
-  return value === 'claude' || value === 'codex' || value === 'opencode';
+  return value === 'claude' || value === 'codex' || value === 'opencode' || value === 'omp';
 }
 
 /** `pane.report_agent_session` — tie the pane to a resumable session handle. */

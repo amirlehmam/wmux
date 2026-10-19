@@ -94,4 +94,16 @@ describe('withClaudeResume', () => {
     // Nothing was typed, so the handle is still available for a later create.
     expect(hasResumed('surf-1')).toBe(false);
   });
+
+  it('handles omp session resume with path quoting', () => {
+    const path = 'C:/Users/test/my project/session.jsonl';
+    expect(call({ claudeSessionId: undefined, ompSessionId: path, ompEnabled: true, shell: 'cmd.exe' }))
+      .toEqual([`omp --resume "${path}"`]);
+  });
+
+  it('refuses to resume omp when disabled or invalid', () => {
+    const path = 'C:/Users/test/session.jsonl';
+    expect(call({ claudeSessionId: undefined, ompSessionId: path, ompEnabled: false })).toBeUndefined();
+    expect(call({ claudeSessionId: undefined, ompSessionId: 'invalid-token', ompEnabled: true })).toBeUndefined();
+  });
 });

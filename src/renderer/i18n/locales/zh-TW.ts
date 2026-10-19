@@ -541,6 +541,8 @@ export const zhTW: Translation = {
   'settings.workspacePanel.restoreCodexSessions': '還原時繼續 Codex 工作階段',
   'settings.workspacePanel.restoreOpencodeSessions': '還原時繼續 OpenCode 工作階段',
   'settings.workspacePanel.restoreOpencodeSessionsHint': '以 `opencode -s` 在每個還原分頁原本的目錄中重新開啟它的 OpenCode 工作階段。需要 wmux 的 OpenCode 外掛（已啟用代理整合）。正常結束的 OpenCode 不會重新開啟。若工作階段已被刪除，OpenCode 會改為建立新的工作階段。OpenCode 2 只有以 --standalone 啟動時才會記錄：它共用的背景伺服器無法分辨分頁。',
+  'settings.workspacePanel.restoreOmpSessions': '還原時繼續 omp 工作階段',
+  'settings.workspacePanel.restoreOmpSessionsHint': '以 `omp --resume <path>` 在每個還原分頁原本的目錄中重新開啟它的精確 omp 工作階段。需要啟用 wmux 的 omp 擴充功能（狀態掛鉤已開啟）。正常結束的 omp 不會重新開啟。若工作階段檔案已被刪除，該窗格會安全略過，絕不偷偷建立新工作階段。',
   'settings.workspacePanel.restoreCodexSessionsHint': '在每個還原的分頁中重新開啟原本那段 Codex 對話。先啟用這個選項，再到新的 wmux 終端機啟動 codex。需要 Node.js，以及在 PowerShell 或命令提示字元中執行的原生 Windows 版 Codex CLI。正常結束的工作階段不會重新開啟。',
   'settings.workspacePanel.restoreClaudeSessions': '還原時繼續 Claude Code 工作階段',
   'settings.workspacePanel.restoreClaudeSessionsHint': 'wmux 還原工作階段時，會在原本的目錄下用 `claude --resume` 重新啟動每個曾執行 Claude Code 的終端機。預設關閉：這些窗格會同時各啟動一個 agent。Claude 已沒有對應對話的窗格會被略過，你正常結束的 Claude 也不會被還原。',

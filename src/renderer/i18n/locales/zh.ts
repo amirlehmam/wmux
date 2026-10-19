@@ -444,6 +444,8 @@ export const zh: Translation = {
     '在点击 × 按钮、使用右键菜单或按 Ctrl+Shift+W 关闭会话前先询问 —— 这样误点击就不会终止尚未保存状态的代理。通过 CLI 或代理发起的关闭操作永远不会弹出询问。',
   'settings.workspacePanel.restoreClaudeSessions': '恢复时继续 Claude Code 会话',
   'settings.workspacePanel.restoreClaudeSessionsHint': 'wmux 恢复会话时，会在原目录下用 `claude --resume` 重新启动每个曾运行 Claude Code 的终端。默认关闭：这些窗格会同时各启动一个代理。Claude 已没有对应对话的窗格会被跳过，你正常退出的 Claude 也不会被恢复。',
+  'settings.workspacePanel.restoreOmpSessions': '恢复时继续 omp 会话',
+  'settings.workspacePanel.restoreOmpSessionsHint': '以 `omp --resume <path>` 在每个恢复标签页原本的目录中重新打开其精确 omp 会话。需要启用 wmux 的 omp 扩展（状态挂钩已开启）。正常退出的 omp 不会重新打开。若会话文件在此期间被删除，该窗格会安全跳过恢复，绝不偷偷新建空白会话。',
   'settings.workspacePanel.autoOpenDiff': '代理编辑文件时自动打开差异标签页',
   'settings.workspacePanel.autoOpenDiffHint':
     '当代理编辑或写入文件时，wmux 会在底部窗格弹出差异标签页。关闭此项可阻止它出现。',

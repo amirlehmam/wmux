@@ -24,6 +24,8 @@ interface TerminalPaneProps {
   codexSessionId?: string;
   /** OpenCode session to resume on a restored pane (#290). */
   opencodeSessionId?: string;
+  /** Omp session to resume on a restored pane. */
+  ompSessionId?: string;
   focused?: boolean;
   visible?: boolean;
   showFindBar?: boolean;
@@ -41,13 +43,14 @@ export default function TerminalPane({
   claudeSessionId,
   codexSessionId,
   opencodeSessionId,
+  ompSessionId,
   focused = true,
   visible = true,
   showFindBar = false,
   onFindBarClose,
   copyModeActive = false,
 }: TerminalPaneProps) {
-  const { terminalRef, searchAddonRef, xtermRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, colorScheme, startupCommands, env, claudeSessionId, codexSessionId, opencodeSessionId });
+  const { terminalRef, searchAddonRef, xtermRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, colorScheme, startupCommands, env, claudeSessionId, codexSessionId, opencodeSessionId, ompSessionId });
 
   const [_lastQuery, setLastQuery] = useState('');
 

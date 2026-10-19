@@ -84,6 +84,8 @@ interface UseTerminalOptions {
   codexSessionId?: string;
   /** OpenCode session to resume on a restored pane (#290). */
   opencodeSessionId?: string;
+  /** Omp session to resume on a restored pane. */
+  ompSessionId?: string;
 }
 
 interface UseTerminalResult {
@@ -777,7 +779,7 @@ export async function fetchTheme(name: string): Promise<ThemeConfig> {
   }
 }
 
-export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = true, colorScheme, startupCommands, env, claudeSessionId, codexSessionId, opencodeSessionId }: UseTerminalOptions = {}): UseTerminalResult {
+export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = true, colorScheme, startupCommands, env, claudeSessionId, codexSessionId, opencodeSessionId, ompSessionId }: UseTerminalOptions = {}): UseTerminalResult {
   const t = useT();
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -816,6 +818,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
   codexSessionIdRef.current = codexSessionId;
   const opencodeSessionIdRef = useRef<string | undefined>(opencodeSessionId);
   opencodeSessionIdRef.current = opencodeSessionId;
+  const ompSessionIdRef = useRef<string | undefined>(ompSessionId);
+  ompSessionIdRef.current = ompSessionId;
 
   // Subscribe to relevant settings so changes apply live.
   const prefs = useStore((s) => s.terminalPrefs);
@@ -1652,6 +1656,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
             codexEnabled: useStore.getState().workspacePrefs.restoreCodexSessions,
             opencodeSessionId: opencodeSessionIdRef.current,
             opencodeEnabled: useStore.getState().workspacePrefs.restoreOpencodeSessions,
+            ompSessionId: ompSessionIdRef.current,
+            ompEnabled: useStore.getState().workspacePrefs.restoreOmpSessions,
+            shell: effectiveShell,
           });
           window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd, env: envRef.current ?? {}, surfaceId, startupCommands: spawnCommands, cols: initialCols, rows: initialRows })
             .then((created: { id: string; shell: string; shellFallbackFrom?: string }) => {

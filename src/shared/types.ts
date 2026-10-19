@@ -92,6 +92,12 @@ export interface SurfaceRef {
    * when `workspacePrefs.restoreOpencodeSessions` is on.
    */
   opencodeSessionId?: string;
+  /**
+   * Omp session to resume, stamped by `stampOmpSessionIds` from what wmux's
+   * omp extension reported. Restored as `omp --resume <path>` when
+   * `workspacePrefs.restoreOmpSessions` is on.
+   */
+  ompSessionId?: string;
   /** Initial URL for a browser surface created from a quick-launch profile (issue #32). */
   url?: string;
   /**

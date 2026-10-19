@@ -140,10 +140,12 @@ function withIdentity<T extends { surfaceId: string; sessionId?: string | null; 
   agentSource: string | null;
 } {
   const identity = agentIdentity.identify(snapshot.surfaceId);
-  // Only Codex overrides: identity already names a Claude pane, and taking
+  // Only Codex and omp override: identity already names a Claude pane, and taking
   // every Claude session report as the source would change `agentSource` for
   // panes this feature has nothing to do with.
-  const reported = snapshot.sessionId && snapshot.sessionProvider === 'codex' ? 'codex' : undefined;
+  const reported = snapshot.sessionId && (snapshot.sessionProvider === 'codex' || snapshot.sessionProvider === 'omp')
+    ? snapshot.sessionProvider
+    : undefined;
   return { ...snapshot, agent: reported ?? identity?.kind ?? null, agentSource: reported ? 'session' : identity?.source ?? null };
 }
 
@@ -246,6 +248,15 @@ const HANDLERS: Record<string, (surfaceId: SurfaceId, p: any) => any> = {
   'pane.release_opencode_session': (surfaceId, p) => {
     const current = getAgentState(surfaceId);
     if (current?.sessionProvider !== 'opencode' || current.sessionId !== p.sessionId) return { released: false };
+    return { released: releaseAgent(surfaceId) };
+  },
+  // omp exited cleanly: forget its handle so restore gives back a shell.
+  // When a specific sessionId is given, verify it matches to avoid stale exits;
+  // when omitted, release the surface unconditionally.
+  'pane.release_omp_session': (surfaceId, p) => {
+    const current = getAgentState(surfaceId);
+    if (current?.sessionProvider !== 'omp') return { released: false };
+    if (p.sessionId && current.sessionId && current.sessionId !== p.sessionId) return { released: false };
     return { released: releaseAgent(surfaceId) };
   },
 

@@ -312,6 +312,19 @@ export default function WorkspaceSettings() {
       </p>
 
       <div className="settings-row">
+        <label className="settings-label">{t('settings.workspacePanel.restoreOmpSessions', 'Resume omp sessions on restore')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={workspacePrefs.restoreOmpSessions}
+          onChange={(e) => setWorkspacePrefs({ restoreOmpSessions: e.target.checked })}
+        />
+      </div>
+      <p className="settings-hint">
+        {t('settings.workspacePanel.restoreOmpSessionsHint', "Reopens each restored tab's exact omp session with `omp --resume <path>`, in the directory it was in. Needs the wmux omp extension (Status hooks on). An omp session you quit normally is not reopened. If a session file was deleted since, the pane skips resume safely without creating a new session.")}
+      </p>
+
+      <div className="settings-row">
         <label className="settings-label">{t('settings.workspacePanel.detectAgentScreens', 'Read agent screens to infer state')}</label>
         <input
           type="checkbox"
