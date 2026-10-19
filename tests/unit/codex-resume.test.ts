@@ -32,6 +32,8 @@ describe('Codex per-tab restore', () => {
       const tracker = new CodexSessionTracker(id => rpc('pane.report_codex_session', { surfaceId, sessionId: id }));
       tracker.request(JSON.stringify({ id: 1, method: 'thread/start' }));
       tracker.response(JSON.stringify({ id: 1, result: { thread: { id: sessionId, ephemeral: false } } }));
+      // A new thread is saved at its first turn: before that Codex has written nothing to resume.
+      tracker.request(JSON.stringify({ id: 2, method: 'turn/start', params: { threadId: sessionId } }));
     }
     const saved = JSON.parse(JSON.stringify(stampAgentSessionIds(leaf([terminal(SA), terminal(SB)]))));
     resetAgentState(); // main process restarted
@@ -119,6 +121,33 @@ describe('Codex per-tab restore', () => {
     reportAgentSession(SA, { sessionId: A, provider: 'codex' });
     expect(reportAgentSession(SA, { sessionId: B, provider: 'other' })).toBeNull();
     expect(getAgentState(SA)?.sessionId).toBe(A);
+  });
+
+  // A restored tab whose thread Codex does not have (one left empty, never
+  // written) failed `codex resume` on every restart: it never reported, so
+  // nothing released it, and silence keeps a restored id.
+  it('forgets a restored id Codex cannot open — only that id, in that tab', () => {
+    const tree = leaf([terminal(SA, { codexSessionId: A }), terminal(SB, { codexSessionId: B })]);
+    expect(rpc('pane.codex_session_missing', { surfaceId: SA, sessionId: A }).accepted).toBe(true);
+    const saved: any = stampAgentSessionIds(tree);
+    expect(saved.surfaces[0].codexSessionId).toBeUndefined();
+    expect(saved.surfaces[1].codexSessionId).toBe(B);
+    expect(restore(saved.surfaces[0])).toBeUndefined();
+  });
+
+  it('keeps a different id than the one Codex refused', () => {
+    rpc('pane.codex_session_missing', { surfaceId: SA, sessionId: B });
+    expect(stampAgentSessionIds(leaf([terminal(SA, { codexSessionId: A })])).surfaces[0].codexSessionId).toBe(A);
+  });
+
+  it('a later report in the tab wins over an earlier refusal', () => {
+    rpc('pane.codex_session_missing', { surfaceId: SA, sessionId: A });
+    reportAgentSession(SA, { sessionId: A, provider: 'codex' });
+    expect(stampAgentSessionIds(leaf([terminal(SA)])).surfaces[0].codexSessionId).toBe(A);
+  });
+
+  it('refuses a missing-session note that is not a session id', () => {
+    expect(rpc('pane.codex_session_missing', { surfaceId: SA, sessionId: 'x; rm -rf /' }).accepted).toBe(false);
   });
 
 

@@ -13,6 +13,8 @@ export interface CodexRelayOptions {
   /** Explicit --yolo from this launch only; never inferred from saved sessions. */
   yolo?: boolean;
   onSession: (id: string) => void;
+  /** A thread this terminal tried to resume does not exist in Codex. */
+  onMissing?: (id: string) => void;
 }
 
 export interface CodexRelay {
@@ -89,7 +91,7 @@ export async function createCodexRelay(options: CodexRelayOptions): Promise<Code
       if (id === sessionId) return;
       sessionId = id;
       options.onSession(id);
-    });
+    }, options.onMissing);
     const child = spawn(options.executable, options.args, {
       cwd: options.cwd, env: options.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     });

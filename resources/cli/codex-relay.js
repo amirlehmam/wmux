@@ -85,7 +85,7 @@ async function createCodexRelay(options) {
                 return;
             sessionId = id;
             options.onSession(id);
-        });
+        }, options.onMissing);
         const child = (0, child_process_1.spawn)(options.executable, options.args, {
             cwd: options.cwd, env: options.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
         });

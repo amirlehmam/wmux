@@ -5,10 +5,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.codexLaunchPlan = codexLaunchPlan;
+exports.resumeTarget = resumeTarget;
+exports.isTransientWmuxError = isTransientWmuxError;
+exports.wmuxRequestPatiently = wmuxRequestPatiently;
+exports.codexCapabilityKey = codexCapabilityKey;
+exports.supportsRemote = supportsRemote;
 exports.runWmuxCodex = runWmuxCodex;
 /** Launched by wmux's private PATH shims using wmux's resolved Node runtime. */
 const child_process_1 = require("child_process");
+const fs_1 = __importDefault(require("fs"));
 const net_1 = __importDefault(require("net"));
+const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
 const NON_INTERACTIVE = new Set([
     'agents', 'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin', 'app-server',
@@ -105,8 +112,29 @@ function codexLaunchPlan(args, cwd) {
         plan.interactive = false;
     return plan;
 }
+/** `codex resume <id>` → the id; anything else (a picker, a new chat) → undefined. */
+function resumeTarget(clientArgs) {
+    for (let i = 0; i < clientArgs.length; i++) {
+        const arg = clientArgs[i];
+        if (arg === '--')
+            return undefined;
+        if (arg.startsWith('-')) {
+            if (VALUE_OPTIONS.has(arg))
+                i++;
+            continue;
+        }
+        if (arg !== 'resume')
+            return undefined;
+        const id = clientArgs[i + 1];
+        return id && !id.startsWith('-') ? id : undefined;
+    }
+    return undefined;
+}
+/** wmux is there but did not answer in time, or dropped the connection. */
+class WmuxBusyError extends Error {
+}
 /** Authenticated local pipe only; never send environment variables or transcripts. */
-function wmuxRequest(method, params) {
+const wmuxRequest = (method, params, timeoutMs) => {
     return new Promise((resolve, reject) => {
         const pipe = process.env.WMUX_PIPE;
         const token = process.env.WMUX_PIPE_TOKEN;
@@ -116,7 +144,7 @@ function wmuxRequest(method, params) {
         }
         const socket = net_1.default.connect(pipe);
         let data = '';
-        const timer = setTimeout(() => finish(new Error('wmux did not respond')), 2000);
+        const timer = setTimeout(() => finish(new WmuxBusyError('wmux did not respond')), timeoutMs);
         const finish = (error, result) => {
             clearTimeout(timer);
             socket.destroy();
@@ -147,15 +175,116 @@ function wmuxRequest(method, params) {
             }
         });
         socket.on('error', error => finish(error));
-        socket.on('end', () => finish(new Error('wmux disconnected')));
+        socket.on('end', () => finish(new WmuxBusyError('wmux disconnected')));
     });
+};
+/**
+ * Worth asking again: wmux exists but was too busy to answer. Restoring a
+ * session starts every saved Codex at once, beside every other pane, and
+ * wmux's main process answers none of them until that burst is through.
+ * ENOENT (no wmux at all), "Outside wmux" and an error REPLY (an older wmux
+ * that does not know the method) are answers, and are never retried.
+ */
+function isTransientWmuxError(error) {
+    if (error instanceof WmuxBusyError)
+        return true;
+    const code = error?.code;
+    return code === 'EBUSY' || code === 'ECONNRESET' || code === 'EPIPE' || code === 'ETIMEDOUT';
 }
-function supportsRemote(executable, env) {
+/**
+ * The request, asked again while wmux is merely busy. A single 2 s attempt
+ * used to decide each launch: during a restore, roughly half the Codex panes
+ * timed out and started without session capture, so wmux lost track of
+ * them — a `/new` or a quit there was never recorded.
+ */
+async function wmuxRequestPatiently(method, params, patience, request = wmuxRequest, now = Date.now) {
+    const deadline = now() + patience.budgetMs;
+    let attemptMs = patience.firstAttemptMs;
+    for (let attempt = 0;; attempt++) {
+        try {
+            return await request(method, params, Math.max(1, Math.min(attemptMs, deadline - now())));
+        }
+        catch (error) {
+            const pause = Math.min(250 * (attempt + 1), 1000);
+            if (!isTransientWmuxError(error) || now() + pause >= deadline)
+                throw error;
+            if (attempt === 0)
+                patience.onWait?.();
+            await new Promise(resolve => setTimeout(resolve, pause));
+            attemptMs *= 2;
+        }
+    }
+}
+/** Whether to record sessions: decides a restored pane's capture, so it waits for wmux. */
+const CONFIG_PATIENCE = { budgetMs: 45_000, firstAttemptMs: 3_000 };
+/** Session reports run beside the TUI, so they can afford to wait longer. */
+const REPORT_PATIENCE = { budgetMs: 60_000, firstAttemptMs: 3_000 };
+/** The release holds the prompt after Codex exits; a missed one only reopens it. */
+const RELEASE_PATIENCE = { budgetMs: 10_000, firstAttemptMs: 2_000 };
+/**
+ * `codex --help` lists `--remote-auth-token-env` from the version that can be
+ * relayed. It used to run with a 5 s limit on every launch, and a timeout read
+ * as "this Codex is too old": a restore starts every saved Codex at once, so
+ * the burst of `--help` processes was what ran out of time. The probe is now
+ * given 30 s and its positive answer is remembered per executable (path, size,
+ * mtime — an update invalidates it), so a restore runs it once, not per pane.
+ */
+const REMOTE_PROBE_TIMEOUT_MS = 30_000;
+function capabilityCachePath() {
+    return path_1.default.join(os_1.default.tmpdir(), 'wmux-codex-remote-support.json');
+}
+function codexCapabilityKey(executable) {
+    try {
+        const stat = fs_1.default.statSync(executable);
+        return `${path_1.default.resolve(executable).toLowerCase()}|${stat.size}|${Math.trunc(stat.mtimeMs)}`;
+    }
+    catch {
+        return null;
+    }
+}
+function readCapabilityCache(file) {
+    try {
+        const parsed = JSON.parse(fs_1.default.readFileSync(file, 'utf8'));
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    }
+    catch {
+        return {};
+    }
+}
+/** Remember a supported executable. Best effort: a cache that cannot be written only costs a probe. */
+function rememberSupport(file, key) {
+    try {
+        const next = { ...readCapabilityCache(file), [key]: true };
+        const temp = `${file}.${process.pid}.tmp`;
+        fs_1.default.writeFileSync(temp, JSON.stringify(next));
+        fs_1.default.renameSync(temp, file);
+    }
+    catch { /* another launcher won the race, or tmp is read-only */ }
+}
+const probeRemoteSupport = (executable, env) => {
     return new Promise(resolve => {
-        (0, child_process_1.execFile)(executable, ['--help'], { env, windowsHide: true, timeout: 5000, maxBuffer: 256 * 1024 }, (error, stdout) => {
+        (0, child_process_1.execFile)(executable, ['--help'], { env, windowsHide: true, timeout: REMOTE_PROBE_TIMEOUT_MS, maxBuffer: 256 * 1024 }, (error, stdout) => {
+            // Killed by the timeout: no answer, which is not a "no".
+            if (error && error.killed) {
+                resolve(null);
+                return;
+            }
             resolve(!error && stdout.includes('--remote-auth-token-env'));
         });
     });
+};
+/** true / false, or null when Codex never answered (not the same as "too old"). */
+async function supportsRemote(executable, env, probe = probeRemoteSupport, cacheFile = capabilityCachePath()) {
+    const key = codexCapabilityKey(executable);
+    if (key && readCapabilityCache(cacheFile)[key] === true)
+        return true;
+    // One more try for a probe that ran out of time; a real "no" is not retried.
+    let supported = await probe(executable, env);
+    if (supported === null)
+        supported = await probe(executable, env);
+    if (supported && key)
+        rememberSupport(cacheFile, key);
+    return supported;
 }
 function runCli(executable, args, env) {
     return new Promise((resolve, reject) => {
@@ -198,27 +327,44 @@ async function runWmuxCodex(args = process.argv.slice(2)) {
         return runCli(executable, args, env);
     let enabled = false;
     try {
-        enabled = (await wmuxRequest('pane.codex_restore_config', { surfaceId })).enabled === true;
+        enabled = (await wmuxRequestPatiently('pane.codex_restore_config', { surfaceId }, {
+            ...CONFIG_PATIENCE,
+            onWait: () => console.error('[wmux] wmux is busy; waiting for it before starting Codex with session restore...'),
+        })).enabled === true;
     }
-    catch { /* An older/offline wmux leaves the CLI usable. */ }
+    catch (error) {
+        // An older/offline wmux leaves the CLI usable. Say so when wmux was there
+        // but never answered: that pane is about to run without session capture.
+        if (isTransientWmuxError(error))
+            console.error('[wmux] wmux did not answer; starting Codex without session restore.');
+    }
     if (!enabled)
         return runCli(executable, args, env);
-    if (!await supportsRemote(executable, env)) {
-        console.error('[wmux] This Codex version cannot record sessions for automatic restore. Starting Codex normally.');
+    const remote = await supportsRemote(executable, env);
+    if (remote !== true) {
+        console.error(remote === null
+            ? '[wmux] Codex did not answer `codex --help` in time; starting it without session restore.'
+            : '[wmux] This Codex version cannot record sessions for automatic restore. Starting Codex normally.');
         return runCli(executable, args, env);
     }
     // Serialize reports so a delayed response cannot stamp an older thread last.
     let reports = Promise.resolve();
+    const report = (method, sessionId) => {
+        reports = reports.then(async () => {
+            try {
+                await wmuxRequestPatiently(method, { surfaceId, sessionId }, REPORT_PATIENCE);
+            }
+            catch { /* A crashed wmux cannot receive a report; Codex still owns its history. */ }
+        });
+    };
+    const target = resumeTarget(plan.clientArgs);
     const relay = await startRelay({
         executable, args: plan.serverArgs, cwd: plan.cwd, env, yolo: plan.yolo,
-        onSession: sessionId => {
-            reports = reports.then(async () => {
-                try {
-                    await wmuxRequest('pane.report_codex_session', { surfaceId, sessionId });
-                }
-                catch { /* A crashed wmux cannot receive a report; Codex still owns its history. */ }
-            });
-        },
+        onSession: sessionId => report('pane.report_codex_session', sessionId),
+        // Only the conversation this launch was asked to reopen — what a restore
+        // typed. wmux then forgets that saved id instead of retrying it forever.
+        onMissing: sessionId => { if (sessionId === target)
+            report('pane.codex_session_missing', sessionId); },
     });
     if (!relay)
         return runCli(executable, args, env);
@@ -236,7 +382,7 @@ async function runWmuxCodex(args = process.argv.slice(2)) {
         // Only an orderly CLI exit forgets the handle. A crash, socket failure or
         // wmux shutdown retains it. Main also guards this RPC while quitting.
         try {
-            await wmuxRequest('pane.release_codex_session', { surfaceId, sessionId: relay.sessionId });
+            await wmuxRequestPatiently('pane.release_codex_session', { surfaceId, sessionId: relay.sessionId }, RELEASE_PATIENCE);
         }
         catch { /* wmux has already closed */ }
         console.log(`To resume later: codex resume ${relay.sessionId}`);

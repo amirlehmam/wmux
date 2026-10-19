@@ -19,6 +19,7 @@ import {
   reportAgentSession,
   reportMetadata,
   releaseAgent,
+  noteMissingSession,
   answerAgent,
   sanitizeChoices,
   getAgentState,
@@ -248,6 +249,11 @@ const HANDLERS: Record<string, (surfaceId: SurfaceId, p: any) => any> = {
     if (current?.sessionProvider !== 'opencode' || current.sessionId !== p.sessionId) return { released: false };
     return { released: releaseAgent(surfaceId) };
   },
+  // A restore typed `codex resume <id>` and Codex answered that the thread does
+  // not exist (an empty one never written). Forget that saved id — only it.
+  'pane.codex_session_missing': (surfaceId, p) => ({
+    accepted: noteMissingSession(surfaceId, 'codex', p.sessionId),
+  }),
 
   'pane.report_metadata': (surfaceId, p) => ({
     accepted: !!reportMetadata(surfaceId, {

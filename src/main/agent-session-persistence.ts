@@ -1,5 +1,5 @@
-import { getAgentState, wasAgentReleased } from './agent-state';
-import { stampClaudeSessionIds } from './claude-resume';
+import { getAgentState, wasAgentReleased, isSessionMissing } from './agent-state';
+import { mapSurfaces, stampClaudeSessionIds } from './claude-resume';
 import { stampCodexSessionIds } from './codex-resume';
 import { stampOpencodeSessionIds } from './opencode-resume';
 import { stampAgySessionIds } from './agy-resume';
@@ -21,9 +21,24 @@ function providerLookup(provider: AgentSessionProvider) {
   };
 }
 
+/**
+ * Drop a saved Codex id that Codex said it cannot open. Silence keeps a
+ * restored handle (above), so this is the one way such an id leaves — and only
+ * when the id on disk is exactly the one Codex refused.
+ */
+function dropMissingCodexIds<T>(tree: T): T {
+  return mapSurfaces(tree, surface => {
+    const id = surface.codexSessionId;
+    if (typeof id !== 'string' || !isSessionMissing(surface.id as SurfaceId, 'codex', id)) return surface;
+    const rest = { ...surface };
+    delete rest.codexSessionId;
+    return rest;
+  });
+}
+
 export function stampAgentSessionIds<T>(tree: T): T {
   const claude = stampClaudeSessionIds(tree, providerLookup('claude'));
-  const codex = stampCodexSessionIds(claude, providerLookup('codex'));
+  const codex = dropMissingCodexIds(stampCodexSessionIds(claude, providerLookup('codex')));
   const opencode = stampOpencodeSessionIds(codex, providerLookup('opencode'));
   return stampAgySessionIds(opencode, providerLookup('agy'));
 }

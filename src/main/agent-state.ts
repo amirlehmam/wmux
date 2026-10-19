@@ -478,9 +478,36 @@ export function reportAgentSession(
   record.sessionId = sessionId;
   record.sessionProvider = provider;
   releasedSessions.delete(surfaceId);
+  missingSessions.delete(surfaceId);
   const result = commit(record);
   if (changed) notifySessionChanged();
   return result;
+}
+
+/**
+ * Saved handles the agent itself said it cannot open, per surface. Codex
+ * answers a resume of a thread that never had a turn with "no rollout found";
+ * kept, that id fails on every restart, and nothing else ever releases it —
+ * the pane never reported it, so there is no record to release. Matched
+ * against the id in the persisted tree at save time (agent-session-persistence),
+ * so only that exact handle goes.
+ */
+const missingSessions = new Map<SurfaceId, { provider: AgentSessionProvider; sessionId: string }>();
+
+/** `pane.codex_session_missing` — the saved handle names nothing to resume. */
+export function noteMissingSession(surfaceId: SurfaceId, provider: AgentSessionProvider, sessionId: unknown): boolean {
+  if (!SESSION_VALIDATORS[provider](sessionId)) return false;
+  if (missingSessions.size >= MAX_TRACKED_SURFACES && !missingSessions.has(surfaceId)) {
+    missingSessions.delete(missingSessions.keys().next().value!);
+  }
+  missingSessions.set(surfaceId, { provider, sessionId });
+  notifySessionChanged();
+  return true;
+}
+
+export function isSessionMissing(surfaceId: SurfaceId, provider: AgentSessionProvider, sessionId: string): boolean {
+  const missing = missingSessions.get(surfaceId);
+  return missing?.provider === provider && missing.sessionId === sessionId;
 }
 
 /** `pane.report_metadata` — model / context% / tokens, with a TTL. */
@@ -946,4 +973,5 @@ function notifyBroadcastListeners(): void {
 export function resetAgentState(): void {
   records.clear();
   releasedSessions.clear();
+  missingSessions.clear();
 }

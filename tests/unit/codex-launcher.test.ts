@@ -5,7 +5,9 @@ import { execFileSync } from 'child_process';
 import path from 'path';
 import { WebSocket } from 'ws';
 import { CodexSessionTracker } from '../../src/cli/codex-session-tracker';
-import { codexLaunchPlan } from '../../src/cli/wmux-codex';
+import {
+  codexLaunchPlan, resumeTarget, supportsRemote, wmuxRequestPatiently, isTransientWmuxError,
+} from '../../src/cli/wmux-codex';
 import { createCodexRelay, MAX_BACKENDS, type CodexRelay } from '../../src/cli/codex-relay';
 
 const A = '11111111-2222-3333-4444-555555555555';
@@ -22,8 +24,48 @@ describe('Codex conversation capture', () => {
       tracker.request(wire({ id, method }));
       tracker.response(wire({ id, result: { thread: { id: thread } } }));
     }
-    // Every root reply is reported; the relay dedupes on the id it saves.
-    expect(found.mock.calls).toEqual([[A], [A], [B]]);
+    // Every resumed or forked root reply is reported; the relay dedupes on the
+    // id it saves. A started thread waits for its first turn (next test).
+    expect(found.mock.calls).toEqual([[A], [B]]);
+  });
+
+  // Codex writes a new thread only once it has a turn. Reported at
+  // thread/start, an empty tab saved an id no `codex resume` could open.
+  it('reports a new thread at its first turn, and never one left empty', () => {
+    const found = vi.fn();
+    const tracker = new CodexSessionTracker(found);
+    tracker.request(wire({ id: 1, method: 'thread/start' }));
+    tracker.response(wire({ id: 1, result: { thread: { id: A } } }));
+    expect(found).not.toHaveBeenCalled();
+    tracker.request(wire({ id: 2, method: 'turn/start', params: { threadId: B } }));
+    expect(found).not.toHaveBeenCalled();
+    tracker.request(wire({ id: 3, method: 'turn/start', params: { threadId: A } }));
+    tracker.request(wire({ id: 4, method: 'turn/start', params: { threadId: A } }));
+    expect(found.mock.calls).toEqual([[A]]);
+    expect(tracker.sessionId).toBe(A);
+  });
+
+  it.each(['review/start', 'thread/shellCommand', 'thread/inject_items'])('also takes %s as a new thread\'s first content', method => {
+    const found = vi.fn();
+    const tracker = new CodexSessionTracker(found);
+    tracker.request(wire({ id: 1, method: 'thread/start' }));
+    tracker.response(wire({ id: 1, result: { thread: { id: A } } }));
+    tracker.request(wire({ id: 2, method, params: { threadId: A } }));
+    expect(found.mock.calls).toEqual([[A]]);
+  });
+
+  it('names a resumed thread Codex does not have, and nothing else', () => {
+    const missing = vi.fn();
+    const tracker = new CodexSessionTracker(vi.fn(), missing);
+    const fail = (id: number, method: string, threadId: string, message: string) => {
+      tracker.request(wire({ id, method, params: { threadId } }));
+      tracker.response(wire({ id, error: { code: -32600, message } }));
+    };
+    fail(1, 'thread/resume', A, `no rollout found for thread id ${A}`);
+    fail(2, 'thread/resume', B, 'stream disconnected before completion');
+    fail(3, 'thread/fork', B, `no rollout found for thread id ${B}`);
+    fail(4, 'thread/resume', B, `no rollout found for thread id ${A}`);
+    expect(missing.mock.calls).toEqual([[A]]);
   });
 
   it('ignores ephemeral threads requested internally when the first prompt is sent', () => {
@@ -31,6 +73,7 @@ describe('Codex conversation capture', () => {
     const tracker = new CodexSessionTracker(found);
     tracker.request(wire({ id: 1, method: 'thread/start' }));
     tracker.response(wire({ id: 1, result: { thread: { id: A, ephemeral: false } } }));
+    tracker.request(wire({ id: 9, method: 'turn/start', params: { threadId: A } }));
     tracker.request(wire({ id: 2, method: 'thread/start', params: { ephemeral: true } }));
     tracker.response(wire({ id: 2, result: { thread: { id: B } } }));
     tracker.request(wire({ id: 3, method: 'thread/start' }));
@@ -104,6 +147,101 @@ describe('Codex launch compatibility', () => {
   });
 });
 
+// A restore starts every saved Codex at once. Each launcher used to get one
+// 2 s answer from wmux and one 5 s `codex --help`; under that burst about half
+// timed out and ran without session capture.
+describe('launcher patience during a restore burst', () => {
+  const busy = () => Object.assign(new Error('wmux did not respond'), { name: 'WmuxBusyError' });
+  // The real busy error is a private class; reproduce it through the request itself.
+  function flaky(failures: number, error: () => Error = () => { const e = new Error('x') as NodeJS.ErrnoException; e.code = 'EBUSY'; return e; }) {
+    const timeouts: number[] = [];
+    let calls = 0;
+    const request = async (_method: string, _params: Record<string, unknown>, timeoutMs: number) => {
+      timeouts.push(timeoutMs);
+      if (calls++ < failures) throw error();
+      return { enabled: true };
+    };
+    return { request, timeouts, calls: () => calls };
+  }
+
+  it('asks a busy wmux again, with longer attempts, and says so once', async () => {
+    const { request, timeouts } = flaky(2);
+    const onWait = vi.fn();
+    const result = await wmuxRequestPatiently('pane.codex_restore_config', {}, { budgetMs: 60_000, firstAttemptMs: 3_000, onWait }, request);
+    expect(result).toEqual({ enabled: true });
+    expect(timeouts).toEqual([3_000, 6_000, 12_000]);
+    expect(onWait).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up at the end of its budget', async () => {
+    let clock = 0;
+    const { request, calls } = flaky(Infinity);
+    const now = () => (clock += 4_000);
+    await expect(wmuxRequestPatiently('m', {}, { budgetMs: 20_000, firstAttemptMs: 3_000 }, request, now)).rejects.toThrow();
+    expect(calls()).toBeLessThan(6);
+  });
+
+  it.each([
+    ['no wmux at all', () => Object.assign(new Error('connect ENOENT'), { code: 'ENOENT' })],
+    ['an older wmux refusing the method', () => new Error('Unknown method')],
+    ['outside wmux', () => new Error('Outside wmux')],
+  ])('answers at once for %s', async (_label, error) => {
+    const { request, calls } = flaky(Infinity, error);
+    await expect(wmuxRequestPatiently('m', {}, { budgetMs: 60_000, firstAttemptMs: 3_000 }, request)).rejects.toThrow();
+    expect(calls()).toBe(1);
+  });
+
+  it('treats a dropped or busy pipe as transient', () => {
+    for (const code of ['EBUSY', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT']) {
+      expect(isTransientWmuxError(Object.assign(new Error(code), { code }))).toBe(true);
+    }
+    expect(isTransientWmuxError(busy())).toBe(false); // only the launcher's own class, not a lookalike
+    expect(isTransientWmuxError(Object.assign(new Error('x'), { code: 'ENOENT' }))).toBe(false);
+  });
+
+  it('probes `codex --help` once per executable, and remembers only a yes', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'wmux-codex-cap-'));
+    dirs.push(dir);
+    const exe = path.join(dir, 'codex.exe');
+    writeFileSync(exe, 'v1');
+    const cache = path.join(dir, 'cache.json');
+    const yes = vi.fn(async () => true);
+    expect(await supportsRemote(exe, {}, yes, cache)).toBe(true);
+    expect(await supportsRemote(exe, {}, yes, cache)).toBe(true);
+    expect(yes).toHaveBeenCalledTimes(1);
+    writeFileSync(exe, 'v2, an update'); // size changes: the cached answer no longer applies
+    const no = vi.fn(async () => false);
+    expect(await supportsRemote(exe, {}, no, cache)).toBe(false);
+    expect(await supportsRemote(exe, {}, no, cache)).toBe(false);
+    expect(no).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a probe that timed out, and does not call silence a "no"', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'wmux-codex-cap-'));
+    dirs.push(dir);
+    const exe = path.join(dir, 'codex.exe');
+    writeFileSync(exe, 'v1');
+    const slowThenYes = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(true);
+    expect(await supportsRemote(exe, {}, slowThenYes, path.join(dir, 'c.json'))).toBe(true);
+    const silent = vi.fn(async () => null);
+    expect(await supportsRemote(exe, {}, silent, path.join(dir, 'd.json'))).toBeNull();
+    expect(silent).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [['resume', A], A],
+    [['-c', 'model="resume"', 'resume', A], A],
+    [['--model', 'o3', 'resume', A], A],
+    [['resume', '--last'], undefined],
+    [['resume'], undefined],
+    [['fork', A], undefined],
+    [[], undefined],
+    [['--', 'resume', A], undefined],
+  ])('finds the conversation a launch was asked to reopen in %j', (args, expected) => {
+    expect(resumeTarget(args as string[])).toBe(expected);
+  });
+});
+
 const relays: CodexRelay[] = [];
 const sockets: WebSocket[] = [];
 const dirs: string[] = [];
@@ -116,14 +254,22 @@ async function relay(onSession = vi.fn(), yolo = false) {
   const dir = mkdtempSync(path.join(tmpdir(), 'wmux-codex-relay-'));
   dirs.push(dir);
   const script = path.join(dir, 'server.cjs');
-  writeFileSync(script, `require('readline').createInterface({input:process.stdin}).on('line',line=>{
+  // \`holdUntil\` names a file: the reply waits until it exists, so a test can
+  // order two backends' replies without betting on how fast each one starts.
+  writeFileSync(script, `const fs=require('fs');require('readline').createInterface({input:process.stdin}).on('line',line=>{
     const request=JSON.parse(line);
-    setTimeout(()=>process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:request.params?.threadId,ephemeral:false},pid:process.pid,request,raw:line}})+'\\n'),request.params?.delayMs||0);
+    const reply=()=>process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:request.params?.threadId,ephemeral:false},pid:process.pid,request,raw:line}})+'\\n');
+    const hold=request.params?.holdUntil;
+    if(hold){const t=setInterval(()=>{if(fs.existsSync(hold)){clearInterval(t);reply();}},10);return;}
+    setTimeout(reply,request.params?.delayMs||0);
   });`);
   const instance = await createCodexRelay({ executable: process.execPath, args: [script], cwd: dir, env: process.env, onSession, yolo });
   relays.push(instance);
+  relayDirs.set(instance, dir);
   return instance;
 }
+const relayDirs = new WeakMap<CodexRelay, string>();
+const relayDir = (instance: CodexRelay) => relayDirs.get(instance)!;
 function connect(instance: CodexRelay, token = instance.token, origin?: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(instance.url, { headers: { Authorization: `Bearer ${token}` }, origin });
@@ -151,6 +297,13 @@ describe('authenticated local relay', () => {
     expect(JSON.parse(await response).result.request).toEqual({ id: 1, method, params: {
       threadId: A, approvalPolicy: 'never', sandbox: 'danger-full-access', permissions: null, model: 'test-model',
     } });
+    // A started thread is captured at its first turn.
+    if (method === 'thread/start') {
+      expect(found).not.toHaveBeenCalled();
+      const turn = new Promise<string>(resolve => socket.once('message', data => resolve(data.toString())));
+      socket.send(wire({ id: 2, method: 'turn/start', params: { threadId: A } }));
+      await turn;
+    }
     expect(found.mock.calls).toEqual([[A]]);
     expect(instance.sessionId).toBe(A);
   });
@@ -198,13 +351,18 @@ describe('authenticated local relay', () => {
     const tui = await connect(instance);
     const picker = await connect(instance);
     const tuiReply = new Promise<string>(resolve => tui.once('message', data => resolve(data.toString())));
-    tui.send(wire({ id: 1, method: 'thread/resume', params: { threadId: A, delayMs: 100 } }));
+    // Held until the picker has been answered. A 100 ms delay used to stand in
+    // for this, and lost whenever the picker's own backend took longer than that
+    // to start — a loaded machine, or a full parallel test run.
+    const release = path.join(relayDir(instance), 'release-tui');
+    tui.send(wire({ id: 1, method: 'thread/resume', params: { threadId: A, holdUntil: release } }));
     const pickerReply = new Promise<string>(resolve => picker.once('message', data => resolve(data.toString())));
     // A second connection may reuse id=1. Its read response must not consume
     // the TUI's pending resume, even if it happens to contain a thread object.
     picker.send(wire({ id: 1, method: 'thread/read', params: { threadId: B } }));
     expect(JSON.parse(await pickerReply).result.thread.id).toBe(B);
     expect(found).not.toHaveBeenCalled();
+    writeFileSync(release, '');
     expect(JSON.parse(await tuiReply).result.thread.id).toBe(A);
     expect(found.mock.calls).toEqual([[A]]);
     picker.close();
