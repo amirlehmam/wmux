@@ -110,15 +110,22 @@ type SessionIdLookup = (surfaceId: SurfaceId) => string | null | undefined;
  * running pane changes and the field cannot go stale in memory.
  *
  * A surface whose agent was released (Claude exited cleanly — `SessionEnd`
- * calls `releaseAgent`) looks up to nothing and has any previously stamped id
+ * calls `releaseAgent`) looks up to `null` and has any previously stamped id
  * REMOVED rather than left behind. That is what makes "exit Claude, restart
  * wmux, get a plain shell" work, and it is why the delete branch is not an
  * optimisation that can be skipped.
+ *
+ * `undefined` is the other answer and means "no opinion": a restored pane
+ * whose `claude --resume` has not reported yet — or whose tab has not even
+ * been shown, so its PTY does not exist — keeps the id it was restored with.
+ * Treating silence as an exit wiped every unopened tab's conversation on the
+ * first 30 s auto-save after a restart (same rule as codex-resume.ts).
  */
 export function stampClaudeSessionIds<T>(tree: T, lookup: SessionIdLookup): T {
   return mapSurfaces(tree, (s) => {
     if (s.type !== 'terminal') return s;
     const found = lookup(s.id as SurfaceId);
+    if (found === undefined) return s;
     const next = isValidClaudeSessionId(found) ? found : undefined;
     const prev = typeof s.claudeSessionId === 'string' ? s.claudeSessionId : undefined;
     if (next === prev) return s;

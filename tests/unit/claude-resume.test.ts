@@ -112,6 +112,13 @@ describe('stampClaudeSessionIds', () => {
     expect('claudeSessionId' in out.surfaces[0]).toBe(false);
   });
 
+  // `undefined` is "no opinion": a restored pane whose Claude has not reported
+  // yet (or whose tab was never shown) must not lose its handle to an autosave.
+  it('KEEPS the id when the lookup has no opinion', () => {
+    const tree = leaf([terminal('surf-1', { claudeSessionId: ID_A })]);
+    expect(stampClaudeSessionIds(tree, () => undefined)).toBe(tree);
+  });
+
   it('preserves every other surface field', () => {
     const tree = leaf([terminal('surf-1', { cwd: 'D:\\work', shell: 'pwsh', startupCommands: ['nvm use'] })]);
     const out = stampClaudeSessionIds(tree, () => ID_A);

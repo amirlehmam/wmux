@@ -336,8 +336,11 @@ function routeSpecialV2(
   }
   // The CLI exiting because wmux is shutting down must not erase recovery IDs.
   // A quitting wmux kills every PTY, and an agent that exits because of it did
-  // not choose to end its conversation — keep the handle for restore.
-  if ((request.method === 'pane.release_codex_session' || request.method === 'pane.release_opencode_session') && isQuitting) {
+  // not choose to end its conversation — keep the handle for restore. Claude's
+  // release is `pane.release_agent`, sent by its SessionEnd hook as the PTY
+  // dies, and gets the same refusal.
+  if ((request.method === 'pane.release_codex_session' || request.method === 'pane.release_opencode_session' ||
+       request.method === 'pane.release_agent') && isQuitting) {
     respond({ released: false });
     return true;
   }
