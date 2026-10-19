@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { bashExists, forBash, hasBash } from '../helpers/bash-path';
+import { BASH_TEST_TIMEOUT_MS, bashExists, forBash, hasBash } from '../helpers/bash-path';
 import { createWmuxStub, removeWmuxStub, type WmuxStub } from '../helpers/wmux-stub';
 
 const SCRIPTS = path.resolve(__dirname, '../../resources/wmux-orchestrator/scripts');
@@ -62,8 +62,8 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-// Each script run spawns several node processes under Git Bash, ~2-3 s on Windows.
-const SLOW = 30_000;
+// Each script run spawns several node processes under Git Bash: see BASH_TEST_TIMEOUT_MS.
+const SLOW = BASH_TEST_TIMEOUT_MS;
 
 describe.skipIf(!canRun)('reap-wave.sh', { timeout: SLOW }, () => {
   it('kills the agent, then closes its surface, then stamps reapedAt', () => {

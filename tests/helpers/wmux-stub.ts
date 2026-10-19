@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { forBash } from './bash-path';
+import { BASH_CALL_TIMEOUT_MS, forBash } from './bash-path';
 
 /**
  * A stand-in `wmux` for testing the orchestrator's bash scripts without ever
@@ -80,7 +80,9 @@ export function createWmuxStub(opts: { pingFails?: boolean } = {}): WmuxStub {
         .map(([k, v]) => `export ${k}=${JSON.stringify(v)}; `)
         .join('');
       const full = `export PATH="${bashDir}:$PATH"; unset WMUX_CLI WMUX_SURFACE_ID WMUX_PIPE WMUX; ${assigns}${script}`;
-      const r = spawnSync('bash', ['-c', full], { encoding: 'utf8' });
+      // Killed rather than left to block the worker: see BASH_CALL_TIMEOUT_MS.
+      const r = spawnSync('bash', ['-c', full], { encoding: 'utf8', timeout: BASH_CALL_TIMEOUT_MS });
+      if (r.error) throw new Error(`bash did not finish: ${r.error.message}`);
       return { stdout: r.stdout ?? '', stderr: r.stderr ?? '', status: r.status ?? 1 };
     },
     assertReachable() {

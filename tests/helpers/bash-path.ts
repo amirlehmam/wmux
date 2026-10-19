@@ -59,3 +59,20 @@ export function hasBash(): boolean {
 export function forBash(p: string): string {
   return toBashPath(p, bashExists);
 }
+
+/**
+ * Time limits for tests that drive the orchestrator's bash scripts.
+ *
+ * Those scripts start a `node` process for every state.json access, and on
+ * Windows each one goes through Git Bash's fork emulation (and the antivirus):
+ * a single test measured 18-30 s on an idle desktop, and roughly twice that
+ * inside a full parallel run. Each file used to pick its own limit — 15, 30 or
+ * 60 s — and raise it after the next spurious failure.
+ *
+ * The scripts run through spawnSync/execFileSync, which block the worker, so
+ * vitest's timer cannot fire while a script runs: the test timeout never caught
+ * a hang, it only turned a slow pass into a failure. The real guard is
+ * BASH_CALL_TIMEOUT_MS on the call itself, which kills a script that stops.
+ */
+export const BASH_CALL_TIMEOUT_MS = 120_000;
+export const BASH_TEST_TIMEOUT_MS = 300_000;

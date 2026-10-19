@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { bashExists, forBash, hasBash } from '../helpers/bash-path';
+import { BASH_TEST_TIMEOUT_MS, bashExists, forBash, hasBash } from '../helpers/bash-path';
 import { createWmuxStub, removeWmuxStub, type WmuxStub } from '../helpers/wmux-stub';
 
 const SPAWN = path.resolve(__dirname, '../../resources/wmux-orchestrator/scripts/spawn-agents.sh');
@@ -115,8 +115,8 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-// Each script run spawns a node process per JSON access under Git Bash, ~3-6 s on Windows.
-const SLOW = 60_000;
+// Each script run spawns a node process per JSON access under Git Bash: see BASH_TEST_TIMEOUT_MS.
+const SLOW = BASH_TEST_TIMEOUT_MS;
 
 describe.skipIf(!canRun)('spawn-agents.sh with groups', { timeout: SLOW }, () => {
   it('puts a group in one pane, replaces the idle tab once, and focuses the first member', () => {
