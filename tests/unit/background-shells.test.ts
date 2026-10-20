@@ -194,6 +194,24 @@ describe('wmux-hook.js background shells (#276)', () => {
       expect(params.bgTasksEnded).toBe('bnamed');
     });
 
+    it('keeps the newest endings when the tail holds more than the cap', async () => {
+      const lines = Array.from({ length: 40 }, (_, i) => absorbed(NOTIFICATION(`bold${i}`)));
+      lines.push(absorbed(NOTIFICATION('bold3'))); // re-reported: counts as recent
+      lines.push(absorbed(NOTIFICATION('bnewest')));
+      fs.writeFileSync(child, lines.join('\n') + '\n');
+      const params = await hookParams(['--event', 'PreToolUse'], {
+        hook_event_name: 'PreToolUse', tool_name: 'TaskStop', tool_input: { task_id: 'bstop' },
+        agent_id: 'a1b2c3', transcript_path: parent,
+      });
+      const ended = params.bgTasksEnded.split(',');
+      expect(ended).toHaveLength(32);
+      expect(ended[0]).toBe('bstop');
+      expect(ended).toContain('bnewest');
+      expect(ended).toContain('bold3');
+      expect(ended).toContain('bold39');
+      expect(ended).not.toContain('bold0');
+    });
+
     it('keeps a TaskStop in the same call', async () => {
       fs.writeFileSync(child, absorbed(NOTIFICATION('bdone')) + '\n');
       const params = await hookParams(['--event', 'PreToolUse'], {

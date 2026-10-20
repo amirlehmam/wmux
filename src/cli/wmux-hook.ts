@@ -374,7 +374,14 @@ function subagentEndedTaskIds(file: string): string[] {
       ids.push(...endedTaskIds(record.message.content));
     }
   }
-  return [...new Set(ids)];
+  // Oldest first, and a repeated id moves to its latest position, so the end of
+  // the list is always the most recent endings.
+  const recent = new Set<string>();
+  for (const id of ids) {
+    recent.delete(id);
+    recent.add(id);
+  }
+  return [...recent];
 }
 
 function readBackgroundTasks(data: Record<string, any>, toolInput: any, toolName: unknown, out: HookPayloadFields): void {
@@ -394,8 +401,13 @@ function readBackgroundTasks(data: Record<string, any>, toolInput: any, toolName
   if (out.agentId && (event === 'PreToolUse' || event === 'SubagentStop')) {
     const ended = subagentEndedTaskIds(subagentTranscriptPath(data, out.agentId));
     if (ended.length) {
-      out.bgTasksEnded = [...new Set([...out.bgTasksEnded.split(',').filter(Boolean), ...ended])]
-        .slice(0, MAX_TASK_NOTIFICATIONS).join(',');
+      // Keep a TaskStop from this call, then the NEWEST endings. Every hook
+      // rereads the same tail, so keeping the oldest would drop a fresh ending
+      // on every call until older records scrolled out of the tail.
+      const stopped = out.bgTasksEnded.split(',').filter(Boolean);
+      const room = MAX_TASK_NOTIFICATIONS - stopped.length;
+      const newest = ended.filter((id) => !stopped.includes(id)).slice(-room);
+      out.bgTasksEnded = [...stopped, ...newest].join(',');
     }
   }
   if (event === 'SessionStart' && data.source === 'startup') out.freshSession = true;
