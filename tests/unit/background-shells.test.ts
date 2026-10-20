@@ -143,6 +143,10 @@ describe('wmux-hook.js background shells (#276)', () => {
       type: 'attachment', isSidechain: true, agentId: 'a1b2c3',
       attachment: { type: 'queued_command', prompt, commandMode: 'task-notification' },
     });
+    const delivered = (prompt: string, isMeta = true) => JSON.stringify({
+      type: 'user', isSidechain: true, isMeta,
+      message: { role: 'user', content: `[SYSTEM NOTIFICATION - NOT USER INPUT]\nThis is an automated background-task event.\n\n${prompt}` },
+    });
     const quoted = (prompt: string) => JSON.stringify({
       type: 'user', isSidechain: true, message: { role: 'user', content: [{ type: 'tool_result', content: prompt }] },
     });
@@ -167,6 +171,17 @@ describe('wmux-hook.js background shells (#276)', () => {
         transcript_path: parent,
       });
       expect(params.bgTasksEnded).toBe('bdone');
+    });
+
+    it('also reads a notification delivered as a meta user message, but not a typed one', async () => {
+      fs.writeFileSync(child, [
+        delivered(NOTIFICATION('bmeta')),
+        delivered(NOTIFICATION('btyped'), false),
+      ].join('\n') + '\n');
+      const params = await hookParams(['--event', 'PreToolUse'], {
+        hook_event_name: 'PreToolUse', tool_name: 'Read', agent_id: 'a1b2c3', transcript_path: parent,
+      });
+      expect(params.bgTasksEnded).toBe('bmeta');
     });
 
     it('ends it when the subagent stops, from the transcript SubagentStop names', async () => {

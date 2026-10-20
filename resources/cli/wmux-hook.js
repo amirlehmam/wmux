@@ -310,10 +310,12 @@ function readTail(file, max) {
 /**
  * Background tasks a SUBAGENT was told have ended. A shell the subagent started
  * reports back to the subagent, not to the parent: the `<task-notification>` is
- * absorbed into the subagent's turn as a `queued_command` attachment, and a
- * subagent fires no UserPromptSubmit, so the path above never sees it and the
- * shell's line stayed "running" until the 12 h ghost guard. Only that record
- * type is read, so a notification quoted in tool output is not taken for one.
+ * written into the subagent's transcript, and a subagent fires no
+ * UserPromptSubmit, so the path above never sees it and the shell's line
+ * stayed "running" until the 12 h ghost guard. It arrives in one of two
+ * records: a `queued_command` attachment (absorbed mid-turn), or a meta user
+ * message whose text leads with a "[SYSTEM NOTIFICATION …]" preamble. Only
+ * those are read, so a notification quoted in tool output is not taken for one.
  */
 function subagentEndedTaskIds(file) {
     const ids = [];
@@ -328,10 +330,13 @@ function subagentEndedTaskIds(file) {
             continue;
         }
         const attachment = record?.attachment;
-        if (attachment?.type !== 'queued_command' || typeof attachment.prompt !== 'string')
-            continue;
-        if (isTaskNotification(attachment.prompt))
-            ids.push(...endedTaskIds(attachment.prompt));
+        if (attachment?.type === 'queued_command' && typeof attachment.prompt === 'string') {
+            if (isTaskNotification(attachment.prompt))
+                ids.push(...endedTaskIds(attachment.prompt));
+        }
+        else if (record?.type === 'user' && record.isMeta === true && typeof record.message?.content === 'string') {
+            ids.push(...endedTaskIds(record.message.content));
+        }
     }
     return [...new Set(ids)];
 }
