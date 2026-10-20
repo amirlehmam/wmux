@@ -16,7 +16,9 @@
  *   - UserPromptSubmit       → extracts `prompt` (the prompt log, issue #207)
  * WMUX_SURFACE_ID (set by wmux in each pane's shell) ties the event to its pane.
  */
+import fs from 'fs';
 import net from 'net';
+import path from 'path';
 import { DEFAULT_V2_TIMEOUT_MS, transportDeadline } from './transport-deadline';
 
 const argv = process.argv.slice(2);
@@ -309,6 +311,67 @@ function taskDetail(toolInput: any): string {
   return raw.replace(/\s+/g, ' ').trim().slice(0, MAX_TASK_DETAIL);
 }
 
+/**
+ * How much of a subagent's transcript is read for notifications. The tail is
+ * enough: this runs on every tool call the subagent makes, and a notification
+ * is absorbed just before the call that follows it.
+ */
+const SUBAGENT_TAIL_BYTES = 256 * 1024;
+
+/**
+ * Where a subagent's own transcript is. `SubagentStop` names it
+ * (`agent_transcript_path`); every other hook from inside a subagent carries
+ * only the parent's `transcript_path`, and Claude Code keeps the subagent's
+ * beside it as `<session>/subagents/agent-<agent_id>.jsonl`.
+ */
+function subagentTranscriptPath(data: Record<string, any>, agentId: string): string {
+  const named = data.agent_transcript_path;
+  if (typeof named === 'string' && path.basename(named) === `agent-${agentId}.jsonl`) return named;
+  const parent = data.transcript_path;
+  if (typeof parent !== 'string' || !parent.endsWith('.jsonl')) return '';
+  return path.join(parent.slice(0, -'.jsonl'.length), 'subagents', `agent-${agentId}.jsonl`);
+}
+
+/** The last `max` bytes of a file, from the first whole line; '' on any error. */
+function readTail(file: string, max: number): string {
+  if (!file) return '';
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, max);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const text = buf.toString('utf8');
+    return len < size ? text.slice(text.indexOf('\n') + 1) : text;
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* already gone */ }
+  }
+}
+
+/**
+ * Background tasks a SUBAGENT was told have ended. A shell the subagent started
+ * reports back to the subagent, not to the parent: the `<task-notification>` is
+ * absorbed into the subagent's turn as a `queued_command` attachment, and a
+ * subagent fires no UserPromptSubmit, so the path above never sees it and the
+ * shell's line stayed "running" until the 12 h ghost guard. Only that record
+ * type is read, so a notification quoted in tool output is not taken for one.
+ */
+function subagentEndedTaskIds(file: string): string[] {
+  const ids: string[] = [];
+  for (const line of readTail(file, SUBAGENT_TAIL_BYTES).split('\n')) {
+    if (!line.includes('<task-notification>')) continue;
+    let record: any;
+    try { record = JSON.parse(line); } catch { continue; }
+    const attachment = record?.attachment;
+    if (attachment?.type !== 'queued_command' || typeof attachment.prompt !== 'string') continue;
+    if (isTaskNotification(attachment.prompt)) ids.push(...endedTaskIds(attachment.prompt));
+  }
+  return [...new Set(ids)];
+}
+
 function readBackgroundTasks(data: Record<string, any>, toolInput: any, toolName: unknown, out: HookPayloadFields): void {
   const response = data.tool_response ?? data.toolResponse;
   const bgId = response && typeof response === 'object' ? response.backgroundTaskId : undefined;
@@ -322,6 +385,13 @@ function readBackgroundTasks(data: Record<string, any>, toolInput: any, toolName
   }
   if (event === 'UserPromptSubmit' && typeof data.prompt === 'string' && isTaskNotification(data.prompt)) {
     out.bgTasksEnded = endedTaskIds(data.prompt).join(',');
+  }
+  if (out.agentId && (event === 'PreToolUse' || event === 'SubagentStop')) {
+    const ended = subagentEndedTaskIds(subagentTranscriptPath(data, out.agentId));
+    if (ended.length) {
+      out.bgTasksEnded = [...new Set([...out.bgTasksEnded.split(',').filter(Boolean), ...ended])]
+        .slice(0, MAX_TASK_NOTIFICATIONS).join(',');
+    }
   }
   if (event === 'SessionStart' && data.source === 'startup') out.freshSession = true;
 }

@@ -1182,7 +1182,9 @@ function applyHookLifecycle(params: any): void {
  * devcontainer through `wmux bridge` — with no process polling. The start is
  * the PostToolUse that carries `backgroundTaskId`; the end is the
  * `<task-notification>` Claude Code feeds its next turn (UserPromptSubmit,
- * which it fires mid-turn too), a `TaskStop`, or the session ending. The
+ * which it fires mid-turn too), a `TaskStop`, or the session ending. A shell a
+ * subagent started reports to that subagent instead, which fires no
+ * UserPromptSubmit; the hook reads those off the subagent's transcript. The
  * parent's Stop never ends one, for the same reason it never ends a #272
  * subagent: the shell outlives the turn by design.
  */
