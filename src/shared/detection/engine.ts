@@ -119,19 +119,26 @@ export function sliceRegion(input: DetectionInput, region: Region): string[] {
     case 'top_non_empty_lines':
       return lines.filter((l) => l.trim().length > 0).slice(0, count);
     case 'non_empty_lines_above': {
-      // An anchor that names its own region would recurse; it is matched
-      // against plain lines, so the field is simply not consulted here.
+      // An anchor or start that names its own region would recurse; both are
+      // matched against plain lines, so the field is simply not consulted here.
       if (!region.anchor) return [];
       const recent = lines.slice(-LIMITS.MAX_REGION_LINES).filter((l) => l.trim().length > 0);
-      let last = -1;
-      for (let i = recent.length - 1; i >= 0; i--) {
-        if (matchLine([recent[i]], region.anchor) !== null) { last = i; break; }
-      }
-      return last < 0 ? [] : recent.slice(Math.max(0, last - count), last);
+      const last = lastMatchBefore(recent, region.anchor, recent.length);
+      if (last < 0) return [];
+      const opened = region.start ? lastMatchBefore(recent, region.start, last) : -1;
+      return recent.slice(Math.max(0, opened, last - count), last);
     }
     default:
       return [];
   }
+}
+
+/** Index of the last line before `end` that `matcher` hits, or -1. */
+function lastMatchBefore(lines: string[], matcher: Matcher, end: number): number {
+  for (let i = end - 1; i >= 0; i--) {
+    if (matchLine([lines[i]], matcher) !== null) return i;
+  }
+  return -1;
 }
 
 /** One line against one already-prepared matcher. */

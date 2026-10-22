@@ -132,6 +132,43 @@ describe('detectScreen — current business question', () => {
     expect(out.state).not.toBe('question');
   });
 
+  // Codex round 1, P1: "three lines above the marker" reached past a one-line
+  // answer into the wrapped continuation of the user's prompt, which carries no
+  // prompt glyph of its own.
+  it('does not take the wrapped continuation of the user\'s prompt for the agent\'s question', () => {
+    const out = detectScreen({
+      lines: [
+        '> Please answer briefly:',
+        '  Should the build pass?',
+        '',
+        '● Done.',
+        '',
+        '✻ Baked for 1s · done 3:46 PM',
+        '',
+        '──────────────────────────────',
+        '> ',
+        '──────────────────────────────',
+        '  ⏵⏵ auto mode on (shift+tab to cycle)',
+      ],
+    }, BUNDLED_MANIFESTS);
+    expect(out.state).not.toBe('question');
+  });
+
+  it('does not take a question printed by a tool for the agent\'s', () => {
+    const out = detectScreen({
+      lines: [
+        '● Bash(npm init)',
+        '  ⎿  Is this OK? (yes)',
+        '',
+        '✻ Baked for 3s · done 3:46 PM',
+        '',
+        '> ',
+        '  ⏵⏵ auto mode on (shift+tab to cycle)',
+      ],
+    }, BUNDLED_MANIFESTS);
+    expect(out.state).not.toBe('question');
+  });
+
   // After a closed question Claude Code pre-fills a suggested answer on the
   // prompt line, and plain text cannot tell it from typing. Captured live
   // (Claude Code 2.1.304): ">" + U+00A0 + the suggestion, under the question.
@@ -330,6 +367,16 @@ describe('sliceRegion', () => {
     expect(sliceRegion({ lines }, { id: 'non_empty_lines_above', count: 2, anchor })).toEqual(['c', 'd']);
     expect(sliceRegion({ lines: ['a', 'b'] }, { id: 'non_empty_lines_above', count: 2, anchor })).toEqual([]);
     expect(sliceRegion({ lines }, { id: 'non_empty_lines_above', count: 2 })).toEqual([]);
+  });
+
+  it('non_empty_lines_above opens no higher than the nearest `start` above the anchor, and ignores a start it cannot see', () => {
+    const anchor = { kind: 'contains' as const, value: 'MARK' };
+    const start = { kind: 'lineStartsWith' as const, value: 'S' };
+    const lines = ['S old', 'a', 'b', 'S new', 'c', 'MARK'];
+    expect(sliceRegion({ lines }, { id: 'non_empty_lines_above', count: 3, anchor, start })).toEqual(['S new', 'c']);
+    // a start only BELOW the anchor bounds nothing
+    expect(sliceRegion({ lines: ['a', 'b', 'MARK', 'S after'] }, { id: 'non_empty_lines_above', count: 2, anchor, start }))
+      .toEqual(['a', 'b']);
   });
 
   it('osc_title yields the trimmed title, or nothing', () => {

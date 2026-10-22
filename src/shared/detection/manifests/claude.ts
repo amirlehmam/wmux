@@ -37,9 +37,15 @@ const SPINNER = '[✳✴✵✶✷✸✹✺✻✼✽·✦✧]';
  */
 const TURN_DONE = `^\\s*${SPINNER}\\s+\\S+ for \\d+[ms]\\b.*\\bdone\\b`;
 
+/**
+ * The first line of one of Claude's messages or tool calls: "● Done." Windows
+ * builds draw U+25CF; elsewhere Claude Code draws U+23FA in the same place.
+ */
+const MESSAGE_START = '^[●⏺]\\s';
+
 export const claudeManifest: Manifest = {
   agent: 'claude',
-  version: 1,
+  version: 2,
 
   signatures: [
     // The mode footer. Present in every screen captured, in both modes, and
@@ -115,13 +121,20 @@ export const claudeManifest: Manifest = {
      * answered, when the turn after it was short. Anchored above the last
      * marker, an answered question is by construction above an older marker.
      *
+     * It is also bounded by the message. The region opens no higher than the
+     * line that starts Claude's last message, so a one-line answer does not
+     * lend its window to the user's wrapped prompt above it — whose
+     * continuation lines carry no prompt glyph to exclude them by.
+     *
      * The question mark must be followed by ordinary text or end the line. One
-     * followed by a closing quote is Claude QUOTING a question, and a line that
-     * starts with the prompt glyph is the user's own submitted text.
+     * followed by a closing quote is Claude QUOTING a question, a line that
+     * starts with the prompt glyph is the user's own submitted text, and one
+     * that starts with `⎿` is a tool's output.
      *
      * Known limits, stated rather than papered over: a turn too short for
-     * Claude to print the marker is not seen at all, and a past question
-     * retold without quotes in the closing lines reads as current.
+     * Claude to print the marker is not seen at all, a past question retold
+     * without quotes in the closing lines reads as current, and so does a
+     * question on a tool output's second line, when the turn ends on the tool.
      */
     {
       id: 'claude.question.pending',
@@ -135,11 +148,12 @@ export const claudeManifest: Manifest = {
         { kind: 'lineRegex', value: '^>(\\s|$)' },
         {
           kind: 'lineRegex',
-          value: '^\\s*[^>❯\\s].*\\?(\\s+[^\\s»"”]|\\s*$)',
+          value: '^\\s*[^>❯⎿\\s].*\\?(\\s+[^\\s»"”]|\\s*$)',
           region: {
             id: 'non_empty_lines_above',
             count: 3,
             anchor: { kind: 'lineRegex', value: TURN_DONE },
+            start: { kind: 'lineRegex', value: MESSAGE_START },
           },
         },
       ],

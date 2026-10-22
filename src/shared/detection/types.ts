@@ -85,6 +85,16 @@ export interface Region {
   count?: number;
   /** Required by `non_empty_lines_above`; ignored by the others. */
   anchor?: Matcher;
+  /**
+   * `non_empty_lines_above` only: the region opens no higher than the nearest
+   * line above the anchor that this matches, which it includes. That is how a
+   * rule reads "the end of the last MESSAGE" rather than "the last N lines",
+   * which can reach past a short message into whatever preceded it. With no
+   * match in the window the region keeps its plain count: the message then
+   * started above what the screen holds, so every line above the anchor is
+   * still part of it.
+   */
+  start?: Matcher;
 }
 
 export interface Rule {

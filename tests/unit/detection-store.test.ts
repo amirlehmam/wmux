@@ -36,7 +36,7 @@ describe('explainFile', () => {
       manifestSource: 'bundled',
     });
     expect(out.evidence.join('\n')).toContain('Unravelling');
-    expect(out.manifestVersion).toBe(1);
+    expect(out.manifestVersion).toBe(2);
   });
 
   it('replays a captured idle screen', () => {
