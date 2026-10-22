@@ -22,18 +22,22 @@ import type { AgentRosterEntry } from '../store/agent-rollup';
 type ChoiceLike = { id: string; label: string; isDefault?: unknown };
 
 export function toRemoteRosterSource(entry: AgentRosterEntry): RemoteRosterSource {
+  // The phone protocol's state set is closed (RemoteRosterSource.state) and a
+  // question is not on it. A question only ever refines a DECLARED idle, so it
+  // goes back to being that idle, and the phone sees the pane exactly as it did
+  // before question detection existed. Not `unknown`: main's roster marks a
+  // turn done on working -> idle, and a turn that ended on a question lost its
+  // "done" toast. Never `blocked`, which would arm the phone's answer path for
+  // something that has no declared choices.
+  const asked = entry.state === 'question';
   return {
     surfaceId: entry.surfaceId,
     workspaceId: entry.workspaceId,
     workspaceTitle: entry.workspaceTitle,
     label: entry.label,
     kind: entry.kind,
-    // The phone protocol's state set is closed (RemoteRosterSource.state) and a
-    // question is not on it. It degrades to `unknown` — never to `blocked`,
-    // which would arm the phone's answer path for something that has no declared
-    // choices, and never widened here, where nothing validates the new value.
-    state: entry.state === 'question' ? 'unknown' : entry.state,
-    stateSource: entry.stateSource,
+    state: entry.state === 'question' ? 'idle' : entry.state,
+    stateSource: asked ? 'declared' : entry.stateSource,
     blockedReason: entry.blockedReason,
     choices: (entry.choices as ChoiceLike[]).map((c) =>
       c.isDefault === true ? { id: c.id, label: c.label, isDefault: true } : { id: c.id, label: c.label },
