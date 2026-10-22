@@ -158,6 +158,7 @@ export const fr: Translation = {
   'surfaceTab.splitRight': 'Diviser à droite',
   'surfaceTab.splitDown': 'Diviser en bas',
   'surfaceTab.rename': 'Renommer',
+  'surfaceTab.copyPath': 'Copier le chemin complet',
   'surfaceTab.startupCommand': 'Commande de démarrage…',
   'surfaceTab.startupCommandTitle': 'Commandes de démarrage',
   'surfaceTab.startupCommandHint': 'Une commande par ligne. Elles s’exécutent au démarrage de ce panneau — à la restauration, ou quand une session ou une disposition enregistrée l’ouvre — et rien ne s’exécute maintenant.',

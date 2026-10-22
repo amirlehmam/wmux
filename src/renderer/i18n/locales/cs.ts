@@ -165,6 +165,7 @@ export const cs: Translation = {
   'surfaceTab.splitRight': 'Rozdělit vpravo',
   'surfaceTab.splitDown': 'Rozdělit dolů',
   'surfaceTab.rename': 'Přejmenovat',
+  'surfaceTab.copyPath': 'Kopírovat celou cestu',
   'surfaceTab.close': 'Zavřít',
   'surfaceTab.closeOthers': 'Zavřít ostatní',
   'surfaceTab.closeToRight': 'Zavřít vpravo',

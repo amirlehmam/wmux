@@ -217,6 +217,7 @@ export const en = {
   'surfaceTab.splitRight': 'Split right',
   'surfaceTab.splitDown': 'Split down',
   'surfaceTab.rename': 'Rename',
+  'surfaceTab.copyPath': 'Copy full path',
   'surfaceTab.startupCommand': 'Startup command…',
   'surfaceTab.startupCommandTitle': 'Startup commands',
   'surfaceTab.startupCommandHint': 'One command per line. They run when this pane starts — on restore, or when a saved session or layout opens it — and nothing runs now.',

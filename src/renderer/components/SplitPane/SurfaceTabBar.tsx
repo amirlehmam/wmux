@@ -94,11 +94,14 @@ export default function SurfaceTabBar({
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [renamingId, setRenamingId] = useState<SurfaceId | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  // Right-click tab context menu (Rename / Close / Close others).
+  // Right-click tab context menu.
   const [ctxMenu, setCtxMenu] = useState<{ surfaceId: SurfaceId; x: number; y: number } | null>(null);
   // The surface whose startup commands are being edited (#284), if any.
   const [startupFor, setStartupFor] = useState<SurfaceId | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const ctxSurface = surfaces.find((s) => s.id === ctxMenu?.surfaceId);
+  const ctxFilePath = ctxSurface?.type === 'markdown' ? ctxSurface.markdownFilePath
+    : ctxSurface?.type === 'code' ? ctxSurface.codeFilePath : undefined;
   // Which control-cluster dropdown is open, and where to anchor it (issue #34).
   // Menus render through a portal to document.body so the tab bar's
   // `overflow: hidden` can no longer clip them (the old caret-dropdown bug).
@@ -603,6 +606,26 @@ export default function SurfaceTabBar({
           >
             {t('surfaceTab.rename', 'Rename')}
           </div>
+          {ctxFilePath && (
+            <div
+              className="ctx-menu__item"
+              role="menuitem"
+              tabIndex={0}
+              title={ctxFilePath}
+              onClick={() => {
+                window.wmux?.clipboard?.writeText?.(ctxFilePath)?.catch(() => { /* ignore, as in CodePane */ });
+                setCtxMenu(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.currentTarget.click();
+                }
+              }}
+            >
+              {t('surfaceTab.copyPath', 'Copy full path')}
+            </div>
+          )}
           {surfaces.find((s) => s.id === ctxMenu.surfaceId)?.type === 'terminal' && (
             <div
               className="ctx-menu__item"
