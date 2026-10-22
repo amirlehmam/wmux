@@ -32,7 +32,15 @@ export function userManifestDir(): string {
   return path.join(getAppDataDir(), 'agent-detection');
 }
 
+/**
+ * `question` is not among them, and an override therefore turns question
+ * detection OFF for its agent. Its bundled rule reads an anchored, message-
+ * bounded region with regexes, neither of which an override may use, and a
+ * literal-only approximation would promote quoted and stale questions. Off is
+ * the honest degradation: the pane reads as the idle its agent declared.
+ */
 const STATES = new Set(['blocked', 'working', 'idle']);
+const NO_QUESTION = 'an override cannot carry a "question" rule, so this agent\'s questions read as idle';
 const REGIONS = new Set([
   'whole_recent', 'bottom_lines', 'bottom_non_empty_lines', 'top_non_empty_lines', 'osc_title',
 ]);
@@ -135,6 +143,7 @@ export function parseUserManifest(
   rulesRaw.forEach((r, i) => {
     const rule = validRule(r, allowRegex);
     if (rule) rules.push(rule);
+    else if ((r as { state?: unknown } | null)?.state === 'question') errors.push(`rule[${i}] rejected — ${NO_QUESTION}`);
     else errors.push(`rule[${i}] rejected`);
   });
 

@@ -71,6 +71,19 @@ describe('parseUserManifest', () => {
     expect(manifest).toBeNull();
   });
 
+  // Codex round 1, P1: an override replaces the bundled manifest whole, and the
+  // bundled question rule needs regexes and an anchored region an override may
+  // not use. Turning question detection off is the honest result (the pane
+  // reads as the idle its agent declared); doing it without a word is not.
+  it('says so when it drops a question rule, rather than a bare "rejected"', () => {
+    const { manifest, errors } = parseUserManifest({
+      ...valid,
+      rules: [valid.rules[0], { ...valid.rules[0], id: 'mine.question', state: 'question' }],
+    });
+    expect(manifest?.rules.map((r) => r.id)).toEqual(['mine.blocked']);
+    expect(errors).toEqual([expect.stringMatching(/rule\[1\].*question/)]);
+  });
+
   it('rejects an unknown region and an unknown state', () => {
     expect(parseUserManifest({
       ...valid, rules: [{ ...valid.rules[0], region: { id: 'nowhere' } }],
