@@ -146,12 +146,20 @@ export const claudeManifest: Manifest = {
        */
       region: { id: 'bottom_non_empty_lines', count: 12 },
       all: [
-        // "> " alone on its line, optionally with the cursor block after it.
-        { kind: 'lineRegex', value: '^>\\s*$' },
+        // The prompt box, empty or not. Live it is ">" followed by U+00A0,
+        // which `\s` covers under the engine's `u` flag, and after a turn
+        // Claude Code pre-fills a suggested next message there in dim text —
+        // as plain text indistinguishable from a draft, and idle either way.
+        { kind: 'lineRegex', value: '^>(\\s|$)' },
       ],
       none: [
         { kind: 'contains', value: 'esc to interrupt' },
-        { kind: 'lineRegex', value: `^\\s*${SPINNER}\\s+\\S` },
+        // Any spinner-glyph line EXCEPT the turn-done marker ("✻ Crunched for
+        // 2s · done 12:40 AM"), which shares the glyph and sits above the
+        // prompt after every finished turn — vetoing on it read every
+        // post-turn screen as `unknown`. A live run still vetoes on its own
+        // spinner line, which has no "for <n>s … done".
+        { kind: 'lineRegex', value: `^\\s*${SPINNER}\\s+(?!\\S+ for \\d+[ms]\\b.*\\bdone\\b)\\S` },
       ],
     },
   ],

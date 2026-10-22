@@ -35,6 +35,31 @@ describe('detectScreen — Claude Code', () => {
     });
   });
 
+  // After every finished turn Claude Code leaves "✻ Crunched for 2s · done
+  // 12:40 AM" above the prompt box. It shares the spinner glyph with a live run,
+  // so the idle rule's spinner veto used to read it as a run and give `unknown`.
+  // The fixture keeps the live prompt shape: ">" then U+00A0.
+  it('reads the prompt after a finished turn as idle, turn-done marker and all', () => {
+    expect(read('claude-idle-after-turn')).toMatchObject({
+      agent: 'claude', state: 'idle', ruleId: 'claude.idle.prompt',
+    });
+  });
+
+  // Claude Code pre-fills a suggested next message on the prompt line in dim
+  // text; read as plain text it is indistinguishable from typing, and either
+  // way the agent is waiting on the user.
+  it('reads a prompt line holding a suggestion or a draft as idle', () => {
+    const s = screen('claude-idle-after-turn');
+    const lines = s.lines.map((l) => (l === '> ' ? '> Merci, c’est noté.' : l));
+    expect(detectScreen({ lines }, BUNDLED_MANIFESTS)).toMatchObject({ agent: 'claude', state: 'idle' });
+  });
+
+  it('still reads a live run as working when an earlier turn-done marker is on screen', () => {
+    const working = screen('claude-working');
+    const lines = ['✻ Crunched for 2s · done 12:40 AM', '', ...working.lines];
+    expect(detectScreen({ lines }, BUNDLED_MANIFESTS)).toMatchObject({ agent: 'claude', state: 'working' });
+  });
+
   /**
    * The prompt box is on screen during a run too — the spinner sits ABOVE it.
    * If idle did not exclude the run markers, every working screen would also

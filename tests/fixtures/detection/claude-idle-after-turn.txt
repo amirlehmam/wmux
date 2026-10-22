@@ -1,0 +1,15 @@
+
+✻ Sautéed for 2s · done 12:39 AM
+
+> Deuxième essai, sans rien lire ni lancer : réponds en une phrase.
+
+● D’accord, je n’ai rien lu ni lancé.
+
+✻ Crunched for 2s · done 12:40 AM
+
+────────────────────────────────────────────────────────────────────────────────────
+> 
+────────────────────────────────────────────────────────────────────────────────────
+  wmux @ master ●2 | Haiku 5.5/medium
+  ctx ░░░░░░ 12/40%
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent
