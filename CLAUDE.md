@@ -709,6 +709,12 @@ wmux layout agents --count N [--type T] [--coordinator-ratio R] [--anchor-surfac
 # Terminal I/O
 wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]
 wmux read-screen [--lines N] [--surface <id>] | trigger-flash
+wmux detect explain [--surface <id>] | --file <path> [--agent <k>] | detect reload
+                                       # The screen-detection verdict as TEXT: state,
+                                       # rule id and the lines it matched. --file replays
+                                       # a captured screen through the bundled manifests.
+                                       # Read this before reaching for a screenshot to
+                                       # see what a pane is detected as.
 wmux prompts [--surface <id>] [--limit N] [--json]     # the prompt log (issue #207)
                                        # What this pane has been asked, oldest first:
                                        # "#<seq>  <hh:mm>  <summary>". Surface defaults
