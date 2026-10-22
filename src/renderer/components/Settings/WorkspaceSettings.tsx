@@ -362,7 +362,7 @@ export default function WorkspaceSettings() {
       <p className="settings-hint">
         {t(
           'settings.workspacePanel.detectAgentScreensHint',
-          'For agents that do not report state themselves (Codex, Gemini, Aider…), match their on-screen UI against bundled rules to tell blocked from working. Runs entirely on this machine and never overrides what an agent declares — panes whose agent reports are skipped without being read at all. Override the rules in %APPDATA%\\wmux\\agent-detection, and use `wmux detect explain` to see which rule fired.',
+          'For agents that do not report state themselves (Codex, Gemini, Aider…), match their on-screen UI against bundled rules to tell blocked from working. Runs entirely on this machine and never overrides what an agent declares — it only refines a declared idle into a question still on screen, and panes whose agent reports working or blocked are not read at all. Override the rules in %APPDATA%\\wmux\\agent-detection, and use `wmux detect explain` to see which rule fired.',
         )}
       </p>
 

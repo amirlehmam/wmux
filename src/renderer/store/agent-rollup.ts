@@ -227,7 +227,7 @@ function rosterEntryFor(
    * `unknown` rather than `idle` when nobody spoke: idle is a claim.
    */
   const refined = isCurrentQuestion(declared, detection) ? 'question' : declaredState;
-  const state: AgentPresenceState = refined ?? detectedState ?? 'unknown';
+  const state: AgentPresenceState = refined ?? screenOnlyState(detectedState) ?? 'unknown';
   const stateSource = refined !== declaredState ? 'detected' : resolveStateSource(declaredState, detectedState);
   const blocked = state === 'blocked';
   const choices = blocked ? (declared?.choices ?? []) : [];
@@ -330,7 +330,11 @@ export function detectionPausedBy(declaredState: string | undefined): boolean {
  * Carry `idleSince` across one declared-state delta.
  *
  * Stamped with the renderer's clock on the transition into idle and kept for
- * as long as the surface stays idle; dropped the moment it is anything else.
+ * as long as the surface stays idle in the same session; dropped the moment it
+ * is anything else. A new session restarts it even from idle to idle (a resume
+ * reports no turn), or a question it asks would sit under the old stamp and
+ * never be republished. Main's snapshot always carries `sessionId`, so a
+ * metadata-only report cannot restart it by omission.
  * The renderer's clock on purpose: it is compared against `observedAt`, which
  * the same renderer stamps, so no cross-process skew enters the comparison.
  */
@@ -340,7 +344,8 @@ export function withIdleSince<T extends DeclaredAgentSnapshot>(
   now: number,
 ): T {
   if (next.state !== 'idle') return { ...next, idleSince: undefined };
-  const kept = previous?.state === 'idle' ? previous.idleSince : undefined;
+  const samePeriod = previous?.state === 'idle' && (previous.sessionId ?? null) === (next.sessionId ?? null);
+  const kept = samePeriod ? previous.idleSince : undefined;
   return { ...next, idleSince: kept ?? now };
 }
 
@@ -382,8 +387,19 @@ export function surfaceAgentState(
 ): { state: AgentPresenceState; source: 'declared' | 'detected' } | null {
   if (isCurrentQuestion(declared, detection)) return { state: 'question', source: 'detected' };
   if (declared && declared.state !== 'unknown') return { state: declared.state, source: 'declared' };
-  if (detection && detection.state !== 'unknown') return { state: detection.state, source: 'detected' };
-  return null;
+  const seen = screenOnlyState(detection && detection.state !== 'unknown' ? detection.state : null);
+  return seen ? { state: seen, source: 'detected' } : null;
+}
+
+/**
+ * What a screen verdict stands for when no agent declared anything.
+ *
+ * `question` only ever refines a declared idle (isCurrentQuestion): without one
+ * there is no turn and no session to place it in. What such a screen does show
+ * is a finished turn at an open prompt, which is idle.
+ */
+function screenOnlyState(detected: AgentPresenceState | null): AgentPresenceState | null {
+  return detected === 'question' ? 'idle' : detected;
 }
 
 /** Which layer supplied `state`. Declared always wins — see the note above. */
@@ -462,6 +478,17 @@ export function rankedRoster(rollup: AgentRollup): AgentRosterEntry[] {
   const questions = rollup.roster.filter((e) => e.state === 'question');
   const rest = rollup.roster.filter((e) => e.state !== 'blocked' && e.state !== 'question');
   return [...rollup.blocked, ...questions, ...rest];
+}
+
+/**
+ * The one agent a "go to who needs me" button should land on: the permission
+ * prompt waiting longest, else the first question in tree order, else none.
+ * Read off the same ranking, so the button cannot pick a different agent from
+ * the one the list puts first.
+ */
+export function firstWaiting(rollup: AgentRollup): AgentRosterEntry | undefined {
+  const first = rankedRoster(rollup)[0];
+  return first && (first.state === 'blocked' || first.state === 'question') ? first : undefined;
 }
 
 /**

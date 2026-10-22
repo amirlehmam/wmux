@@ -39,6 +39,11 @@
   --ui-agent-blocked: #b388ff;
   --ui-agent-blocked-rgb: 179, 136, 255;
 
+  /* A question for the user: waits on them, blocks nothing, so neither the
+     prompt's violet nor working's amber. The stylesheets keep this value as
+     their fallback for a theme that predates it. */
+  --ui-agent-question: #4fb3d9;
+
   /* Background elevation scale, darkest recess -> most elevated control. */
   --ui-bg-0: #111111;
   --ui-bg-1: #1a1a1a;
@@ -71,6 +76,10 @@
      unmistakably violet, so the state vocabulary survives the theme switch. */
   --ui-agent-blocked: #6a3ab8;
   --ui-agent-blocked-rgb: 106, 58, 184;
+
+  /* #4fb3d9 is 2.4:1 on white, the status text's background. #006b87 is 6.1:1
+     on --ui-bg-2 and 4.8:1 on --ui-bg-0, and still reads as the same cyan. */
+  --ui-agent-question: #006b87;
 
   --ui-bg-0: #e4e4e4;
   --ui-bg-1: #f5f5f5;

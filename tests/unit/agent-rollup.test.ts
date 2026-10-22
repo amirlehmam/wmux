@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   rollupAgents, workspaceAgentState, surfaceAgentState,
-  isCurrentQuestion, detectionPausedBy, detectionNeedsPublish, withIdleSince, rankedRoster,
+  isCurrentQuestion, detectionPausedBy, detectionNeedsPublish, withIdleSince, rankedRoster, firstWaiting,
 } from '../../src/renderer/store/agent-rollup';
 import type { DeclaredAgentSnapshot } from '../../src/renderer/store/agent-rollup';
+import { toRemoteRosterSource } from '../../src/renderer/utils/remote-roster';
 import { SplitNode, PaneId, WorkspaceInfo, WorkspaceId } from '../../src/shared/types';
 
 const NOW = 1_000_000;
@@ -350,6 +351,32 @@ describe('rollupAgents — current question (same surface, same session, same tu
     expect(stateOf(anonymous, seen('question'))).toBe('idle');
   });
 
+  // Codex round 1, P1: with no declared idle there is no turn and no session to
+  // place the screen's question in, so it must not become one. The remote then
+  // stamped it `declared`, a claim no agent made.
+  it('a question on the screen of an agent that declared nothing reads as the idle it refines, and says it was seen', () => {
+    const out = rollupAgents(tree(), {}, NOW, {}, { 'surf-a': seen('question') });
+    expect(out.roster[0]).toMatchObject({ state: 'idle', stateSource: 'detected', detectedState: 'question' });
+    expect(out.byWorkspace['ws-1'].question).toBe(0);
+    expect(surfaceAgentState(undefined, seen('question'))).toEqual({ state: 'idle', source: 'detected' });
+    expect(toRemoteRosterSource(out.roster[0])).toMatchObject({ state: 'idle', stateSource: 'detected' });
+    const unknown = rollupAgents(tree(), { 'surf-a': declared({ state: 'unknown' }) }, NOW, {}, { 'surf-a': seen('question') });
+    expect(unknown.roster[0]).toMatchObject({ state: 'idle', stateSource: 'detected' });
+  });
+
+  // Codex round 1, P2: with only a question waiting, the banner read
+  // "0 working · 1 asking" over a disabled button titled "No agent is waiting".
+  it('the banner jumps to the oldest permission prompt, else to the first question, else nowhere', () => {
+    const many = (states: Record<string, DeclaredAgentSnapshot>, dets = {}) => rollupAgents(
+      [ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-w' }, { id: 'surf-a' }, { id: 'surf-b' }]))], states, NOW, {}, dets,
+    );
+    const asking = many({ 'surf-w': declared({ state: 'working' }), 'surf-a': idle() }, { 'surf-a': seen('question') });
+    expect(firstWaiting(asking)?.surfaceId).toBe('surf-a');
+    const both = many({ 'surf-a': idle(), 'surf-b': declared({ state: 'blocked' }) }, { 'surf-a': seen('question') });
+    expect(firstWaiting(both)?.surfaceId).toBe('surf-b');
+    expect(firstWaiting(many({ 'surf-w': declared({ state: 'working' }) }))).toBeUndefined();
+  });
+
   it('never overrides a declared working or blocked, and a question needs the user before work in the same workspace', () => {
     const working = rollupAgents(tree(), { 'surf-a': declared({ state: 'working', sessionId: SESSION }) }, NOW, {}, { 'surf-a': seen('question') });
     expect(working.roster[0].state).toBe('working');
@@ -380,6 +407,19 @@ describe('the scan loop\'s part in keeping a question current', () => {
     expect(working.idleSince).toBeUndefined();
     const nextTurn = withIdleSince(working, declared({ state: 'idle', updatedAt: 900 }), 9_900);
     expect(nextTurn.idleSince).toBe(9_900);
+  });
+
+  // Codex round 1, P1: a resumed or restarted session that goes straight from
+  // idle to idle kept the old period, so its question was never republished.
+  it('starts a new idle period when the session changes, even from idle to idle', () => {
+    const first = withIdleSince(undefined, declared({ state: 'idle', sessionId: 'old' }), 9_000);
+    const same = withIdleSince(first, declared({ state: 'idle', sessionId: 'old' }), 9_500);
+    expect(same.idleSince).toBe(9_000);
+    const resumed = withIdleSince(same, declared({ state: 'idle', sessionId: 'new' }), 9_800);
+    expect(resumed.idleSince).toBe(9_800);
+    // and the question the new session asks is republished under its stamp
+    const q = { agent: 'claude', state: 'question' as const, ruleId: 'claude.question.pending', observedAt: 9_200 };
+    expect(detectionNeedsPublish(q, { ...q, observedAt: undefined }, resumed.idleSince)).toBe(true);
   });
 
   it('republishes a question whose stored stamp predates the current idle period, even when nothing else moved', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
-import { rollupAgents } from '../../store/agent-rollup';
+import { firstWaiting, rollupAgents } from '../../store/agent-rollup';
 import type { AgentRosterEntry } from '../../store/agent-rollup';
 
 /**
@@ -45,35 +45,40 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
 
   if (total === 0) return null;
 
-  const oldest = rollup.blocked[0];
+  // A permission prompt first, else a question; never a question ahead of a
+  // prompt, which has a dwell to rank by where a question has none.
+  const target = firstWaiting(rollup);
+  const oldest = target?.state === 'blocked' ? target : undefined;
+  const where = target ? `${target.workspaceTitle} · ${target.label}` : '';
 
   return (
     <div className="agent-roster" data-blocked={blocked > 0}>
       <button
         className="agent-roster__main"
-        disabled={!oldest}
-        onClick={() => oldest && onFocusAgent?.(oldest)}
+        disabled={!target}
+        onClick={() => target && onFocusAgent?.(target)}
         title={oldest
-          ? t('agentRoster.jumpHint', 'Go to the agent waiting longest — {label}')
-            .replace('{label}', `${oldest.workspaceTitle} · ${oldest.label}`)
-          : t('agentRoster.noneBlocked', 'No agent is waiting on you')}
+          ? t('agentRoster.jumpHint', 'Go to the agent waiting longest — {label}').replace('{label}', where)
+          : target
+            ? t('agentRoster.jumpQuestionHint', 'Go to the agent asking you a question — {label}').replace('{label}', where)
+            : t('agentRoster.noneBlocked', 'No agent is waiting on you')}
       >
         <span className="agent-roster__dot" />
         <span className="agent-roster__count">
           {blocked > 0
             ? t('agentRoster.needYou', '{count} need you').replace('{count}', String(blocked))
-            : t('agentRoster.allBusy', '{count} working').replace('{count}', String(working))}
+            : question > 0
+              ? t('agentRoster.asking', '{count} asking').replace('{count}', String(question))
+              : t('agentRoster.allBusy', '{count} working').replace('{count}', String(working))}
         </span>
-        {blocked > 0 && working > 0 && (
-          <span className="agent-roster__secondary">
-            {t('agentRoster.alsoWorking', '· {count} working').replace('{count}', String(working))}
-          </span>
-        )}
-        {/* Said, never jumped to: the main button goes to the oldest permission
-            prompt, and a question has no declared start to rank against one. */}
-        {question > 0 && (
+        {blocked > 0 && question > 0 && (
           <span className="agent-roster__secondary">
             {t('agentRoster.alsoAsking', '· {count} asking').replace('{count}', String(question))}
+          </span>
+        )}
+        {(blocked > 0 || question > 0) && working > 0 && (
+          <span className="agent-roster__secondary">
+            {t('agentRoster.alsoWorking', '· {count} working').replace('{count}', String(working))}
           </span>
         )}
         {oldest && <span className="agent-roster__dwell">{formatDwell(oldest.dwellMs)}</span>}
