@@ -99,9 +99,16 @@ export const claudeManifest: Manifest = {
      * Question — the turn finished on an ordinary question for the user.
      *
      * All three halves are required, and together they say "current": the
-     * completed-turn marker says the run is over, the empty prompt says the
-     * user has not started answering, and the question itself must sit in the
-     * last three non-empty lines of the message that the LAST marker closes.
+     * completed-turn marker says the run is over, the prompt box says Claude
+     * is waiting for input, and the question itself must sit in the last
+     * three non-empty lines of the message that the LAST marker closes.
+     *
+     * The prompt line may carry text, and that is deliberate. After a closed
+     * question Claude Code pre-fills a suggested answer there ("> Oui, c'est
+     * réussi.", in dim text, cursor on its first character), and a screen read
+     * as plain text cannot tell that from typing. Requiring an empty prompt
+     * lost the question on two live tries out of three. So the question stays
+     * current until the answer is SENT, which is when the transcript moves on.
      *
      * That third half is anchored on purpose. "A `?` somewhere near the bottom"
      * also matches a question from the previous turn that the user already
@@ -123,7 +130,9 @@ export const claudeManifest: Manifest = {
       region: { id: 'bottom_non_empty_lines', count: 12 },
       all: [
         { kind: 'lineRegex', value: TURN_DONE },
-        { kind: 'lineRegex', value: '^>\\s*$' },
+        // The prompt box, empty or not. Live it is ">" followed by U+00A0,
+        // which `\s` covers under the engine's `u` flag.
+        { kind: 'lineRegex', value: '^>(\\s|$)' },
         {
           kind: 'lineRegex',
           value: '^\\s*[^>❯\\s].*\\?(\\s+[^\\s»"”]|\\s*$)',

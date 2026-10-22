@@ -132,9 +132,40 @@ describe('detectScreen — current business question', () => {
     expect(out.state).not.toBe('question');
   });
 
-  it('does not read a question as current once the user has started typing an answer', () => {
+  // After a closed question Claude Code pre-fills a suggested answer on the
+  // prompt line, and plain text cannot tell it from typing. Captured live
+  // (Claude Code 2.1.304): ">" + U+00A0 + the suggestion, under the question.
+  it('reads a question as current while Claude Code suggests an answer on the prompt line', () => {
+    const out = read('wmux-current-question-suggested');
+    expect(out).toMatchObject({ agent: 'claude', state: 'question', ruleId: 'claude.question.pending' });
+    expect(out.evidence.some((l) => l.includes('Ce deuxième essai est-il réussi ?'))).toBe(true);
+  });
+
+  it('keeps the question current until the answer is sent, even once the user types', () => {
     const lines = screen('wmux-current-question-inline').lines.map((l) => (l === '> ' ? '> oui mais' : l));
-    expect(detectScreen({ lines }, BUNDLED_MANIFESTS).state).not.toBe('question');
+    expect(detectScreen({ lines }, BUNDLED_MANIFESTS)).toMatchObject({
+      state: 'question', ruleId: 'claude.question.pending',
+    });
+  });
+
+  // Sent: the answer is now in the transcript and a new turn has closed under
+  // it without asking anything, so the question is above an older marker.
+  it('lets the question go once the answer is sent and the next turn ends', () => {
+    const lines = screen('wmux-current-question-suggested').lines;
+    const prompt = lines.findIndex((l) => l.startsWith('> '));
+    const sent = [
+      ...lines.slice(0, prompt - 1),
+      '> Oui, c\'est réussi.',
+      '',
+      '● Parfait, merci.',
+      '',
+      '✻ Baked for 2s · done 12:41 AM',
+      '',
+      ...lines.slice(prompt - 1, prompt),
+      '> ',
+      ...lines.slice(prompt + 1),
+    ];
+    expect(detectScreen({ lines: sent }, BUNDLED_MANIFESTS).state).not.toBe('question');
   });
 });
 
