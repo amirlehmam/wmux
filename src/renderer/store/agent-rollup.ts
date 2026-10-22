@@ -349,7 +349,6 @@ interface PublishableDetection {
   agent: string | null;
   state: string;
   ruleId: string | null;
-  evidence?: string[];
   observedAt?: number;
 }
 
@@ -357,10 +356,14 @@ interface PublishableDetection {
  * Should the scan loop publish `next` over the verdict it last published?
  *
  * Unchanged verdicts are not published — the loop ticks several times a second
- * (#141). A question is the exception in two ways, because its stamp is what
- * makes it current: new evidence under the same rule is a different question,
- * and a stamp older than the surface's current idle period must be renewed or
- * the same question asked again next turn would never be shown.
+ * (#141). A question is the one exception, because its stamp is what makes it
+ * current: a stamp older than the surface's current idle period must be
+ * renewed, or the same question asked again next turn would never be shown.
+ *
+ * Evidence is deliberately not compared. The question rule's evidence includes
+ * the prompt line, which carries the answer as the user types it, so comparing
+ * it republished on every keystroke. Nothing reads the stored evidence, and a
+ * second question in the same idle period is current under the first stamp.
  */
 export function detectionNeedsPublish(
   previous: PublishableDetection | null | undefined,
@@ -370,7 +373,6 @@ export function detectionNeedsPublish(
   if (!previous) return true;
   if (previous.state !== next.state || previous.agent !== next.agent || previous.ruleId !== next.ruleId) return true;
   if (next.state !== 'question') return false;
-  if ((previous.evidence ?? []).join('\n') !== (next.evidence ?? []).join('\n')) return true;
   return typeof idleSince === 'number' && (previous.observedAt ?? -Infinity) < idleSince;
 }
 

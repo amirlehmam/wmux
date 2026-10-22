@@ -387,11 +387,24 @@ describe('the scan loop\'s part in keeping a question current', () => {
     const stored = { ...q, observedAt: 1_000 };
     expect(detectionNeedsPublish(stored, q, 500)).toBe(false);
     expect(detectionNeedsPublish(stored, q, 2_000)).toBe(true);
-    expect(detectionNeedsPublish(stored, { ...q, evidence: ['b ?'] }, 500)).toBe(true);
     expect(detectionNeedsPublish(null, q, undefined)).toBe(true);
     // an unchanged non-question verdict is left alone, as before
     const w = { agent: 'claude', state: 'working' as const, ruleId: 'r', evidence: ['x'] };
-    expect(detectionNeedsPublish({ ...w, observedAt: 1 }, { ...w, evidence: ['y'] }, 2_000)).toBe(false);
+    const wMoved = { ...w, evidence: ['y'] };
+    expect(detectionNeedsPublish({ ...w, observedAt: 1 }, wMoved, 2_000)).toBe(false);
+  });
+
+  it('does not republish a question on every keystroke of the answer being typed under it', () => {
+    // The prompt line is part of the rule's evidence, and it carries the
+    // answer as it is typed. Within one idle period that changes nothing a
+    // consumer reads, so it must not cost a store write per scan tick.
+    const asked = {
+      agent: 'claude', state: 'question' as const, ruleId: 'claude.question.pending',
+      evidence: ['✻ Crunched for 2s · done 12:40 AM', '> ', 'Ce deuxième essai est-il réussi ?'],
+    };
+    const stored = { ...asked, observedAt: 1_000 };
+    const typing = { ...asked, evidence: ['✻ Crunched for 2s · done 12:40 AM', '> Oui, je le', 'Ce deuxième essai est-il réussi ?'] };
+    expect(detectionNeedsPublish(stored, typing, 500)).toBe(false);
   });
 });
 
