@@ -126,7 +126,9 @@ export const claudeManifest: Manifest = {
      * lend its window to the user's wrapped prompt above it — whose
      * continuation lines carry no prompt glyph to exclude them by.
      *
-     * The question mark must be followed by ordinary text or end the line. One
+     * The question mark must be followed by ordinary text or end the line. It
+     * may be ASCII, Arabic `؟` or full-width `？`; CJK text runs on after the
+     * full-width one with no space, so only that one waives the space. One
      * followed by a closing quote is Claude QUOTING a question, a line that
      * starts with the prompt glyph is the user's own submitted text, and one
      * that starts with `⎿` is a tool's output.
@@ -148,7 +150,7 @@ export const claudeManifest: Manifest = {
         { kind: 'lineRegex', value: '^>(\\s|$)' },
         {
           kind: 'lineRegex',
-          value: '^\\s*[^>❯⎿\\s].*\\?(\\s+[^\\s»"”]|\\s*$)',
+          value: '^\\s*[^>❯⎿\\s].*([?؟](\\s+[^\\s»"”]|\\s*$)|？\\s*([^\\s»"”」』]|$))',
           region: {
             id: 'non_empty_lines_above',
             count: 3,

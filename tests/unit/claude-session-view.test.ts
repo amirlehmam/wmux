@@ -45,6 +45,19 @@ describe('screen-detected sessions in sidebar detail rows', () => {
     expect(out.blocked).toBe(1);
     expect(out.sessions[0]).toMatchObject({ blocked: true, choices: [], answerPending: false });
   });
+  // PR #326 review (GitHub Codex): the workspace header said "Question for
+  // you" while the sub-row of the very session asking read "Idle".
+  it('carries a current question to the session row that asked it', () => {
+    const SESSION = '11111111-1111-1111-1111-111111111111';
+    const idle = { state: 'idle' as const, idleSince: NOW - 10_000, sessionId: SESSION };
+    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
+      { 'surf-a': idle, 'surf-b': { state: 'idle' } },
+      { 'surf-a': { agent: 'claude', state: 'question', observedAt: NOW - 5_000, sessionId: SESSION } });
+    expect(out.sessions.map((s) => [s.surfaceId, s.question, s.working, s.blocked])).toEqual([
+      ['surf-a', true, false, false], ['surf-b', false, false, false],
+    ]);
+    expect(out.blocked).toBe(0);
+  });
   it('uses fresh hook activity when detection has no state', () => {
     const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Read', NOW) }, NOW, {},
       { 'surf-a': { agent: 'claude', state: 'unknown' } });

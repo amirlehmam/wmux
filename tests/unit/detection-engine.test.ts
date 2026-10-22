@@ -154,6 +154,20 @@ describe('detectScreen — current business question', () => {
     expect(out.state).not.toBe('question');
   });
 
+  // PR #326 review (GitHub Codex): Claude answering in Chinese or Japanese
+  // closes on a full-width `？`, in Arabic on `؟`, and both read as idle.
+  it('reads a question closed by a full-width or Arabic question mark', () => {
+    const asked = (line: string) => detectScreen({
+      lines: [`● ${line}`, '', '✻ Baked for 2s · done 3:46 PM', '', '> ', '  ⏵⏵ auto mode on (shift+tab to cycle)'],
+    }, BUNDLED_MANIFESTS).state;
+    expect(asked('要我现在修改这两个文件吗？')).toBe('question');
+    // CJK runs straight on after the mark, with no space to require
+    expect(asked('要我现在修改吗？还没有改动任何文件。')).toBe('question');
+    expect(asked('هل أبدأ التعديل الآن؟')).toBe('question');
+    // closed by a corner bracket, it is a quoted question, as with » or ”
+    expect(asked('你之前问过「要修改吗？」，答案是可以。')).not.toBe('question');
+  });
+
   it('does not take a question printed by a tool for the agent\'s', () => {
     const out = detectScreen({
       lines: [

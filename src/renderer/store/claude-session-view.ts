@@ -35,6 +35,9 @@ export interface DeclaredAgentState {
   answeredAt?: number | null;
   /** When this pane became blocked — see AgentStateRecord.blockedSince. */
   blockedSince?: number | null;
+  /** Which turn and session a question belongs to — see isCurrentQuestion. */
+  idleSince?: number;
+  sessionId?: string | null;
 }
 
 /** One agent session inside a workspace (legacy name retained for callers). */
@@ -57,6 +60,13 @@ export interface ClaudeSessionView {
    * that actually needs the user (issue #128).
    */
   blocked: boolean;
+  /**
+   * The agent ended its turn on a question that is still current. Not
+   * `blocked`: nothing is parked behind it and there is nothing to answer
+   * from here, but the row must not read "Idle" under a header that says
+   * "Question for you".
+   */
+  question: boolean;
   /** What it is waiting for, when the agent said. */
   blockedReason: string | null;
   /**
@@ -138,7 +148,7 @@ function resolveActivity(
   declared: DeclaredAgentState | undefined,
   now: number,
   detection: DetectionSnapshot | undefined,
-): Pick<ClaudeSessionView, 'working' | 'blocked' | 'blockedReason' | 'tool' | 'choices' | 'answerPending'> {
+): Pick<ClaudeSessionView, 'working' | 'blocked' | 'question' | 'blockedReason' | 'tool' | 'choices' | 'answerPending'> {
   const hookFresh = !!hook && now - hook.lastSeen < SESSION_ACTIVITY_TTL_MS;
   const obsFresh = !!observed && !observed.isDone && !!observed.lastTool
     && now - observed.lastUpdate < SESSION_ACTIVITY_TTL_MS;
@@ -163,6 +173,7 @@ function resolveActivity(
   return {
     working,
     blocked,
+    question: state === 'question',
     blockedReason: declaredBlocked ? (declared.blockedReason ?? null) : null,
     tool,
     choices,

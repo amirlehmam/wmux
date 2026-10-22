@@ -41,7 +41,7 @@ function getToolLabel(tool: string, t: T): string {
 }
 
 /** Detail text of one Claude session sub-line. */
-function sessionDetailText(session: { working: boolean; blocked: boolean; blockedReason: string | null; tool: string | null; answerPending?: boolean; backgroundShells?: number }, t: T): string {
+function sessionDetailText(session: { working: boolean; blocked: boolean; question?: boolean; blockedReason: string | null; tool: string | null; answerPending?: boolean; backgroundShells?: number }, t: T): string {
   // Blocked outranks the tool label: a pane parked on a permission prompt is
   // the one thing the user has to act on, so it must not read as "Idle" just
   // because no tool is running (issue #128).
@@ -51,6 +51,8 @@ function sessionDetailText(session: { working: boolean; blocked: boolean; blocke
   // our own say-so is exactly the ghost this feature exists to avoid.
   if (session.answerPending) return t('workspaceRow.answerSent', 'Sent — waiting…');
   if (session.blocked) return session.blockedReason || t('workspaceRow.needsYou', 'Needs you');
+  // The same words the workspace header uses for it, on the row that asked.
+  if (session.question) return t('workspaceRow.question', 'Question for you');
   if (!session.working) {
     // The agent is at its prompt, but a shell it backgrounded runs on (#276).
     const shells = session.backgroundShells ?? 0;
@@ -515,7 +517,8 @@ export default function WorkspaceRow({
                 'workspace-row__agent--clickable',
                 'workspace-row__session',
                 s.blocked ? 'workspace-row__session--blocked' : '',
-                s.working || s.blocked || s.backgroundShells > 0 ? '' : 'workspace-row__session--idle',
+                s.question ? 'workspace-row__session--question' : '',
+                s.working || s.blocked || s.question || s.backgroundShells > 0 ? '' : 'workspace-row__session--idle',
               ].filter(Boolean).join(' ')}
               // Per-session channel: this is what makes "that one is REWRITING
               // my code, that one is only reading" legible at a glance. Bound
@@ -531,7 +534,8 @@ export default function WorkspaceRow({
             >
               <span className="workspace-row__agent-glyph" aria-hidden="true">{i === sessions.length - 1 ? '└' : '├'}</span>
               {s.blocked && <span className="workspace-row__agent-dot workspace-row__agent-dot--blocked" />}
-              {(s.working || s.backgroundShells > 0) && !s.blocked && <span className="workspace-row__agent-dot" />}
+              {s.question && <span className="workspace-row__agent-dot workspace-row__agent-dot--question" />}
+              {(s.working || s.backgroundShells > 0) && !s.blocked && !s.question && <span className="workspace-row__agent-dot" />}
               <span className="workspace-row__agent-name">{s.label}</span>
               <span className={`workspace-row__agent-detail${uiMode === 'trace' ? ' workspace-row__session-tool' : ''}`}>
                 {sessionDetailText(s, t)}

@@ -750,6 +750,16 @@
   color: var(--ui-agent-blocked);
   opacity: 1;
 }
+/* A question on the session that asked it: the header's colour, and steady,
+   since it waits for the user without anything blocked behind it. */
+.workspace-row__agent-dot--question {
+  background: var(--ui-agent-question, #4fb3d9);
+  animation: none;
+}
+.workspace-row__session--question .workspace-row__agent-detail {
+  color: var(--ui-agent-question, #4fb3d9);
+  opacity: 1;
+}
 /* Answer buttons for a blocked pane (issue #128, the back-channel).
    Violet, matching the blocked dot and detail text — the whole point of that
    colour is that "needs you" reads differently from the amber of panes getting
