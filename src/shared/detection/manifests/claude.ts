@@ -148,9 +148,10 @@ export const claudeManifest: Manifest = {
       region: { id: 'bottom_non_empty_lines', count: 12 },
       all: [
         { kind: 'lineRegex', value: TURN_DONE },
-        // The prompt box, empty or not. Live it is ">" followed by U+00A0,
-        // which `\s` covers under the engine's `u` flag.
-        { kind: 'lineRegex', value: '^>(\\s|$)' },
+        // The prompt box: ">" alone on its line, or ">" + U+00A0 + a suggestion
+        // or a draft (both captured live). The transcript repeats each message
+        // the user sent as ">" + a plain space + text, which is not the box.
+        { kind: 'lineRegex', value: '^>(\\s*$|\\u00A0)' },
         {
           kind: 'lineRegex',
           value: '^\\s*[^>❯⎿\\s].*([?؟](\\s+[^\\s»"”]|\\s*$)|？\\s*([^\\s»"”」』]|$))',

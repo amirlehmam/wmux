@@ -10,7 +10,9 @@ const FIXTURES = path.join(__dirname, '..', 'fixtures', 'detection');
 /** A captured screen, as the renderer would hand it over. */
 function screen(name: string): { lines: string[] } {
   const raw = fs.readFileSync(path.join(FIXTURES, `${name}.txt`), 'utf8');
-  return { lines: raw.replace(/\n$/, '').split('\n') };
+  // A Windows checkout may have turned the fixture's LF into CRLF; the renderer
+  // never hands over a '\r'.
+  return { lines: raw.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n') };
 }
 
 const read = (name: string, expected?: string | null) =>
@@ -192,11 +194,25 @@ describe('detectScreen — current business question', () => {
     expect(out.evidence.some((l) => l.includes('Ce deuxième essai est-il réussi ?'))).toBe(true);
   });
 
+  // A typed draft keeps the box's U+00A0: captured live (Claude Code 2.1.305)
+  // as ">" + U+00A0 + "oui mais".
   it('keeps the question current until the answer is sent, even once the user types', () => {
-    const lines = screen('wmux-current-question-inline').lines.map((l) => (l === '> ' ? '> oui mais' : l));
+    const lines = screen('wmux-current-question-inline').lines.map((l) => (l === '> ' ? '> oui mais' : l));
+    expect(lines).toContain('> oui mais');
     expect(detectScreen({ lines }, BUNDLED_MANIFESTS)).toMatchObject({
       state: 'question', ruleId: 'claude.question.pending',
     });
+  });
+
+  // The transcript repeats each message the user sent as "> " + text, with a
+  // plain space. With no prompt box on screen (a dialog no rule knows), that
+  // echo is not a prompt, and the question is not read.
+  it('reads no question when the only ">" line is the user’s echoed message', () => {
+    const s = screen('wmux-current-question-suggested');
+    const lines = s.lines.filter((l) => !l.startsWith('> '));
+    expect(lines).toHaveLength(s.lines.length - 1);
+    expect(lines.some((l) => l.startsWith('> Deuxième essai'))).toBe(true);
+    expect(detectScreen({ lines }, BUNDLED_MANIFESTS).state).not.toBe('question');
   });
 
   // Sent: the answer is now in the transcript and a new turn has closed under
