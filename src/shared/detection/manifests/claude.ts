@@ -26,9 +26,12 @@ import { Manifest } from '../types';
  *
  * A character class, never a quantified group, so it cannot backtrack. Kept as
  * an explicit set rather than a Unicode block range: the block also contains
- * ordinary dingbats that appear in prose.
+ * ordinary dingbats that appear in prose. ✢ was missing until a live Claude Code
+ * 2.1.305 run in auto mode was sampled frame by frame: "✢ Flambéing… (14s · ↓
+ * 1.5k tokens · thought for 8s)", with no "esc to interrupt" anywhere, so on that
+ * frame no rule saw a run and the empty prompt below read idle.
  */
-const SPINNER = '[✳✴✵✶✷✸✹✺✻✼✽·✦✧]';
+const SPINNER = '[✳✴✵✶✷✸✹✺✻✼✽·✦✧✢]';
 
 export const claudeManifest: Manifest = {
   agent: 'claude',
@@ -100,7 +103,10 @@ export const claudeManifest: Manifest = {
       state: 'working',
       priority: 800,
       region: { id: 'bottom_non_empty_lines', count: 10 },
-      all: [{ kind: 'lineRegex', value: `^\\s*${SPINNER}\\s+\\S` }],
+      // Not a turn-done marker ("✻ Crunched for 2s · done …", see the idle
+      // rule): with one above the prompt, any "(2s " in the last message used
+      // to complete the pair and read a finished turn as working.
+      all: [{ kind: 'lineRegex', value: `^\\s*${SPINNER}\\s+(?!\\S+ for \\d+[hms]\\b|Cost:)\\S` }],
       any: [
         { kind: 'contains', value: 'esc to interrupt' },
         // "(26s · ↓ 1.4k tokens)" — elapsed seconds opening a parenthetical.
@@ -162,12 +168,6 @@ export const claudeManifest: Manifest = {
         // Cost: $0.05" in earlier versions. Vetoing on one read every post-turn
         // screen as `unknown`.
         { kind: 'lineRegex', value: `^\\s*${SPINNER}\\s+(?!\\S+ for \\d+[hms]\\b|Cost:)\\S` },
-        // A run's own line, whatever frame its glyph is on: one leading glyph,
-        // then the elapsed-time parenthetical ("✻ Unravelling… (26s · …").
-        // SPINNER is a list, so a frame missing from it leaves a run with no
-        // glyph line above to veto on, and under bypass permissions there is
-        // no "esc to interrupt" either: this line is then the only sign of it.
-        { kind: 'lineRegex', value: '^\\s*\\S\\s+\\S.*\\(\\d+[sm]\\s' },
       ],
     },
   ],

@@ -69,19 +69,26 @@ describe('detectScreen — Claude Code', () => {
     expect(detectScreen({ lines }, BUNDLED_MANIFESTS).state).toBe('unknown');
   });
 
-  // If a run's spinner glyph is on a frame the SPINNER class does not list (✢
-  // here) and bypass mode shows no "esc to interrupt", only the elapsed-time
-  // parenthetical says a run is under way, with or without an earlier
-  // turn-done marker above it.
-  it('never reads a run as idle on a spinner frame no rule lists', () => {
+  // A live Claude Code 2.1.305 run in auto mode, sampled frame by frame, drew
+  // "✢ Flambéing… (14s · ↓ 1.5k tokens · thought for 8s)" with no "esc to
+  // interrupt". ✢ was missing from SPINNER, so on that frame no rule saw the
+  // run and the empty prompt below it read idle.
+  it('reads a run on the ✢ spinner frame as working', () => {
     const working = screen('claude-working');
-    const offFrame = working.lines.map((l) => l.replace('✻ Unravelling', '✢ Unravelling'));
-    expect(offFrame.some((l) => l.startsWith('✢ Unravelling… (26s'))).toBe(true);
-    expect(detectScreen({ lines: offFrame }, BUNDLED_MANIFESTS).state).toBe('unknown');
-    // Under an earlier marker the working rule takes the marker for its glyph
-    // line and the parenthetical for its evidence, and reads working.
-    const underMarker = ['✻ Crunched for 2s · done 12:40 AM', '', ...offFrame];
-    expect(detectScreen({ lines: underMarker }, BUNDLED_MANIFESTS).state).not.toBe('idle');
+    const frame = working.lines.map((l) => l.replace('✻ Unravelling', '✢ Unravelling'));
+    expect(frame.some((l) => l.startsWith('✢ Unravelling… (26s'))).toBe(true);
+    expect(detectScreen({ lines: frame }, BUNDLED_MANIFESTS)).toMatchObject({
+      agent: 'claude', state: 'working', ruleId: 'claude.working.spinner',
+    });
+  });
+
+  // Only a spinner-glyph line vetoes idle. A duration in Claude's own message
+  // ("● Done (2s total).") is not a run.
+  it('reads the prompt as idle under a message that mentions a duration', () => {
+    const s = screen('claude-idle-after-turn');
+    const lines = s.lines.map((l) => (l.startsWith('● ') ? '● Done (2s total).' : l));
+    expect(lines).toContain('● Done (2s total).');
+    expect(detectScreen({ lines }, BUNDLED_MANIFESTS)).toMatchObject({ agent: 'claude', state: 'idle' });
   });
 
   // Earlier Claude Code versions closed a turn with "✻ Baked for 3m 10s" or
