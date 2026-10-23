@@ -30,6 +30,10 @@ import { Manifest } from '../types';
  * 2.1.305 run in auto mode was sampled frame by frame: "✢ Flambéing… (14s · ↓
  * 1.5k tokens · thought for 8s)", with no "esc to interrupt" anywhere, so on that
  * frame no rule saw a run and the empty prompt below read idle.
+ *
+ * The cost, the same as for every glyph here: a transcript line that starts with
+ * one ("✢ Heading") reads as a spinner line, vetoes idle, and with a duration
+ * such as "(2s " in the last lines completes the working rule.
  */
 const SPINNER = '[✳✴✵✶✷✸✹✺✻✼✽·✦✧✢]';
 

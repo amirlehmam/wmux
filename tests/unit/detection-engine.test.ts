@@ -75,8 +75,9 @@ describe('detectScreen — Claude Code', () => {
   // run and the empty prompt below it read idle.
   it('reads a run on the ✢ spinner frame as working', () => {
     const working = screen('claude-working');
-    const frame = working.lines.map((l) => l.replace('✻ Unravelling', '✢ Unravelling'));
-    expect(frame.some((l) => l.startsWith('✢ Unravelling… (26s'))).toBe(true);
+    const live = '✢ Flambéing… (14s · ↓ 1.5k tokens · thought for 8s)';
+    const frame = working.lines.map((l) => (l.startsWith('✻ Unravelling') ? live : l));
+    expect(frame).toContain(live);
     expect(detectScreen({ lines: frame }, BUNDLED_MANIFESTS)).toMatchObject({
       agent: 'claude', state: 'working', ruleId: 'claude.working.spinner',
     });
