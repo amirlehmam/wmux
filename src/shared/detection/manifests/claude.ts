@@ -32,7 +32,7 @@ const SPINNER = '[✳✴✵✶✷✸✹✺✻✼✽·✦✧]';
 
 export const claudeManifest: Manifest = {
   agent: 'claude',
-  version: 1,
+  version: 2,
 
   signatures: [
     // The mode footer. Present in every screen captured, in both modes, and
@@ -124,11 +124,11 @@ export const claudeManifest: Manifest = {
     },
 
     /**
-     * Idle — an empty prompt box at the bottom of the screen.
+     * Idle — the prompt box at the bottom of the screen, with no run under way.
      *
      * Lowest priority, and it is the only rule that concludes `idle`, so every
-     * shape above gets to disagree first. `none` is what makes it an EMPTY
-     * prompt: a run in progress leaves its footer within the same few lines.
+     * shape above gets to disagree first. `none` is what keeps a run out: a
+     * run in progress leaves its footer within the same few lines.
      */
     {
       id: 'claude.idle.prompt',
