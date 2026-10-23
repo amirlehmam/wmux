@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   rollupAgents, workspaceAgentState, surfaceAgentState,
   isCurrentQuestion, detectionPausedBy, detectionNeedsPublish, withIdleSince, rankedRoster, firstWaiting,
-  questionStampIsStale, observedStamp,
 } from '../../src/renderer/store/agent-rollup';
 import type { DeclaredAgentSnapshot } from '../../src/renderer/store/agent-rollup';
 import { toRemoteRosterSource } from '../../src/renderer/utils/remote-roster';
@@ -423,34 +422,19 @@ describe('the scan loop\'s part in keeping a question current', () => {
     expect(detectionNeedsPublish(q, { ...q, observedAt: undefined }, resumed.idleSince)).toBe(true);
   });
 
-  // Codex round 2, P1: the session change above restarts the period, but the
-  // scan loop only rereads a screen whose output moved, so the same question
-  // still on screen was never republished and the pane read idle until output.
-  it('rereads an unchanged screen whose stored question predates the current idle period, once', () => {
-    const asked = { agent: 'claude', state: 'question' as const, ruleId: 'claude.question.pending', observedAt: 9_200, sessionId: 'old' };
+  // Codex rounds 2 and 3. Round 2 asked for the same question to be reread
+  // after that session change even with no new output; round 3 showed what
+  // that does: it restamps the previous session's pixels as the new one's. So
+  // the scan loop still rereads on output only, and until the new session
+  // prints, its pane reads as the idle it declared. This pins the refusal.
+  it('keeps the previous session\'s question off the new session until the screen is read again', () => {
     const resumed = withIdleSince(
       withIdleSince(undefined, declared({ state: 'idle', sessionId: 'old' }), 9_000),
       declared({ state: 'idle', sessionId: 'new' }), 9_800,
     );
-    expect(questionStampIsStale(asked, resumed.idleSince)).toBe(true);
-    const republished = { ...asked, observedAt: 9_900, sessionId: 'new' };
-    expect(detectionNeedsPublish(asked, { ...asked, observedAt: undefined }, resumed.idleSince)).toBe(true);
-    expect(questionStampIsStale(republished, resumed.idleSince)).toBe(false);
-    // nothing else asks for a reread: another verdict, or no period at all
-    expect(questionStampIsStale({ ...asked, state: 'idle' }, resumed.idleSince)).toBe(false);
-    expect(questionStampIsStale(asked, undefined)).toBe(false);
-    expect(questionStampIsStale(null, resumed.idleSince)).toBe(false);
-  });
-
-  // The reread above ends because the republished stamp is not before the
-  // period. A wall clock stepped back between the two would keep it before,
-  // and the loop would reread and republish on every tick.
-  it('never stamps a verdict before the idle period it was read in, even if the clock stepped back', () => {
-    expect(observedStamp(9_900, 9_800)).toBe(9_900);
-    expect(observedStamp(9_500, 9_800)).toBe(9_800);
-    expect(observedStamp(9_500, undefined)).toBe(9_500);
-    const asked = { agent: 'claude', state: 'question' as const, ruleId: 'claude.question.pending' };
-    expect(questionStampIsStale({ ...asked, observedAt: observedStamp(9_500, 9_800) }, 9_800)).toBe(false);
+    const askedBefore = { agent: 'claude', state: 'question' as const, observedAt: 9_200, sessionId: 'old' };
+    expect(isCurrentQuestion(resumed, askedBefore)).toBe(false);
+    expect(surfaceAgentState(resumed, askedBefore)).toEqual({ state: 'idle', source: 'declared' });
   });
 
   it('republishes a question whose stored stamp predates the current idle period, even when nothing else moved', () => {

@@ -28,7 +28,7 @@ import { detectScreen } from '../../shared/detection/engine';
 import { progressTurnState, withProgressTurn } from '../utils/progress-turn';
 import { BUNDLED_MANIFESTS } from '../../shared/detection/manifests';
 import type { DetectionResult, Manifest } from '../../shared/detection/types';
-import { detectionNeedsPublish, detectionPausedBy, observedStamp, questionStampIsStale } from '../store/agent-rollup';
+import { detectionNeedsPublish, detectionPausedBy } from '../store/agent-rollup';
 
 /**
  * How much of the bottom of the buffer to read.
@@ -89,21 +89,23 @@ function readScreen(surfaceId: string): string[] | null {
 function shouldScan(
   surfaceId: string,
   scan: SurfaceScanState,
-  declared: { state?: string; idleSince?: number } | undefined,
+  declaredState: string | undefined,
   now: number,
 ): boolean {
   // Working and blocked pause the scan; idle no longer does, because an idle
   // agent is where an unanswered question sits (see detectionPausedBy).
-  if (detectionPausedBy(declared?.state)) return false;
+  if (detectionPausedBy(declaredState)) return false;
   if (now - scan.firstSeenAt < STARTUP_GRACE_MS) return false;
 
   const seq = surfaceOutputSeq.get(surfaceId) ?? 0;
   if (seq !== scan.lastScannedSeq) return true;
 
   // No new output. Re-scan anyway only while we still have no answer — a
-  // pane that has settled on a state needs no further looks until it moves —
-  // or once when its question predates the current idle period.
-  return scan.lastResult === null || questionStampIsStale(scan.lastResult, declared?.idleSince);
+  // pane that has settled on a state needs no further looks until it moves.
+  // Not even for a question stamped before the current idle period: with no
+  // output since, those pixels are the previous turn's or session's, and a
+  // reread would only restamp them as this one's.
+  return scan.lastResult === null;
 }
 
 /** Scan one surface, publishing only when its verdict actually moved. */
@@ -116,7 +118,7 @@ function scanSurface(
   const store = useStore.getState();
   const identity = store.agentIdentities[surfaceId];
 
-  if (!shouldScan(surfaceId, scan, store.agentStates[surfaceId], now)) return;
+  if (!shouldScan(surfaceId, scan, store.agentStates[surfaceId]?.state, now)) return;
 
   const lines = readScreen(surfaceId);
   if (!lines) return;
@@ -141,11 +143,7 @@ function scanSurface(
   // The store's copy says when it was read and for which session, so a
   // consumer can tell a current question from one left over from an earlier
   // turn. Stamped only on publish: an unchanged verdict keeps its first stamp.
-  const published: DetectionResult = {
-    ...result,
-    observedAt: observedStamp(now, declared?.idleSince),
-    sessionId: declared?.sessionId ?? null,
-  };
+  const published: DetectionResult = { ...result, observedAt: now, sessionId: declared?.sessionId ?? null };
   scan.lastResult = published;
   store.setAgentDetection(surfaceId, published);
 
