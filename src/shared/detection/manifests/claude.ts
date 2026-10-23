@@ -146,20 +146,28 @@ export const claudeManifest: Manifest = {
        */
       region: { id: 'bottom_non_empty_lines', count: 12 },
       all: [
-        // The prompt box, empty or not. Live it is ">" followed by U+00A0,
-        // which `\s` covers under the engine's `u` flag, and after a turn
-        // Claude Code pre-fills a suggested next message there in dim text —
-        // as plain text indistinguishable from a draft, and idle either way.
-        { kind: 'lineRegex', value: '^>(\\s|$)' },
+        // The prompt box: ">" alone on its line, or ">" + U+00A0 + text. Live
+        // the box is ">" + U+00A0, and after a turn Claude Code pre-fills a
+        // suggested next message there in dim text, which as plain text cannot
+        // be told from a draft and is idle either way. The U+00A0 is what tells
+        // the box from the transcript, which repeats each message the user sent
+        // as ">" + a plain space + text; that echo is not a prompt.
+        { kind: 'lineRegex', value: '^>(\\s*$|\\u00A0)' },
       ],
       none: [
         { kind: 'contains', value: 'esc to interrupt' },
-        // Any spinner-glyph line EXCEPT the turn-done marker ("✻ Crunched for
-        // 2s · done 12:40 AM"), which shares the glyph and sits above the
-        // prompt after every finished turn — vetoing on it read every
-        // post-turn screen as `unknown`. A live run still vetoes on its own
-        // spinner line, which has no "for <n>s … done".
-        { kind: 'lineRegex', value: `^\\s*${SPINNER}\\s+(?!\\S+ for \\d+[ms]\\b.*\\bdone\\b)\\S` },
+        // Any spinner-glyph line EXCEPT a turn-done marker, which shares the
+        // glyph and sits above the prompt after every finished turn: "✻
+        // Crunched for 2s · done 12:40 AM" now, "✻ Baked for 3m 10s" or "✻
+        // Cost: $0.05" in earlier versions. Vetoing on one read every post-turn
+        // screen as `unknown`.
+        { kind: 'lineRegex', value: `^\\s*${SPINNER}\\s+(?!\\S+ for \\d+[hms]\\b|Cost:)\\S` },
+        // A run's own line, whatever frame its glyph is on: one leading glyph,
+        // then the elapsed-time parenthetical ("✻ Unravelling… (26s · …").
+        // SPINNER is a list, so a frame missing from it leaves a run with no
+        // glyph line above to veto on, and under bypass permissions there is
+        // no "esc to interrupt" either: this line is then the only sign of it.
+        { kind: 'lineRegex', value: '^\\s*\\S\\s+\\S.*\\(\\d+[sm]\\s' },
       ],
     },
   ],
