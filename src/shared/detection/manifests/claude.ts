@@ -136,7 +136,10 @@ export const claudeManifest: Manifest = {
      * Known limits, stated rather than papered over: a turn too short for
      * Claude to print the marker is not seen at all, a past question retold
      * without quotes in the closing lines reads as current, and so does a
-     * question on a tool output's second line, when the turn ends on the tool.
+     * question on a tool output's continuation line, when the turn ends on
+     * the tool, or a full-width `？` inside a quotation that runs on past it
+     * on the same line. Each is a shape of the input; tightening the matcher
+     * for one has so far opened the next, so they are left here instead.
      */
     {
       id: 'claude.question.pending',

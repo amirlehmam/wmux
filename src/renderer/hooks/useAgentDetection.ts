@@ -28,7 +28,7 @@ import { detectScreen } from '../../shared/detection/engine';
 import { progressTurnState, withProgressTurn } from '../utils/progress-turn';
 import { BUNDLED_MANIFESTS } from '../../shared/detection/manifests';
 import type { DetectionResult, Manifest } from '../../shared/detection/types';
-import { detectionNeedsPublish, detectionPausedBy } from '../store/agent-rollup';
+import { detectionNeedsPublish, detectionPausedBy, questionStampIsStale } from '../store/agent-rollup';
 
 /**
  * How much of the bottom of the buffer to read.
@@ -89,20 +89,21 @@ function readScreen(surfaceId: string): string[] | null {
 function shouldScan(
   surfaceId: string,
   scan: SurfaceScanState,
-  declaredState: string | undefined,
+  declared: { state?: string; idleSince?: number } | undefined,
   now: number,
 ): boolean {
   // Working and blocked pause the scan; idle no longer does, because an idle
   // agent is where an unanswered question sits (see detectionPausedBy).
-  if (detectionPausedBy(declaredState)) return false;
+  if (detectionPausedBy(declared?.state)) return false;
   if (now - scan.firstSeenAt < STARTUP_GRACE_MS) return false;
 
   const seq = surfaceOutputSeq.get(surfaceId) ?? 0;
   if (seq !== scan.lastScannedSeq) return true;
 
   // No new output. Re-scan anyway only while we still have no answer — a
-  // pane that has settled on a state needs no further looks until it moves.
-  return scan.lastResult === null;
+  // pane that has settled on a state needs no further looks until it moves —
+  // or once when its question predates the current idle period.
+  return scan.lastResult === null || questionStampIsStale(scan.lastResult, declared?.idleSince);
 }
 
 /** Scan one surface, publishing only when its verdict actually moved. */
@@ -115,7 +116,7 @@ function scanSurface(
   const store = useStore.getState();
   const identity = store.agentIdentities[surfaceId];
 
-  if (!shouldScan(surfaceId, scan, store.agentStates[surfaceId]?.state, now)) return;
+  if (!shouldScan(surfaceId, scan, store.agentStates[surfaceId], now)) return;
 
   const lines = readScreen(surfaceId);
   if (!lines) return;

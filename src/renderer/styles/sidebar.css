@@ -1477,6 +1477,14 @@
   animation: pulse-blocked-dot 2s ease-in-out infinite;
 }
 
+/* Only questions waiting: their colour, steady, as on the rows below. */
+.agent-roster[data-question='true'] .agent-roster__dot {
+  background: var(--ui-agent-question, #4fb3d9);
+}
+.agent-roster[data-question='true'] .agent-roster__count {
+  color: var(--ui-agent-question, #4fb3d9);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-roster__dot { animation: none; }
 }

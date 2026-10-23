@@ -377,8 +377,24 @@ export function detectionNeedsPublish(
 ): boolean {
   if (!previous) return true;
   if (previous.state !== next.state || previous.agent !== next.agent || previous.ruleId !== next.ruleId) return true;
-  if (next.state !== 'question') return false;
-  return typeof idleSince === 'number' && (previous.observedAt ?? -Infinity) < idleSince;
+  return next.state === 'question' && questionStampIsStale(previous, idleSince);
+}
+
+/**
+ * Is this stored verdict a question stamped before the current idle period?
+ *
+ * The one reason to reread a screen whose output has not moved. The period
+ * can restart with nothing printed (a new session reported from idle to idle),
+ * and the scan loop otherwise rereads only on output, so the question still on
+ * screen would read as idle until the next keystroke of output. Bounded: the
+ * reread republishes it under a fresh stamp, after which this is false.
+ */
+export function questionStampIsStale(
+  stored: PublishableDetection | null | undefined,
+  idleSince: number | undefined,
+): boolean {
+  return stored?.state === 'question' && typeof idleSince === 'number'
+    && (stored.observedAt ?? -Infinity) < idleSince;
 }
 
 export function surfaceAgentState(

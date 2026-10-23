@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { detectScreen, isSafeRegexSource, sliceRegion } from '../../src/shared/detection/engine';
 import { BUNDLED_MANIFESTS } from '../../src/shared/detection/manifests';
-import { LIMITS, Manifest } from '../../src/shared/detection/types';
+import { LIMITS, Manifest, Matcher, Region } from '../../src/shared/detection/types';
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures', 'detection');
 
@@ -414,11 +414,20 @@ describe('sliceRegion', () => {
  */
 describe('isSafeRegexSource', () => {
   it('accepts the patterns the bundled manifests use', () => {
+    // A region's anchor and start are matchers too, on a rule or on a matcher.
+    const withRegions = (m: Matcher): Matcher[] => [m, ...regionMatchers(m.region)];
+    const regionMatchers = (r: Region | undefined): Matcher[] =>
+      [r?.anchor, r?.start].filter((x): x is Matcher => !!x).flatMap(withRegions);
     for (const manifest of BUNDLED_MANIFESTS) {
       const sources = [
         ...manifest.signatures,
-        ...manifest.rules.flatMap((r) => [...(r.all ?? []), ...(r.any ?? []), ...(r.none ?? [])]),
+        ...manifest.rules.flatMap((r) => [
+          ...regionMatchers(r.region),
+          ...[...(r.all ?? []), ...(r.any ?? []), ...(r.none ?? [])].flatMap(withRegions),
+        ]),
       ].filter((m) => m.kind === 'lineRegex').map((m) => m.value);
+      // the walk reaches nested matchers: Claude's question region has a start
+      if (manifest.agent === 'claude') expect(sources).toContain('^[●⏺]\\s');
 
       for (const source of sources) {
         expect(isSafeRegexSource(source), `${manifest.agent}: ${source}`).toBe(true);

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   rollupAgents, workspaceAgentState, surfaceAgentState,
   isCurrentQuestion, detectionPausedBy, detectionNeedsPublish, withIdleSince, rankedRoster, firstWaiting,
+  questionStampIsStale,
 } from '../../src/renderer/store/agent-rollup';
 import type { DeclaredAgentSnapshot } from '../../src/renderer/store/agent-rollup';
 import { toRemoteRosterSource } from '../../src/renderer/utils/remote-roster';
@@ -420,6 +421,25 @@ describe('the scan loop\'s part in keeping a question current', () => {
     // and the question the new session asks is republished under its stamp
     const q = { agent: 'claude', state: 'question' as const, ruleId: 'claude.question.pending', observedAt: 9_200 };
     expect(detectionNeedsPublish(q, { ...q, observedAt: undefined }, resumed.idleSince)).toBe(true);
+  });
+
+  // Codex round 2, P1: the session change above restarts the period, but the
+  // scan loop only rereads a screen whose output moved, so the same question
+  // still on screen was never republished and the pane read idle until output.
+  it('rereads an unchanged screen whose stored question predates the current idle period, once', () => {
+    const asked = { agent: 'claude', state: 'question' as const, ruleId: 'claude.question.pending', observedAt: 9_200, sessionId: 'old' };
+    const resumed = withIdleSince(
+      withIdleSince(undefined, declared({ state: 'idle', sessionId: 'old' }), 9_000),
+      declared({ state: 'idle', sessionId: 'new' }), 9_800,
+    );
+    expect(questionStampIsStale(asked, resumed.idleSince)).toBe(true);
+    const republished = { ...asked, observedAt: 9_900, sessionId: 'new' };
+    expect(detectionNeedsPublish(asked, { ...asked, observedAt: undefined }, resumed.idleSince)).toBe(true);
+    expect(questionStampIsStale(republished, resumed.idleSince)).toBe(false);
+    // nothing else asks for a reread: another verdict, or no period at all
+    expect(questionStampIsStale({ ...asked, state: 'idle' }, resumed.idleSince)).toBe(false);
+    expect(questionStampIsStale(asked, undefined)).toBe(false);
+    expect(questionStampIsStale(null, resumed.idleSince)).toBe(false);
   });
 
   it('republishes a question whose stored stamp predates the current idle period, even when nothing else moved', () => {

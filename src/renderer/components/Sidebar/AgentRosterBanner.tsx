@@ -52,7 +52,7 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
   const where = target ? `${target.workspaceTitle} · ${target.label}` : '';
 
   return (
-    <div className="agent-roster" data-blocked={blocked > 0}>
+    <div className="agent-roster" data-blocked={blocked > 0} data-question={blocked === 0 && question > 0}>
       <button
         className="agent-roster__main"
         disabled={!target}
