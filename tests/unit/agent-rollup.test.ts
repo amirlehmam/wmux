@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   rollupAgents, workspaceAgentState, surfaceAgentState,
   isCurrentQuestion, detectionPausedBy, detectionNeedsPublish, withIdleSince, rankedRoster, firstWaiting,
-  questionStampIsStale,
+  questionStampIsStale, observedStamp,
 } from '../../src/renderer/store/agent-rollup';
 import type { DeclaredAgentSnapshot } from '../../src/renderer/store/agent-rollup';
 import { toRemoteRosterSource } from '../../src/renderer/utils/remote-roster';
@@ -440,6 +440,17 @@ describe('the scan loop\'s part in keeping a question current', () => {
     expect(questionStampIsStale({ ...asked, state: 'idle' }, resumed.idleSince)).toBe(false);
     expect(questionStampIsStale(asked, undefined)).toBe(false);
     expect(questionStampIsStale(null, resumed.idleSince)).toBe(false);
+  });
+
+  // The reread above ends because the republished stamp is not before the
+  // period. A wall clock stepped back between the two would keep it before,
+  // and the loop would reread and republish on every tick.
+  it('never stamps a verdict before the idle period it was read in, even if the clock stepped back', () => {
+    expect(observedStamp(9_900, 9_800)).toBe(9_900);
+    expect(observedStamp(9_500, 9_800)).toBe(9_800);
+    expect(observedStamp(9_500, undefined)).toBe(9_500);
+    const asked = { agent: 'claude', state: 'question' as const, ruleId: 'claude.question.pending' };
+    expect(questionStampIsStale({ ...asked, observedAt: observedStamp(9_500, 9_800) }, 9_800)).toBe(false);
   });
 
   it('republishes a question whose stored stamp predates the current idle period, even when nothing else moved', () => {

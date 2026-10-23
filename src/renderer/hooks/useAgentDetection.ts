@@ -28,7 +28,7 @@ import { detectScreen } from '../../shared/detection/engine';
 import { progressTurnState, withProgressTurn } from '../utils/progress-turn';
 import { BUNDLED_MANIFESTS } from '../../shared/detection/manifests';
 import type { DetectionResult, Manifest } from '../../shared/detection/types';
-import { detectionNeedsPublish, detectionPausedBy, questionStampIsStale } from '../store/agent-rollup';
+import { detectionNeedsPublish, detectionPausedBy, observedStamp, questionStampIsStale } from '../store/agent-rollup';
 
 /**
  * How much of the bottom of the buffer to read.
@@ -141,7 +141,11 @@ function scanSurface(
   // The store's copy says when it was read and for which session, so a
   // consumer can tell a current question from one left over from an earlier
   // turn. Stamped only on publish: an unchanged verdict keeps its first stamp.
-  const published: DetectionResult = { ...result, observedAt: now, sessionId: declared?.sessionId ?? null };
+  const published: DetectionResult = {
+    ...result,
+    observedAt: observedStamp(now, declared?.idleSince),
+    sessionId: declared?.sessionId ?? null,
+  };
   scan.lastResult = published;
   store.setAgentDetection(surfaceId, published);
 

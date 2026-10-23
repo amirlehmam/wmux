@@ -397,6 +397,18 @@ export function questionStampIsStale(
     && (stored.observedAt ?? -Infinity) < idleSince;
 }
 
+/**
+ * The `observedAt` to publish a verdict read at `now` under.
+ *
+ * Never before the idle period it was read in. Both clocks are this
+ * renderer's, but a wall clock can step back between the two stamps, and a
+ * fresh read stamped before its own period would stay stale: the loop would
+ * reread and republish it on every tick (#141).
+ */
+export function observedStamp(now: number, idleSince: number | undefined): number {
+  return typeof idleSince === 'number' ? Math.max(now, idleSince) : now;
+}
+
 export function surfaceAgentState(
   declared: DeclaredAgentSnapshot | undefined,
   detection: DetectionSnapshot | undefined,
