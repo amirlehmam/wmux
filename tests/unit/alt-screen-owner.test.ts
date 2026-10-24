@@ -27,9 +27,9 @@ const PROMPT_MARK = `${ESC}]133;A${ESC}\\`;
 const write = (t: Terminal, d: string) => new Promise<void>((r) => t.write(d, r));
 
 /** A terminal wired the way useTerminal wires one: the owner tracker plus the prompt log's OSC 133 handler. */
-function wiredTerminal(): Terminal {
+function wiredTerminal(notify?: (d: ResetNoticeDetail) => void): Terminal {
   const t = new Terminal({ cols: 40, rows: 6, allowProposedApi: true });
-  trackAlternateScreenOwner(t, SURFACE);
+  trackAlternateScreenOwner(t, SURFACE, { notify });
   t.parser.registerOscHandler(133, (data) => handlePromptMark(t, SURFACE, data));
   return t;
 }
@@ -208,6 +208,62 @@ describe('who owns the alternate screen (issue #357)', () => {
     await stuckOnAlternateScreen(t);
     await write(t, `${ESC}[?1049l`);
     expect(alternateScreenOwner(SURFACE)).toBeUndefined();
+  });
+
+  describe('the force window belongs to the screen it was armed on', () => {
+    it('quitting the program and starting another one does not leave the arm behind', async () => {
+      const t = track(wiredTerminal());
+      await stuckOnAlternateScreen(t);
+      // Reset in a live vim: kept, and a second press would force.
+      expect(applyManualReset(t, SURFACE, { now: 10_000 })).toBe('keep');
+      // vim quits normally, and a new vim starts inside the old window.
+      await write(t, `${ESC}[?1049l$ vim
+`);
+      await write(t, `${ALT_ON}VIM FRAME`);
+      expect(applyManualReset(t, SURFACE, { now: 11_000 })).toBe('keep');
+      await write(t, '');
+      expect(t.buffer.active.type).toBe('alternate');
+    });
+
+    it('a program entering the screen the reset kept starts a new screen too', async () => {
+      const t = track(wiredTerminal());
+      await stuckOnAlternateScreen(t);
+      expect(applyManualReset(t, SURFACE, { now: 10_000 })).toBe('keep');
+      // Typed into the stuck screen of a shell that emits no prompt marks.
+      await write(t, `
+$ vim
+${ALT_ON}VIM FRAME`);
+      expect(applyManualReset(t, SURFACE, { now: 11_000 })).toBe('keep');
+    });
+
+    it('the notice goes away when the program leaves the alternate screen', async () => {
+      const notices: ResetNoticeDetail[] = [];
+      const notify = (d: ResetNoticeDetail) => { notices.push(d); };
+      const t = track(wiredTerminal(notify));
+      await stuckOnAlternateScreen(t);
+      applyManualReset(t, SURFACE, { now: 10_000, notify });
+      expect(notices.at(-1)?.until).toBe(10_000 + FORCE_LEAVE_WINDOW_MS);
+      await write(t, `${ESC}[?1049l`);
+      expect(notices.at(-1)).toEqual({ surfaceId: SURFACE, until: null });
+    });
+
+    it('the notice goes away when a program enters the alternate screen again', async () => {
+      const notices: ResetNoticeDetail[] = [];
+      const notify = (d: ResetNoticeDetail) => { notices.push(d); };
+      const t = track(wiredTerminal(notify));
+      await stuckOnAlternateScreen(t);
+      applyManualReset(t, SURFACE, { now: 10_000, notify });
+      await write(t, ALT_ON);
+      expect(notices.at(-1)).toEqual({ surfaceId: SURFACE, until: null });
+    });
+
+    it('with no notice up, buffer changes announce nothing', async () => {
+      const notices: ResetNoticeDetail[] = [];
+      const t = track(wiredTerminal((d) => { notices.push(d); }));
+      await stuckOnAlternateScreen(t);
+      await write(t, `${ESC}[?1049l${ALT_ON}${ESC}[?1049l`);
+      expect(notices).toEqual([]);
+    });
   });
 
   it('forgetAlternateScreen drops the record and the force arm', async () => {

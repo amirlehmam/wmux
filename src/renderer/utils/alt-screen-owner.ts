@@ -18,7 +18,8 @@
  *   oh-my-posh and bash-preexec setups, including on a remote host.
  *
  * Returning to the normal buffer clears the record: there is no alternate
- * screen left to own. The prompt mark is not parsed again here — the prompt
+ * screen left to own. It also ends a kept reset's force window and notice, and
+ * so does a new entry: both were about a screen that is no longer there. The prompt mark is not parsed again here — the prompt
  * log's OSC 133 handler already parses every mark and reports prompt starts to
  * {@link notePromptStart}.
  *
@@ -53,8 +54,20 @@ export function entersAlternateScreen(params: readonly (number | number[])[]): b
   return params.some((param) => typeof param === 'number' && ALTERNATE_SCREEN_MODES.has(param));
 }
 
-export function noteAlternateScreenEntered(surfaceId: string): void {
+/**
+ * The screen a kept reset was about is gone or has a new program on it, so a
+ * press now would be a first press about a different screen: disarm the force
+ * window and hide the notice. Without this, quitting vim after a kept reset
+ * and reopening it within the window let the next press force the live vim.
+ */
+function endKeptScreen(surfaceId: string, notify: ResetNotify | undefined): void {
+  if (!keptAt.delete(surfaceId)) return;
+  notify?.({ surfaceId, until: null });
+}
+
+export function noteAlternateScreenEntered(surfaceId: string, notify?: ResetNotify): void {
   owners.set(surfaceId, 'program');
+  endKeptScreen(surfaceId, notify);
 }
 
 /** An OSC 133;A. Only a prompt drawn ON the alternate screen says anything about it. */
@@ -62,25 +75,35 @@ export function notePromptStart(surfaceId: string, bufferType: string): void {
   if (bufferType === 'alternate') owners.set(surfaceId, 'shell');
 }
 
-export function noteNormalBuffer(surfaceId: string): void {
+export function noteNormalBuffer(surfaceId: string, notify?: ResetNotify): void {
   owners.delete(surfaceId);
+  endKeptScreen(surfaceId, notify);
 }
 
 export function alternateScreenOwner(surfaceId: string): AlternateScreenOwner | undefined {
   return owners.get(surfaceId);
 }
 
+export interface AlternateScreenTrackerOptions {
+  /** Hides the notice when the screen it was shown for goes away. */
+  notify?: ResetNotify;
+}
+
 /**
  * Watch `terminal` for alternate-screen entries and exits. The CSI handler
  * declines every sequence, so xterm still applies the mode itself.
  */
-export function trackAlternateScreenOwner(terminal: Terminal, surfaceId: string): IDisposable {
+export function trackAlternateScreenOwner(
+  terminal: Terminal,
+  surfaceId: string,
+  options: AlternateScreenTrackerOptions = {},
+): IDisposable {
   const csi = terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
-    if (entersAlternateScreen(params)) noteAlternateScreenEntered(surfaceId);
+    if (entersAlternateScreen(params)) noteAlternateScreenEntered(surfaceId, options.notify);
     return false;
   });
   const buffer = terminal.buffer.onBufferChange((active) => {
-    if (active.type === 'normal') noteNormalBuffer(surfaceId);
+    if (active.type === 'normal') noteNormalBuffer(surfaceId, options.notify);
   });
   return {
     dispose() {
@@ -107,6 +130,13 @@ export interface ResetNoticeDetail {
   until: number | null;
 }
 
+export type ResetNotify = (detail: ResetNoticeDetail) => void;
+
+/** Show or hide a surface's notice: what `ResetNotice` listens for. */
+export function dispatchResetNotice(detail: ResetNoticeDetail): void {
+  document.dispatchEvent(new CustomEvent<ResetNoticeDetail>(RESET_NOTICE_EVENT, { detail }));
+}
+
 /**
  * The command palette's "Reset terminal state (leave alternate screen)" entry.
  * Not a ShortcutAction: it has no default binding, and the press-twice route
@@ -118,7 +148,7 @@ export interface ManualResetOptions {
   /** The palette's "leave alternate screen" entry. */
   forceLeave?: boolean;
   now?: number;
-  notify?: (detail: ResetNoticeDetail) => void;
+  notify?: ResetNotify;
 }
 
 /**

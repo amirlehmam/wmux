@@ -25,7 +25,7 @@ import {
 } from '../utils/mouse-modes';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { resetTerminalModes } from '../utils/terminal-reset';
-import { applyManualReset, forgetAlternateScreen, RESET_NOTICE_EVENT, trackAlternateScreenOwner, type ResetNoticeDetail } from '../utils/alt-screen-owner';
+import { applyManualReset, dispatchResetNotice, forgetAlternateScreen, trackAlternateScreenOwner } from '../utils/alt-screen-owner';
 import { forgetSurfaceShellState, treeSurfaceIds, workspaceShellState } from '../utils/surface-shell-state';
 import { forgetProgressTurn, noteSurfaceProgress } from '../utils/progress-turn';
 import { windowsPtyCompat } from '../utils/windows-pty';
@@ -1485,7 +1485,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Who is on the alternate screen, for Reset terminal state (#357). Prompt
     // starts reach it through the OSC 133 handler just registered.
-    const altScreenDisposable = surfaceId ? trackAlternateScreenOwner(terminal, surfaceId) : null;
+    const altScreenDisposable = surfaceId
+      ? trackAlternateScreenOwner(terminal, surfaceId, { notify: dispatchResetNotice })
+      : null;
 
     // OSC 52: clipboard write — emitted by tmux when text is copied (set-clipboard on).
     // navigator.clipboard.writeText() requires a user-gesture context which PTY data
@@ -1963,9 +1965,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       }
       applyManualReset(term, surfaceId, {
         forceLeave: detail?.leaveAlternateScreen === true,
-        notify: (notice) => {
-          document.dispatchEvent(new CustomEvent<ResetNoticeDetail>(RESET_NOTICE_EVENT, { detail: notice }));
-        },
+        notify: dispatchResetNotice,
       });
       // Drop the replay cache too, or the next remount puts the modes straight
       // back — same coupling as the exit path.
