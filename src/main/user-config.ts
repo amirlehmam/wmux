@@ -385,7 +385,7 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
     // percent it is effectively "off", so say so instead of silently accepting it.
     if (dim > 0 && dim < 1) {
       const pct = Math.round(dim * 100);
-      const hint = pct <= MAX_INACTIVE_PANE_DIM_PCT ? `; for ${pct}% write ${pct}` : '';
+      const hint = pct > 0 && pct <= MAX_INACTIVE_PANE_DIM_PCT ? `; for ${pct}% write ${pct}` : '';
       errors.push(`appearance.inactive-pane-dim: ${dim} is a percent (0-${MAX_INACTIVE_PANE_DIM_PCT})${hint}`);
     } else if (dim >= 0 && dim <= MAX_INACTIVE_PANE_DIM_PCT) a.inactivePaneDim = dim;
     else errors.push(`appearance.inactive-pane-dim: ${dim} not between 0 and ${MAX_INACTIVE_PANE_DIM_PCT}`);

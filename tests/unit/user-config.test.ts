@@ -503,11 +503,14 @@ describe('[appearance] inactive-pane-dim', () => {
     ]);
   });
 
-  it('rejects 0.7 without suggesting 70, which is over the maximum', () => {
-    tmp = write('[appearance]\ninactive-pane-dim = 0.7\n');
+  it.each([
+    ['0.7', 'it is over the maximum'],
+    ['0.004', 'it rounds to 0'],
+  ])('rejects %s without a suggestion, because %s', (raw) => {
+    tmp = write(`[appearance]\ninactive-pane-dim = ${raw}\n`);
     const out = loadUserConfig(tmp);
     expect(out.appearance?.inactivePaneDim).toBeUndefined();
-    expect(out.errors).toEqual(['appearance.inactive-pane-dim: 0.7 is a percent (0-60)']);
+    expect(out.errors).toEqual([`appearance.inactive-pane-dim: ${raw} is a percent (0-60)`]);
   });
 
   it.each([0, 1, 12.5, 20, 60])('accepts %s', (value) => {
