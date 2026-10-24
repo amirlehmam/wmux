@@ -29,6 +29,7 @@ import { forgetSurfaceShellState, treeSurfaceIds, workspaceShellState } from '..
 import { forgetProgressTurn, noteSurfaceProgress } from '../utils/progress-turn';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
+import { serializeRemountSnapshot } from '../utils/remount-snapshot';
 import { anchorViewportLikeConpty, captureCursorLine, captureViewportTop, restoreCursorLine } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
 import { createFlingVelocityTracker, startFling, stepFling, type Fling } from '../utils/touch-fling';
@@ -134,9 +135,9 @@ function clearStuckRunningState(surfaceId: string): void {
 }
 
 // Snapshot the buffer before disposal so a remount (split-tree restructure)
-// can replay it (issue #49). Normal buffer only, so a TUI's own SIGWINCH
-// redraw owns the alt screen after remount. Bounded LRU so a genuine pane
-// close (no remount to consume it) can't grow the cache.
+// can replay it (issue #49). Includes the alternate screen, so a TUI that is
+// still running comes back on it (see utils/remount-snapshot.ts). Bounded LRU
+// so a genuine pane close (no remount to consume it) can't grow the cache.
 function snapshotSurfaceBuffer(
   surfaceId: string | undefined,
   serializeAddon: SerializeAddon,
@@ -144,7 +145,7 @@ function snapshotSurfaceBuffer(
 ): void {
   if (!surfaceId) return;
   try {
-    const text = serializeAddon.serialize({ excludeAltBuffer: true });
+    const text = serializeRemountSnapshot(serializeAddon);
     if (!text) return;
     if (surfaceBufferCache.size >= MAX_BUFFER_CACHE) {
       const oldest = surfaceBufferCache.keys().next().value;
@@ -352,7 +353,7 @@ function mouseModesFor(surfaceId: string): MouseModeState {
 // otherwise wipe the scrollback (issue #49). We snapshot on unmount and replay
 // on the next mount. Bounded so genuine pane closes can't leak the cache.
 interface BufferSnapshot {
-  /** SerializeAddon output — the normal buffer only. */
+  /** SerializeAddon output — the normal buffer, then the alternate one if active. */
   text: string;
   /** The size the terminal (and so the PTY) had when it was taken. */
   cols: number;
@@ -1057,9 +1058,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Restore a buffer snapshot captured before a previous unmount (issue #49).
     // Written now — before the PTY reattaches below — so the restored scrollback
-    // lands ahead of any new PTY output. We snapshot the normal buffer only
-    // (excludeAltBuffer), so a TUI like tmux/vim simply redraws itself via the
-    // post-remount SIGWINCH on top of the restored shell scrollback.
+    // lands ahead of any new PTY output. A TUI that was on the alternate screen
+    // comes back on it, and redraws there via the post-remount SIGWINCH.
     if (surfaceId) {
       const snapshot = surfaceBufferCache.get(surfaceId);
       if (snapshot) {
@@ -1124,10 +1124,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     //   alt buffer OR mouse-tracking app  → forward to the PTY (SGR wheel reports
     //                                        if mouse tracking is on, else arrows)
     //
-    // Buffer type alone is unreliable: after a React remount tmux doesn't re-send
-    // \x1b[?1049h on SIGWINCH (only on a fresh client attach), so
-    // xterm's buffer.active.type stays 'normal' even though tmux is drawn there.
-    // surfaceMouseModes (module-level, survives remounts) is the reliable signal.
+    // Buffer type alone is not enough: an app can track the mouse on the normal
+    // buffer. surfaceMouseModes (module-level, survives remounts) answers that;
+    // the buffer type itself survives a remount (utils/remount-snapshot.ts).
     const wheelHost = terminalRef.current;
     const onWheelCapture = (ev: WheelEvent) => {
       // A REAL wheel (or touchpad) takes the pane over from a touch fling

@@ -32,15 +32,13 @@ const ATTACH_FRAMES = 5;
  * `buffer.onBufferChange`: an event fired exactly when the active buffer
  * switches, which is the fact being read. No polling, and nothing to tune.
  *
- * Known gap, and it is the reason the alternative was considered: after a
- * split-tree restructure the replacement xterm reports `normal` even with tmux
- * drawing into it, because SerializeAddon replays the CONTENT and not the
- * DECSET that put the old terminal on the alt buffer (issue #164). The signal
- * that does survive that is `surfaceMouseModes`, but it answers a different
- * question — "has the application enabled mouse tracking" — and `less`, and vim
- * with `set mouse=`, enable none, so it would miss exactly the programs this
- * exists for. A remount briefly re-showing the header is a smaller and more
- * self-correcting wrong answer than never hiding it for a pager at all.
+ * A split-tree restructure replaces the xterm, and the replacement comes back
+ * on the alternate buffer when the old one was on it (utils/remount-snapshot.ts),
+ * so the buffer type survives a remount. `surfaceMouseModes` was considered as
+ * the signal before that was true, but it answers a different question — "has
+ * the application enabled mouse tracking" — and `less`, and vim with
+ * `set mouse=`, enable none, so it would miss exactly the programs this exists
+ * for.
  */
 function useAltBuffer(surfaceId: string): boolean {
   const [alt, setAlt] = useState(false);
