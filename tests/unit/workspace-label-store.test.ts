@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { PaneId, SplitNode, SurfaceId, WorkspaceInfo } from '../../src/shared/types';
+import type { PaneId, SplitNode, SurfaceId, WorkspaceId, WorkspaceInfo } from '../../src/shared/types';
 import { useStore } from '../../src/renderer/store';
+import { officeLayoutKey } from '../../src/renderer/components/Hub/office-layout';
 import {
   getStoredWorkspaceLabel,
   selectWorkspaceLabel,
@@ -62,6 +63,37 @@ describe('workspace label from the store', () => {
   it('keeps a name somebody chose', () => {
     announce('Fix login bug');
     expect(getStoredWorkspaceLabel({ ...named, titleIsDefault: undefined })).toBe('Workspace 3');
+  });
+
+  // Claude Code animates a glyph at the start of its title while it works:
+  // `◐ Hello greeting reply` through the frames to `✳ Hello greeting reply`.
+  describe('across spinner frames', () => {
+    const FRAMES = ['◐', '◑', '◒', '◓', '⠋', '✳'].map((g) => `${g} Hello greeting reply`);
+
+    it('keeps one label, for a component and a caller outside React alike', () => {
+      for (const frame of FRAMES) {
+        announce(frame);
+        expect(selectWorkspaceLabel(useStore.getState(), named)).toBe('Hello greeting reply');
+        expect(getStoredWorkspaceLabel(named)).toBe('Hello greeting reply');
+      }
+    });
+
+    it('falls back to the stored name on a title that is only a glyph', () => {
+      announce('✳');
+      expect(selectWorkspaceLabel(useStore.getState(), named)).toBe('Workspace 3');
+      expect(getStoredWorkspaceLabel(named)).toBe('Workspace 3');
+    });
+
+    it("keeps the Hub's layout key, so the office is not rebuilt every frame", () => {
+      const id = 'ws-label' as WorkspaceId;
+      const agents = [{ surfaceId, workspaceId: id }];
+      const keys = FRAMES.map((frame) => {
+        announce(frame);
+        // What HubView hands officeLayoutKey: each workspace under its label.
+        return officeLayoutKey([{ id, title: getStoredWorkspaceLabel(named) }], agents);
+      });
+      expect(new Set(keys).size).toBe(1);
+    });
   });
 
   describe('with an agent in a later pane', () => {

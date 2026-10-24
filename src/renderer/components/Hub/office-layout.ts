@@ -85,6 +85,18 @@ interface Block {
   workspace: LayoutWorkspace | null; // null = the break room block
 }
 
+/**
+ * Everything `buildLayout` reads, as one string: two inputs with the same key
+ * produce the same office. The hub rebuilds its layout only when this changes,
+ * because its roster's identity changes every second (the dwell tick) while the
+ * geometry changes only when a workspace or an agent appears, disappears, or is
+ * renamed.
+ */
+export function officeLayoutKey(workspaces: readonly LayoutWorkspace[], agents: readonly LayoutAgent[]): string {
+  return workspaces.map((w) => `${w.id}:${w.title}`).join('|')
+    + '||' + agents.map((a) => `${a.surfaceId}:${a.workspaceId}`).join('|');
+}
+
 export function buildLayout(workspaces: LayoutWorkspace[], agents: LayoutAgent[]): OfficeLayout {
   const agentsByWorkspace: Record<string, LayoutAgent[]> = {};
   for (const agent of agents) {

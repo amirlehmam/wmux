@@ -114,6 +114,29 @@ export function isConsoleDefaultTitle(title: string): boolean {
 }
 
 /**
+ * One leading status-glyph token: a run of one to three characters that are
+ * neither letters, digits nor spaces, followed by a space or by the end of the
+ * title. Claude Code puts `✳` there when idle and `◐ ◑ ◒ ◓` (braille frames in
+ * older builds) while it works. Any short run of symbols rather than a list of
+ * frames, so the next agent's spinner needs no entry here; a title that starts
+ * with a letter or a digit (`MINGW64:/c/repo`, `(1) Inbox`) never matches.
+ */
+const STATUS_GLYPH_PREFIX = /^[^\p{L}\p{N}\s]{1,3}(?:\s+|$)/u;
+
+/**
+ * A window title without the status glyph an agent animates in front of it (#343).
+ *
+ * The workspace NAME reads titles through this, so a spinner frame — up to five
+ * store writes a second while an agent works — does not rename the workspace
+ * and re-render everything that names it. A title that is only a glyph answers
+ * empty, which callers treat as "no title". The tab label keeps the raw title:
+ * there the glyph is the pane's live status.
+ */
+export function stripStatusGlyph(title: string): string {
+  return title.replace(STATUS_GLYPH_PREFIX, '');
+}
+
+/**
  * Drop the least recently written surfaces once the map is over budget.
  *
  * Returns the input untouched when it fits, so the common path allocates

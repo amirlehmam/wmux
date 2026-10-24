@@ -4,6 +4,7 @@ import {
   MAX_OSC_TITLE_SURFACES,
   normalizeOscTitle,
   evictOscTitles,
+  stripStatusGlyph,
   createOscTitleSlice,
   type OscTitleEntry,
 } from '../../src/renderer/store/osc-title-slice';
@@ -135,5 +136,33 @@ describe('the store setter', () => {
     h.slice.setOscTitle('surf-1', 'building');
     h.slice.clearOscTitle('surf-1');
     expect(h.get().oscTitles['surf-1']).toBeUndefined();
+  });
+});
+
+describe('stripStatusGlyph', () => {
+  it('drops the status glyph an agent puts in front of its title', () => {
+    // Claude Code: `✳` while idle, `◐ ◑ ◒ ◓` while working, braille frames in
+    // older builds. Recorded: `◐ Claude Code` … `✳ Hello greeting reply`.
+    for (const glyph of ['✳', '◐', '◑', '◒', '◓', '⠋', '⠙', '⠹']) {
+      expect(stripStatusGlyph(`${glyph} Hello greeting reply`)).toBe('Hello greeting reply');
+    }
+  });
+
+  it('drops ONE short run of symbols, and only when a space follows it', () => {
+    expect(stripStatusGlyph('✳️ Fix login')).toBe('Fix login');
+    expect(stripStatusGlyph('✳ ◐ Fix login')).toBe('◐ Fix login');
+    expect(stripStatusGlyph('****** Fix login')).toBe('****** Fix login');
+  });
+
+  it('leaves a title that starts with a letter or a digit alone', () => {
+    for (const title of ['MINGW64:/c/repo', 'user@host: ~', '(1) Inbox', '~/dev/wmux', 'Fix issue #221', '1. step']) {
+      expect(stripStatusGlyph(title)).toBe(title);
+    }
+  });
+
+  it('answers empty for a title that is only a glyph', () => {
+    expect(stripStatusGlyph('✳')).toBe('');
+    expect(stripStatusGlyph('⠋')).toBe('');
+    expect(stripStatusGlyph('')).toBe('');
   });
 });

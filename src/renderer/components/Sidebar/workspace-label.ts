@@ -1,5 +1,6 @@
 import type { SplitNode, WorkspaceInfo } from '../../../shared/types';
 import type { AgentIdentitySnapshot, DeclaredAgentSnapshot } from '../../store/agent-rollup';
+import { stripStatusGlyph } from '../../store/osc-title-slice';
 
 /**
  * The window title a workspace's terminals announce, for its sidebar name. Every
@@ -37,7 +38,9 @@ function pickTerminalTitle(
   const surface = node.surfaces[node.activeSurfaceIndex];
   // Only a terminal has a program that can set a title; see getSurfaceLabel.
   if (surface?.type !== 'terminal') return undefined;
-  const title = oscTitleFor(surface.id);
+  // Without the agent's status glyph, so a spinner frame keeps the name, and a
+  // title that is only a glyph counts as none.
+  const title = stripStatusGlyph(oscTitleFor(surface.id) ?? '');
   return title ? { title, agent: hasAgent(surface.id) } : undefined;
 }
 

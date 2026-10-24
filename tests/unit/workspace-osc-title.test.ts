@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { PaneId, SplitNode, SurfaceId, SurfaceRef, WorkspaceInfo } from '../../src/shared/types';
 import { getWorkspaceLabel } from '../../src/renderer/components/Sidebar/workspace-label';
+import { getSurfaceLabel } from '../../src/renderer/components/SplitPane/surface-label';
 import { createWorkspaceSlice, WorkspaceSlice } from '../../src/renderer/store/workspace-slice';
 import { DEFAULT_TERMINAL_PREFS, DEFAULT_WORKSPACE_PREFS } from '../../src/renderer/store/settings-slice';
 
@@ -132,6 +133,33 @@ describe('getWorkspaceLabel', () => {
       const ws: Labelled = { title: 'api work', titleIsDefault: false, splitTree: leaf([claude]) };
       expect(getWorkspaceLabel(ws, titles({ [claude.id]: 'x' }), agents(claude.id))).toBe('api work');
     });
+  });
+});
+
+describe("getWorkspaceLabel — an agent's status glyph", () => {
+  // Claude Code animates a glyph at the start of its title while it works, and
+  // titles reach the store up to five times a second. A spinner frame must not
+  // rename the workspace: every place that names it would re-render with it.
+  it('names the workspace the same on every spinner frame', () => {
+    const claude = s();
+    const ws: Labelled = { title: 'Workspace 2', titleIsDefault: true, splitTree: leaf([claude]) };
+    const frames = ['◐', '◑', '◒', '◓', '⠋', '⠙', '✳'].map((g) =>
+      getWorkspaceLabel(ws, titles({ [claude.id]: `${g} Hello greeting reply` })));
+    expect(new Set(frames)).toEqual(new Set(['Hello greeting reply']));
+  });
+
+  it('treats a pane titled with nothing but a glyph as untitled', () => {
+    const shell = s();
+    const claude = s();
+    const lone: Labelled = { title: 'Workspace 2', titleIsDefault: true, splitTree: leaf([claude]) };
+    expect(getWorkspaceLabel(lone, titles({ [claude.id]: '✳' }))).toBe('Workspace 2');
+    const both: Labelled = { title: 'Workspace 2', titleIsDefault: true, splitTree: branch(leaf([claude]), leaf([shell])) };
+    expect(getWorkspaceLabel(both, titles({ [claude.id]: '⠋', [shell.id]: 'pwsh' }))).toBe('pwsh');
+  });
+
+  it('leaves the tab its raw title', () => {
+    // Guard: the glyph is the tab's live status, and only the workspace NAME drops it.
+    expect(getSurfaceLabel(s(), undefined, undefined, undefined, '◐ Hello greeting reply')).toBe('◐ Hello greeting reply');
   });
 });
 

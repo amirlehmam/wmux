@@ -65,7 +65,9 @@ export function useWorkspaceLabel(workspace: LabelledWorkspace): string {
 /**
  * Labels for a list of workspaces, by id, for a component that names several
  * (command palette, notification panel). Selects strings and compares them
- * shallowly, so the map is rebuilt only when some name actually changes.
+ * shallowly, so the map is rebuilt — and the caller re-rendered — only when some
+ * name actually changes. An agent's spinner frame does not change one
+ * (`stripStatusGlyph`), which is what makes this cheap enough for the App root.
  */
 export function useWorkspaceLabels(workspaces: readonly WorkspaceInfo[]): ReadonlyMap<WorkspaceId, string> {
   const labels = useStore(useShallow((state) => workspaces.map((ws) => selectWorkspaceLabel(state, ws))));
