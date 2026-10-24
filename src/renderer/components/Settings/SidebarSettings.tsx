@@ -21,6 +21,16 @@ export default function SidebarSettings() {
       </div>
 
       <div className="settings-row">
+        <label className="settings-label">{t('settings.sidebarPanel.badgesOnStatusLine', 'Show counts and badges on the status line')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={sidebarPrefs.badgesOnStatusLine}
+          onChange={(e) => setSidebarPrefs({ badgesOnStatusLine: e.target.checked })}
+        />
+      </div>
+
+      <div className="settings-row">
         <label className="settings-label">{t('settings.sidebarPanel.showGitBranch', 'Show git branch')}</label>
         <input
           type="checkbox"

@@ -507,6 +507,7 @@ export const en = {
   'settings.sidebarPanel.showNotificationMessage': 'Show notification message',
   'settings.sidebarPanel.hideAllDetails': 'Hide all details',
   'settings.sidebarPanel.wrapTitles': 'Wrap long workspace titles',
+  'settings.sidebarPanel.badgesOnStatusLine': 'Show counts and badges on the status line',
   'settings.sidebarPanel.appearanceSection': 'Appearance',
   'settings.sidebarPanel.mode': 'Sidebar mode',
   'settings.sidebarPanel.mode.classic': 'Classic',

@@ -296,6 +296,28 @@
   margin-top: 2px;
 }
 
+/* Settings → Sidebar → "Show counts and badges on the status line": the
+   odometer and unread badge follow the status text instead of the title. The
+   lead moves to the wrapper so the badge centres on the text, not its margin. */
+.workspace-row__status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.workspace-row__status-line > .workspace-row__status {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+/* The badge is taller than a status line; without this the row grows a few
+   pixels whenever a notification arrives. */
+.workspace-row__status-line > .unread-badge {
+  margin-block: calc(-2px * var(--sidebar-text-scale, 1));
+}
+
 .workspace-row__status--idle {
   color: rgba(var(--ui-overlay-rgb), 0.35);
 }

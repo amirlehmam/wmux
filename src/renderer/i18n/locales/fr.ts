@@ -429,6 +429,7 @@ export const fr: Translation = {
   'settings.sidebarPanel.showNotificationMessage': 'Afficher le message de notification',
   'settings.sidebarPanel.hideAllDetails': 'Masquer tous les détails',
   'settings.sidebarPanel.wrapTitles': "Renvoyer à la ligne les titres d'espace de travail longs",
+  'settings.sidebarPanel.badgesOnStatusLine': "Afficher les compteurs et badges sur la ligne d'état",
   'settings.sidebarPanel.appearanceSection': 'Apparence',
   'settings.sidebarPanel.mode': 'Mode barre latérale',
   'settings.sidebarPanel.mode.classic': 'Classique',

@@ -433,6 +433,12 @@ export interface SidebarPrefs {
    * keeps it. A new field, so stored prefs pick it up from the defaults.
    */
   wrapTitles: boolean;
+  /**
+   * Put the tool-call odometer and the unread badge on the status line instead
+   * of beside the title, so the title gets the row's full width and the
+   * sidebar can be narrower. Off by default: the title line is the shipped look.
+   */
+  badgesOnStatusLine: boolean;
 }
 
 export const SIDEBAR_TEXT_SCALE_MIN = 90;
@@ -460,6 +466,7 @@ export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = {
   backgroundOpacity: 100,
   textScale: 100,
   wrapTitles: false,
+  badgesOnStatusLine: false,
 };
 
 // ─── Workspace settings ───────────────────────────────────────────────────────

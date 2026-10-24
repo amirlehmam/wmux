@@ -398,6 +398,30 @@ export default function WorkspaceRow({
 
   const stateDotClass = stateDotClassFor(statusInputs, isClaudeActive);
 
+  // Beside the title by default; on the status line with
+  // `sidebarPrefs.badgesOnStatusLine`, so the title gets the full row width.
+  const rowBadges = (
+    <>
+      {/* Work odometer: total tool calls this workspace's sessions have made.
+          hookActivity[].toolCount is live, monotonic and deliberately never
+          garbage-collected — and was rendered nowhere in the app until now.
+          Static text, so it is the one part of TRACE that survives a narrow
+          sidebar, reduced motion, and a screenshot. */}
+      {!!rowTrace && rowTrace.toolCount > 0 && (
+        <span
+          className="workspace-row__odometer"
+          title={t('workspaceRow.toolCallsTitle', '{count} tool calls in this workspace').replace('{count}', String(rowTrace.toolCount))}
+        >
+          {rowTrace.toolCount}
+        </span>
+      )}
+
+      {workspace.unreadCount > 0 && (
+        <UnreadBadge count={workspace.unreadCount} isSelected={isActive} />
+      )}
+    </>
+  );
+
   return (
     <div
       ref={rowRef}
@@ -480,23 +504,7 @@ export default function WorkspaceRow({
           </span>
         )}
 
-        {/* Work odometer: total tool calls this workspace's sessions have made.
-            hookActivity[].toolCount is live, monotonic and deliberately never
-            garbage-collected — and was rendered nowhere in the app until now.
-            Static text, so it is the one part of TRACE that survives a narrow
-            sidebar, reduced motion, and a screenshot. */}
-        {!!rowTrace && rowTrace.toolCount > 0 && (
-          <span
-            className="workspace-row__odometer"
-            title={t('workspaceRow.toolCallsTitle', '{count} tool calls in this workspace').replace('{count}', String(rowTrace.toolCount))}
-          >
-            {rowTrace.toolCount}
-          </span>
-        )}
-
-        {workspace.unreadCount > 0 && (
-          <UnreadBadge count={workspace.unreadCount} isSelected={isActive} />
-        )}
+        {!sidebarPrefs.badgesOnStatusLine && rowBadges}
 
         <button
           className="workspace-row__close"
@@ -511,9 +519,18 @@ export default function WorkspaceRow({
       </div>
 
       {/* Line 2: Status — always visible */}
-      <div className={`workspace-row__status ${statusClass}`}>
-        {statusText}
-      </div>
+      {sidebarPrefs.badgesOnStatusLine ? (
+        <div className="workspace-row__status-line">
+          <div className={`workspace-row__status ${statusClass}`}>
+            {statusText}
+          </div>
+          {rowBadges}
+        </div>
+      ) : (
+        <div className={`workspace-row__status ${statusClass}`}>
+          {statusText}
+        </div>
+      )}
 
       {/* Per-Claude-session sub-lines — one per pane running Claude Code,
           shown as soon as the workspace hosts 2+ sessions (click → focus pane) */}
