@@ -272,7 +272,10 @@ inside a terminal bubble through the HOST, not the pane, so the leaf's click-to-
 native listener on the slot (`onActivate`); and a same-commit move changes no prop, so
 `attachGeneration` re-runs the show path (refit, repaint, refocus — removing the element
 blurred its textarea). The snapshot/replay machinery stays as the fallback for a terminal
-that genuinely is rebuilt (StrictMode's dev double-mount).
+that genuinely is rebuilt on a live PTY (the root ErrorBoundary's retry; StrictMode and Fast
+Refresh in dev). It snapshots only a surface still in the store and replays only into a
+reused PTY: Load session keeps saved surface ids, so a closed pane's id can come back on a
+fresh shell (`RemountSnapshotCache` in `utils/remount-snapshot.ts`).
 
 ### Split Tree
 Pane layouts use an immutable binary tree (`SplitNode`). Each leaf = one pane with N surfaces (tabs).

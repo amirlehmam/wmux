@@ -21,7 +21,7 @@ import {
   applyMouseModeSequences,
   emptyMouseModeState,
   isMouseTracking,
-  mouseModeReplaySequence,
+  takeMouseModeReplay,
 } from '../utils/mouse-modes';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { resetTerminalModes, shellOwnsScreen } from '../utils/terminal-reset';
@@ -29,7 +29,7 @@ import { forgetSurfaceShellState, previousSurfaceShellState, treeSurfaceIds, wor
 import { forgetProgressTurn, noteSurfaceProgress } from '../utils/progress-turn';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
-import { serializeRemountSnapshot } from '../utils/remount-snapshot';
+import { RemountSnapshotCache, serializeRemountSnapshot } from '../utils/remount-snapshot';
 import { anchorViewportLikeConpty, captureCursorLine, captureViewportTop, restoreCursorLine } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
 import { createFlingVelocityTracker, startFling, stepFling, type Fling } from '../utils/touch-fling';
@@ -141,33 +141,28 @@ function clearStuckRunningState(surfaceId: string): void {
   } catch { /* best-effort: badge reset is non-critical */ }
 }
 
-// Snapshot the buffer before disposal so a remount (split-tree restructure)
+// Snapshot the buffer before disposal so a terminal rebuilt on the same PTY
 // can replay it (issue #49). Includes the alternate screen, so a TUI that is
-// still running comes back on it (see utils/remount-snapshot.ts). Bounded LRU
-// so a genuine pane close (no remount to consume it) can't grow the cache.
+// still running comes back on it. Skipped for a surface that has left the
+// store — a close no longer pays for a snapshot nothing will read (see
+// RemountSnapshotCache in utils/remount-snapshot.ts).
 function snapshotSurfaceBuffer(
   surfaceId: string | undefined,
   serializeAddon: SerializeAddon,
   terminal: Terminal,
 ): void {
   if (!surfaceId) return;
-  try {
+  surfaceBufferCache.retire(surfaceId, () => {
     const text = serializeRemountSnapshot(serializeAddon);
-    if (!text) return;
-    if (surfaceBufferCache.size >= MAX_BUFFER_CACHE) {
-      const oldest = surfaceBufferCache.keys().next().value;
-      if (oldest !== undefined) surfaceBufferCache.delete(oldest);
-    }
+    if (!text) return null;
     // The dimensions travel with the text because the replay only reproduces
     // the original screen at the original size: SerializeAddon restores the
     // cursor to its VIEWPORT row, and the PTY on the other side is still the
     // size we last told it. Replaying into a differently-sized buffer therefore
     // lands the cursor a different number of rows from the bottom than ConPTY
-    // has it, and nothing afterwards corrects that. See restoreSurfaceBuffer.
-    surfaceBufferCache.set(surfaceId, { text, cols: terminal.cols, rows: terminal.rows });
-  } catch {
-    // Serialization failure is non-fatal — just lose the snapshot.
-  }
+    // has it, and nothing afterwards corrects that. See restoreSurfaceState.
+    return { text, cols: terminal.cols, rows: terminal.rows };
+  });
 }
 
 /**
@@ -354,21 +349,14 @@ function mouseModesFor(surfaceId: string): MouseModeState {
   return state;
 }
 
-// Cache of serialized xterm buffers keyed by surfaceId. A split-tree
-// restructure remounts PaneWrapper (React reconciliation moves it to a
-// different depth/parent), disposing and recreating the terminal — which would
-// otherwise wipe the scrollback (issue #49). We snapshot on unmount and replay
-// on the next mount. Bounded so genuine pane closes can't leak the cache.
-interface BufferSnapshot {
-  /** SerializeAddon output — the normal buffer, then the alternate one if active. */
-  text: string;
-  /** The size the terminal (and so the PTY) had when it was taken. */
-  cols: number;
-  rows: number;
-}
-
-const surfaceBufferCache = new Map<string, BufferSnapshot>();
-const MAX_BUFFER_CACHE = 32;
+// Serialized xterm buffers keyed by surfaceId, so a terminal that is
+// disposed and rebuilt on the same PTY keeps its scrollback (issue #49). Since
+// #346 a split-tree change no longer rebuilds one; what still does is listed
+// on RemountSnapshotCache. Bounded, and only for surfaces still in the store.
+const surfaceBufferCache = new RemountSnapshotCache({
+  capacity: 32,
+  isOpen: (surfaceId) => useStore.getState().workspaces.some((ws) => treeHasSurface(ws.splitTree, surfaceId)),
+});
 
 // Live xterm instances keyed by surfaceId, so the pipe bridge can read screen
 // content (surface.read_text / `wmux read-screen`) from the active buffer.
@@ -1064,21 +1052,27 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     const titleDisposable = recordTitleChanges(terminal, surfaceId);
 
     // Restore a buffer snapshot captured before a previous unmount (issue #49).
-    // Written now — before the PTY reattaches below — so the restored scrollback
-    // lands ahead of any new PTY output. A TUI that was on the alternate screen
-    // comes back on it, and redraws there via the post-remount SIGWINCH.
-    if (surfaceId) {
-      const snapshot = surfaceBufferCache.get(surfaceId);
+    // Run by the PTY lookup below, just before it attaches, so the restored
+    // scrollback lands ahead of any PTY output — and only once the lookup has
+    // said whether the PTY is the one the snapshot was taken from. A fresh PTY
+    // gets nothing: replaying a dead TUI's alternate screen into a new shell
+    // put its prompt on the alternate buffer (see utils/remount-snapshot.ts).
+    // A TUI that was on the alternate screen comes back on it, and redraws
+    // there via the post-remount SIGWINCH.
+    const restoreSurfaceState = (ptyReused: boolean) => {
+      // StrictMode's discarded first mount answers its lookup too, and must not
+      // take the snapshot its replacement is waiting for.
+      if (disposed || !surfaceId) return;
+      const snapshot = surfaceBufferCache.take(surfaceId, ptyReused);
       if (snapshot) {
-        surfaceBufferCache.delete(surfaceId);
         // Replay at the size the snapshot was taken at, undoing the fit()
         // above — and HELD there, not merely set there. SerializeAddon restores
         // the cursor to its VIEWPORT row, so the replayed screen agrees with
         // ConPTY's about where the cursor is only at the size ConPTY still has;
         // and `terminal.write()` is asynchronous, so a bare resize pins only the
-        // size the bytes are QUEUED at. A remount is triggered by a split-tree
-        // change — exactly when the pane's size changed — so the PTY attach, the
-        // ResizeObserver and the visibility effect are all racing the parse. The
+        // size the bytes are QUEUED at. The pane need not be the size the
+        // snapshot was taken at, so the PTY attach, the ResizeObserver and the
+        // visibility effect are all racing the parse to re-fit it. The
         // hold is what keeps them out of it; see utils/replay-hold.ts for the
         // measurement. Growing to the pane's real size then happens once, in the
         // write callback, applied to BOTH sides in step — which with windowsPty
@@ -1086,14 +1080,17 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         replayHold.hold();
         terminal.resize(snapshot.cols, snapshot.rows);
         terminal.write(snapshot.text, () => {
-          // Parsed at last. Release, and pay back the one size sync that was
-          // refused while we held — the pane's real size, applied to xterm and
-          // the PTY together, which is the single in-step growth `windowsPty`
-          // makes correct on both sides.
-          if (!replayHold.release()) return;
+          // Parsed at last. Release, and grow to the pane's real size — applied
+          // to xterm and the PTY together, which is the single in-step growth
+          // `windowsPty` makes correct on both sides. Not only when a sync was
+          // refused while held: the hold starts after the async PTY lookup, by
+          // which time the pane has usually been fitted already, and the resize
+          // above undid that.
+          replayHold.release();
+          if (disposed) return;
           fit();
           const dims = fitAddonRef.current?.proposeDimensions();
-          if (dims && ptyIdRef.current) {
+          if (dims && ptyIdRef.current && (dims.cols !== snapshot.cols || dims.rows !== snapshot.rows)) {
             window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
           }
         });
@@ -1118,10 +1115,14 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       //
       // Unconditional on having a snapshot, deliberately: the modes are the
       // application's state, not the buffer's, and a mount that reattaches to a
-      // live PTY needs them whether or not a buffer came with it.
-      const replay = mouseModeReplaySequence(surfaceMouseModes.get(surfaceId));
+      // live PTY needs them whether or not a buffer came with it. A fresh PTY
+      // gets none, for the same reason the snapshot is withheld: the
+      // application that asked for them is gone. Its wheel remainder goes too,
+      // as on the exit path.
+      const replay = takeMouseModeReplay(surfaceMouseModes, surfaceId, ptyReused);
       if (replay) terminal.write(replay);
-    }
+      if (!ptyReused) wheelLineAccum.delete(surfaceId);
+    };
 
     // Wheel handling — we always take ownership on the capture phase (xterm's
     // own forwarding is unreliable after the WebGL context swap, #41, and an
@@ -1730,6 +1731,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     if (surfaceId && window.wmux.pty.has) {
       window.wmux.pty.has(surfaceId).then((exists: boolean) => {
         if (exists) {
+          restoreSurfaceState(true);
           attachToPty(surfaceId!);
         } else {
           // No existing PTY — create a new one, passing surfaceId so PTY ID = Surface ID
@@ -1751,10 +1753,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
             shell: effectiveShell,
           });
           window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd, env: envRef.current ?? {}, surfaceId, startupCommands: spawnCommands, cols: initialCols, rows: initialRows })
-            .then((created: { id: string; shell: string; shellFallbackFrom?: string }) => {
+            .then((created: { id: string; shell: string; reused: boolean; shellFallbackFrom?: string }) => {
               // PTY persists (keep-alive); a remount re-attaches via pty.has.
               if (disposed) return;
               setResolvedShellForSurface(surfaceId, created.shell);
+              // `reused`: StrictMode's second mount loses the has() race and
+              // lands here on the PTY its first mount just created.
+              restoreSurfaceState(created.reused);
               noteShellFallback(created);
               attachToPty(created.id);
             })
@@ -1764,9 +1769,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     } else {
       // No surfaceId hint — always create new PTY
       window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd, env: envRef.current ?? {}, startupCommands: startupCommandsRef.current, cols: initialCols, rows: initialRows })
-        .then((created: { id: string; shell: string; shellFallbackFrom?: string }) => {
+        .then((created: { id: string; shell: string; reused: boolean; shellFallbackFrom?: string }) => {
           if (disposed) return;
           setResolvedShellForSurface(surfaceId, created.shell);
+          restoreSurfaceState(created.reused);
           noteShellFallback(created);
           attachToPty(created.id);
         })

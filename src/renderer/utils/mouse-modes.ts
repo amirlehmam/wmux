@@ -136,3 +136,26 @@ export function mouseModeReplaySequence(state: MouseModeState | undefined): stri
   ];
   return modes.map(m => `\x1b[?${m}h`).join('');
 }
+
+/**
+ * The sequence that puts a terminal attaching to `surfaceId`'s PTY back into
+ * the modes its application asked for.
+ *
+ * Only for a REUSED PTY. The modes belong to the application, and a surface id
+ * can come back on a fresh shell (Load session keeps saved ids) after the TUI
+ * that set them was closed with its pane. Replaying them there left the shell
+ * tracking the mouse in SGR, and the wheel handler, which reads this map, sent
+ * its scrolling to the shell as escape codes. A fresh PTY therefore forgets the
+ * entry: its own application has asked for nothing yet.
+ */
+export function takeMouseModeReplay(
+  modes: Map<string, MouseModeState>,
+  surfaceId: string,
+  ptyReused: boolean,
+): string {
+  if (!ptyReused) {
+    modes.delete(surfaceId);
+    return '';
+  }
+  return mouseModeReplaySequence(modes.get(surfaceId));
+}
