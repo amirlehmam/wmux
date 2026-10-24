@@ -34,11 +34,16 @@ export default function ResetNotice({ surfaceId }: { surfaceId: string }) {
     return () => clearTimeout(timer);
   }, [until]);
 
-  if (until === null) return null;
-  const shortcut = formatBinding(binding);
-  const text = shortcut
-    ? t('terminal.resetKeptAltScreen').replace('{shortcut}', shortcut)
-    : t('terminal.resetKeptAltScreenNoShortcut');
+  // The live region stays mounted and only its text changes: a screen reader
+  // announces a change to a region, and often says nothing about one that
+  // arrives already filled. Empty, it draws nothing (terminal.css).
+  let text = '';
+  if (until !== null) {
+    const shortcut = formatBinding(binding);
+    text = shortcut
+      ? t('terminal.resetKeptAltScreen').replace('{shortcut}', shortcut)
+      : t('terminal.resetKeptAltScreenNoShortcut');
+  }
   return (
     <div className="reset-notice" role="status" aria-live="polite">
       {text}

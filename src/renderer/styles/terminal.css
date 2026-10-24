@@ -158,7 +158,10 @@
 /* Reset terminal state kept the alternate screen (#357). Stacked above the
    copy-mode band (bottom: 8px) and the prompt pill (bottom: 34px) for the same
    reason the pill clears copy mode: any of them can be showing at once. Wraps
-   inside the pane rather than overflowing a narrow one. */
+   inside the pane rather than overflowing a narrow one. Above the prompt
+   outline (27), which is up to half the pane wide and would otherwise cover
+   part of it; it is transient and never hit-testable, so the outline stays
+   usable underneath. */
 .reset-notice {
   position: absolute;
   bottom: 60px;
@@ -173,8 +176,16 @@
   font-size: 11px;
   line-height: 1.4;
   text-align: center;
-  z-index: 25;
+  z-index: 28;
   pointer-events: none;
+}
+
+/* The live region stays mounted so screen readers announce its text; with no
+   text it draws nothing. Not display:none, which takes it out of the
+   accessibility tree. */
+.reset-notice:empty {
+  padding: 0;
+  background: none;
 }
 
 .notification-ring {
