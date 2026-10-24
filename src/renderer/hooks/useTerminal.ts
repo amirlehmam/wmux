@@ -25,7 +25,14 @@ import {
 } from '../utils/mouse-modes';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { resetTerminalModes } from '../utils/terminal-reset';
-import { applyManualReset, dispatchResetNotice, forgetAlternateScreen, trackAlternateScreenOwner } from '../utils/alt-screen-owner';
+import {
+  applyManualReset,
+  beginSnapshotReplay,
+  dispatchResetNotice,
+  endSnapshotReplay,
+  forgetAlternateScreen,
+  trackAlternateScreenOwner,
+} from '../utils/alt-screen-owner';
 import { forgetSurfaceShellState, treeSurfaceIds, workspaceShellState } from '../utils/surface-shell-state';
 import { forgetProgressTurn, noteSurfaceProgress } from '../utils/progress-turn';
 import { windowsPtyCompat } from '../utils/windows-pty';
@@ -1086,7 +1093,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // set moves the cursor the same way on each.
         replayHold.hold();
         terminal.resize(snapshot.cols, snapshot.rows);
+        // The replayed ?1049h is the old screen coming back, not a program
+        // entering it; Reset terminal state already knows who is on it (#357).
+        beginSnapshotReplay(surfaceId);
         terminal.write(snapshot.text, () => {
+          endSnapshotReplay(surfaceId);
           // Parsed at last. Release, and pay back the one size sync that was
           // refused while we held — the pane's real size, applied to xterm and
           // the PTY together, which is the single in-step growth `windowsPty`

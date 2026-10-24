@@ -30,9 +30,10 @@
  * already parses every mark and reports them to {@link notePromptStart},
  * {@link noteCommandStart} and {@link noteCommandEnd}.
  *
- * Known gap: a terminal rebuilt from a snapshot (the remount fallback) replays
- * `?1049h`, so a screen recorded as the shell's reads as a program's again. The
- * cost is one extra press, never a leave under a live program.
+ * A terminal rebuilt from a snapshot (the remount fallback) replays `?1049h`.
+ * That is the old screen coming back, not a program entering, so DECSETs are
+ * ignored while a snapshot is being written ({@link beginSnapshotReplay}); the
+ * record itself is module state and survives the remount.
  *
  * Module maps rather than store state, like `surfaceMouseModes`: nothing
  * renders from them.
@@ -55,6 +56,9 @@ const owners = new Map<string, AlternateScreenOwner>();
 
 /** When each surface's last manual reset kept the alternate screen. */
 const keptAt = new Map<string, number>();
+
+/** Surfaces whose rebuilt terminal is being written a remount snapshot. */
+const replaying = new Set<string>();
 
 /** Does a DECSET (`CSI ? Pm h`) with these parameters enter the alternate screen? */
 export function entersAlternateScreen(params: readonly (number | number[])[]): boolean {
@@ -120,7 +124,7 @@ export function trackAlternateScreenOwner(
   options: AlternateScreenTrackerOptions = {},
 ): IDisposable {
   const csi = terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
-    if (entersAlternateScreen(params)) noteAlternateScreenEntered(surfaceId, options.notify);
+    if (!replaying.has(surfaceId) && entersAlternateScreen(params)) noteAlternateScreenEntered(surfaceId, options.notify);
     return false;
   });
   const buffer = terminal.buffer.onBufferChange((active) => {
@@ -130,14 +134,32 @@ export function trackAlternateScreenOwner(
     dispose() {
       csi.dispose();
       buffer.dispose();
+      // A terminal disposed before its snapshot parsed never runs the write
+      // callback, and a flag left set would hide the next program from the
+      // replacement.
+      replaying.delete(surfaceId);
     },
   };
+}
+
+/**
+ * A remount snapshot is about to be written to the surface's rebuilt terminal:
+ * call before `terminal.write(snapshot)` and {@link endSnapshotReplay} in its
+ * callback.
+ */
+export function beginSnapshotReplay(surfaceId: string): void {
+  replaying.add(surfaceId);
+}
+
+export function endSnapshotReplay(surfaceId: string): void {
+  replaying.delete(surfaceId);
 }
 
 /** The surface is gone. */
 export function forgetAlternateScreen(surfaceId: string): void {
   owners.delete(surfaceId);
   keptAt.delete(surfaceId);
+  replaying.delete(surfaceId);
 }
 
 /**
@@ -208,4 +230,5 @@ export function applyManualReset(
 export function resetAlternateScreenOwners(): void {
   owners.clear();
   keptAt.clear();
+  replaying.clear();
 }

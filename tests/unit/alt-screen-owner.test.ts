@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm';
 import {
   alternateScreenOwner,
   applyManualReset,
+  beginSnapshotReplay,
+  endSnapshotReplay,
   entersAlternateScreen,
   forgetAlternateScreen,
   resetAlternateScreenOwners,
@@ -285,6 +287,63 @@ describe('who owns the alternate screen (issue #357)', () => {
       await stuckOnAlternateScreen(t);
       await write(t, `\r\n${PROMPT_MARK}remote$ ${INPUT_MARK}ls\r\n${COMMAND_START}file\r\n${COMMAND_END}`);
       expect(applyManualReset(t, SURFACE, { now: 1000 })).toBe('leave');
+    });
+  });
+
+  describe('a terminal rebuilt from a remount snapshot', () => {
+    /** The old terminal's tracker goes with it; the record, module state, stays. */
+    function remount(old: { dispose(): void }): Terminal {
+      old.dispose();
+      return track(wiredTerminal());
+    }
+
+    it("the snapshot's replayed ?1049h is not a program entering", async () => {
+      const t = new Terminal({ cols: 40, rows: 6, allowProposedApi: true });
+      terminals.push(t);
+      const tracker = trackAlternateScreenOwner(t, SURFACE);
+      t.parser.registerOscHandler(133, (data) => handlePromptMark(t, SURFACE, data));
+      await stuckOnAlternateScreen(t);
+      await write(t, `\r\n${PROMPT_MARK}$ `);
+      expect(alternateScreenOwner(SURFACE)).toBe('shell');
+
+      const rebuilt = remount(tracker);
+      beginSnapshotReplay(SURFACE);
+      await new Promise<void>((done) => rebuilt.write(`MAIN-1\r\n${ALT_ON}TUI FRAME\r\n$ `, () => {
+        endSnapshotReplay(SURFACE);
+        done();
+      }));
+      expect(rebuilt.buffer.active.type).toBe('alternate');
+      expect(alternateScreenOwner(SURFACE)).toBe('shell');
+      expect(applyManualReset(rebuilt, SURFACE, { now: 1000 })).toBe('leave');
+    });
+
+    it('a program entering after the replay is recorded again', async () => {
+      const t = track(wiredTerminal());
+      beginSnapshotReplay(SURFACE);
+      await write(t, ALT_ON);
+      endSnapshotReplay(SURFACE);
+      expect(alternateScreenOwner(SURFACE)).toBeUndefined();
+      await write(t, ALT_ON);
+      expect(alternateScreenOwner(SURFACE)).toBe('program');
+    });
+
+    it('a terminal disposed mid-replay does not leave its replacement deaf to DECSETs', async () => {
+      const t = new Terminal({ cols: 40, rows: 6, allowProposedApi: true });
+      terminals.push(t);
+      const tracker = trackAlternateScreenOwner(t, SURFACE);
+      // The write callback never runs for a terminal disposed before it parsed.
+      beginSnapshotReplay(SURFACE);
+      const rebuilt = remount(tracker);
+      await write(rebuilt, ALT_ON);
+      expect(alternateScreenOwner(SURFACE)).toBe('program');
+    });
+
+    it('the replay is per surface', async () => {
+      const t = track(wiredTerminal());
+      beginSnapshotReplay('surf-other');
+      await write(t, ALT_ON);
+      endSnapshotReplay('surf-other');
+      expect(alternateScreenOwner(SURFACE)).toBe('program');
     });
   });
 
