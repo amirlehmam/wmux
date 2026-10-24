@@ -15,13 +15,20 @@
  * - `shell` — an OSC 133;A arrived while the active buffer was the alternate
  *   one. A shell is prompting there, so whatever entered it is gone. wmux's
  *   PowerShell, cmd and bash integrations emit these marks, and so do Starship,
- *   oh-my-posh and bash-preexec setups, including on a remote host.
+ *   oh-my-posh and bash-preexec setups, including on a remote host. An OSC
+ *   133;D (command finished) there ends a `command` the same way.
+ * - `command` — an OSC 133;C (command start) arrived on the alternate buffer:
+ *   a command was run from that prompt and has not finished. It may draw
+ *   inline without entering anything (Claude Code's inline mode, a dev
+ *   server), so the reset keeps the screen until the next A or D. cmd emits no
+ *   C, so a cmd pane stays `shell` and behaves as before.
  *
  * Returning to the normal buffer clears the record: there is no alternate
  * screen left to own. It also ends a kept reset's force window and notice, and
- * so does a new entry: both were about a screen that is no longer there. The prompt mark is not parsed again here — the prompt
- * log's OSC 133 handler already parses every mark and reports prompt starts to
- * {@link notePromptStart}.
+ * so does a new entry: both were about a screen that is no longer there. The
+ * prompt marks are not parsed again here — the prompt log's OSC 133 handler
+ * already parses every mark and reports them to {@link notePromptStart},
+ * {@link noteCommandStart} and {@link noteCommandEnd}.
  *
  * Known gap: a terminal rebuilt from a snapshot (the remount fallback) replays
  * `?1049h`, so a screen recorded as the shell's reads as a program's again. The
@@ -39,7 +46,7 @@ import {
 } from './terminal-reset';
 import { previousSurfaceShellState } from './surface-shell-state';
 
-export type AlternateScreenOwner = 'program' | 'shell';
+export type AlternateScreenOwner = 'program' | 'command' | 'shell';
 
 /** DEC private modes that activate the alternate buffer in xterm.js. */
 const ALTERNATE_SCREEN_MODES: ReadonlySet<number> = new Set([47, 1047, 1049]);
@@ -73,6 +80,20 @@ export function noteAlternateScreenEntered(surfaceId: string, notify?: ResetNoti
 /** An OSC 133;A. Only a prompt drawn ON the alternate screen says anything about it. */
 export function notePromptStart(surfaceId: string, bufferType: string): void {
   if (bufferType === 'alternate') owners.set(surfaceId, 'shell');
+}
+
+/** An OSC 133;C: a command runs from the prompt, and on the alternate screen it may draw there. */
+export function noteCommandStart(surfaceId: string, bufferType: string): void {
+  if (bufferType === 'alternate') owners.set(surfaceId, 'command');
+}
+
+/**
+ * An OSC 133;D: that command finished, so the shell has the screen again. Only
+ * ends a `command`: a program that entered after the command started is still
+ * the owner until a prompt says otherwise.
+ */
+export function noteCommandEnd(surfaceId: string, bufferType: string): void {
+  if (bufferType === 'alternate' && owners.get(surfaceId) === 'command') owners.set(surfaceId, 'shell');
 }
 
 export function noteNormalBuffer(surfaceId: string, notify?: ResetNotify): void {

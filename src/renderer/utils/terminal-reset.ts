@@ -166,7 +166,8 @@ export interface AlternateScreenFacts {
  * and works in every shell: a prompt drawn on the alternate screen since it was
  * last entered means the program that entered it is gone, even when the outer
  * shell last reported `running` for the `ssh` or `wsl` it is still inside; a
- * program entering it since the last such prompt means something may still be
+ * program entering it since the last such prompt, or a command started from
+ * that prompt (OSC 133;C) and not yet finished, means something may still be
  * drawing there, even when PowerShell without PSReadLine reports `idle`. The
  * #347 shell-state rule decides only when the stream said neither. A pane with
  * no prompt marks at all can still be recovered by asking twice.

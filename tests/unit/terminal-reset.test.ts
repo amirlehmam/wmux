@@ -245,6 +245,15 @@ describe('alternateScreenResetAction (issue #357)', () => {
     expect(alternateScreenResetAction(facts({ owner: 'program', shellState: 'running' }))).toBe('keep');
   });
 
+  it('keeps while a command started from a prompt on the alternate screen runs (133;C)', () => {
+    // An inline program (Claude Code's inline mode, a dev server) enters nothing,
+    // and a local `running` report used to lose to the earlier prompt mark.
+    expect(alternateScreenResetAction(facts({ owner: 'command' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'command', shellState: 'running' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'command', shellState: 'idle' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'command', lastKeptAt: 99_000 }))).toBe('force');
+  });
+
   it('a program on the alternate screen outranks an `idle` report (PowerShell without PSReadLine)', () => {
     // `running` is reported only from the PSReadLine Enter handler, so without it
     // the state reads idle while vim runs. The in-band entry is the fresher fact.

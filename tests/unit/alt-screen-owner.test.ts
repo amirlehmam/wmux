@@ -23,6 +23,9 @@ const ESC = '\x1b';
 const SURFACE = 'surf-357';
 const ALT_ON = `${ESC}[?1049h${ESC}[H`;
 const PROMPT_MARK = `${ESC}]133;A${ESC}\\`;
+const INPUT_MARK = `${ESC}]133;B${ESC}\\`;
+const COMMAND_START = `${ESC}]133;C${ESC}\\`;
+const COMMAND_END = `${ESC}]133;D;0${ESC}\\`;
 
 const write = (t: Terminal, d: string) => new Promise<void>((r) => t.write(d, r));
 
@@ -208,6 +211,81 @@ describe('who owns the alternate screen (issue #357)', () => {
     await stuckOnAlternateScreen(t);
     await write(t, `${ESC}[?1049l`);
     expect(alternateScreenOwner(SURFACE)).toBeUndefined();
+  });
+
+  describe('a command started from a prompt on the alternate screen (OSC 133;C)', () => {
+    /** A shell prompting on a dead program's screen, then running `cmd` from it. */
+    async function commandFromStalePrompt(t: Terminal, cmd: string): Promise<void> {
+      await stuckOnAlternateScreen(t);
+      await write(t, `\r\n${PROMPT_MARK}PS> ${INPUT_MARK}${cmd}\r\n${COMMAND_START}`);
+    }
+
+    it('keeps the screen while the command runs: an inline program draws there', async () => {
+      const t = track(wiredTerminal());
+      // Claude Code's inline mode, a dev server: no DECSET, just output.
+      await commandFromStalePrompt(t, 'claude');
+      await write(t, '> working...');
+      expect(alternateScreenOwner(SURFACE)).toBe('command');
+      expect(applyManualReset(t, SURFACE, { now: 1000 })).toBe('keep');
+      await write(t, '');
+      expect(t.buffer.active.type).toBe('alternate');
+    });
+
+    it('keeps it even when the shell reports idle (PowerShell without PSReadLine)', async () => {
+      const t = track(wiredTerminal());
+      recordSurfaceShellState(SURFACE, 'idle');
+      await commandFromStalePrompt(t, 'npm run dev');
+      expect(applyManualReset(t, SURFACE, { now: 1000 })).toBe('keep');
+    });
+
+    it('the command ending (133;D) gives the screen back to the shell', async () => {
+      const t = track(wiredTerminal());
+      await commandFromStalePrompt(t, 'npm run dev');
+      await write(t, `^C\r\n${COMMAND_END}`);
+      expect(alternateScreenOwner(SURFACE)).toBe('shell');
+      expect(applyManualReset(t, SURFACE, { now: 1000 })).toBe('leave');
+    });
+
+    it('so does the next prompt, for a shell that emits no D', async () => {
+      const t = track(wiredTerminal());
+      await commandFromStalePrompt(t, 'ls');
+      await write(t, `file\r\n${PROMPT_MARK}PS> `);
+      expect(applyManualReset(t, SURFACE, { now: 1000 })).toBe('leave');
+    });
+
+    it('a command mark on the normal buffer says nothing about the alternate screen', async () => {
+      const t = track(wiredTerminal());
+      await write(t, `${PROMPT_MARK}$ ${INPUT_MARK}ls\r\n${COMMAND_START}file\r\n${COMMAND_END}`);
+      expect(alternateScreenOwner(SURFACE)).toBeUndefined();
+    });
+
+    it('a command end without a command start on the screen changes nothing', async () => {
+      const t = track(wiredTerminal());
+      await stuckOnAlternateScreen(t);
+      await write(t, COMMAND_END);
+      expect(alternateScreenOwner(SURFACE)).toBe('program');
+    });
+
+    it('ssh from a local shell: the outer `running` and command do not block the inner prompt', async () => {
+      const t = track(wiredTerminal());
+      // The local shell runs `ssh host`: its C lands on the normal buffer and
+      // its `running` report stays up for the whole session.
+      await write(t, `${PROMPT_MARK}PS> ${INPUT_MARK}ssh host\r\n${COMMAND_START}`);
+      recordSurfaceShellState(SURFACE, 'running');
+      // A remote TUI dies on the alternate screen, and the remote shell prompts there.
+      await write(t, `${ALT_ON}TUI FRAME\r\n${PROMPT_MARK}remote$ `);
+      expect(applyManualReset(t, SURFACE, { now: 1000 })).toBe('leave');
+      await write(t, '');
+      expect(t.buffer.active.type).toBe('normal');
+    });
+
+    it('ssh: a remote command that ran and finished from the inner prompt still leaves', async () => {
+      const t = track(wiredTerminal());
+      recordSurfaceShellState(SURFACE, 'running');
+      await stuckOnAlternateScreen(t);
+      await write(t, `\r\n${PROMPT_MARK}remote$ ${INPUT_MARK}ls\r\n${COMMAND_START}file\r\n${COMMAND_END}`);
+      expect(applyManualReset(t, SURFACE, { now: 1000 })).toBe('leave');
+    });
   });
 
   describe('the force window belongs to the screen it was armed on', () => {
