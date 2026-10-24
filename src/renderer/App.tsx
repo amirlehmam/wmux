@@ -845,6 +845,9 @@ export default function App() {
       // `!== undefined`, not truthiness: 0 is the value that turns dimming off.
       const inactivePaneDim = result?.appearance?.inactivePaneDim;
       if (inactivePaneDim !== undefined) state.setAppearancePrefs({ inactivePaneDim });
+      // `[sidebar] wrap-titles` (issue #342); false is a real value, so no truthiness test.
+      const wrapTitles = result?.sidebar?.wrapTitles;
+      if (typeof wrapTitles === 'boolean') state.setSidebarPrefs({ wrapTitles });
 
       // Community translations from ~/.wmux/locales (issue #147) ride the same
       // reload so `wmux reload-config` refreshes everything under ~/.wmux, not

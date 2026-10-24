@@ -63,6 +63,11 @@ ui-theme = "dark"        # dark | light | system — the app chrome, not the ter
 # 0 turns dimming off. Focus mode (titlebar button) still dims on top of this.
 inactive-pane-dim = 20
 
+[sidebar]
+# Let a long workspace title wrap to two lines before it is truncated
+# (Settings -> Sidebar -> "Wrap long workspace titles"). Default false.
+wrap-titles = true
+
 [workspace]
 # What a NEW workspace opens with — the sidebar "+", Ctrl+N, first launch and
 # `wmux new-workspace` all use this.

@@ -499,3 +499,51 @@ describe('[appearance] inactive-pane-dim', () => {
     expect(loadUserConfig(tmp).appearance?.inactivePaneDim).toBeUndefined();
   });
 });
+
+describe('[sidebar] wrap-titles', () => {
+  let tmp: string | null = null;
+  afterEach(() => {
+    if (tmp && fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    tmp = null;
+  });
+
+  function write(body: string): string {
+    const p = path.join(os.tmpdir(), `wmux-sidebar-${Date.now()}-${Math.random()}.toml`);
+    fs.writeFileSync(p, body, 'utf8');
+    return p;
+  }
+
+  it('reads true', () => {
+    tmp = write('[sidebar]\nwrap-titles = true\n');
+    const out = loadUserConfig(tmp);
+    expect(out.errors).toEqual([]);
+    expect(out.sidebar?.wrapTitles).toBe(true);
+  });
+
+  it('reads false as "turn it off", not as absent', () => {
+    tmp = write('[sidebar]\nwrap-titles = false\n');
+    const out = loadUserConfig(tmp);
+    expect(out.errors).toEqual([]);
+    expect(out.sidebar).toEqual({ wrapTitles: false });
+  });
+
+  it('reads the camelCase spelling too', () => {
+    tmp = write('[sidebar]\nwrapTitles = true\n');
+    expect(loadUserConfig(tmp).sidebar?.wrapTitles).toBe(true);
+  });
+
+  it('leaves it undefined when the key or the section is absent', () => {
+    tmp = write('[appearance]\nui-theme = "dark"\n');
+    expect(loadUserConfig(tmp).sidebar).toBeUndefined();
+    fs.unlinkSync(tmp);
+    tmp = write('[sidebar]\n');
+    expect(loadUserConfig(tmp).sidebar).toBeUndefined();
+  });
+
+  it('rejects a non-boolean with an error, leaving the store default', () => {
+    tmp = write('[sidebar]\nwrap-titles = "yes"\n');
+    const out = loadUserConfig(tmp);
+    expect(out.sidebar).toBeUndefined();
+    expect(out.errors).toEqual(['sidebar.wrap-titles: expected boolean']);
+  });
+});

@@ -30,6 +30,9 @@
  *   ui-theme = "light"   # light | dark | system (issue #67)
  *   inactive-pane-dim = 0   # % black over unfocused panes, 0-60; 0 = off
  *
+ *   [sidebar]
+ *   wrap-titles = true         # let a long workspace title wrap to two lines (issue #342)
+ *
  *   [workspace]                # what a NEW workspace starts as (issue #212)
  *   panes  = 3                 # 1-8 terminal panes
  *   layout = "grid"            # grid | columns | rows | left | down | single
@@ -93,6 +96,11 @@ export interface UserConfig {
     uiTheme?: UiTheme;
     /** 0–60 (%) black over unfocused panes; 0 = no dimming. */
     inactivePaneDim?: number;
+  };
+  /** Sidebar display options that Settings → Sidebar also offers. */
+  sidebar?: {
+    /** Let a long workspace title wrap to two lines before truncating (issue #342). */
+    wrapTitles?: boolean;
   };
   /**
    * What a new workspace starts as (issue #212). Ranked below a saved default
@@ -388,6 +396,20 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
   return Object.keys(a).length ? a : undefined;
 }
 
+// `[sidebar] wrap-titles = true | false` (issue #342).
+function mapSidebarSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['sidebar']> | undefined {
+  const sidebar = asTable(root.sidebar);
+  if (!sidebar) return undefined;
+  const out: NonNullable<UserConfig['sidebar']> = {};
+
+  const wrapTitlesRaw = sidebar['wrap-titles'] ?? sidebar.wrapTitles;
+  const wrapTitles = asBool(wrapTitlesRaw);
+  if (wrapTitles !== undefined) out.wrapTitles = wrapTitles;
+  else if (wrapTitlesRaw !== undefined) errors.push('sidebar.wrap-titles: expected boolean');
+
+  return Object.keys(out).length ? out : undefined;
+}
+
 /**
  * New-workspace shape: `[workspace] panes = N`, `layout = "..."` (issue #212).
  *
@@ -566,6 +588,9 @@ function mapToConfig(root: TomlTable, errors: string[]): UserConfig {
 
   const appearance = mapAppearanceSection(root, errors);
   if (appearance) out.appearance = appearance;
+
+  const sidebar = mapSidebarSection(root, errors);
+  if (sidebar) out.sidebar = sidebar;
 
   const workspace = mapWorkspaceSection(root, errors);
   if (workspace) out.workspace = workspace;
