@@ -1,5 +1,6 @@
 import { StateCreator } from 'zustand';
 import { QuickLaunchProfile, SavedLayout } from '../../shared/types';
+import { DEFAULT_INACTIVE_PANE_DIM_PCT } from '../../shared/inactive-pane-dim';
 import { INDEX_MODIFIER_CHOICES, IndexModifiers, reconcileIndexModifiers } from '../utils/index-shortcuts';
 import { bindingsEqual } from '../utils/shortcut-binding';
 import type { BellStyle } from '../utils/terminal-bell';
@@ -1137,6 +1138,12 @@ export interface AppearancePrefs {
    */
   windowMaterial: 'clear' | 'acrylic' | 'mica';
   /**
+   * 0–60 (%): how much black is laid over unfocused panes. 0 turns dimming
+   * off; clamped on read by `inactivePaneDimAlpha`. Focus mode ignores it and
+   * keeps its own, stronger dim.
+   */
+  inactivePaneDim: number;
+  /**
    * Sidebar presentation mode. 'classic' is the stock list; 'trace' is the
    * opt-in live view that renders each Claude session as a tap on a copper bus,
    * with motion driven by real hook traffic.
@@ -1208,6 +1215,7 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   terminalBgOpacity: 88,
   windowTransparency: false,
   windowMaterial: 'clear',
+  inactivePaneDim: DEFAULT_INACTIVE_PANE_DIM_PCT,
   uiMode: 'trace',
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
   hubEnabled: true,

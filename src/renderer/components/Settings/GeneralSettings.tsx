@@ -6,6 +6,7 @@ import type { AppearancePrefs } from '../../store/settings-slice';
 import AgentIntegrationSettings from './AgentIntegrationSettings';
 import { formatBinding } from './KeyboardSettings';
 import { MIN_TERMINAL_OPACITY_PCT, opacityToAlpha } from '../../store/backdrop';
+import { MAX_INACTIVE_PANE_DIM_PCT, inactivePaneDimAlpha } from '../../../shared/inactive-pane-dim';
 import { backdropCaps, NO_BACKDROP, type BackdropCaps } from '../../utils/backdrop-caps';
 
 // Named background presets for issue #89 — the first is the gradient the
@@ -129,6 +130,7 @@ export default function GeneralSettings() {
   // sits directly above it.
   const opacityApplies = appearancePrefs.windowTransparency;
   const effectiveOpacity = Math.round(opacityToAlpha(appearancePrefs.terminalBgOpacity) * 100);
+  const effectiveDim = Math.round(inactivePaneDimAlpha(appearancePrefs.inactivePaneDim) * 100);
 
   return (
     <div className="settings-section">
@@ -173,6 +175,24 @@ export default function GeneralSettings() {
       </div>
 
       <p className="settings-hint">{t('settings.general.appearanceHint')}</p>
+
+      <div className="settings-row">
+        <label className="settings-label">
+          {/* The clamped value, like the opacity slider below: settings.json is
+              user-editable, and the label must match what the overlay paints. */}
+          {t('settings.general.inactivePaneDim')} — {effectiveDim}%
+        </label>
+        <input
+          type="range"
+          min={0}
+          max={MAX_INACTIVE_PANE_DIM_PCT}
+          step={1}
+          value={effectiveDim}
+          onChange={(e) => setAppearancePrefs({ inactivePaneDim: Number(e.target.value) })}
+        />
+      </div>
+
+      <p className="settings-hint">{t('settings.general.inactivePaneDimHint')}</p>
 
       <h3 className="settings-section-title">{t('settings.general.shellSection')}</h3>
 

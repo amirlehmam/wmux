@@ -104,8 +104,10 @@ html.wmux-transparent .split-divider--horizontal {
   position: absolute;
   inset: 0;
 }
+/* Strength from Settings → General → "Dim unfocused panes" (App.tsx sets the
+   property); the fallback is the shipped default. */
 .pane-wrapper__unfocused-overlay {
-  position: absolute; inset: 0; background: rgba(0, 0, 0, 0.2);
+  position: absolute; inset: 0; background: rgba(0, 0, 0, var(--wmux-inactive-pane-dim, 0.2));
   pointer-events: none; z-index: 5; transition: opacity 0.15s ease, background-color 0.2s ease;
 }
 /* Focus mode (titlebar button): the same overlay, much darker, and the

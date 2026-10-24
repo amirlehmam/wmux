@@ -27,6 +27,7 @@
  *
  *   [appearance]
  *   ui-theme = "light"   # light | dark | system (issue #67)
+ *   inactive-pane-dim = 0   # % black over unfocused panes, 0-60; 0 = off
  *
  *   [workspace]                # what a NEW workspace starts as (issue #212)
  *   panes  = 3                 # 1-8 terminal panes
@@ -56,6 +57,7 @@ import * as path from 'path';
 import { parseToml, TomlTable, TomlValue } from './toml-parser';
 import { parseKeyRemaps, KeyRemap } from '../shared/key-sequence';
 import { WorkspaceLayout } from '../shared/types';
+import { MAX_INACTIVE_PANE_DIM_PCT } from '../shared/inactive-pane-dim';
 
 export interface UserColorScheme {
   background?: string;
@@ -86,6 +88,8 @@ export interface UserConfig {
   /** App UI theme (issue #67) — separate from the terminal color scheme. */
   appearance?: {
     uiTheme?: UiTheme;
+    /** 0–60 (%) black over unfocused panes; 0 = no dimming. */
+    inactivePaneDim?: number;
   };
   /**
    * What a new workspace starts as (issue #212). Ranked below a saved default
@@ -356,18 +360,26 @@ function mapTerminalSection(root: TomlTable, errors: string[]): NonNullable<User
 }
 
 // App UI theme (issue #67): `[appearance] ui-theme = "light" | "dark" | "system"`.
+// Unfocused-pane dimming: `[appearance] inactive-pane-dim = 0..60` (percent).
 function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['appearance']> | undefined {
   const appearance = asTable(root.appearance);
   if (!appearance) return undefined;
+  const a: NonNullable<UserConfig['appearance']> = {};
 
   const uiThemeRaw = asString(appearance['ui-theme'] ?? appearance.uiTheme);
-  if (!uiThemeRaw) return undefined;
-
   if (uiThemeRaw === 'light' || uiThemeRaw === 'dark' || uiThemeRaw === 'system') {
-    return { uiTheme: uiThemeRaw };
+    a.uiTheme = uiThemeRaw;
+  } else if (uiThemeRaw) {
+    errors.push(`appearance.ui-theme: "${uiThemeRaw}" not one of light|dark|system`);
   }
-  errors.push(`appearance.ui-theme: "${uiThemeRaw}" not one of light|dark|system`);
-  return undefined;
+
+  const dim = asNumber(appearance['inactive-pane-dim'] ?? appearance.inactivePaneDim);
+  if (dim !== undefined) {
+    if (dim >= 0 && dim <= MAX_INACTIVE_PANE_DIM_PCT) a.inactivePaneDim = dim;
+    else errors.push(`appearance.inactive-pane-dim: ${dim} not between 0 and ${MAX_INACTIVE_PANE_DIM_PCT}`);
+  }
+
+  return Object.keys(a).length ? a : undefined;
 }
 
 /**

@@ -434,3 +434,55 @@ describe('[terminal] osc-title-tabs (issue #221)', () => {
     expect(loadUserConfig(tmp).terminal?.oscTitleTabs).toBeUndefined();
   });
 });
+
+describe('[appearance] inactive-pane-dim', () => {
+  let tmp: string | null = null;
+  afterEach(() => {
+    if (tmp && fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    tmp = null;
+  });
+
+  function write(body: string): string {
+    const p = path.join(os.tmpdir(), `wmux-pane-dim-${Date.now()}-${Math.random()}.toml`);
+    fs.writeFileSync(p, body, 'utf8');
+    return p;
+  }
+
+  it('reads 0 as "do not dim", not as absent', () => {
+    tmp = write('[appearance]\ninactive-pane-dim = 0\n');
+    const out = loadUserConfig(tmp);
+    expect(out.errors).toEqual([]);
+    expect(out.appearance?.inactivePaneDim).toBe(0);
+  });
+
+  it('reads the camelCase spelling too', () => {
+    tmp = write('[appearance]\ninactivePaneDim = 35\n');
+    expect(loadUserConfig(tmp).appearance?.inactivePaneDim).toBe(35);
+  });
+
+  it('reads it alongside ui-theme', () => {
+    tmp = write('[appearance]\nui-theme = "light"\ninactive-pane-dim = 10\n');
+    const out = loadUserConfig(tmp);
+    expect(out.appearance).toEqual({ uiTheme: 'light', inactivePaneDim: 10 });
+  });
+
+  it('keeps a valid dim when ui-theme is invalid', () => {
+    // One bad key in the section must not take the good one down with it.
+    tmp = write('[appearance]\nui-theme = "purple"\ninactive-pane-dim = 0\n');
+    const out = loadUserConfig(tmp);
+    expect(out.appearance?.inactivePaneDim).toBe(0);
+    expect(out.errors.length).toBe(1);
+  });
+
+  it('rejects a value outside 0-60 with an error, leaving the store default', () => {
+    tmp = write('[appearance]\ninactive-pane-dim = 80\n');
+    const out = loadUserConfig(tmp);
+    expect(out.appearance?.inactivePaneDim).toBeUndefined();
+    expect(out.errors).toEqual(['appearance.inactive-pane-dim: 80 not between 0 and 60']);
+  });
+
+  it('leaves it undefined when absent', () => {
+    tmp = write('[appearance]\nui-theme = "dark"\n');
+    expect(loadUserConfig(tmp).appearance?.inactivePaneDim).toBeUndefined();
+  });
+});

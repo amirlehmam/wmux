@@ -36,6 +36,9 @@ export const en = {
   'settings.general.uiTheme.light': 'Light',
   'settings.general.appearanceHint':
     'Controls the sidebar, tab bar, and window chrome. Terminal colors are set separately.',
+  'settings.general.inactivePaneDim': 'Dim unfocused panes',
+  'settings.general.inactivePaneDimHint':
+    'How much darker panes without focus are drawn. 0% turns dimming off. Focus mode still dims more.',
   // Settings — General panel — Explorer context menu
   'settings.general.shellSection': 'Windows Explorer',
   'settings.general.contextMenu': 'Add "Open in wmux" to the folder context menu',

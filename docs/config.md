@@ -52,6 +52,12 @@ palette = [
   "#5555ff", "#ff55ff", "#55ffff", "#ffffff",
 ]
 
+[appearance]
+ui-theme = "dark"        # dark | light | system — the app chrome, not the terminal
+# How much darker unfocused panes are drawn, in percent (0-60, default 20).
+# 0 turns dimming off. Focus mode (titlebar button) still dims on top of this.
+inactive-pane-dim = 20
+
 [workspace]
 # What a NEW workspace opens with — the sidebar "+", Ctrl+N, first launch and
 # `wmux new-workspace` all use this.

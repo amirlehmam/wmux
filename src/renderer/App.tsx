@@ -31,6 +31,7 @@ import ConfirmCloseSurfaceDialog from './components/ConfirmCloseSurfaceDialog';
 import BrowserPane from './components/Browser/BrowserPane';
 import { rememberedPanelUrl, shouldRememberPanelUrl } from './utils/browser-start-page';
 import { activeHistoryUrl } from '../shared/browser-history';
+import { inactivePaneDimAlpha } from '../shared/inactive-pane-dim';
 import { ExplorerPanel } from './components/Explorer/ExplorerPanel';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
@@ -595,6 +596,12 @@ export default function App() {
     document.documentElement.classList.toggle('wmux-focus-mode', focusMode);
     try { localStorage.setItem('wmux-focus-mode', focusMode ? '1' : '0'); } catch { /* storage unavailable: keep the in-memory state */ }
   }, [focusMode]);
+  // The everyday strength of that same overlay, as a custom property for the
+  // same reason: dragging the Settings slider re-renders no pane.
+  const inactivePaneDim = useStore((s) => s.appearancePrefs.inactivePaneDim);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--wmux-inactive-pane-dim', String(inactivePaneDimAlpha(inactivePaneDim)));
+  }, [inactivePaneDim]);
   // Screen detection for agents that report no state of their own. One loop for
   // the whole window; it skips every surface whose agent IS reporting.
   useAgentDetection(useStore((s) => s.workspacePrefs.detectAgentScreens));
@@ -830,6 +837,9 @@ export default function App() {
       // App UI theme override (issue #67): `[appearance] ui-theme = "..."`.
       const uiTheme = result?.appearance?.uiTheme;
       if (uiTheme) state.setAppearancePrefs({ uiTheme });
+      // `!== undefined`, not truthiness: 0 is the value that turns dimming off.
+      const inactivePaneDim = result?.appearance?.inactivePaneDim;
+      if (inactivePaneDim !== undefined) state.setAppearancePrefs({ inactivePaneDim });
 
       // Community translations from ~/.wmux/locales (issue #147) ride the same
       // reload so `wmux reload-config` refreshes everything under ~/.wmux, not
