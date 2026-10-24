@@ -71,8 +71,48 @@ describe('who owns the alternate screen (issue #357)', () => {
       expect(entersAlternateScreen([25])).toBe(false);
       expect(entersAlternateScreen([1002, 1006])).toBe(false);
       expect(entersAlternateScreen([])).toBe(false);
-      // A sub-parameter list is not a mode number.
-      expect(entersAlternateScreen([[1049, 1]])).toBe(false);
+    });
+  });
+
+  describe('through a real xterm: the CSI hook sees what xterm acts on', () => {
+    it.each([
+      ['?47h', `${ESC}[?47h`],
+      ['?1047h', `${ESC}[?1047h`],
+      ['?1049h', `${ESC}[?1049h`],
+      ['?1049;1006h', `${ESC}[?1049;1006h`],
+      ['?1006;1049h', `${ESC}[?1006;1049h`],
+      // xterm hands the hook [1049, [1]] and still switches buffers on it.
+      ['?1049:1h', `${ESC}[?1049:1h`],
+    ])('%s enters the alternate screen and is recorded', async (_name, seq) => {
+      const t = track(wiredTerminal());
+      await write(t, seq);
+      expect(t.buffer.active.type).toBe('alternate');
+      expect(alternateScreenOwner(SURFACE)).toBe('program');
+    });
+
+    it.each([
+      ['?25h', `${ESC}[?25h`],
+      ['?1002;1006h', `${ESC}[?1002;1006h`],
+      ['?2004h', `${ESC}[?2004h`],
+    ])('%s is not an alternate-screen entry', async (_name, seq) => {
+      const t = track(wiredTerminal());
+      await write(t, seq);
+      expect(t.buffer.active.type).toBe('normal');
+      expect(alternateScreenOwner(SURFACE)).toBeUndefined();
+    });
+
+    it('RIS (ESC c) returns to the normal buffer and clears the record, the arm and the notice', async () => {
+      const notices: ResetNoticeDetail[] = [];
+      const notify = (d: ResetNoticeDetail) => { notices.push(d); };
+      const t = track(wiredTerminal(notify));
+      await stuckOnAlternateScreen(t);
+      expect(applyManualReset(t, SURFACE, { now: 10_000, notify })).toBe('keep');
+      await write(t, `${ESC}c`);
+      expect(t.buffer.active.type).toBe('normal');
+      expect(alternateScreenOwner(SURFACE)).toBeUndefined();
+      expect(notices.at(-1)).toEqual({ surfaceId: SURFACE, until: null });
+      await write(t, ALT_ON);
+      expect(applyManualReset(t, SURFACE, { now: 11_000 })).toBe('keep');
     });
   });
 
