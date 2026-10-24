@@ -992,7 +992,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Create and load addons
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon(links.activate);
+    const webLinksAddon = new WebLinksAddon(links.activate, links.webLinkOptions);
     const searchAddon = new SearchAddon();
     const unicode11Addon = new Unicode11Addon();
     const imageAddon = new ImageAddon();
@@ -1289,6 +1289,32 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       panTracker.reset();
       cancelFling();
       if (cancelFlingRef.current === cancelFling) cancelFlingRef.current = null;
+    });
+
+    // A Ctrl+click wmux opens must not also be reported to the app (#353) —
+    // see claimsLinkMouseDown. Capture phase on the container, so the press
+    // stops before xterm's reporter and its Linkifier, both on descendants.
+    // The release is taken on `window` like xterm's own (it binds `document`
+    // mouseup once a press is reported), since the button can come up outside
+    // the pane. The pane's click-to-focus listens for `click`, which stopping
+    // these does not cancel; the focus xterm's mousedown would have given the
+    // terminal is given here instead.
+    const onLinkMouseDown = (ev: MouseEvent) => {
+      if (!links.claimMouseDown(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      terminal.focus();
+    };
+    const onLinkMouseUp = (ev: MouseEvent) => {
+      if (!links.claimMouseUp(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    touchHost.addEventListener('mousedown', onLinkMouseDown, true);
+    window.addEventListener('mouseup', onLinkMouseUp, true);
+    cleanupFnsRef.current.push(() => {
+      touchHost.removeEventListener('mousedown', onLinkMouseDown, true);
+      window.removeEventListener('mouseup', onLinkMouseUp, true);
     });
 
 
