@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useWorkspaceLabels } from '../SplitPane/use-osc-title';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { rankedRoster, rollupAgents, workspaceAgentState } from '../../store/agent-rollup';
@@ -52,6 +53,7 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
   const agentStates = useStore((s) => s.agentStates);
   const agentIdentities = useStore((s) => s.agentIdentities);
   const agentDetections = useStore((s) => s.agentDetections);
+  const workspaceLabels = useWorkspaceLabels(workspaces);
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -181,7 +183,7 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
                   {entry.kind}
                 </span>
               )}
-              <span className="agent-nav__row-workspace">{entry.workspaceTitle}</span>
+              <span className="agent-nav__row-workspace">{workspaceLabels.get(entry.workspaceId) ?? entry.workspaceTitle}</span>
               <span className="agent-nav__row-reason">
                 {entry.blockedReason ?? reasonFallback(entry, t)}
               </span>

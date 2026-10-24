@@ -13,6 +13,7 @@ import ErrorBoundary from '../ErrorBoundary';
 import { useStore } from '../../store';
 import { sidebarTextScale } from '../../store/settings-slice';
 import { useT } from '../../i18n';
+import { getStoredWorkspaceLabel } from '../SplitPane/use-osc-title';
 import '../../styles/sidebar.css';
 import '../../styles/trace.css';
 
@@ -226,7 +227,7 @@ export default function Sidebar({
   const handleSaveAsLayout = useCallback(
     (id: WorkspaceId) => {
       const ws = workspaces.find((w) => w.id === id);
-      if (ws) useStore.getState().requestLayoutSave(ws.title, id);
+      if (ws) useStore.getState().requestLayoutSave(getStoredWorkspaceLabel(ws), id);
     },
     [workspaces],
   );

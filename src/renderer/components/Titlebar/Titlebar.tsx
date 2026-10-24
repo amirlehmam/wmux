@@ -26,7 +26,7 @@ interface TitlebarProps {
   /** The agent-office easter egg (Settings, General). No pref, no button. */
   hubEnabled?: boolean;
   notifications: NotificationInfo[];
-  workspaceNames: Map<string, string>;
+  workspaceNames: ReadonlyMap<string, string>;
   notificationPanelOpen: boolean;
   onToggleNotificationPanel: () => void;
   onNotificationJump: (workspaceId: WorkspaceId, surfaceId: SurfaceId, paneId?: PaneId) => void;

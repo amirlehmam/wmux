@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { useT } from '../i18n';
+import { getStoredWorkspaceLabel } from './SplitPane/use-osc-title';
 
 /**
  * Close-session guard (issue #90): confirmation dialog shown when the opt-in
@@ -41,7 +42,10 @@ export default function ConfirmCloseDialog() {
   if (!open) return null;
 
   const titles = pendingIds
-    .map((id) => workspaces.find((w) => w.id === id)?.title)
+    .map((id) => {
+      const ws = workspaces.find((w) => w.id === id);
+      return ws && getStoredWorkspaceLabel(ws);
+    })
     .filter((title): title is string => !!title);
   const message =
     pendingIds.length === 1

@@ -6,7 +6,7 @@ import { useT } from '../../i18n';
 
 interface NotificationBellProps {
   notifications: NotificationInfo[];
-  workspaceNames: Map<string, string>;
+  workspaceNames: ReadonlyMap<string, string>;
   onJump: (workspaceId: WorkspaceId, surfaceId: SurfaceId, paneId?: PaneId) => void;
   onMarkAllRead: () => void;
   isOpen: boolean;

@@ -1,5 +1,7 @@
-import type { WorkspaceInfo } from '../../../shared/types';
-import { useStore } from '../../store';
+import { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import type { WorkspaceId, WorkspaceInfo } from '../../../shared/types';
+import { useStore, type WmuxStore } from '../../store';
 import { getWorkspaceLabel } from '../Sidebar/workspace-label';
 
 /**
@@ -19,19 +21,46 @@ export function useOscTitleLookup(): (surfaceId: string) => string | undefined {
   return (surfaceId: string) => (enabled ? oscTitles[surfaceId]?.title : undefined);
 }
 
+type LabelledWorkspace = Pick<WorkspaceInfo, 'title' | 'titleIsDefault' | 'splitTree'>;
+
 /**
- * A workspace's sidebar name: its stored title, or — while wmux picked that
- * title — the window title its terminal's program sets. Gated by its own pref,
- * `oscTitleWorkspaces`, so the tabs can follow the title while the sidebar keeps
- * its names.
+ * The one rule for what a workspace is CALLED, wherever the UI names it: the
+ * sidebar, the command palette, a notification, the titlebar. Every reader goes
+ * through here so the same workspace cannot be "Fix login bug" in one place and
+ * "Workspace 3" in another (#343). Gated by its own pref, `oscTitleWorkspaces`,
+ * so the tabs can follow the title while workspace names keep their stored ones.
+ * A chosen name is answered first, so it never reads the prefs.
  *
- * Selects the finished STRING rather than the title map, so a row re-renders
- * only when its own name changes, not on every title any pane in any workspace
- * emits.
+ * Display only: the CLI and pipe API answer the stored `title`.
  */
-export function useWorkspaceLabel(workspace: Pick<WorkspaceInfo, 'title' | 'titleIsDefault' | 'splitTree'>): string {
-  return useStore((state) => getWorkspaceLabel(
-    workspace,
-    (surfaceId) => (state.terminalPrefs.oscTitleWorkspaces ? state.oscTitles[surfaceId]?.title : undefined),
-  ));
+export function selectWorkspaceLabel(
+  state: Pick<WmuxStore, 'terminalPrefs' | 'oscTitles'>,
+  workspace: LabelledWorkspace,
+): string {
+  if (!workspace.titleIsDefault || !state.terminalPrefs.oscTitleWorkspaces) return workspace.title;
+  return getWorkspaceLabel(workspace, (surfaceId) => state.oscTitles[surfaceId]?.title);
+}
+
+/** The label right now, for callbacks and modules that are not components. */
+export function getStoredWorkspaceLabel(workspace: LabelledWorkspace): string {
+  return selectWorkspaceLabel(useStore.getState(), workspace);
+}
+
+/**
+ * A workspace's label, kept current. Selects the finished STRING rather than
+ * the title map, so a row re-renders only when its own name changes, not on
+ * every title any pane in any workspace emits.
+ */
+export function useWorkspaceLabel(workspace: LabelledWorkspace): string {
+  return useStore((state) => selectWorkspaceLabel(state, workspace));
+}
+
+/**
+ * Labels for a list of workspaces, by id, for a component that names several
+ * (command palette, notification panel). Selects strings and compares them
+ * shallowly, so the map is rebuilt only when some name actually changes.
+ */
+export function useWorkspaceLabels(workspaces: readonly WorkspaceInfo[]): ReadonlyMap<WorkspaceId, string> {
+  const labels = useStore(useShallow((state) => workspaces.map((ws) => selectWorkspaceLabel(state, ws))));
+  return useMemo(() => new Map(workspaces.map((ws, i) => [ws.id, labels[i]])), [workspaces, labels]);
 }

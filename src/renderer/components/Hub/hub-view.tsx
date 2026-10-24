@@ -30,6 +30,7 @@ import { BODY_FRAMES, FURNITURE, FURNITURE_PALETTE, VARIANTS, rasterize, variant
 import type { FrameName } from './sprites';
 import { MIN_SCALE, MAX_ZOOM, computeCamera, fitZoom, zoomAt } from './camera';
 import type { CameraView } from './camera';
+import { useWorkspaceLabels } from '../SplitPane/use-osc-title';
 import '../../styles/hub.css';
 
 const TILE = 16;
@@ -137,6 +138,7 @@ export default function HubView({ onClose, onFocusAgent }: {
     dialogRef.current?.focus();
   }, []);
 
+  const workspaceLabels = useWorkspaceLabels(workspaces);
   const rollup = useMemo(
     () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections),
     [workspaces, agentStates, agentIdentities, agentDetections, now],
@@ -146,13 +148,13 @@ export default function HubView({ onClose, onFocusAgent }: {
   // changes every second (dwell tick) while the office geometry only changes
   // when a workspace or an agent appears, disappears, or is renamed.
   const layoutKey = useMemo(
-    () => workspaces.map((w) => `${w.id}:${w.title}`).join('|')
+    () => workspaces.map((w) => `${w.id}:${workspaceLabels.get(w.id)}`).join('|')
       + '||' + rollup.roster.map((e) => `${e.surfaceId}:${e.workspaceId}`).join('|'),
-    [workspaces, rollup],
+    [workspaces, workspaceLabels, rollup],
   );
   const layout = useMemo(
     () => buildLayout(
-      workspaces.map((w) => ({ id: w.id, title: w.title })),
+      workspaces.map((w) => ({ id: w.id, title: workspaceLabels.get(w.id) ?? w.title })),
       rollup.roster.map((e) => ({ surfaceId: e.surfaceId, workspaceId: e.workspaceId })),
     ),
     // layoutKey IS the projection of both inputs; when it is unchanged, the

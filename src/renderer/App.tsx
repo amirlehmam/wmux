@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { startGpuProbe } from './utils/gpu-watchdog';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from './store';
+import { getStoredWorkspaceLabel, useWorkspaceLabels } from './components/SplitPane/use-osc-title';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
 import { classifyClaudeNotification } from '../shared/claude-notification';
@@ -354,9 +355,10 @@ function applyShellState(cmd: any, ws: WorkspaceInfo, deps: MetaDeps): void {
   const duration = totalSeconds >= 60
     ? `${Math.floor(totalSeconds / 60)}m${totalSeconds % 60}s`
     : `${totalSeconds}s`;
+  const label = getStoredWorkspaceLabel(ws);
   const msg = newState === 'interrupted'
-    ? deps.t('app.interruptedIn', 'Interrupted in {workspace} ({duration})').replace('{workspace}', ws.title).replace('{duration}', duration)
-    : deps.t('app.finishedIn', 'Finished in {workspace} ({duration})').replace('{workspace}', ws.title).replace('{duration}', duration);
+    ? deps.t('app.interruptedIn', 'Interrupted in {workspace} ({duration})').replace('{workspace}', label).replace('{duration}', duration)
+    : deps.t('app.finishedIn', 'Finished in {workspace} ({duration})').replace('{workspace}', label).replace('{duration}', duration);
   fireNotification(cmd.surfaceId, ws.id, msg, deps.addNotification);
 }
 
@@ -473,7 +475,8 @@ function handleAgentLifecycleEvent(event: any, addNotification: StoreAction, t: 
   const sid = (event.surfaceId as string) || '';
   const ws = workspaceForSurface(sid);
   const wsId = ws?.id || state.activeWorkspaceId;
-  const wsTitle = ws?.title || state.workspaces.find(w => w.id === wsId)?.title || '';
+  const labelled = ws ?? state.workspaces.find(w => w.id === wsId);
+  const wsTitle = labelled ? getStoredWorkspaceLabel(labelled) : '';
 
   let text: string;
   if (event.event === 'Notification') {
@@ -1436,11 +1439,7 @@ export default function App() {
     setCommandPaletteOpen(false);
   }, [workspaces, activeWorkspaceId, focusedPaneId, handleToggleExplorer]);
 
-  const workspaceNames = React.useMemo(() => {
-    const map = new Map<string, string>();
-    for (const ws of workspaces) map.set(ws.id, ws.title);
-    return map;
-  }, [workspaces]);
+  const workspaceNames = useWorkspaceLabels(workspaces);
 
   const handleNotificationJump = useCallback(
     (workspaceId: WorkspaceId, surfaceId: SurfaceId, _paneId?: PaneId) => {
@@ -1623,7 +1622,7 @@ export default function App() {
   useKeyboardShortcuts(focusedPaneId, setSettingsOpenFromShortcut, () => setBrowserOpen(o => !o), handleToggleNotifPanel, setFocusedPaneId, handleToggleZoom, () => handleToggleExplorer());
 
   // Derive a title for the titlebar: active workspace title or blank
-  const titlebarText = activeWorkspace?.title ?? '';
+  const titlebarText = (activeWorkspace && workspaceNames.get(activeWorkspace.id)) ?? '';
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useWorkspaceLabels } from '../SplitPane/use-osc-title';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { firstWaiting, rollupAgents } from '../../store/agent-rollup';
@@ -25,6 +26,7 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
   const agentStates = useStore((s) => s.agentStates);
   const agentIdentities = useStore((s) => s.agentIdentities);
   const agentDetections = useStore((s) => s.agentDetections);
+  const workspaceLabels = useWorkspaceLabels(workspaces);
   const [now, setNow] = useState(() => Date.now());
 
   const rollup = useMemo(
@@ -49,7 +51,7 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
   // prompt, which has a dwell to rank by where a question has none.
   const target = firstWaiting(rollup);
   const oldest = target?.state === 'blocked' ? target : undefined;
-  const where = target ? `${target.workspaceTitle} · ${target.label}` : '';
+  const where = target ? `${workspaceLabels.get(target.workspaceId) ?? target.workspaceTitle} · ${target.label}` : '';
 
   return (
     <div className="agent-roster" data-blocked={blocked > 0} data-question={blocked === 0 && question > 0}>

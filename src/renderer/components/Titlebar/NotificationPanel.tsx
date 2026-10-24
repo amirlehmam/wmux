@@ -6,7 +6,7 @@ import '../../styles/notification-panel.css';
 
 interface NotificationPanelProps {
   notifications: NotificationInfo[];
-  workspaceNames: Map<string, string>;
+  workspaceNames: ReadonlyMap<string, string>;
   onJump: (workspaceId: WorkspaceId, surfaceId: SurfaceId, paneId?: PaneId) => void;
   onMarkAllRead: () => void;
   onClose: () => void;
