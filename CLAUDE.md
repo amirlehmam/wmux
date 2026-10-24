@@ -726,7 +726,14 @@ wmux layout agents --count N [--type T] [--coordinator-ratio R] [--anchor-surfac
 
 # Terminal I/O
 wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]
-wmux read-screen [--lines N] [--surface <id>] | trigger-flash
+wmux read-screen [--lines N] [--surface <id>] [--events] | trigger-flash
+                                       # Text of the ACTIVE buffer plus `buffer`
+                                       # (normal|alternate), cols/rows and the cursor.
+                                       # --events adds the pane's recent buffer
+                                       # switches and resizes (utils/screen-report.ts):
+                                       # what tells a TUI that lost its frame to an
+                                       # xterm row shrink apart from the program
+                                       # leaving and re-entering ?1049 itself
 wmux detect explain [--surface <id>] | --file <path> [--agent <k>] | detect reload
                                        # The screen-detection verdict as TEXT: state,
                                        # rule id and the lines it matched. --file replays

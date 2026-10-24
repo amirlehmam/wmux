@@ -9,6 +9,7 @@ import { surfaceTerminalRegistry, showPaneNotice } from './hooks/useTerminal';
 import { rollupAgents } from './store/agent-rollup';
 import { toRemoteRosterSource } from './utils/remote-roster';
 import { openLinkFromBridge } from './utils/open-link';
+import { readScreenReport } from './utils/screen-report';
 import { PaneId, SurfaceId, WorkspaceId, SurfaceType, engineOf, type BrowserEngine, type WorkspaceLayout } from '../shared/types';
 import { promptSummary, type PromptEntry, type PromptSource } from './store/prompt-slice';
 import { v4 as uuid } from 'uuid';
@@ -601,26 +602,18 @@ export function initPipeBridge(): void {
     return leaf.surfaces[idx]?.id || null;
   };
 
-  // Read a terminal's screen as plain text (surface.read_text / read-screen).
-  // Reads the ACTIVE xterm buffer — alt buffer included, so a full-screen TUI
-  // returns what is actually visible. `lines` counts back from the bottom of
-  // the buffer (scrollback included); trailing blank lines are trimmed.
-  w.__wmux_readScreen = (surfaceId?: string, lines?: number) => {
+  // Read a terminal's screen (surface.read_text / read-screen): the text of the
+  // ACTIVE buffer plus which buffer it is, its size and the cursor, and with
+  // `events` the surface's recent buffer switches and resizes. See
+  // utils/screen-report.ts.
+  w.__wmux_readScreen = (surfaceId?: string, lines?: number, events?: boolean) => {
     const id = surfaceId || w.__wmux_getActiveSurfaceId?.();
     if (!id) return { error: 'No active surface' };
     const terminal = surfaceTerminalRegistry.get(id);
     if (!terminal) {
       return { error: `no terminal for surface ${id} (markdown/browser pane, another window, or closed)` };
     }
-    const buf = terminal.buffer.active;
-    const count = Math.min(Math.max(Math.floor(lines ?? 50), 1), 10000);
-    const end = buf.length;
-    const out: string[] = [];
-    for (let i = Math.max(0, end - count); i < end; i++) {
-      out.push(buf.getLine(i)?.translateToString(true) ?? '');
-    }
-    while (out.length && out[out.length - 1] === '') out.pop();
-    return { text: out.join('\n'), lines: out.length, surfaceId: id };
+    return readScreenReport(terminal, id, { lines: lines ?? 50, events: events === true });
   };
 
   /**

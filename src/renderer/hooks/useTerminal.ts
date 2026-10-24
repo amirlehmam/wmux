@@ -25,6 +25,7 @@ import {
 } from '../utils/mouse-modes';
 import { attachVisibleRenderer, RendererHandle } from '../utils/terminal-renderer';
 import { resetTerminalModes, shellOwnsScreen } from '../utils/terminal-reset';
+import { trackScreenEvents } from '../utils/screen-report';
 import { forgetSurfaceShellState, previousSurfaceShellState, treeSurfaceIds, workspaceShellState } from '../utils/surface-shell-state';
 import { forgetProgressTurn, noteSurfaceProgress } from '../utils/progress-turn';
 import { windowsPtyCompat } from '../utils/windows-pty';
@@ -1062,6 +1063,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     }
 
     const titleDisposable = recordTitleChanges(terminal, surfaceId);
+    const screenEventsDisposable = surfaceId ? trackScreenEvents(surfaceId, terminal) : undefined;
 
     // Restore a buffer snapshot captured before a previous unmount (issue #49).
     // Written now — before the PTY reattaches below — so the restored scrollback
@@ -1833,6 +1835,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       dataDisposable.dispose();
       titleDisposable?.dispose();
+      screenEventsDisposable?.dispose();
       promptMarkDisposable?.dispose();
 
       // Release every marker this terminal owned (issue #207).
