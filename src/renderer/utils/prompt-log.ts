@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import type { PromptEntry, PromptSource } from '../store/prompt-slice';
 import { nextPromptSeq, normalizePromptText } from '../store/prompt-slice';
 import { parsePromptMark } from './osc133';
+import { notePromptStart } from './alt-screen-owner';
 import * as anchor from './prompt-anchor';
 import * as marks from './prompt-marks';
 
@@ -326,6 +327,10 @@ export function handlePromptMark(terminal: Terminal, surfaceId: string, data: st
   switch (mark.kind) {
     case 'prompt-start':
       shellState.set(surfaceId, { promptLine: buf.baseY + buf.cursorY, inputLine: null, inputCol: 0 });
+      // A prompt on the alternate screen is also what tells Reset terminal
+      // state that the program which entered it is gone (#357). Reported from
+      // here so the mark is parsed once, and regardless of the prompt prefs.
+      notePromptStart(surfaceId, buf.type);
       return true;
     case 'input-start': {
       const state = shellState.get(surfaceId);

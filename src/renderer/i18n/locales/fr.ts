@@ -50,6 +50,7 @@ export const fr: Translation = {
   'palette.category.themes': 'Thèmes',
   'palette.openMarkdown': 'Ouvrir un fichier Markdown…',
   'palette.openWorkspaceFile': 'Ouvrir un fichier de workspace… (wmux.workspace.json)',
+  'palette.resetTerminalLeaveAlt': "Réinitialiser l'état du terminal (quitter l'écran alternatif)",
   'palette.current': 'actuel',
   'titlebar.help': 'Aide / Tutoriel',
   'titlebar.devtools': 'Afficher/Masquer les outils de développement',
@@ -551,6 +552,10 @@ export const fr: Translation = {
   'terminal.uploadFailed': "Échec de l'envoi vers {host} : {reason}",
   'terminal.copyModeHint':
     'MODE COPIE — Flèches pour se déplacer, Maj+flèches pour sélectionner, Entrée pour copier, Échap pour quitter',
+  'terminal.resetKeptAltScreen':
+    "Écran alternatif conservé : un programme l'utilise peut-être encore. Appuyez de nouveau sur {shortcut} pour le quitter quand même.",
+  'terminal.resetKeptAltScreenNoShortcut':
+    "Écran alternatif conservé : un programme l'utilise peut-être encore. Relancez « Réinitialiser l'état du terminal » pour le quitter quand même.",
   'terminal.findPlaceholder': 'Rechercher...',
   'terminal.findPrevious': 'Précédent (Maj+Entrée)',
   'terminal.findNext': 'Suivant (Entrée)',

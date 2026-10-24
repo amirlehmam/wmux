@@ -4,6 +4,7 @@ import { SurfaceId } from '../../../shared/types';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { actionLabel } from '../Settings/KeyboardSettings';
 import { useT } from '../../i18n';
+import { RESET_TERMINAL_LEAVE_ALT_ACTION } from '../../utils/alt-screen-owner';
 import '../../styles/command-palette.css';
 
 interface CommandPaletteProps {
@@ -144,6 +145,17 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
         onClose();
         (window as any).wmux?.workspaceFile?.open?.()?.catch?.(() => {});
       },
+    });
+
+    // Reset terminal state keeps the alternate screen while a program may be
+    // drawing on it (#347); this entry leaves it anyway, for a pane whose shell
+    // emits no prompt marks (#357). Routed through onAction because the focused
+    // terminal is App's to resolve, and App handles this id explicitly.
+    items.push({
+      id: 'command:reset-terminal-leave-alt',
+      label: t('palette.resetTerminalLeaveAlt', 'Reset terminal state (leave alternate screen)'),
+      category: t('palette.category.commands'),
+      action: () => onAction(RESET_TERMINAL_LEAVE_ALT_ACTION),
     });
 
     // Category: Layouts — saved pane arrangements

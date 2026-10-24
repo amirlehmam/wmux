@@ -56,6 +56,7 @@ import type {
 import { buildSurfaceDragPreview } from './components/SplitPane/surface-drag-preview';
 import { forgetSurfaceTitle, surfaceTerminalRegistry } from './hooks/useTerminal';
 import { forgetSurface as forgetPromptLog, hookEventSurface, recordAgentPrompt } from './utils/prompt-log';
+import { forgetAlternateScreen, RESET_TERMINAL_LEAVE_ALT_ACTION } from './utils/alt-screen-owner';
 import { SURFACE_CLOSED_EVENT } from './store/pty-teardown';
 import { installRemoteRendererHandler } from './utils/remote-snapshot';
 import { formatRemoteNotice } from './utils/remote-notice';
@@ -1000,6 +1001,8 @@ export default function App() {
       // store a moment after the store entry was dropped.
       forgetSurfaceTitle(surfaceId);
       useStore.getState().clearOscTitle(surfaceId);
+      // Reset terminal state's record of the alternate screen (#357).
+      forgetAlternateScreen(surfaceId);
     };
     document.addEventListener(SURFACE_CLOSED_EVENT, handler);
     return () => document.removeEventListener(SURFACE_CLOSED_EVENT, handler);
@@ -1415,9 +1418,12 @@ export default function App() {
     const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
     const terminalSurfaceId = surface?.type === 'terminal' ? surface.id : null;
 
-    if (action === 'resetTerminal') {
+    if (action === 'resetTerminal' || action === RESET_TERMINAL_LEAVE_ALT_ACTION) {
       if (terminalSurfaceId) {
-        document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: terminalSurfaceId } }));
+        // The palette's second entry skips the keep-then-press-again step
+        // (#357): choosing it by name already says "leave it anyway".
+        const leaveAlternateScreen = action === RESET_TERMINAL_LEAVE_ALT_ACTION;
+        document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: terminalSurfaceId, leaveAlternateScreen } }));
       }
     } else if (action === 'togglePromptOutline') {
       togglePromptOutlineFor(

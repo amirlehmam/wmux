@@ -93,6 +93,7 @@ export const en = {
   'palette.category.layouts': 'Layouts',
   'palette.openMarkdown': 'Open Markdown File…',
   'palette.openWorkspaceFile': 'Open workspace file… (wmux.workspace.json)',
+  'palette.resetTerminalLeaveAlt': 'Reset terminal state (leave alternate screen)',
   'palette.saveCurrentLayout': 'Save current layout as new preset',
   'palette.saveCurrentLayoutFailed': 'No active workspace to save as a layout.',
   'palette.newWorkspaceWithLayout': 'New Workspace: {name}',
@@ -702,6 +703,10 @@ export const en = {
   'terminal.uploadFailed': 'Upload to {host} failed: {reason}',
   'terminal.copyModeHint':
     'COPY MODE — Arrow keys to move, Shift+arrows to select, Enter to copy, Esc to exit',
+  'terminal.resetKeptAltScreen':
+    'Kept the alternate screen: a program may still be using it. Press {shortcut} again to leave it anyway.',
+  'terminal.resetKeptAltScreenNoShortcut':
+    'Kept the alternate screen: a program may still be using it. Run Reset terminal state again to leave it anyway.',
   'terminal.findPlaceholder': 'Find...',
   'terminal.findPrevious': 'Previous (Shift+Enter)',
   'terminal.findNext': 'Next (Enter)',
