@@ -434,11 +434,12 @@ export interface SidebarPrefs {
    */
   wrapTitles: boolean;
   /**
-   * Put the tool-call odometer and the unread badge on the status line instead
-   * of beside the title, so the title gets the row's full width and the
-   * sidebar can be narrower. Off by default: the title line is the shipped look.
+   * Give the workspace title the row's full width: the tool-call odometer and
+   * the unread badge move to the status line, and the hover-only close button
+   * takes no space until the row is hovered. Lets the sidebar be narrower. Off
+   * by default: the title line is the shipped look.
    */
-  badgesOnStatusLine: boolean;
+  fullWidthTitles: boolean;
 }
 
 export const SIDEBAR_TEXT_SCALE_MIN = 90;
@@ -466,7 +467,7 @@ export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = {
   backgroundOpacity: 100,
   textScale: 100,
   wrapTitles: false,
-  badgesOnStatusLine: false,
+  fullWidthTitles: false,
 };
 
 // ─── Workspace settings ───────────────────────────────────────────────────────

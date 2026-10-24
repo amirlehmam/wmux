@@ -269,6 +269,17 @@
   background: rgba(var(--ui-overlay-rgb), 0.15);
 }
 
+/* Full-width titles: the close button is invisible until hover anyway, so it
+   stops reserving its slot on the title line until then. The line keeps the
+   button's height, or the row would grow when the pointer enters it. */
+.workspace-row--full-width-title:not(:hover) .workspace-row__close {
+  display: none;
+}
+
+.workspace-row--full-width-title .workspace-row__header {
+  min-height: 16px;
+}
+
 /* Rename input */
 .workspace-row__rename-input {
   flex: 1;
@@ -296,7 +307,7 @@
   margin-top: 2px;
 }
 
-/* Settings → Sidebar → "Show counts and badges on the status line": the
+/* Settings → Sidebar → "Give workspace titles the full row width": the
    odometer and unread badge follow the status text instead of the title. The
    lead moves to the wrapper so the badge centres on the text, not its margin. */
 .workspace-row__status-line {

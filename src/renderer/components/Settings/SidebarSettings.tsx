@@ -21,13 +21,19 @@ export default function SidebarSettings() {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label">{t('settings.sidebarPanel.badgesOnStatusLine', 'Show counts and badges on the status line')}</label>
+        <label className="settings-label">{t('settings.sidebarPanel.fullWidthTitles', 'Give workspace titles the full row width')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
-          checked={sidebarPrefs.badgesOnStatusLine}
-          onChange={(e) => setSidebarPrefs({ badgesOnStatusLine: e.target.checked })}
+          checked={sidebarPrefs.fullWidthTitles}
+          onChange={(e) => setSidebarPrefs({ fullWidthTitles: e.target.checked })}
         />
+      </div>
+
+      <div className="settings-row settings-row--column">
+        <p className="settings-hint">
+          {t('settings.sidebarPanel.fullWidthTitlesHint', 'Moves the tool-call count and unread badge to the status line, and shows the close button only on hover.')}
+        </p>
       </div>
 
       <div className="settings-row">

@@ -399,7 +399,7 @@ export default function WorkspaceRow({
   const stateDotClass = stateDotClassFor(statusInputs, isClaudeActive);
 
   // Beside the title by default; on the status line with
-  // `sidebarPrefs.badgesOnStatusLine`, so the title gets the full row width.
+  // `sidebarPrefs.fullWidthTitles`, so the title gets the full row width.
   const rowBadges = (
     <>
       {/* Work odometer: total tool calls this workspace's sessions have made.
@@ -433,6 +433,7 @@ export default function WorkspaceRow({
         // `solidFill` restores the pre-0.35 opaque block for anyone who wants it.
         isActive && activeTabIndicator === 'solidFill' ? 'workspace-row--fill' : '',
         workspace.customColor ? 'workspace-row--custom' : '',
+        sidebarPrefs.fullWidthTitles ? 'workspace-row--full-width-title' : '',
         dropEdge ? `workspace-row--drop-${dropEdge}` : '',
       ].filter(Boolean).join(' ')}
       style={rowStyle}
@@ -504,7 +505,7 @@ export default function WorkspaceRow({
           </span>
         )}
 
-        {!sidebarPrefs.badgesOnStatusLine && rowBadges}
+        {!sidebarPrefs.fullWidthTitles && rowBadges}
 
         <button
           className="workspace-row__close"
@@ -519,7 +520,7 @@ export default function WorkspaceRow({
       </div>
 
       {/* Line 2: Status — always visible */}
-      {sidebarPrefs.badgesOnStatusLine ? (
+      {sidebarPrefs.fullWidthTitles ? (
         <div className="workspace-row__status-line">
           <div className={`workspace-row__status ${statusClass}`}>
             {statusText}
