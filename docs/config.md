@@ -59,8 +59,10 @@ palette = [
 
 [appearance]
 ui-theme = "dark"        # dark | light | system — the app chrome, not the terminal
-# How much darker unfocused panes are drawn, in percent (0-60, default 20).
-# 0 turns dimming off. Focus mode (titlebar button) still dims on top of this.
+# How much darker unfocused panes are drawn, as a PERCENT from 0 to 60 (default 20),
+# so 20 means 20%, not 0.2 (a value between 0 and 1 is rejected). 0 turns dimming off.
+# While Focus mode (titlebar button) is on, it uses its own fixed 62% dim and this
+# setting has no effect.
 inactive-pane-dim = 20
 
 [workspace]

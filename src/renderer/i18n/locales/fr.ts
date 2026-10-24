@@ -28,6 +28,9 @@ export const fr: Translation = {
   'settings.general.uiTheme.light': 'Clair',
   'settings.general.appearanceHint':
     "Contrôle la barre latérale, la barre d'onglets et le cadre de la fenêtre. Les couleurs du terminal se règlent séparément.",
+  'settings.general.inactivePaneDim': 'Atténuer les panes inactifs',
+  'settings.general.inactivePaneDimHint':
+    "Degré d'assombrissement des panes sans focus. 0 % désactive l'atténuation. Le mode focus atténue davantage.",
   'settings.general.shellSection': 'Explorateur Windows',
   'settings.general.contextMenu': 'Ajouter « Ouvrir dans wmux » au menu contextuel des dossiers',
   'settings.general.contextMenuLabel': 'Ouvrir dans wmux',

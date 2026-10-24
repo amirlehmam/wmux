@@ -494,6 +494,29 @@ describe('[appearance] inactive-pane-dim', () => {
     expect(out.errors).toEqual(['appearance.inactive-pane-dim: 80 not between 0 and 60']);
   });
 
+  it.each([['0.2', 20], ['0.5', 50]])('rejects the fraction %s as a mistaken 0..1 form', (raw, pct) => {
+    tmp = write(`[appearance]\ninactive-pane-dim = ${raw}\n`);
+    const out = loadUserConfig(tmp);
+    expect(out.appearance?.inactivePaneDim).toBeUndefined();
+    expect(out.errors).toEqual([
+      `appearance.inactive-pane-dim: ${raw} is a percent (0-60); for ${pct}% write ${pct}`,
+    ]);
+  });
+
+  it('rejects 0.7 without suggesting 70, which is over the maximum', () => {
+    tmp = write('[appearance]\ninactive-pane-dim = 0.7\n');
+    const out = loadUserConfig(tmp);
+    expect(out.appearance?.inactivePaneDim).toBeUndefined();
+    expect(out.errors).toEqual(['appearance.inactive-pane-dim: 0.7 is a percent (0-60)']);
+  });
+
+  it.each([0, 1, 12.5, 20, 60])('accepts %s', (value) => {
+    tmp = write(`[appearance]\ninactive-pane-dim = ${value}\n`);
+    const out = loadUserConfig(tmp);
+    expect(out.errors).toEqual([]);
+    expect(out.appearance?.inactivePaneDim).toBe(value);
+  });
+
   it('leaves it undefined when absent', () => {
     tmp = write('[appearance]\nui-theme = "dark"\n');
     expect(loadUserConfig(tmp).appearance?.inactivePaneDim).toBeUndefined();

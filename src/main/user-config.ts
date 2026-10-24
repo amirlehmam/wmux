@@ -28,7 +28,7 @@
  *
  *   [appearance]
  *   ui-theme = "light"   # light | dark | system (issue #67)
- *   inactive-pane-dim = 0   # % black over unfocused panes, 0-60; 0 = off
+ *   inactive-pane-dim = 0   # % black over unfocused panes, 0-60; 0 = off; ignored in Focus mode
  *
  *   [workspace]                # what a NEW workspace starts as (issue #212)
  *   panes  = 3                 # 1-8 terminal panes
@@ -366,7 +366,7 @@ function mapTerminalSection(root: TomlTable, errors: string[]): NonNullable<User
 }
 
 // App UI theme (issue #67): `[appearance] ui-theme = "light" | "dark" | "system"`.
-// Unfocused-pane dimming: `[appearance] inactive-pane-dim = 0..60` (percent).
+// Unfocused-pane dimming: `[appearance] inactive-pane-dim = 0..60` (percent, so 20 = 20%; 0.2 is rejected).
 function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<UserConfig['appearance']> | undefined {
   const appearance = asTable(root.appearance);
   if (!appearance) return undefined;
@@ -381,7 +381,13 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
 
   const dim = asNumber(appearance['inactive-pane-dim'] ?? appearance.inactivePaneDim);
   if (dim !== undefined) {
-    if (dim >= 0 && dim <= MAX_INACTIVE_PANE_DIM_PCT) a.inactivePaneDim = dim;
+    // 0 < dim < 1 is almost certainly the 0..1 form the issue floated: taken as a
+    // percent it is effectively "off", so say so instead of silently accepting it.
+    if (dim > 0 && dim < 1) {
+      const pct = Math.round(dim * 100);
+      const hint = pct <= MAX_INACTIVE_PANE_DIM_PCT ? `; for ${pct}% write ${pct}` : '';
+      errors.push(`appearance.inactive-pane-dim: ${dim} is a percent (0-${MAX_INACTIVE_PANE_DIM_PCT})${hint}`);
+    } else if (dim >= 0 && dim <= MAX_INACTIVE_PANE_DIM_PCT) a.inactivePaneDim = dim;
     else errors.push(`appearance.inactive-pane-dim: ${dim} not between 0 and ${MAX_INACTIVE_PANE_DIM_PCT}`);
   }
 
