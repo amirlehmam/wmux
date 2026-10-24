@@ -74,6 +74,65 @@ describe('getWorkspaceLabel', () => {
     const ws: Labelled = { title: 'Workspace 1', titleIsDefault: true, splitTree: leaf([browser]) };
     expect(getWorkspaceLabel(ws, titles({ [browser.id]: 'confused' }))).toBe('Workspace 1');
   });
+
+  describe('with a detected agent', () => {
+    const agents = (...ids: string[]) => (surfaceId: string) => ids.includes(surfaceId);
+
+    it('prefers an agent pane over a titled shell earlier in tree order', () => {
+      const shell = s();
+      const claude = s();
+      const ws: Labelled = { title: 'Workspace 1', titleIsDefault: true, splitTree: branch(leaf([shell]), leaf([claude])) };
+      const oscTitleFor = titles({ [shell.id]: 'MINGW64:/c/repo', [claude.id]: 'Fix the login bug' });
+      expect(getWorkspaceLabel(ws, oscTitleFor, agents(claude.id))).toBe('Fix the login bug');
+    });
+
+    it('falls back to tree order when no pane has an agent', () => {
+      const shell = s();
+      const other = s();
+      const ws: Labelled = { title: 'Workspace 1', titleIsDefault: true, splitTree: branch(leaf([shell]), leaf([other])) };
+      const oscTitleFor = titles({ [shell.id]: 'shell', [other.id]: 'other' });
+      expect(getWorkspaceLabel(ws, oscTitleFor, agents())).toBe('shell');
+    });
+
+    it('takes the first agent pane in tree order when several have one', () => {
+      const shell = s();
+      const first = s();
+      const second = s();
+      const ws: Labelled = {
+        title: 'Workspace 1',
+        titleIsDefault: true,
+        splitTree: branch(leaf([shell]), branch(leaf([first]), leaf([second]))),
+      };
+      const oscTitleFor = titles({ [shell.id]: 'shell', [first.id]: 'first', [second.id]: 'second' });
+      expect(getWorkspaceLabel(ws, oscTitleFor, agents(first.id, second.id))).toBe('first');
+    });
+
+    it('skips an agent pane that has no title', () => {
+      const shell = s();
+      const silent = s();
+      const ws: Labelled = { title: 'Workspace 1', titleIsDefault: true, splitTree: branch(leaf([shell]), leaf([silent])) };
+      expect(getWorkspaceLabel(ws, titles({ [shell.id]: 'shell' }), agents(silent.id))).toBe('shell');
+    });
+
+    it('still skips a hidden tab, agent or not', () => {
+      const hiddenAgent = s();
+      const shown = s();
+      const shell = s();
+      const ws: Labelled = {
+        title: 'Workspace 1',
+        titleIsDefault: true,
+        splitTree: branch(leaf([hiddenAgent, shown], 1), leaf([shell])),
+      };
+      const oscTitleFor = titles({ [hiddenAgent.id]: 'hidden', [shell.id]: 'shell' });
+      expect(getWorkspaceLabel(ws, oscTitleFor, agents(hiddenAgent.id))).toBe('shell');
+    });
+
+    it('does not override a name somebody chose', () => {
+      const claude = s();
+      const ws: Labelled = { title: 'api work', titleIsDefault: false, splitTree: leaf([claude]) };
+      expect(getWorkspaceLabel(ws, titles({ [claude.id]: 'x' }), agents(claude.id))).toBe('api work');
+    });
+  });
 });
 
 describe('titleIsDefault — which workspace names may follow the window title', () => {

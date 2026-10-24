@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { WorkspaceId, WorkspaceInfo } from '../../../shared/types';
 import { useStore, type WmuxStore } from '../../store';
-import { getWorkspaceLabel } from '../Sidebar/workspace-label';
+import { getWorkspaceLabel, hasAgentLookup } from '../Sidebar/workspace-label';
 
 /**
  * Read a surface's program-set window title, for the tab label (issue #221).
@@ -29,16 +29,23 @@ type LabelledWorkspace = Pick<WorkspaceInfo, 'title' | 'titleIsDefault' | 'split
  * through here so the same workspace cannot be "Fix login bug" in one place and
  * "Workspace 3" in another (#343). Gated by its own pref, `oscTitleWorkspaces`,
  * so the tabs can follow the title while workspace names keep their stored ones.
- * A chosen name is answered first, so it never reads the prefs.
+ * A chosen name is answered first, so it never reads the prefs. A pane with an
+ * agent (`hasAgentLookup`: an identity, or a session its hooks reported) is
+ * preferred over an earlier shell pane, so an agent session's own title is not
+ * hidden behind the shell's.
  *
  * Display only: the CLI and pipe API answer the stored `title`.
  */
 export function selectWorkspaceLabel(
-  state: Pick<WmuxStore, 'terminalPrefs' | 'oscTitles'>,
+  state: Pick<WmuxStore, 'terminalPrefs' | 'oscTitles' | 'agentIdentities' | 'agentStates'>,
   workspace: LabelledWorkspace,
 ): string {
   if (!workspace.titleIsDefault || !state.terminalPrefs.oscTitleWorkspaces) return workspace.title;
-  return getWorkspaceLabel(workspace, (surfaceId) => state.oscTitles[surfaceId]?.title);
+  return getWorkspaceLabel(
+    workspace,
+    (surfaceId) => state.oscTitles[surfaceId]?.title,
+    hasAgentLookup(state),
+  );
 }
 
 /** The label right now, for callbacks and modules that are not components. */
