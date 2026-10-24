@@ -20,6 +20,9 @@ export interface SessionData {
     workspaces: Array<{
       id: string;
       title: string;
+      // wmux picked the title, so it may follow the terminal's window title.
+      // Declared so the backup and snapshot copies below cannot drop it (#145).
+      titleIsDefault?: boolean;
       customColor?: string;
       pinned: boolean;
       shell: string;
@@ -148,6 +151,7 @@ function backupAutoSession(previousVersion: string): void {
       savedAt: Date.now(),
       workspaces: workspaces.map(w => ({
         title: w.title,
+        titleIsDefault: w.titleIsDefault,
         customColor: w.customColor,
         pinned: !!w.pinned,
         shell: w.shell,
@@ -432,6 +436,7 @@ export function writeSessionSnapshot(data: SessionData, at: number = Date.now())
       savedAt: at,
       workspaces: workspaces.map(w => ({
         title: w.title,
+        titleIsDefault: w.titleIsDefault,
         customColor: w.customColor,
         pinned: !!w.pinned,
         shell: w.shell,

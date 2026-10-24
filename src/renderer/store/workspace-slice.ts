@@ -175,6 +175,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
         ?? (layoutInstanceTitle(resolved.layout?.name ?? '', get().workspaces)
           || deriveWorkspaceTitle(splitTree, options.cwd, options.shell, t)
           || t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(get().workspaces.length + 1))),
+      titleIsDefault: options.title === undefined ? true : options.titleIsDefault,
       pinned: options.pinned ?? false,
       shell: options.shell || '',
       splitTree,
@@ -222,7 +223,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       splitTree: instantiateLayout(layout.splitTree),
       // A blank layout name gives '' and must not become an explicit empty
       // title: leave it undefined so the tab-derived title applies.
-      ...(title ? { title } : {}),
+      ...(title ? { title, titleIsDefault: true } : {}),
     }, t);
   },
 
@@ -287,7 +288,12 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
 
   renameWorkspace(id: WorkspaceId, title: string): void {
     set((state) => ({
-      workspaces: state.workspaces.map((w) => (w.id === id ? { ...w, title } : w)),
+      workspaces: state.workspaces.map((w) => {
+        if (w.id !== id) return w;
+        // A chosen name stops following the window title.
+        const { titleIsDefault: _dropped, ...rest } = w;
+        return { ...rest, title };
+      }),
     }));
   },
 
@@ -318,6 +324,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
     const newWorkspaces: WorkspaceInfo[] = workspaceConfigs.map((config, i) => ({
       id: `ws-${uuid()}` as WorkspaceId,
       title: config.title ?? t('workspace.defaultTitle', 'Workspace {n}').replace('{n}', String(i + 1)),
+      titleIsDefault: config.title === undefined ? true : config.titleIsDefault,
       pinned: config.pinned ?? false,
       shell: config.shell || '',
       splitTree: config.splitTree ?? resolveDefaultSplitTree(get),

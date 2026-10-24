@@ -11,6 +11,7 @@
  *   cursor-blink    = true
  *   scrollback-lines = 10000
  *   osc-title-tabs  = true        # label a tab with the program's window title (#221)
+ *   osc-title-workspaces = true   # same for a workspace wmux named by default
  *
  *   [terminal.colors]
  *   default = "Dracula"
@@ -79,6 +80,8 @@ export interface UserConfig {
     scrollbackLines?: number;
     /** Label a tab with the program's OSC 0/2 window title (issue #221). */
     oscTitleTabs?: boolean;
+    /** Name a default-named workspace after that window title too. */
+    oscTitleWorkspaces?: boolean;
     /** Reports per cell of a touch pan forwarded to a mouse-tracking app (issue #267). */
     touchPanGain?: number;
     userColorSchemes?: Record<string, UserColorScheme>;
@@ -342,6 +345,9 @@ function mapTerminalSection(root: TomlTable, errors: string[]): NonNullable<User
 
   const oscTitleTabs = asBool(terminal['osc-title-tabs'] ?? terminal.oscTitleTabs);
   if (oscTitleTabs !== undefined) t.oscTitleTabs = oscTitleTabs;
+
+  const oscTitleWorkspaces = asBool(terminal['osc-title-workspaces'] ?? terminal.oscTitleWorkspaces);
+  if (oscTitleWorkspaces !== undefined) t.oscTitleWorkspaces = oscTitleWorkspaces;
 
   const touchPanGain = asNumber(terminal['touch-pan-gain'] ?? terminal.touchPanGain);
   if (touchPanGain !== undefined) {

@@ -669,6 +669,14 @@ export interface TerminalPrefs {
    */
   oscTitleTabs: boolean;
   /**
+   * Name a workspace after the window title its terminal's program sets, while
+   * the workspace still has a name wmux picked (`titleIsDefault`). A name the
+   * user or a caller chose is never replaced. Its own switch rather than
+   * `oscTitleTabs`, so the tabs can follow the title while the sidebar keeps
+   * the names it had. New field, so no promotion needed (see oscTitleTabs).
+   */
+  oscTitleWorkspaces: boolean;
+  /**
    * SGR wheel reports sent per cell of finger travel when a touch pan is
    * forwarded to a mouse-tracking app (issue #267). 1 is one report per cell,
    * which tracks the finger only where the app moves one row per report;
@@ -701,6 +709,7 @@ export const DEFAULT_TERMINAL_PREFS: TerminalPrefs = {
   cursorBlink: true,
   scrollbackLines: 5000,
   oscTitleTabs: true,
+  oscTitleWorkspaces: true,
   touchPanGain: 1,
   bellStyle: 'visual',
   rightClick: 'copyPaste',

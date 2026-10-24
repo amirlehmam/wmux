@@ -468,6 +468,9 @@ export const fr: Translation = {
   'settings.terminalPanel.oscTitleTabs': "Utiliser le titre de fenêtre comme nom d'onglet",
   'settings.terminalPanel.oscTitleTabsHint':
     "Nomme un onglet terminal d'après le titre de fenêtre que son programme définit — c'est ainsi que Claude Code annonce le titre de la conversation. Un onglet que vous avez renommé vous-même garde toujours son nom. Désactivez si votre shell met son chemin complet dans le titre.",
+  'settings.terminalPanel.oscTitleWorkspaces': "Utiliser le titre de fenêtre comme nom d'espace de travail",
+  'settings.terminalPanel.oscTitleWorkspacesHint':
+    "Nomme un espace de travail d'après le titre de fenêtre de son premier terminal qui en définit un, jusqu'à ce que vous le renommiez. Un nom que vous avez donné, ou donné avec --title, ne change jamais.",
   'settings.terminalPanel.scrollbackSection': 'Historique de défilement',
   'settings.terminalPanel.scrollbackLines': "Lignes d'historique",
   'settings.terminalPanel.bg': 'fond',

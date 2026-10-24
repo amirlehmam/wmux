@@ -12,6 +12,7 @@ import PrStatusIcon from './PrStatusIcon';
 import { traceState, toolChannel } from './trace-signals';
 import { resolveStatusText, statusClassFor, stateDotClassFor, backgroundShellsText, type StatusTextInputs, type T } from './workspace-status';
 import { buildContextLine, sidebarDetails } from './context-line';
+import { useWorkspaceLabel } from '../SplitPane/use-osc-title';
 
 /** Stable empty view — avoids allocating a fresh object every collapsed tick. */
 const EMPTY_AGENTS_VIEW: WorkspaceAgentsView = { lines: [], total: 0, running: 0, shells: 0 };
@@ -106,19 +107,33 @@ export default function WorkspaceRow({
 }: WorkspaceRowProps) {
   const t = useT();
   const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(workspace.title);
+  // What the row shows: the stored title, or the program's window title while
+  // wmux picked the name. A rename starts from it, and counts as one only if
+  // the field differs from where it started: the label can change while the
+  // field is open (a spinner in the title), and confirming an untouched field
+  // must not freeze a followed title in place.
+  const workspaceLabel = useWorkspaceLabel(workspace);
+  const [renameValue, setRenameValue] = useState(workspaceLabel);
+  const renameStartRef = useRef(workspaceLabel);
   const rowRef = useRef<HTMLDivElement>(null);
+  const startRename = () => {
+    renameStartRef.current = workspaceLabel;
+    setRenameValue(workspaceLabel);
+    setIsRenaming(true);
+  };
+  const submitRename = () => {
+    if (renameValue.trim() && renameValue !== renameStartRef.current) {
+      onRename?.(renameValue.trim());
+    }
+    setIsRenaming(false);
+  };
 
   // Listen for rename shortcut event (only the active workspace responds)
   useEffect(() => {
     if (!isActive) return;
-    const handler = () => {
-      setIsRenaming(true);
-      setRenameValue(workspace.title);
-    };
-    document.addEventListener('wmux:rename-workspace', handler);
-    return () => document.removeEventListener('wmux:rename-workspace', handler);
-  }, [isActive, workspace.title]);
+    document.addEventListener('wmux:rename-workspace', startRename);
+    return () => document.removeEventListener('wmux:rename-workspace', startRename);
+  }, [isActive, workspaceLabel]);
 
   // Emit the workspace colour as a CUSTOM PROPERTY, not as a background.
   //
@@ -438,21 +453,11 @@ export default function WorkspaceRow({
             className="workspace-row__rename-input"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={() => {
-              if (renameValue.trim() && renameValue !== workspace.title) {
-                onRename?.(renameValue.trim());
-              }
-              setIsRenaming(false);
-            }}
+            onBlur={submitRename}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                if (renameValue.trim() && renameValue !== workspace.title) {
-                  onRename?.(renameValue.trim());
-                }
-                setIsRenaming(false);
-              }
+              if (e.key === 'Enter') submitRename();
               if (e.key === 'Escape') {
-                setRenameValue(workspace.title);
+                setRenameValue(renameStartRef.current);
                 setIsRenaming(false);
               }
               e.stopPropagation();
@@ -465,11 +470,10 @@ export default function WorkspaceRow({
             className="workspace-row__title"
             onDoubleClick={(e) => {
               e.stopPropagation();
-              setRenameValue(workspace.title);
-              setIsRenaming(true);
+              startRename();
             }}
           >
-            {workspace.title}
+            {workspaceLabel}
           </span>
         )}
 

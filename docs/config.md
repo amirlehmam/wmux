@@ -14,6 +14,11 @@ font-size        = 14
 cursor-style     = "block"        # block | underline | bar
 cursor-blink     = true
 scrollback-lines = 10000
+# Name tabs, and workspaces wmux named by default, after the window title their
+# program sets (Claude Code sets the conversation title). A name you chose
+# always wins. Both default to true.
+osc-title-tabs       = true
+osc-title-workspaces = true
 # Touchscreens: scroll steps sent per row of finger travel when a drag scrolls
 # a full-screen app. 1 / the app's own scroll speed makes the content follow
 # the finger (opencode's scroll_speed is 3). Wheel and flick are unaffected.

@@ -387,6 +387,13 @@ export interface QuickLaunchProfile {
 export interface WorkspaceInfo {
   id: WorkspaceId;
   title: string;
+  /**
+   * True when wmux picked `title` (`Workspace N`, a layout instance, the
+   * tab-derived name) rather than a person or a caller. Only such a name gives
+   * way to the window title a terminal's program sets; a rename clears it.
+   * Absent on sessions saved before it existed, so their names stay fixed.
+   */
+  titleIsDefault?: boolean;
   customColor?: string;
   pinned: boolean;
   shell: string;
@@ -563,6 +570,7 @@ export interface SavedSession {
   savedAt: number;
   workspaces: Array<{
     title: string;
+    titleIsDefault?: boolean;
     customColor?: string;
     shell: string;
     cwd: string;

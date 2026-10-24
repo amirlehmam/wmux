@@ -554,6 +554,9 @@ export const en = {
   'settings.terminalPanel.oscTitleTabs': 'Use the window title as the tab label',
   'settings.terminalPanel.oscTitleTabsHint':
     'Label a terminal tab with the window title its program sets — Claude Code announces the conversation title this way. A tab you renamed yourself always keeps its name. Turn this off if your shell sets the title to its full path.',
+  'settings.terminalPanel.oscTitleWorkspaces': 'Use the window title as the workspace name',
+  'settings.terminalPanel.oscTitleWorkspacesHint':
+    'Name a workspace after the window title of its first terminal that sets one, until you rename it. A name you gave a workspace, or one given with --title, never changes.',
   'settings.terminalPanel.bellSection': 'Bell',
   'settings.terminalPanel.bellStyle': 'Terminal bell',
   'settings.terminalPanel.bellStyle.visual': 'Flash the pane',

@@ -433,4 +433,17 @@ describe('[terminal] osc-title-tabs (issue #221)', () => {
     tmp = write('[terminal]\nfont-size = 14\n');
     expect(loadUserConfig(tmp).terminal?.oscTitleTabs).toBeUndefined();
   });
+
+  it('reads osc-title-workspaces in both spellings, and leaves it undefined when absent', () => {
+    tmp = write('[terminal]\nosc-title-workspaces = false\n');
+    const out = loadUserConfig(tmp);
+    expect(out.errors).toEqual([]);
+    expect(out.terminal?.oscTitleWorkspaces).toBe(false);
+    fs.unlinkSync(tmp);
+    tmp = write('[terminal]\noscTitleWorkspaces = true\n');
+    expect(loadUserConfig(tmp).terminal?.oscTitleWorkspaces).toBe(true);
+    fs.unlinkSync(tmp);
+    tmp = write('[terminal]\nosc-title-tabs = false\n');
+    expect(loadUserConfig(tmp).terminal?.oscTitleWorkspaces).toBeUndefined();
+  });
 });

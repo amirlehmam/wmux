@@ -434,4 +434,22 @@ describe('explorer panel state persistence', () => {
     expect(ws.explorerExpanded).toEqual({ 'C:/repo': ['docs'] });
     expect(ws.explorerShowHidden).toBe(true);
   });
+
+  it('carries titleIsDefault through the auto-backup, so a restored default name still follows the window title', () => {
+    mod.handleVersionChange('1.13.0');
+    mod.saveSession({
+      version: 1,
+      windows: [{
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        sidebarWidth: 260,
+        activeWorkspaceId: null,
+        workspaces: [{ id: 'ws-1', title: 'Workspace 1', titleIsDefault: true, pinned: false, shell: 'pwsh', splitTree: leaf }],
+      }],
+    } as any);
+
+    mod.handleVersionChange('1.14.0');
+
+    const name = mod.listNamedSessions().map(s => s.name).find((n) => n.startsWith('Auto-backup'))!;
+    expect(mod.loadNamedSession(name)!.workspaces[0].titleIsDefault).toBe(true);
+  });
 });

@@ -422,6 +422,24 @@ export default function TerminalSettings() {
         )}
       </p>
 
+      <div className="settings-row">
+        <label className="settings-label">
+          {t('settings.terminalPanel.oscTitleWorkspaces', 'Use the window title as the workspace name')}
+        </label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={terminalPrefs.oscTitleWorkspaces}
+          onChange={(e) => setTerminalPrefs({ oscTitleWorkspaces: e.target.checked })}
+        />
+      </div>
+      <p className="settings-hint">
+        {t(
+          'settings.terminalPanel.oscTitleWorkspacesHint',
+          'Name a workspace after the window title of its first terminal that sets one, until you rename it. A name you gave a workspace, or one given with --title, never changes.',
+        )}
+      </p>
+
       <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.terminalPanel.bellSection', 'Bell')}</h3>
 
