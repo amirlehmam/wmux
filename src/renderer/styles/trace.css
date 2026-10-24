@@ -334,10 +334,6 @@
   margin-top: 0;
 }
 
-:root[data-ui-mode='trace'] .workspace-row__status-line {
-  margin-top: 0;
-}
-
 :root[data-ui-mode='trace'] .workspace-row__agents {
   margin-top: 1px;
   margin-bottom: 1px;

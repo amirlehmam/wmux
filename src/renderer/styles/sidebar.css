@@ -269,15 +269,21 @@
   background: rgba(var(--ui-overlay-rgb), 0.15);
 }
 
-/* Full-width titles: the close button is invisible until hover anyway, so it
-   stops reserving its slot on the title line until then. The line keeps the
-   button's height, or the row would grow when the pointer enters it. */
-.workspace-row--full-width-title:not(:hover) .workspace-row__close {
-  display: none;
+/* Settings → Sidebar → "Give workspace titles the full row width": the state
+   dot, the odometer, the unread badge and the close button get a line above
+   the title. The height is fixed, so a badge arriving or the close button
+   appearing on hover never changes the row's height; the 16px badge and button
+   overhang it into the row's padding and the title's leading. */
+.workspace-row__top-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(12px * var(--sidebar-text-scale, 1));
+  margin-bottom: 1px;
 }
 
-.workspace-row--full-width-title .workspace-row__header {
-  min-height: 16px;
+.workspace-row__top-line > .workspace-row__state-dot {
+  margin-right: auto;
 }
 
 /* Rename input */
@@ -305,28 +311,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   margin-top: 2px;
-}
-
-/* Settings → Sidebar → "Give workspace titles the full row width": the
-   odometer and unread badge follow the status text instead of the title. The
-   lead moves to the wrapper so the badge centres on the text, not its margin. */
-.workspace-row__status-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.workspace-row__status-line > .workspace-row__status {
-  flex: 1;
-  min-width: 0;
-  margin-top: 0;
-}
-
-/* The badge is taller than a status line; without this the row grows a few
-   pixels whenever a notification arrives. */
-.workspace-row__status-line > .unread-badge {
-  margin-block: calc(-2px * var(--sidebar-text-scale, 1));
 }
 
 .workspace-row__status--idle {

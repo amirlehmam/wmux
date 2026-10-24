@@ -32,7 +32,7 @@ export default function SidebarSettings() {
 
       <div className="settings-row settings-row--column">
         <p className="settings-hint">
-          {t('settings.sidebarPanel.fullWidthTitlesHint', 'Moves the tool-call count and unread badge to the status line, and shows the close button only on hover.')}
+          {t('settings.sidebarPanel.fullWidthTitlesHint', 'Moves the status light, tool-call count, unread badge and close button to a line above the title, so the title and the status each get a full line.')}
         </p>
       </div>
 

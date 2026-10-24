@@ -10,11 +10,11 @@ import type { HookActivityEntry } from '../../src/renderer/store/claude-session-
 import { DEFAULT_SIDEBAR_PREFS } from '../../src/renderer/store/settings-slice';
 import WorkspaceRow from '../../src/renderer/components/Sidebar/WorkspaceRow';
 
-// The tool-call odometer, the unread badge and the hover-only close button's
-// reserved slot sat on the title line, so a narrow sidebar truncated the title
-// to make room for them. An opt-in sidebar pref moves the odometer and badge to
-// the status line and keeps the close button out of the layout until hover,
-// giving the title the row's full width.
+// The state dot, the tool-call odometer, the unread badge and the hover-only
+// close button's reserved slot sat on the title line, so a narrow sidebar
+// truncated the title to make room for them. An opt-in sidebar pref moves all
+// four to a line of their own above the title, so the title and the status
+// text each get the row's full width.
 
 const store = create(() => ({
   sidebarPrefs: { ...DEFAULT_SIDEBAR_PREFS },
@@ -60,7 +60,8 @@ function render(unreadCount = workspace.unreadCount, hookActivity = busy) {
 const CSS = readFileSync(join(__dirname, '..', '..', 'src/renderer/styles/sidebar.css'), 'utf8');
 const row = () => container.querySelector('.workspace-row')!;
 const header = () => container.querySelector('.workspace-row__header')!;
-const statusLine = () => container.querySelector('.workspace-row__status-line');
+const topLine = () => container.querySelector('.workspace-row__top-line');
+const classesOf = (el: Element) => [...el.children].map((child) => child.className.split(' ')[0]);
 
 describe('full-width workspace titles', () => {
   it('is off by default, so the shipped title line is unchanged', () => {
@@ -68,40 +69,38 @@ describe('full-width workspace titles', () => {
     render();
     expect(header().querySelector('.workspace-row__odometer')?.textContent).toBe('42');
     expect(header().querySelector('.unread-badge')?.textContent).toBe('3');
-    expect(statusLine()).toBeNull();
-    expect(row().classList.contains('workspace-row--full-width-title')).toBe(false);
+    expect(header().querySelector('.workspace-row__state-dot')).not.toBeNull();
+    expect(header().querySelector('.workspace-row__close')).not.toBeNull();
+    expect(topLine()).toBeNull();
   });
 
-  it('moves the odometer and the unread badge after the status text when on', () => {
+  it('moves the dot, the counts and the close button above the title when on', () => {
     store.setState({ sidebarPrefs: { ...DEFAULT_SIDEBAR_PREFS, fullWidthTitles: true } });
     render();
-    expect(header().querySelector('.workspace-row__odometer')).toBeNull();
-    expect(header().querySelector('.unread-badge')).toBeNull();
-    // The title and the close button are all that is left on the title line.
-    expect(header().querySelector('.workspace-row__title')?.textContent).toBe(workspace.title);
-    expect(header().querySelector('.workspace-row__close')).not.toBeNull();
-
-    const line = statusLine()!;
-    expect([...line.children].map((el) => el.className.split(' ')[0]))
-      .toEqual(['workspace-row__status', 'workspace-row__odometer', 'unread-badge']);
-    expect(line.querySelector('.workspace-row__odometer')?.textContent).toBe('42');
-    expect(line.querySelector('.unread-badge')?.textContent).toBe('3');
-    expect(row().classList.contains('workspace-row--full-width-title')).toBe(true);
+    expect(classesOf(topLine()!))
+      .toEqual(['workspace-row__state-dot', 'workspace-row__via-ping', 'workspace-row__odometer', 'unread-badge', 'workspace-row__close']);
+    expect(topLine()!.querySelector('.workspace-row__odometer')?.textContent).toBe('42');
+    expect(topLine()!.querySelector('.unread-badge')?.textContent).toBe('3');
+    // The title and the status text each have a line to themselves.
+    expect(classesOf(header())).toEqual(['workspace-row__title']);
+    expect(header().textContent).toBe(workspace.title);
+    expect(row().querySelector(':scope > .workspace-row__status')?.textContent).toBe('Reading file...');
+    expect(topLine()!.nextElementSibling).toBe(header());
   });
 
-  it('keeps the close button out of the title line until the row is hovered', () => {
-    expect(CSS).toMatch(/\.workspace-row--full-width-title:not\(:hover\) \.workspace-row__close \{\s*display: none;/);
-    // The 16px button set the title line's height, so the line keeps it.
-    expect(CSS).toMatch(/\.workspace-row--full-width-title \.workspace-row__header \{\s*min-height: 16px;/);
+  it('keeps the top line one height whatever it holds', () => {
+    // A fixed height, so a badge arriving or the close button showing on hover
+    // never changes the row's height; the dot pushes the rest to the right.
+    expect(CSS).toMatch(/\.workspace-row__top-line \{[^}]*\sheight: calc\(12px \* var\(--sidebar-text-scale, 1\)\);/);
+    expect(CSS).toMatch(/\.workspace-row__top-line > \.workspace-row__state-dot \{\s*margin-right: auto;/);
   });
 
-  it('leaves the status line as the bare status element when nothing is counted', () => {
+  it('keeps the dot and the close button on the top line when nothing is counted', () => {
     store.setState({
       sidebarPrefs: { ...DEFAULT_SIDEBAR_PREFS, fullWidthTitles: true },
       appearancePrefs: { uiMode: 'classic' },
     });
     render(0, {});
-    expect([...statusLine()!.children].map((el) => el.className.split(' ')[0]))
-      .toEqual(['workspace-row__status']);
+    expect(classesOf(topLine()!)).toEqual(['workspace-row__state-dot', 'workspace-row__close']);
   });
 });

@@ -430,7 +430,7 @@ export const fr: Translation = {
   'settings.sidebarPanel.hideAllDetails': 'Masquer tous les détails',
   'settings.sidebarPanel.wrapTitles': "Renvoyer à la ligne les titres d'espace de travail longs",
   'settings.sidebarPanel.fullWidthTitles': "Donner toute la largeur aux titres d'espace de travail",
-  'settings.sidebarPanel.fullWidthTitlesHint': "Déplace le nombre d'appels d'outils et le badge non lu sur la ligne d'état, et n'affiche le bouton de fermeture qu'au survol.",
+  'settings.sidebarPanel.fullWidthTitlesHint': "Déplace le voyant d'état, le nombre d'appels d'outils, le badge non lu et le bouton de fermeture sur une ligne au-dessus du titre, pour que le titre et l'état aient chacun une ligne entière.",
   'settings.sidebarPanel.appearanceSection': 'Apparence',
   'settings.sidebarPanel.mode': 'Mode barre latérale',
   'settings.sidebarPanel.mode.classic': 'Classique',

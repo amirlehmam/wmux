@@ -398,8 +398,26 @@ export default function WorkspaceRow({
 
   const stateDotClass = stateDotClassFor(statusInputs, isClaudeActive);
 
-  // Beside the title by default; on the status line with
-  // `sidebarPrefs.fullWidthTitles`, so the title gets the full row width.
+  // The dot, the badges and the close button sit on the title line by default.
+  // `sidebarPrefs.fullWidthTitles` moves them to a line of their own above it,
+  // so the title and the status text each get the row's full width.
+  const stateDot = (
+    <>
+      <span className={`workspace-row__state-dot ${stateDotClass}`} />
+      {/* One ring per tool call. Keyed on the tool counter so React remounts
+          the span and the one-shot animation replays — genuinely evented,
+          rather than a loop that runs whether or not anything happened.
+          Bucketed to cap the remount rate on a very fast agent. */}
+      {rowTrace?.live && !rowTrace.blocked && (
+        <span
+          key={`ping-${Math.floor(rowTrace.toolCount / 2)}`}
+          className="workspace-row__via-ping"
+          aria-hidden="true"
+        />
+      )}
+    </>
+  );
+
   const rowBadges = (
     <>
       {/* Work odometer: total tool calls this workspace's sessions have made.
@@ -422,6 +440,19 @@ export default function WorkspaceRow({
     </>
   );
 
+  const closeButton = (
+    <button
+      className="workspace-row__close"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      title={t('workspaceRow.closeWorkspace', 'Close workspace')}
+    >
+      &#x2715;
+    </button>
+  );
+
   return (
     <div
       ref={rowRef}
@@ -433,7 +464,6 @@ export default function WorkspaceRow({
         // `solidFill` restores the pre-0.35 opaque block for anyone who wants it.
         isActive && activeTabIndicator === 'solidFill' ? 'workspace-row--fill' : '',
         workspace.customColor ? 'workspace-row--custom' : '',
-        sidebarPrefs.fullWidthTitles ? 'workspace-row--full-width-title' : '',
         dropEdge ? `workspace-row--drop-${dropEdge}` : '',
       ].filter(Boolean).join(' ')}
       style={rowStyle}
@@ -459,20 +489,17 @@ export default function WorkspaceRow({
           inline override that the active row used to have to fight. */}
       <span className="workspace-row__rail" />
 
+      {sidebarPrefs.fullWidthTitles && (
+        <div className="workspace-row__top-line">
+          {stateDot}
+          {rowBadges}
+          {closeButton}
+        </div>
+      )}
+
       {/* Line 1: Title */}
       <div className="workspace-row__header">
-        <span className={`workspace-row__state-dot ${stateDotClass}`} />
-        {/* One ring per tool call. Keyed on the tool counter so React remounts
-            the span and the one-shot animation replays — genuinely evented,
-            rather than a loop that runs whether or not anything happened.
-            Bucketed to cap the remount rate on a very fast agent. */}
-        {rowTrace?.live && !rowTrace.blocked && (
-          <span
-            key={`ping-${Math.floor(rowTrace.toolCount / 2)}`}
-            className="workspace-row__via-ping"
-            aria-hidden="true"
-          />
-        )}
+        {!sidebarPrefs.fullWidthTitles && stateDot}
         {isRenaming ? (
           <input
             className="workspace-row__rename-input"
@@ -506,32 +533,13 @@ export default function WorkspaceRow({
         )}
 
         {!sidebarPrefs.fullWidthTitles && rowBadges}
-
-        <button
-          className="workspace-row__close"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          title={t('workspaceRow.closeWorkspace', 'Close workspace')}
-        >
-          &#x2715;
-        </button>
+        {!sidebarPrefs.fullWidthTitles && closeButton}
       </div>
 
       {/* Line 2: Status — always visible */}
-      {sidebarPrefs.fullWidthTitles ? (
-        <div className="workspace-row__status-line">
-          <div className={`workspace-row__status ${statusClass}`}>
-            {statusText}
-          </div>
-          {rowBadges}
-        </div>
-      ) : (
-        <div className={`workspace-row__status ${statusClass}`}>
-          {statusText}
-        </div>
-      )}
+      <div className={`workspace-row__status ${statusClass}`}>
+        {statusText}
+      </div>
 
       {/* Per-Claude-session sub-lines — one per pane running Claude Code,
           shown as soon as the workspace hosts 2+ sessions (click → focus pane) */}

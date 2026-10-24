@@ -508,7 +508,7 @@ export const en = {
   'settings.sidebarPanel.hideAllDetails': 'Hide all details',
   'settings.sidebarPanel.wrapTitles': 'Wrap long workspace titles',
   'settings.sidebarPanel.fullWidthTitles': 'Give workspace titles the full row width',
-  'settings.sidebarPanel.fullWidthTitlesHint': 'Moves the tool-call count and unread badge to the status line, and shows the close button only on hover.',
+  'settings.sidebarPanel.fullWidthTitlesHint': 'Moves the status light, tool-call count, unread badge and close button to a line above the title, so the title and the status each get a full line.',
   'settings.sidebarPanel.appearanceSection': 'Appearance',
   'settings.sidebarPanel.mode': 'Sidebar mode',
   'settings.sidebarPanel.mode.classic': 'Classic',
