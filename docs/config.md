@@ -66,6 +66,8 @@ inactive-pane-dim = 20
 [sidebar]
 # Let a long workspace title wrap to two lines before it is truncated
 # (Settings -> Sidebar -> "Wrap long workspace titles"). Default false.
+# While this key is set it overrides the Settings toggle at every startup
+# and reload (see "Precedence" below).
 wrap-titles = true
 
 [workspace]
