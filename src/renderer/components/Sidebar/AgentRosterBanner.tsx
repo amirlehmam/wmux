@@ -30,8 +30,8 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
   const [now, setNow] = useState(() => Date.now());
 
   const rollup = useMemo(
-    () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections),
-    [workspaces, agentStates, agentIdentities, agentDetections, now],
+    () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections, workspaceLabels),
+    [workspaces, agentStates, agentIdentities, agentDetections, now, workspaceLabels],
   );
 
   const { blocked, question, working, total } = rollup.totals;
@@ -51,7 +51,7 @@ export default function AgentRosterBanner({ onFocusAgent, onOpenNavigator }: {
   // prompt, which has a dwell to rank by where a question has none.
   const target = firstWaiting(rollup);
   const oldest = target?.state === 'blocked' ? target : undefined;
-  const where = target ? `${workspaceLabels.get(target.workspaceId) ?? target.workspaceTitle} · ${target.label}` : '';
+  const where = target ? `${target.workspaceTitle} · ${target.label}` : '';
 
   return (
     <div className="agent-roster" data-blocked={blocked > 0} data-question={blocked === 0 && question > 0}>

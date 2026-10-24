@@ -101,6 +101,10 @@ export interface AgentRosterEntry {
   surfaceId: SurfaceId;
   paneId: PaneId;
   workspaceId: WorkspaceId;
+  /**
+   * What the workspace is called: its label from `rollupAgents`'
+   * `workspaceLabels` (the sidebar's name, #343), else its stored title.
+   */
   workspaceTitle: string;
   /** User-set tab title, else the pane cwd's folder name. */
   label: string;
@@ -200,6 +204,7 @@ const EMPTY_COUNTS = (): AgentCounts => ({ blocked: 0, question: 0, working: 0, 
 function rosterEntryFor(
   surface: SurfaceEntry,
   workspace: WorkspaceInfo,
+  workspaceTitle: string,
   declared: DeclaredAgentSnapshot | undefined,
   identity: AgentIdentitySnapshot | undefined,
   detection: DetectionSnapshot | undefined,
@@ -240,7 +245,7 @@ function rosterEntryFor(
     surfaceId: surface.surfaceId,
     paneId: surface.paneId,
     workspaceId: workspace.id,
-    workspaceTitle: workspace.title,
+    workspaceTitle,
     // The agent's own name beats a folder name: with three panes in one repo,
     // "myproj / myproj / myproj" identifies nothing, "claude / codex / claude"
     // is the distinction the user is looking at the list to make. A hand-set tab
@@ -412,6 +417,8 @@ function resolveStateSource(
   return null;
 }
 
+const NO_WORKSPACE_LABELS: ReadonlyMap<WorkspaceId, string> = new Map();
+
 /**
  * Fold declared agent state over the live workspace list.
  *
@@ -420,6 +427,12 @@ function resolveStateSource(
  * records only through a 256-entry LRU, so the renderer's map accumulates
  * entries for surfaces that were closed minutes ago. Iterating the map would
  * make "2 need you" survive closing both panes.
+ *
+ * @param workspaceLabels What each workspace is called, by id
+ *   (`useWorkspaceLabels`, or `selectWorkspaceLabels` outside React). Every
+ *   caller that SHOWS `workspaceTitle` passes it, so the roster names a
+ *   workspace the way the sidebar does (#343); a workspace it does not list, or
+ *   a caller that only counts, gets the stored title.
  */
 export function rollupAgents(
   workspaces: WorkspaceInfo[],
@@ -427,6 +440,7 @@ export function rollupAgents(
   now: number,
   identities: Record<string, AgentIdentitySnapshot | undefined> = {},
   detections: Record<string, DetectionSnapshot | undefined> = {},
+  workspaceLabels: ReadonlyMap<WorkspaceId, string> = NO_WORKSPACE_LABELS,
 ): AgentRollup {
   const byWorkspace: Record<string, AgentCounts> = {};
   const totals = EMPTY_COUNTS();
@@ -438,11 +452,13 @@ export function rollupAgents(
 
     const surfaces: SurfaceEntry[] = [];
     collectSurfaces(workspace.splitTree, surfaces);
+    const workspaceTitle = workspaceLabels.get(workspace.id) ?? workspace.title;
 
     for (const surface of surfaces) {
       const entry = rosterEntryFor(
         surface,
         workspace,
+        workspaceTitle,
         agentStates[surface.surfaceId],
         identities[surface.surfaceId],
         detections[surface.surfaceId],

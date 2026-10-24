@@ -8,6 +8,7 @@ import { resolveAnchorPane, resolveLayoutSize } from './store/agent-layout-targe
 import { surfaceTerminalRegistry, showPaneNotice } from './hooks/useTerminal';
 import { rollupAgents } from './store/agent-rollup';
 import { toRemoteRosterSource } from './utils/remote-roster';
+import { selectWorkspaceLabels } from './components/SplitPane/use-osc-title';
 import { openLinkFromBridge } from './utils/open-link';
 import { PaneId, SurfaceId, WorkspaceId, SurfaceType, engineOf, type BrowserEngine, type WorkspaceLayout } from '../shared/types';
 import { promptSummary, type PromptEntry, type PromptSource } from './store/prompt-slice';
@@ -719,10 +720,14 @@ export function initPipeBridge(): void {
   // #235/#253 hold there too), mapped field by field to RemoteRosterSource so
   // metadata, detectedState, paneId and every choice's key/text stay here.
   // Pulled by main on its own cadence while a phone is connected; nothing
-  // subscribes to the store for it.
+  // subscribes to the store for it. Workspaces carry the sidebar's labels, so
+  // the phone names them as the desktop does (#343); the CLI's answers above
+  // keep the stored title.
   w.__wmux_remoteRoster = () => {
     const s = useStore.getState();
-    return rollupAgents(s.workspaces, s.agentStates, Date.now(), s.agentIdentities, s.agentDetections)
-      .roster.map(toRemoteRosterSource);
+    return rollupAgents(
+      s.workspaces, s.agentStates, Date.now(), s.agentIdentities, s.agentDetections,
+      selectWorkspaceLabels(s, s.workspaces),
+    ).roster.map(toRemoteRosterSource);
   };
 }

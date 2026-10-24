@@ -22,6 +22,8 @@ export function useOscTitleLookup(): (surfaceId: string) => string | undefined {
 }
 
 type LabelledWorkspace = Pick<WorkspaceInfo, 'title' | 'titleIsDefault' | 'splitTree'>;
+/** The store fields a workspace's label is derived from. */
+type LabelState = Pick<WmuxStore, 'terminalPrefs' | 'oscTitles' | 'agentIdentities' | 'agentStates'>;
 
 /**
  * The one rule for what a workspace is CALLED, wherever the UI names it: the
@@ -34,10 +36,11 @@ type LabelledWorkspace = Pick<WorkspaceInfo, 'title' | 'titleIsDefault' | 'split
  * preferred over an earlier shell pane, so an agent session's own title is not
  * hidden behind the shell's.
  *
- * Display only: the CLI and pipe API answer the stored `title`.
+ * Display only: the CLI's answers (`list-workspaces`, `current-workspace`) keep
+ * the stored `title`. The phone's remote roster is a display, and gets this.
  */
 export function selectWorkspaceLabel(
-  state: Pick<WmuxStore, 'terminalPrefs' | 'oscTitles' | 'agentIdentities' | 'agentStates'>,
+  state: LabelState,
   workspace: LabelledWorkspace,
 ): string {
   if (!workspace.titleIsDefault || !state.terminalPrefs.oscTitleWorkspaces) return workspace.title;
@@ -46,6 +49,17 @@ export function selectWorkspaceLabel(
     (surfaceId) => state.oscTitles[surfaceId]?.title,
     hasAgentLookup(state),
   );
+}
+
+/**
+ * Labels for a list of workspaces, by id, from one store snapshot: what
+ * `useWorkspaceLabels` answers, for a caller outside React (the remote roster).
+ */
+export function selectWorkspaceLabels(
+  state: LabelState,
+  workspaces: readonly WorkspaceInfo[],
+): Map<WorkspaceId, string> {
+  return new Map(workspaces.map((ws) => [ws.id, selectWorkspaceLabel(state, ws)]));
 }
 
 /** The label right now, for callbacks and modules that are not components. */

@@ -123,6 +123,23 @@ describe('rollupAgents', () => {
     ]);
   });
 
+  it('names a workspace by the label the caller passes, else by its stored title', () => {
+    // The display callers (the roster banner, the navigator, the Hub, the phone)
+    // pass the sidebar's labels; a caller that passes none gets the stored title.
+    const workspaces = [
+      ws('ws-1', 'Workspace 1', leaf('pane-1', [{ id: 'surf-a' }])),
+      ws('ws-2', 'beta', leaf('pane-2', [{ id: 'surf-b' }])),
+    ];
+    const states = { 'surf-a': declared({ state: 'working' }), 'surf-b': declared({ state: 'working' }) };
+    const labels = new Map([['ws-1' as WorkspaceId, 'Fix login bug']]);
+
+    const labelled = rollupAgents(workspaces, states, NOW, {}, {}, labels);
+    expect(labelled.roster.map((r) => r.workspaceTitle)).toEqual(['Fix login bug', 'beta']);
+    expect(labelled.roster.map((r) => toRemoteRosterSource(r).workspaceTitle)).toEqual(['Fix login bug', 'beta']);
+
+    expect(rollupAgents(workspaces, states, NOW).roster.map((r) => r.workspaceTitle)).toEqual(['Workspace 1', 'beta']);
+  });
+
   it('carries the blocked reason and declared choices through to the roster', () => {
     const out = rollupAgents([ws('ws-1', 'alpha', leaf('pane-1', [{ id: 'surf-a' }]))], {
       'surf-a': declared({

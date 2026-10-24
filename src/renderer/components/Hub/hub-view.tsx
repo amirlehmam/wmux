@@ -140,8 +140,8 @@ export default function HubView({ onClose, onFocusAgent }: {
 
   const workspaceLabels = useWorkspaceLabels(workspaces);
   const rollup = useMemo(
-    () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections),
-    [workspaces, agentStates, agentIdentities, agentDetections, now],
+    () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections, workspaceLabels),
+    [workspaces, agentStates, agentIdentities, agentDetections, now, workspaceLabels],
   );
 
   // Keyed on a stable projection, not on `rollup` itself: see officeLayoutKey.

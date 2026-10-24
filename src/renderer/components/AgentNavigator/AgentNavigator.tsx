@@ -60,8 +60,8 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
   const listRef = useRef<HTMLDivElement>(null);
 
   const rollup = useMemo(
-    () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections),
-    [workspaces, agentStates, agentIdentities, agentDetections, now],
+    () => rollupAgents(workspaces, agentStates, now, agentIdentities, agentDetections, workspaceLabels),
+    [workspaces, agentStates, agentIdentities, agentDetections, now, workspaceLabels],
   );
 
   /**
@@ -183,7 +183,7 @@ export default function AgentNavigator({ onClose, onFocusAgent }: {
                   {entry.kind}
                 </span>
               )}
-              <span className="agent-nav__row-workspace">{workspaceLabels.get(entry.workspaceId) ?? entry.workspaceTitle}</span>
+              <span className="agent-nav__row-workspace">{entry.workspaceTitle}</span>
               <span className="agent-nav__row-reason">
                 {entry.blockedReason ?? reasonFallback(entry, t)}
               </span>
