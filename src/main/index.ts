@@ -1977,13 +1977,14 @@ app.whenReady().then(() => {
             const lines = Number.isFinite(rawLines)
               ? Math.min(Math.max(Math.floor(rawLines), 1), 10000)
               : 50;
+            const events = request.params?.events === true;
             // The surface's terminal is mounted in exactly one window; probe
             // each until one has it, keeping the first miss as the error.
             let result: { text?: string; error?: string } | null = null;
             for (const win of BrowserWindow.getAllWindows()) {
               if (win.isDestroyed()) continue;
               const r = await win.webContents.executeJavaScript(
-                `window.__wmux_readScreen?.(${JSON.stringify(surfaceId.id)}, ${lines})`
+                `window.__wmux_readScreen?.(${JSON.stringify(surfaceId.id)}, ${lines}, ${events})`
               );
               if (r && !r.error) { result = r; break; }
               if (r && !result) result = r;

@@ -272,7 +272,10 @@ inside a terminal bubble through the HOST, not the pane, so the leaf's click-to-
 native listener on the slot (`onActivate`); and a same-commit move changes no prop, so
 `attachGeneration` re-runs the show path (refit, repaint, refocus — removing the element
 blurred its textarea). The snapshot/replay machinery stays as the fallback for a terminal
-that genuinely is rebuilt (StrictMode's dev double-mount).
+that genuinely is rebuilt on a live PTY (the root ErrorBoundary's retry; StrictMode and Fast
+Refresh in dev). It snapshots only a surface still in the store and replays only into a
+reused PTY: Load session keeps saved surface ids, so a closed pane's id can come back on a
+fresh shell (`RemountSnapshotCache` in `utils/remount-snapshot.ts`).
 
 ### Split Tree
 Pane layouts use an immutable binary tree (`SplitNode`). Each leaf = one pane with N surfaces (tabs).
@@ -731,7 +734,14 @@ wmux layout agents --count N [--type T] [--coordinator-ratio R] [--anchor-surfac
 
 # Terminal I/O
 wmux send <text> | send-key <key> [--ctrl] [--shift] [--alt]
-wmux read-screen [--lines N] [--surface <id>] | trigger-flash
+wmux read-screen [--lines N] [--surface <id>] [--events] | trigger-flash
+                                       # Text of the ACTIVE buffer plus `buffer`
+                                       # (normal|alternate), cols/rows and the cursor.
+                                       # --events adds the pane's recent buffer
+                                       # switches and resizes (utils/screen-report.ts):
+                                       # what tells a TUI that lost its frame to an
+                                       # xterm row shrink apart from the program
+                                       # leaving and re-entering ?1049 itself
 wmux detect explain [--surface <id>] | --file <path> [--agent <k>] | detect reload
                                        # The screen-detection verdict as TEXT: state,
                                        # rule id and the lines it matched. --file replays

@@ -1332,6 +1332,25 @@ function printAllPrompts(result: any): void {
 }
 
 /**
+ * `wmux read-screen` argv → `surface.read_text` params. Same targeting rule as
+ * send/send-key: inside a pane the caller's own surface is the default;
+ * cross-pane reads take --surface explicitly. `--events` is opt-in because
+ * agents call read-screen constantly and only a diagnosis wants the history.
+ */
+export function readScreenParams(
+  args: string[],
+  callerSurface: string | undefined,
+): { surfaceId?: string; lines: number; events?: true } {
+  const lines = getFlag(args, '--lines');
+  const surfaceId = getFlag(args, '--surface') || callerSurface;
+  return {
+    ...(surfaceId ? { surfaceId } : {}),
+    lines: lines ? parseInt(lines) : 50,
+    ...(args.includes('--events') ? { events: true as const } : {}),
+  };
+}
+
+/**
  * What has this pane been asked to do? (issue #207)
  *
  * The prompt log is the one thing `read-screen` cannot recover: an agent TUI
@@ -2164,8 +2183,13 @@ const COMMAND_SPECS = {
     bool: ['--ctrl', '--shift', '--alt'],
   },
   'read-screen': {
-    usage: `wmux read-screen [--lines N] [--surface <id>]   ${SURFACE_NOTE}`,
+    usage: [
+      `wmux read-screen [--lines N] [--surface <id>] [--events]   ${SURFACE_NOTE}`,
+      '  Text of the active buffer, plus which buffer it is, its size and the cursor.',
+      '  --events adds the pane\'s recent buffer switches and resizes, oldest first.',
+    ].join('\n'),
     value: ['--lines', '--surface'],
+    bool: ['--events'],
   },
   prompts: {
     usage: [
@@ -2452,14 +2476,7 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
   send: cmdSend,
   'send-key': cmdSendKey,
   'read-screen': async (args) => {
-    const lines = args.find((a, i) => args[i - 1] === '--lines');
-    // Same targeting rule as send/send-key: inside a pane the caller's own
-    // surface is the default; cross-pane reads take --surface explicitly.
-    const surfaceId = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
-    print(await sendV2('surface.read_text', {
-      ...(surfaceId ? { surfaceId } : {}),
-      lines: lines ? parseInt(lines) : 50,
-    }));
+    print(await sendV2('surface.read_text', readScreenParams(args, process.env.WMUX_SURFACE_ID)));
   },
   prompts: cmdPrompts,
   'trigger-flash': async (args) => print(await sendV2('surface.trigger_flash', { id: args[1] })),
@@ -2585,7 +2602,7 @@ Pane:       split [--down] [--type T] [--color-scheme NAME], close-pane, focus-p
             pane new|close|focus|list   (verb form, mirrors issue #4 example)
 Layout:     layout grid --count <N> [--type terminal] [--anchor-surface <id>]
             layout agents --count <N> [--coordinator-ratio R] [--anchor-surface <id>]
-Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>], trigger-flash
+Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>] [--events], trigger-flash
             prompts [--surface <id>] [--limit N] [--json]
             (the prompts this pane was given — the one thing read-screen cannot
              recover, since an agent TUI repaints over its own scrollback)

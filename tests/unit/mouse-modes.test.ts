@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Terminal } from '@xterm/xterm';
 import {
   applyMouseModeSequences,
   effectiveEncoding,
@@ -6,6 +7,8 @@ import {
   emptyMouseModeState,
   isMouseTracking,
   mouseModeReplaySequence,
+  takeMouseModeReplay,
+  type MouseModeState,
 } from '../../src/renderer/utils/mouse-modes';
 
 const ESC = '\x1b';
@@ -133,5 +136,46 @@ describe('mouse mode tracking (issue #164)', () => {
     // This runs on every PTY data event, so the common path must not do work.
     const state = emptyMouseModeState();
     expect(applyMouseModeSequences(state, 'a lot of ordinary output')).toBe(state);
+  });
+});
+
+/**
+ * The modes are the APPLICATION's state, so they belong to one PTY. A surface
+ * id outlives it — Load session keeps saved ids — and a closed pane's TUI left
+ * its modes behind: a fresh shell on that id came up tracking the mouse in SGR,
+ * and the wheel handler forwarded its scrolling to the shell as escape codes.
+ */
+describe('takeMouseModeReplay', () => {
+  const SURFACE = 'surf-1';
+
+  function modesAfterTui(): Map<string, MouseModeState> {
+    const modes = new Map<string, MouseModeState>();
+    modes.set(SURFACE, fold(`${ESC}[?1049h${ESC}[?1002;1006h`));
+    return modes;
+  }
+
+  function terminalAfter(replay: string): Promise<Terminal> {
+    const terminal = new Terminal({ cols: 40, rows: 8, allowProposedApi: true });
+    return new Promise((resolve) => terminal.write(replay, () => resolve(terminal)));
+  }
+
+  it("gives a fresh PTY none of the closed TUI's mouse modes, and forgets them", async () => {
+    const modes = modesAfterTui();
+
+    const fresh = await terminalAfter(takeMouseModeReplay(modes, SURFACE, false));
+
+    expect(fresh.modes.mouseTrackingMode).toBe('none');
+    // The wheel handler reads the map, not the terminal: it must not still
+    // think a plain shell is tracking the mouse.
+    expect(isMouseTracking(modes.get(SURFACE))).toBe(false);
+  });
+
+  it('puts a reattached terminal back into the modes its TUI still expects (#164)', async () => {
+    const modes = modesAfterTui();
+
+    const reattached = await terminalAfter(takeMouseModeReplay(modes, SURFACE, true));
+
+    expect(reattached.modes.mouseTrackingMode).toBe('drag');
+    expect(isMouseTracking(modes.get(SURFACE))).toBe(true);
   });
 });

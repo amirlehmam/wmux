@@ -56,10 +56,28 @@ describe('useTerminal wiring', () => {
   it('fits the buffer to the pane before anything is written into it', () => {
     const open = USE_TERMINAL.indexOf('terminal.open(terminalRef.current)');
     const fit = USE_TERMINAL.indexOf('\n    fit();', open);
-    const replay = USE_TERMINAL.indexOf('surfaceBufferCache.get(surfaceId)');
     expect(open).toBeGreaterThan(-1);
     expect(fit).toBeGreaterThan(open);
-    expect(fit).toBeLessThan(replay);
+
+    // The snapshot is read only inside restoreSurfaceState, defined after the fit.
+    const restore = USE_TERMINAL.indexOf('const restoreSurfaceState = (');
+    const take = USE_TERMINAL.indexOf('surfaceBufferCache.take(surfaceId');
+    expect(restore).toBeGreaterThan(fit);
+    expect(take).toBeGreaterThan(restore);
+
+    // Runtime order, not just text order: the fit runs synchronously in the
+    // mount effect, and every call of the restore sits in a callback of the
+    // async PTY lookup (has()/create() .then), which cannot run before that
+    // synchronous effect body has returned.
+    const lookup = USE_TERMINAL.indexOf('if (surfaceId && window.wmux.pty.has)');
+    expect(lookup).toBeGreaterThan(fit);
+    const calls = [...USE_TERMINAL.matchAll(/restoreSurfaceState\(/g)]
+      .map((m) => m.index ?? -1)
+      .filter((i) => i !== restore + 'const '.length);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(USE_TERMINAL.lastIndexOf('.then((', call)).toBeGreaterThan(lookup);
+    }
   });
 
   it('replays a snapshot at the size it was taken at, before writing it', () => {

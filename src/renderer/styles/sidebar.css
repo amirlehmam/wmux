@@ -269,6 +269,23 @@
   background: rgba(var(--ui-overlay-rgb), 0.15);
 }
 
+/* Settings → Sidebar → "Give workspace titles the full row width": the state
+   dot, the odometer, the unread badge and the close button get a line above
+   the title. The height is fixed, so a badge arriving or the close button
+   appearing on hover never changes the row's height; the 16px badge and button
+   overhang it into the row's padding and the title's leading. */
+.workspace-row__top-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(12px * var(--sidebar-text-scale, 1));
+  margin-bottom: 1px;
+}
+
+.workspace-row__top-line > .workspace-row__state-dot {
+  margin-right: auto;
+}
+
 /* Rename input */
 .workspace-row__rename-input {
   flex: 1;

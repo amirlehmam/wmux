@@ -21,6 +21,22 @@ export default function SidebarSettings() {
       </div>
 
       <div className="settings-row">
+        <label className="settings-label">{t('settings.sidebarPanel.fullWidthTitles', 'Give workspace titles the full row width')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={sidebarPrefs.fullWidthTitles}
+          onChange={(e) => setSidebarPrefs({ fullWidthTitles: e.target.checked })}
+        />
+      </div>
+
+      <div className="settings-row settings-row--column">
+        <p className="settings-hint">
+          {t('settings.sidebarPanel.fullWidthTitlesHint', 'Moves the status light, tool-call count, unread badge and close button to a line above the title, so the title and the status each get a full line.')}
+        </p>
+      </div>
+
+      <div className="settings-row">
         <label className="settings-label">{t('settings.sidebarPanel.showGitBranch', 'Show git branch')}</label>
         <input
           type="checkbox"
