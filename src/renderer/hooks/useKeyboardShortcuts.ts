@@ -6,7 +6,7 @@ import { rollupAgents } from '../store/agent-rollup';
 import { focusAgentTarget } from '../store/focus-agent';
 import { PaneId, SplitNode } from '../../shared/types';
 import { trimTrailingWhitespace } from '../utils/copy-text';
-import { GLOBAL_IN_EDITOR, isEditableTarget } from './shortcut-target';
+import { GLOBAL_IN_EDITOR, IGNORES_KEY_REPEAT, isEditableTarget } from './shortcut-target';
 import { matchIndexShortcut, resolveIndexTarget } from '../utils/index-shortcuts';
 import { isSafeToIntercept } from '../utils/shortcut-binding';
 import { followOutputFor, togglePinnedPromptFor, togglePromptOutlineFor } from '../store/prompt-actions';
@@ -469,8 +469,10 @@ export function useKeyboardShortcuts(
         const handler = handlers[action];
         if (!handler) return;
 
-        // Found a matching action — prevent default and handle it
+        // Found a matching action — prevent default and handle it. A repeat of
+        // a run-once action is still claimed, so the held chord reaches nothing.
         e.preventDefault();
+        if (e.repeat && IGNORES_KEY_REPEAT.has(action)) return;
         handler();
         return;
       }

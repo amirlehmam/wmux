@@ -28,6 +28,9 @@ export const fr: Translation = {
   'settings.general.uiTheme.light': 'Clair',
   'settings.general.appearanceHint':
     "Contrôle la barre latérale, la barre d'onglets et le cadre de la fenêtre. Les couleurs du terminal se règlent séparément.",
+  'settings.general.inactivePaneDim': 'Atténuer les panes inactifs',
+  'settings.general.inactivePaneDimHint':
+    "Degré d'assombrissement des panes sans focus. 0 % désactive l'atténuation. Le mode focus atténue davantage.",
   'settings.general.shellSection': 'Explorateur Windows',
   'settings.general.contextMenu': 'Ajouter « Ouvrir dans wmux » au menu contextuel des dossiers',
   'settings.general.contextMenuLabel': 'Ouvrir dans wmux',
@@ -50,6 +53,7 @@ export const fr: Translation = {
   'palette.category.themes': 'Thèmes',
   'palette.openMarkdown': 'Ouvrir un fichier Markdown…',
   'palette.openWorkspaceFile': 'Ouvrir un fichier de workspace… (wmux.workspace.json)',
+  'palette.resetTerminalLeaveAlt': "Réinitialiser l'état du terminal (quitter l'écran alternatif)",
   'palette.current': 'actuel',
   'titlebar.help': 'Aide / Tutoriel',
   'titlebar.devtools': 'Afficher/Masquer les outils de développement',
@@ -429,6 +433,8 @@ export const fr: Translation = {
   'settings.sidebarPanel.showNotificationMessage': 'Afficher le message de notification',
   'settings.sidebarPanel.hideAllDetails': 'Masquer tous les détails',
   'settings.sidebarPanel.wrapTitles': "Renvoyer à la ligne les titres d'espace de travail longs",
+  'settings.sidebarPanel.fullWidthTitles': "Donner toute la largeur aux titres d'espace de travail",
+  'settings.sidebarPanel.fullWidthTitlesHint': "Déplace le voyant d'état, le nombre d'appels d'outils, le badge non lu et le bouton de fermeture sur une ligne au-dessus du titre, pour que le titre et l'état aient chacun une ligne entière.",
   'settings.sidebarPanel.appearanceSection': 'Apparence',
   'settings.sidebarPanel.mode': 'Mode barre latérale',
   'settings.sidebarPanel.mode.classic': 'Classique',
@@ -551,6 +557,10 @@ export const fr: Translation = {
   'terminal.uploadFailed': "Échec de l'envoi vers {host} : {reason}",
   'terminal.copyModeHint':
     'MODE COPIE — Flèches pour se déplacer, Maj+flèches pour sélectionner, Entrée pour copier, Échap pour quitter',
+  'terminal.resetKeptAltScreen':
+    "Écran alternatif conservé : un programme l'utilise peut-être encore. Appuyez de nouveau sur {shortcut} pour le quitter quand même.",
+  'terminal.resetKeptAltScreenNoShortcut':
+    "Écran alternatif conservé : un programme l'utilise peut-être encore. Relancez « Réinitialiser l'état du terminal » pour le quitter quand même.",
   'terminal.findPlaceholder': 'Rechercher...',
   'terminal.findPrevious': 'Précédent (Maj+Entrée)',
   'terminal.findNext': 'Suivant (Entrée)',

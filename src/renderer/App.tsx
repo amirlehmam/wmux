@@ -57,6 +57,7 @@ import type {
 import { buildSurfaceDragPreview } from './components/SplitPane/surface-drag-preview';
 import { forgetSurfaceTitle, surfaceTerminalRegistry } from './hooks/useTerminal';
 import { forgetSurface as forgetPromptLog, hookEventSurface, recordAgentPrompt } from './utils/prompt-log';
+import { forgetAlternateScreen, RESET_TERMINAL_LEAVE_ALT_ACTION } from './utils/alt-screen-owner';
 import { SURFACE_CLOSED_EVENT } from './store/pty-teardown';
 import { installRemoteRendererHandler } from './utils/remote-snapshot';
 import { formatRemoteNotice } from './utils/remote-notice';
@@ -848,6 +849,9 @@ export default function App() {
       // `!== undefined`, not truthiness: 0 is the value that turns dimming off.
       const inactivePaneDim = result?.appearance?.inactivePaneDim;
       if (inactivePaneDim !== undefined) state.setAppearancePrefs({ inactivePaneDim });
+      // `[sidebar] wrap-titles` (issue #342); false is a real value, so no truthiness test.
+      const wrapTitles = result?.sidebar?.wrapTitles;
+      if (typeof wrapTitles === 'boolean') state.setSidebarPrefs({ wrapTitles });
 
       // Community translations from ~/.wmux/locales (issue #147) ride the same
       // reload so `wmux reload-config` refreshes everything under ~/.wmux, not
@@ -1003,6 +1007,8 @@ export default function App() {
       // store a moment after the store entry was dropped.
       forgetSurfaceTitle(surfaceId);
       useStore.getState().clearOscTitle(surfaceId);
+      // Reset terminal state's record of the alternate screen (#357).
+      forgetAlternateScreen(surfaceId);
     };
     document.addEventListener(SURFACE_CLOSED_EVENT, handler);
     return () => document.removeEventListener(SURFACE_CLOSED_EVENT, handler);
@@ -1418,9 +1424,12 @@ export default function App() {
     const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
     const terminalSurfaceId = surface?.type === 'terminal' ? surface.id : null;
 
-    if (action === 'resetTerminal') {
+    if (action === 'resetTerminal' || action === RESET_TERMINAL_LEAVE_ALT_ACTION) {
       if (terminalSurfaceId) {
-        document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: terminalSurfaceId } }));
+        // The palette's second entry skips the keep-then-press-again step
+        // (#357): choosing it by name already says "leave it anyway".
+        const leaveAlternateScreen = action === RESET_TERMINAL_LEAVE_ALT_ACTION;
+        document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: terminalSurfaceId, leaveAlternateScreen } }));
       }
     } else if (action === 'togglePromptOutline') {
       togglePromptOutlineFor(

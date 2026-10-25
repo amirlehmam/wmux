@@ -5,6 +5,7 @@ import CopyMode from './CopyMode';
 import PinnedPrompt from './PinnedPrompt';
 import PromptOutline from './PromptOutline';
 import NewOutputPill from './NewOutputPill';
+import ResetNotice from './ResetNotice';
 import '../../styles/terminal.css';
 import '../../styles/prompt-marks.css';
 
@@ -158,6 +159,7 @@ export default function TerminalPane({
         />
       )}
       <CopyMode active={copyModeActive} />
+      {visible && surfaceId && <ResetNotice surfaceId={surfaceId} />}
     </div>
   );
 }

@@ -398,6 +398,61 @@ export default function WorkspaceRow({
 
   const stateDotClass = stateDotClassFor(statusInputs, isClaudeActive);
 
+  // The dot, the badges and the close button sit on the title line by default.
+  // `sidebarPrefs.fullWidthTitles` moves them to a line of their own above it,
+  // so the title and the status text each get the row's full width.
+  const stateDot = (
+    <>
+      <span className={`workspace-row__state-dot ${stateDotClass}`} />
+      {/* One ring per tool call. Keyed on the tool counter so React remounts
+          the span and the one-shot animation replays — genuinely evented,
+          rather than a loop that runs whether or not anything happened.
+          Bucketed to cap the remount rate on a very fast agent. */}
+      {rowTrace?.live && !rowTrace.blocked && (
+        <span
+          key={`ping-${Math.floor(rowTrace.toolCount / 2)}`}
+          className="workspace-row__via-ping"
+          aria-hidden="true"
+        />
+      )}
+    </>
+  );
+
+  const rowBadges = (
+    <>
+      {/* Work odometer: total tool calls this workspace's sessions have made.
+          hookActivity[].toolCount is live, monotonic and deliberately never
+          garbage-collected — and was rendered nowhere in the app until now.
+          Static text, so it is the one part of TRACE that survives a narrow
+          sidebar, reduced motion, and a screenshot. */}
+      {!!rowTrace && rowTrace.toolCount > 0 && (
+        <span
+          className="workspace-row__odometer"
+          title={t('workspaceRow.toolCallsTitle', '{count} tool calls in this workspace').replace('{count}', String(rowTrace.toolCount))}
+        >
+          {rowTrace.toolCount}
+        </span>
+      )}
+
+      {workspace.unreadCount > 0 && (
+        <UnreadBadge count={workspace.unreadCount} isSelected={isActive} />
+      )}
+    </>
+  );
+
+  const closeButton = (
+    <button
+      className="workspace-row__close"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      title={t('workspaceRow.closeWorkspace', 'Close workspace')}
+    >
+      &#x2715;
+    </button>
+  );
+
   return (
     <div
       ref={rowRef}
@@ -434,20 +489,17 @@ export default function WorkspaceRow({
           inline override that the active row used to have to fight. */}
       <span className="workspace-row__rail" />
 
+      {sidebarPrefs.fullWidthTitles && (
+        <div className="workspace-row__top-line">
+          {stateDot}
+          {rowBadges}
+          {closeButton}
+        </div>
+      )}
+
       {/* Line 1: Title */}
       <div className="workspace-row__header">
-        <span className={`workspace-row__state-dot ${stateDotClass}`} />
-        {/* One ring per tool call. Keyed on the tool counter so React remounts
-            the span and the one-shot animation replays — genuinely evented,
-            rather than a loop that runs whether or not anything happened.
-            Bucketed to cap the remount rate on a very fast agent. */}
-        {rowTrace?.live && !rowTrace.blocked && (
-          <span
-            key={`ping-${Math.floor(rowTrace.toolCount / 2)}`}
-            className="workspace-row__via-ping"
-            aria-hidden="true"
-          />
-        )}
+        {!sidebarPrefs.fullWidthTitles && stateDot}
         {isRenaming ? (
           <input
             className="workspace-row__rename-input"
@@ -480,34 +532,8 @@ export default function WorkspaceRow({
           </span>
         )}
 
-        {/* Work odometer: total tool calls this workspace's sessions have made.
-            hookActivity[].toolCount is live, monotonic and deliberately never
-            garbage-collected — and was rendered nowhere in the app until now.
-            Static text, so it is the one part of TRACE that survives a narrow
-            sidebar, reduced motion, and a screenshot. */}
-        {!!rowTrace && rowTrace.toolCount > 0 && (
-          <span
-            className="workspace-row__odometer"
-            title={t('workspaceRow.toolCallsTitle', '{count} tool calls in this workspace').replace('{count}', String(rowTrace.toolCount))}
-          >
-            {rowTrace.toolCount}
-          </span>
-        )}
-
-        {workspace.unreadCount > 0 && (
-          <UnreadBadge count={workspace.unreadCount} isSelected={isActive} />
-        )}
-
-        <button
-          className="workspace-row__close"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          title={t('workspaceRow.closeWorkspace', 'Close workspace')}
-        >
-          &#x2715;
-        </button>
+        {!sidebarPrefs.fullWidthTitles && rowBadges}
+        {!sidebarPrefs.fullWidthTitles && closeButton}
       </div>
 
       {/* Line 2: Status — always visible */}

@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import type { PromptEntry, PromptSource } from '../store/prompt-slice';
 import { nextPromptSeq, normalizePromptText } from '../store/prompt-slice';
 import { parsePromptMark } from './osc133';
+import { noteCommandEnd, noteCommandStart, notePromptStart } from './alt-screen-owner';
 import * as anchor from './prompt-anchor';
 import * as marks from './prompt-marks';
 
@@ -326,6 +327,10 @@ export function handlePromptMark(terminal: Terminal, surfaceId: string, data: st
   switch (mark.kind) {
     case 'prompt-start':
       shellState.set(surfaceId, { promptLine: buf.baseY + buf.cursorY, inputLine: null, inputCol: 0 });
+      // A prompt on the alternate screen is also what tells Reset terminal
+      // state that the program which entered it is gone (#357). Reported from
+      // here so the mark is parsed once, and regardless of the prompt prefs.
+      notePromptStart(surfaceId, buf.type);
       return true;
     case 'input-start': {
       const state = shellState.get(surfaceId);
@@ -335,6 +340,9 @@ export function handlePromptMark(terminal: Terminal, surfaceId: string, data: st
       return true;
     }
     case 'output-start':
+      // A command run from a prompt on the alternate screen may draw there
+      // without entering it (#357).
+      noteCommandStart(surfaceId, buf.type);
       commitShellPrompt(terminal, surfaceId);
       return true;
     case 'command-end':
@@ -343,6 +351,7 @@ export function handlePromptMark(terminal: Terminal, surfaceId: string, data: st
       // maintained by every view. The parse still has to happen so the mark is
       // consumed rather than falling through to another OSC 133 consumer.
       shellState.delete(surfaceId);
+      noteCommandEnd(surfaceId, buf.type);
       return true;
     default:
       return false;

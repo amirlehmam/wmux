@@ -57,3 +57,16 @@ export function isEditableTarget(target: EditableTargetLike | null | undefined):
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!target.isContentEditable;
 }
+
+/**
+ * Actions a held chord must run once, not once per auto-repeat keydown.
+ *
+ * Most bindings want the repeat (resizing a pane, stepping the font size), so
+ * this is opt-in. Reset terminal state is in it because a second press within
+ * a few seconds of one that kept the alternate screen forces it off (#357),
+ * and Windows starts repeating a held key well inside that window: holding
+ * Ctrl+Shift+R would force a live program off its screen, which is #347.
+ */
+export const IGNORES_KEY_REPEAT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
+  'resetTerminal',
+]);

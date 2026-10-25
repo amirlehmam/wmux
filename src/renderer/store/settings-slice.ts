@@ -433,6 +433,14 @@ export interface SidebarPrefs {
    * keeps it. A new field, so stored prefs pick it up from the defaults.
    */
   wrapTitles: boolean;
+  /**
+   * Give the workspace title the row's full width: the state dot, the tool-call
+   * odometer, the unread badge and the hover-only close button move to a line
+   * above the title, so the title and the status text each get a full line.
+   * Lets the sidebar be narrower. Off by default: the title line is the
+   * shipped look.
+   */
+  fullWidthTitles: boolean;
 }
 
 export const SIDEBAR_TEXT_SCALE_MIN = 90;
@@ -460,6 +468,7 @@ export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = {
   backgroundOpacity: 100,
   textScale: 100,
   wrapTitles: false,
+  fullWidthTitles: false,
 };
 
 // ─── Workspace settings ───────────────────────────────────────────────────────

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { resetTerminalModes, shellOwnsScreen, terminalResetSequence } from '../../src/renderer/utils/terminal-reset';
+import {
+  alternateScreenResetAction,
+  FORCE_LEAVE_WINDOW_MS,
+  resetTerminalModes,
+  shellOwnsScreen,
+  terminalResetSequence,
+  type AlternateScreenFacts,
+} from '../../src/renderer/utils/terminal-reset';
 import { Terminal } from '@xterm/xterm';
 import { applyMouseModeSequences, emptyMouseModeState, isMouseTracking } from '../../src/renderer/utils/mouse-modes';
 
@@ -196,3 +203,92 @@ describe('manual reset under a live fullscreen program (issue #347)', () => {
   });
 });
 
+
+/**
+ * Issue #357: since #347 the manual reset left the alternate screen only when
+ * the shell had reported it was back at its prompt, and only wmux's PowerShell
+ * integration reports that. A pane stuck on a dead program's alternate screen
+ * in cmd, Git Bash, WSL, SSH or a nested shell could no longer be recovered.
+ *
+ * The decision now weighs the pane's own output first: an OSC 133;A drawn ON
+ * the alternate screen means a shell is prompting there (`owner: 'shell'`),
+ * while a DECSET 47/1047/1049 since then means a program entered it
+ * (`owner: 'program'`). Shell state is the fallback when the stream said
+ * neither, and a second press inside the window forces.
+ */
+describe('alternateScreenResetAction (issue #357)', () => {
+  const facts = (over: Partial<AlternateScreenFacts> = {}): AlternateScreenFacts => ({
+    onAlternateBuffer: true,
+    owner: undefined,
+    shellState: undefined,
+    lastKeptAt: undefined,
+    now: 100_000,
+    forceRequested: false,
+    ...over,
+  });
+
+  it('has nothing to do on the normal buffer, whatever else is true', () => {
+    expect(alternateScreenResetAction(facts({ onAlternateBuffer: false, owner: 'program', forceRequested: true }))).toBe('none');
+  });
+
+  it('leaves when a shell prompted on the alternate screen, with no shell state at all', () => {
+    // cmd, Git Bash with a prompt mark, a remote shell: none of them report state.
+    expect(alternateScreenResetAction(facts({ owner: 'shell' }))).toBe('leave');
+  });
+
+  it('a prompt mark overrides `running`: the outer shell reported the ssh/wsl command, the inner one prompted', () => {
+    expect(alternateScreenResetAction(facts({ owner: 'shell', shellState: 'running' }))).toBe('leave');
+  });
+
+  it('keeps when a program entered the alternate screen after the prompt (#347 still holds)', () => {
+    expect(alternateScreenResetAction(facts({ owner: 'program' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'program', shellState: 'running' }))).toBe('keep');
+  });
+
+  it('keeps while a command started from a prompt on the alternate screen runs (133;C)', () => {
+    // An inline program (Claude Code's inline mode, a dev server) enters nothing,
+    // and a local `running` report used to lose to the earlier prompt mark.
+    expect(alternateScreenResetAction(facts({ owner: 'command' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'command', shellState: 'running' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'command', shellState: 'idle' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'command', lastKeptAt: 99_000 }))).toBe('force');
+  });
+
+  it('a program on the alternate screen outranks an `idle` report (PowerShell without PSReadLine)', () => {
+    // `running` is reported only from the PSReadLine Enter handler, so without it
+    // the state reads idle while vim runs. The in-band entry is the fresher fact.
+    expect(alternateScreenResetAction(facts({ owner: 'program', shellState: 'idle' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts({ owner: 'program', shellState: 'interrupted' }))).toBe('keep');
+  });
+
+  it('with no in-band evidence, falls back to the #347 shell-state rule', () => {
+    expect(alternateScreenResetAction(facts({ shellState: 'idle' }))).toBe('leave');
+    expect(alternateScreenResetAction(facts({ shellState: 'interrupted' }))).toBe('leave');
+    expect(alternateScreenResetAction(facts({ shellState: 'running' }))).toBe('keep');
+    expect(alternateScreenResetAction(facts())).toBe('keep');
+  });
+
+  it('a second press within the window forces', () => {
+    const now = 100_000;
+    expect(alternateScreenResetAction(facts({ owner: 'program', lastKeptAt: now - 1, now }))).toBe('force');
+    expect(alternateScreenResetAction(facts({ owner: 'program', lastKeptAt: now - FORCE_LEAVE_WINDOW_MS, now }))).toBe('force');
+  });
+
+  it('a second press after the window keeps again', () => {
+    const now = 100_000;
+    expect(alternateScreenResetAction(facts({ owner: 'program', lastKeptAt: now - FORCE_LEAVE_WINDOW_MS - 1, now }))).toBe('keep');
+  });
+
+  it('a clock that went backwards does not count as inside the window', () => {
+    expect(alternateScreenResetAction(facts({ owner: 'program', lastKeptAt: 200_000, now: 100_000 }))).toBe('keep');
+  });
+
+  it('the palette entry forces without a first press', () => {
+    expect(alternateScreenResetAction(facts({ owner: 'program', shellState: 'running', forceRequested: true }))).toBe('force');
+  });
+
+  it('the window is a few seconds, long enough to read the notice', () => {
+    expect(FORCE_LEAVE_WINDOW_MS).toBeGreaterThanOrEqual(3000);
+    expect(FORCE_LEAVE_WINDOW_MS).toBeLessThanOrEqual(10_000);
+  });
+});
