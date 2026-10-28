@@ -7,6 +7,8 @@ import { normalizeTouchPanGain, TOUCH_PAN_GAIN_MAX, TOUCH_PAN_GAIN_MIN } from '.
 import { normalizeBellStyle } from '../../utils/terminal-bell';
 import { normalizeRightClickMode } from '../../utils/terminal-right-click';
 import type { ThemeConfig } from '../../../shared/types';
+import { useTerminalHistoryState } from '../../hooks/useTerminalHistoryState';
+import { terminalHistoryWarning, terminalHistoryWarningText } from '../../utils/terminal-history-feedback';
 
 /** First family of a CSS font stack, unquoted — used to match the picker. */
 function firstFamily(stack: string): string {
@@ -27,6 +29,8 @@ let importInFlight = false;
 export default function TerminalSettings() {
   const t = useT();
   const { terminalPrefs, setTerminalPrefs } = useStore();
+  const history = useTerminalHistoryState();
+  const historyWarning = terminalHistoryWarning(history.error);
   const setAppearancePrefs = useStore((s) => s.setAppearancePrefs);
   const [themes, setThemes] = useState<string[]>(['Monokai']);
   const [newSchemeName, setNewSchemeName] = useState('');
@@ -499,6 +503,29 @@ export default function TerminalSettings() {
           onChange={(e) => setTerminalPrefs({ scrollbackLines: Number(e.target.value) })}
         />
       </div>
+
+      <div className="settings-row">
+        <label className="settings-label" htmlFor="terminal-history-enabled">
+          {t('settings.terminalPanel.saveOutput', 'Save terminal output across restarts')}
+        </label>
+        <input
+          id="terminal-history-enabled"
+          type="checkbox"
+          className="settings-toggle"
+          checked={history.state?.enabled ?? false}
+          disabled={!history.state || history.pending || history.unavailable}
+          aria-describedby="terminal-history-hint terminal-history-status"
+          onChange={(e) => { void history.setEnabled(e.target.checked); }}
+        />
+      </div>
+      <p className="settings-hint" id="terminal-history-hint">
+        {t('settings.terminalPanel.saveOutputHint', 'Stores terminal output locally as plaintext, not encrypted; it may contain passwords, tokens or other sensitive information. Turning this off deletes saved output but leaves open terminals intact. Secure erasure is not guaranteed. Turning it on again may save output still visible in live terminals.')}
+      </p>
+      <p className="settings-hint" id="terminal-history-status" role="status">
+        {history.pending && <>{t('settings.terminalPanel.saveOutputPending', 'Updating saved-output preference…')} </>}
+        {historyWarning && terminalHistoryWarningText(historyWarning, t)}
+        {history.unavailable && historyWarning !== 'state' && <> {terminalHistoryWarningText('state', t)}</>}
+      </p>
 
       <div className="settings-divider" />
       <h3 className="settings-section-title">{t('settings.terminalPanel.touchSection', 'Touch')}</h3>

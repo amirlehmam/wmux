@@ -569,6 +569,23 @@ describe('production IPC ownership hooks and preload capture', () => {
     ]);
   });
 
+  it('preserves failed consent results and authoritative paused/final broadcasts through preload', async () => {
+    const callback = vi.fn();
+    const off = bridge.onState(callback);
+    const [, listener] = electron.on.mock.lastCall!;
+    const paused = { enabled: false, generation: 5, error: null };
+    const final = { enabled: true, generation: 5, error: 'cleanup' };
+    listener({ privateEvent: true }, paused);
+    electron.invoke.mockResolvedValueOnce({ ok: false, error: 'cleanup' });
+    expect(await bridge.setEnabled(true)).toEqual({ ok: false, error: 'cleanup' });
+    listener({ privateEvent: true }, final);
+    electron.invoke.mockResolvedValueOnce({ ok: true, value: final });
+    expect(await bridge.getState()).toEqual({ ok: true, value: final });
+    expect(callback.mock.calls).toEqual([[paused], [final]]);
+    off();
+    expect(electron.removeListener).toHaveBeenCalledWith(IPC_CHANNELS.TERMINAL_HISTORY_STATE, listener);
+  });
+
   it('forwards only typed history operations and unsubscribes the exact listener', async () => {
     const token = { recordId: `hist-${randomUUID()}`, generation: 0, incarnation: randomUUID() };
     await bridge.getState(); await bridge.setEnabled(true); await bridge.getBinding('surf-a');

@@ -59,6 +59,8 @@ import type {
 } from './components/SplitPane/drag-preview-types';
 import { buildSurfaceDragPreview } from './components/SplitPane/surface-drag-preview';
 import { forgetClosedTerminal, surfaceTerminalRegistry, terminalHistoryCheckpoints } from './hooks/useTerminal';
+import { subscribeTerminalHistoryState } from './utils/terminal-history-state';
+import { onTerminalHistoryFailure, reportTerminalHistoryFailure, terminalHistoryWarningText } from './utils/terminal-history-feedback';
 import { forgetSurface as forgetPromptLog, hookEventSurface, recordAgentPrompt } from './utils/prompt-log';
 import { forgetAlternateScreen, RESET_TERMINAL_LEAVE_ALT_ACTION } from './utils/alt-screen-owner';
 import { SURFACE_CLOSED_EVENT } from './store/pty-teardown';
@@ -933,6 +935,25 @@ export default function App() {
     });
     return () => { stop(); unsub?.(); };
   }, []);
+
+  useEffect(() => {
+    if (workspaces.length === 0) return;
+    const offWarnings = onTerminalHistoryFailure((category) => {
+      const st = useStore.getState();
+      const ws = st.workspaces.find((w) => w.id === st.activeWorkspaceId) ?? st.workspaces[0];
+      if (!ws) return;
+      addNotification({
+        surfaceId: '' as SurfaceId,
+        workspaceId: ws.id,
+        title: t('terminalHistory.title', 'Terminal output history'),
+        text: terminalHistoryWarningText(category, t),
+      });
+    });
+    const offState = subscribeTerminalHistoryState(window.wmux?.terminalHistory,
+      (state) => reportTerminalHistoryFailure(state.error),
+      () => reportTerminalHistoryFailure('state'));
+    return () => { offState(); offWarnings(); };
+  }, [workspaces.length > 0]);
 
   // Listen for agent spawn events from main process
   useEffect(() => {

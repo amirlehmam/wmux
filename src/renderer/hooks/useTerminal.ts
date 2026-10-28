@@ -45,6 +45,7 @@ import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
 import { connectTerminalWithHistory, forgetPendingTerminalHistoryCreation, type RetainedTerminalEvents } from '../utils/terminal-history';
 import { TerminalHistoryCheckpoints } from '../utils/terminal-history-checkpoints';
+import { reportTerminalHistoryFailure } from '../utils/terminal-history-feedback';
 import { RemountSnapshotCache, serializeRemountSnapshot, type RemountSnapshot } from '../utils/remount-snapshot';
 import { anchorViewportLikeConpty, captureCursorLine, captureViewportTop, restoreCursorLine } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
@@ -465,7 +466,7 @@ export const terminalHistoryCheckpoints = new TerminalHistoryCheckpoints({
   serializer: (surface) => surfaceSerializerRegistry.get(surface),
   bridge: () => window.wmux?.terminalHistory,
   lines: () => useStore.getState().terminalPrefs.scrollbackLines,
-  report: (error) => { console.warn('[terminal-history] Checkpoint failed:', error); },
+  report: reportTerminalHistoryFailure,
 });
 
 /**
@@ -1950,7 +1951,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         const replacement = surfaceId && surfaceTerminalRegistry.get(surfaceId);
         if (!created.reused && !open && (!replacement || replacement === terminal)) window.wmux.pty.kill(created.id);
       },
-      report: (error) => { console.warn('[terminal-history] Restore failed:', error); },
+      report: reportTerminalHistoryFailure,
     }).catch((err: unknown) => {
       if (isCurrent()) terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`);
     });
