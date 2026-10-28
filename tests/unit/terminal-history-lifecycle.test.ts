@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { ProgressAddon } from '@xterm/addon-progress';
 import type { HistoryResult, TerminalHistoryBridge, TerminalHistoryRecord, TerminalHistoryState } from '../../src/shared/terminal-history';
-import { captureTerminalHistory, connectTerminalWithHistory, forgetPendingTerminalHistoryCreation, restoredTerminalHistories, type RetainedTerminalEvents } from '../../src/renderer/utils/terminal-history';
+import { captureTerminalHistory, connectTerminalWithHistory, forgetPendingTerminalHistoryCreation, type RetainedTerminalEvents } from '../../src/renderer/utils/terminal-history';
 import { ReplayHold } from '../../src/renderer/utils/replay-hold';
 import { RemountSnapshotCache, type RemountSnapshot } from '../../src/renderer/utils/remount-snapshot';
 import { applyMouseModeSequences, emptyMouseModeState, type MouseModeState } from '../../src/renderer/utils/mouse-modes';
@@ -225,7 +225,6 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(s.restoreLive).toHaveBeenCalledExactlyOnceWith(false);
     expect(s.hold.isHolding).toBe(false);
     expect(text(s.terminal)).toContain('retained-before');
-    expect(restoredTerminalHistories.has(s.terminal)).toBe(true);
     expect(s.ptyWrite).not.toHaveBeenCalled();
   });
 
@@ -275,7 +274,6 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(s.fit).not.toHaveBeenCalled();
     expect(s.create).not.toHaveBeenCalled();
     expect(s.attach).not.toHaveBeenCalled();
-    expect(restoredTerminalHistories.has(s.terminal)).toBe(false);
     const replacement = setup(history);
     // The grant is unchanged and still readable; no restore call consumes it.
     replacement.bridge.read = s.bridge.read;
@@ -314,7 +312,6 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(s.attach).toHaveBeenCalledOnce();
     expect(text(s.terminal)).not.toContain('retained');
     expect(text(s.terminal)).not.toContain('New terminal session');
-    expect(restoredTerminalHistories.has(s.terminal)).toBe(false);
     expect(s.report).not.toHaveBeenCalled();
   });
 
@@ -405,7 +402,6 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(s.terminal.buffer.alternate.getLine(0)!.translateToString(true)).toContain('LIVE TUI');
     expect(text(s.terminal)).toContain('LIVE NORMAL');
     expect(text(s.terminal)).not.toContain('retained');
-    expect(restoredTerminalHistories.has(s.terminal)).toBe(false);
   });
 
   it('leaves a same-live-PTY terminal alone: no bridge calls, reset, disk replay, or fresh create', async () => {
@@ -484,7 +480,6 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(original.create).toHaveBeenCalledOnce();
     expect(original.abandoned).toHaveBeenCalledExactlyOnceWith({ id: 'surf-history', reused: false });
     expect(replacement.bridge.read).not.toHaveBeenCalled();
-    expect(restoredTerminalHistories.has(replacement.terminal)).toBe(true);
     expect(replacement.ptyWrite).not.toHaveBeenCalled();
     // Consumption is one-shot: a later live mount uses only ordinary snapshots.
     const later = setup(history);
@@ -527,7 +522,6 @@ describe('fresh terminal history lifecycle with real xterm', () => {
       expect(replacement.attach).toHaveBeenCalledOnce();
       expect(replacement.create).not.toHaveBeenCalled();
       expect(text(replacement.terminal)).not.toContain('retained');
-      expect(restoredTerminalHistories.has(replacement.terminal)).toBe(false);
     });
 
   it('leaves a pending handoff for the current mount when an earlier waiter is disposed during authorization', async () => {

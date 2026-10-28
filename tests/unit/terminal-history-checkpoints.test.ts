@@ -3,7 +3,6 @@ import { Terminal } from '@xterm/xterm';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import type { HistoryResult, TerminalHistoryBridge, TerminalHistoryRecord, TerminalHistoryState } from '../../src/shared/terminal-history';
 import { TerminalHistoryCheckpoints } from '../../src/renderer/utils/terminal-history-checkpoints';
-import { restoredTerminalHistories } from '../../src/renderer/utils/terminal-history';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -149,10 +148,8 @@ describe('dirty terminal checkpoints', () => {
     expect(await kit.coordinator.request()).toBe(true);
     expect(kit.records.map((row) => row.surface)).toEqual(['hidden-tab', 'inactive-workspace', 'exited-open']);
     ready = true;
-    restoredTerminalHistories.add(provisional.terminal);
     expect(await kit.coordinator.request()).toBe(true);
     expect(kit.records.at(-1)?.surface).toBe('preparing');
-    expect(restoredTerminalHistories.has(provisional.terminal)).toBe(false);
   });
 
   it('tracks renderer notices, exit/reset, clear, resize/reflow and line-limit changes', async () => {

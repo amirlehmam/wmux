@@ -1,7 +1,7 @@
 import type { Terminal } from '@xterm/xterm';
 import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { TerminalHistoryBridge, TerminalHistoryState } from '../../shared/terminal-history';
-import { captureTerminalHistory, restoredTerminalHistories } from './terminal-history';
+import { captureTerminalHistory } from './terminal-history';
 
 interface Candidate {
   revision: number;
@@ -263,7 +263,6 @@ export class TerminalHistoryCheckpoints {
         if (floor === undefined || !Number.isSafeInteger(floor) || floor < 0) return false;
         const revision = floor + 1;
         if (!Number.isSafeInteger(revision)) return false;
-        if (restoredTerminalHistories.has(terminal)) restoredTerminalHistories.delete(terminal);
         const mutation = candidate.revision;
         candidate.attempted = mutation;
         const captured = await new Promise<ReturnType<typeof captureTerminalHistory> | null>((resolve) => {

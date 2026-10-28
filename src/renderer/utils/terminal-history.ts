@@ -225,9 +225,6 @@ export async function replayTerminalHistory(
   return { ok: true, restored: true };
 }
 
-/** An adopted restore, including its divider, needs an ordinary checkpoint. */
-export const restoredTerminalHistories = new WeakSet<Terminal>();
-
 type PendingPtyEvent = { kind: 'data'; data: string } | { kind: 'exit'; code: number };
 
 interface HistoryPtyEvents {
@@ -453,7 +450,6 @@ export async function connectTerminalWithHistory<T extends CreatedTerminal>(
       }
       if (completed) {
         options.restoreLive(true, completed);
-        restoredTerminalHistories.add(terminal);
       } else options.restoreLive(true);
       options.attach(surfaceId, undefined, retained);
       if (inherited) inherited.events = undefined;
@@ -584,7 +580,6 @@ export async function connectTerminalWithHistory<T extends CreatedTerminal>(
     if (created.reused || (provisional && !eligible())) discard();
     if (!current()) { options.abandoned(created); return; }
     options.restoreLive(created.reused);
-    if (restored && !created.reused) restoredTerminalHistories.add(terminal);
     const retained = pendingCreation?.events;
     options.attach(created.id, created, retained);
     if (pendingCreation) pendingCreation.events = undefined;
