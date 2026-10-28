@@ -1,6 +1,6 @@
-// wmux-plugin-version: 3
-// wmux pi extension — bridges pi's lifecycle events to the wmux sidebar (#231).
-// Auto-installed by wmux to ~/.pi/agent/extensions/wmux.js.
+// wmux-plugin-version: 4
+// wmux pi extension — scoped instructions and independently gated status reporting.
+// Auto-installed by wmux to ~/.pi/agent/extensions/wmux/index.js.
 // No-ops entirely outside wmux (WMUX !== '1').
 //
 // ── Why this exists ──────────────────────────────────────────────────────────
@@ -144,11 +144,9 @@ function sessionFileOnDisk(ctx, stat = statSync) {
 /**
  * Find something that can run `$WMUX_CLI` (issue #187).
  *
- * Deliberately a copy of the OpenCode plugin's resolver rather than an import:
- * both files are installed verbatim as a SINGLE file into another program's
- * config directory, so there is nowhere shared to import from. The two are
- * pinned against each other by tests/unit/pi-extension.test.ts so the copy
- * cannot quietly drift.
+ * Keep the installed extension self-contained rather than depending on wmux's
+ * application modules. Tests compare this resolver with the OpenCode plugin's
+ * copy so the two cannot quietly drift.
  *
  * Order matters. `WMUX_NODE` comes first because wmux resolved it in its own
  * process, where it could also fall back to its Electron binary — so it is the
@@ -270,6 +268,19 @@ export default function wmuxExtension(pi) {
   // without overriding an explicit choice. Pi disables iTerm2 images in
   // fullscreen mode; use --tui-mode regular to display them.
   process.env.PI_IMAGE_PROTOCOL ??= "iterm2";
+
+  // The installed module carries a consent snapshot, refreshed by Pi's /reload.
+  const { instructions, hooks = true } = wmuxExtension.config ?? {};
+  if (instructions) {
+    pi.on("before_agent_start", (event) => {
+      if (event.systemPromptOptions?.sections) {
+        event.systemPromptOptions.sections.wmux = instructions;
+      } else {
+        return { systemPrompt: `${event.systemPrompt}\n\n${instructions}` };
+      }
+    });
+  }
+  if (!hooks) return;
 
   const runtime = resolveNodeRuntime();
 
@@ -459,9 +470,13 @@ export default function wmuxExtension(pi) {
 
   pi.on("session_shutdown", async (event, ctx) => {
     const reason = typeof event?.reason === "string" ? event.reason : "quit";
-    // A switch (/new, /resume, /fork, /reload): the next instance's
-    // session_start re-declares the run state and reports its own file, so
-    // releasing here would only erase the handle a restore needs.
+    // A reload may disable hooks or remove the extension. Clear its live state
+    // without releasing the session file used by the existing restore feature.
+    if (reason === "reload") {
+      await wmux(["report-agent", "--surface", surface, "--run-depth", "0", "--unblocked"], { wait: true });
+      return;
+    }
+    // A switch (/new, /resume, /fork): the next instance reports its own file.
     if (reason !== "quit") return;
     // A pi release, not `--run-depth 0`: the pane stops having a declared
     // agent at all, so the sidebar falls back to the shell's own state rather

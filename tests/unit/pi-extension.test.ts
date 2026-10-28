@@ -7,8 +7,8 @@ import { pluginNeedsUpdate } from '../../src/main/agent-plugin-file';
 /**
  * Issue #231 — the SHIPPED extension, not a copy of its logic.
  *
- * resources/pi-extension/wmux.js is installed verbatim into
- * ~/.pi/agent/extensions/, so the file itself is the contract. Loaded here for
+ * resources/pi-extension/wmux.js is installed with a configuration snapshot as
+ * ~/.pi/agent/extensions/wmux/index.js. Its behavior is exercised here for
  * the same reason the OpenCode plugin is (#187): that bug was one token
  * (`process.execPath`) and no test of a paraphrase would have caught it.
  */
@@ -49,7 +49,10 @@ function fakePi() {
   };
 }
 
-async function extensionWith(env: Record<string, string | undefined> = {}) {
+async function extensionWith(
+  env: Record<string, string | undefined> = {},
+  config: { instructions?: string; hooks?: boolean } = {},
+) {
   Object.assign(process.env, {
     WMUX: '1',
     WMUX_SURFACE_ID: SURFACE,
@@ -59,6 +62,7 @@ async function extensionWith(env: Record<string, string | undefined> = {}) {
   });
   for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
   const factory = (await load()).default;
+  factory.config = config;
   const pi = fakePi();
   factory(pi.api);
   return pi;
@@ -106,7 +110,7 @@ describe('#231 pi extension: activation', () => {
     expect(process.env.PI_IMAGE_PROTOCOL).toBe(protocol);
   });
 
-  it('updates previously installed extensions through the version marker', () => {
+  it('has a distinct version marker from earlier extension sources', () => {
     const source = readFileSync(EXTENSION, 'utf8');
     expect(pluginNeedsUpdate(source, '// wmux-plugin-version: 1\nold source')).toBe(true);
   });
@@ -125,6 +129,48 @@ describe('#231 pi extension: activation', () => {
     const pi = await extensionWith({ WMUX_NODE_ELECTRON: '1' });
     await pi.fire('agent_start');
     expect(calls[0].opts.env.ELECTRON_RUN_AS_NODE).toBe('1');
+  });
+});
+
+describe('Pi scoped instructions', () => {
+  it.each([
+    { instructions: 'compact rules', hooks: true },
+    { instructions: 'compact rules', hooks: false },
+    { instructions: '', hooks: true },
+    { instructions: '', hooks: false },
+  ])('keeps instruction and hook registration independent: %j', async (config) => {
+    const pi = await extensionWith({}, config);
+    expect(pi.has('before_agent_start')).toBe(!!config.instructions);
+    expect(pi.has('agent_start')).toBe(config.hooks);
+    expect(pi.has('session_start')).toBe(config.hooks);
+    if (!config.hooks) {
+      await pi.fire('agent_start');
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it.each([{ WMUX: '0' }, { WMUX_SURFACE_ID: undefined }])('does not expose instructions outside an attached wmux session: %j', async (env) => {
+    const pi = await extensionWith(env, { instructions: 'compact rules', hooks: true });
+    expect(pi.handlers.size).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it('adds one named section without replacing other extensions or accumulating copies', async () => {
+    const pi = await extensionWith({}, { instructions: 'compact rules', hooks: false });
+    const event = { systemPromptOptions: { sections: { personal: 'keep this' } } };
+    await pi.fire('before_agent_start', event);
+    await pi.fire('before_agent_start', event);
+    expect(event.systemPromptOptions.sections).toEqual({ personal: 'keep this', wmux: 'compact rules' });
+    expect(calls).toEqual([]);
+  });
+
+  it('supports older Pi prompts and snapshots configuration until reload', async () => {
+    const pi = await extensionWith({}, { instructions: 'original rules', hooks: false });
+    const factory = (await load()).default;
+    factory.config = { instructions: 'replacement rules', hooks: true };
+    const handler = pi.handlers.get('before_agent_start')![0];
+    expect(handler({ systemPrompt: 'base prompt' })).toEqual({ systemPrompt: 'base prompt\n\noriginal rules' });
+    expect(pi.has('agent_start')).toBe(false);
   });
 });
 
@@ -320,6 +366,21 @@ describe('#231 pi extension: activity and metadata', () => {
 });
 
 describe('#231 pi extension: shutdown', () => {
+  it('clears live run and blocked state on reload without releasing the saved session', async () => {
+    const pi = await extensionWith();
+    await pi.fire('agent_start');
+    await pi.fire('ui_prompt_start', { title: 'Waiting' });
+    calls.length = 0;
+    await pi.fire('session_shutdown', { reason: 'reload' });
+    expect(verbs()).toEqual([
+      ['report-agent', '--surface', SURFACE, '--run-depth', '0', '--unblocked'],
+    ]);
+    const replacement = await extensionWith({}, { instructions: 'compact rules', hooks: false });
+    calls.length = 0;
+    await replacement.fire('session_start');
+    expect(calls).toEqual([]);
+  });
+
   it('releases the pane and waits for the call to land', async () => {
     // pi awaits session_shutdown handlers and then exits. Without the wait the
     // process can be gone before the spawn lands, leaving a pane declared
@@ -364,7 +425,7 @@ describe('#382 pi extension: session file reports', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('updates installs: the marker moved past the version that did not report sessions', () => {
+  it('has a distinct marker from the source that did not report sessions', () => {
     const source = readFileSync(EXTENSION, 'utf8');
     expect(pluginNeedsUpdate(source, '// wmux-plugin-version: 2\nold source')).toBe(true);
   });
@@ -471,10 +532,8 @@ describe('#382 pi extension: session file reports', () => {
 
 describe('#231 pi extension: the copied runtime resolver', () => {
   it('agrees with the OpenCode plugin it was copied from', async () => {
-    // Both files are installed verbatim as a SINGLE file into another program's
-    // config directory, so there is nowhere shared to import from and the
-    // duplication is forced. A duplicate with no enforcement is a time bomb
-    // (#137, #168) — so it is pinned here instead.
+    // The installed extension stays self-contained; compare the resolvers so
+    // their copies cannot silently drift.
     const piResolve = (await load()).default.__wmuxInternals.resolveNodeRuntime;
     const ocResolve = (await import(/* @vite-ignore */ OPENCODE_PLUGIN))
       .WmuxPlugin.__wmuxInternals.resolveNodeRuntime;

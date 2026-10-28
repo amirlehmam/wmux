@@ -1,64 +1,16 @@
 /**
- * pi (@earendil-works/pi-coding-agent) integration — issue #231.
- *
- * The fifth agent wmux teaches about itself, after Claude Code, OpenCode, Kiro
- * and omp. #165 was filed as "support for omp/pi" and closed once omp worked;
- * the reporter of #231 is right that this left pi out. They are separate
- * harnesses with separate config roots, and a pi pane sat on "Running" for the
- * whole time pi was open — the shell-integration's honest report about a
- * long-lived foreground process, and useless for triage.
- *
- * ── Where the block goes, and why it is not just "AGENTS.md" ─────────────────
- *
- * pi loads ONE user-scope context file, from `getAgentDir()` — `~/.pi/agent` —
- * taking the first name that exists from:
- *
- *     AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD
- *
- * (`loadContextFileFromDir` in pi's resource-loader). First match wins and the
- * rest are never read. So the obvious implementation — always write
- * `AGENTS.md`, as the omp integration does — is silently a no-op on a machine
- * that already has `AGENTS.override.md`, which is exactly the file a pi user
- * who cares about their context is most likely to have. wmux would create a
- * second file, report success, and reach nobody.
- *
- * Hence `getPiContextFilePath()`: splice into the file pi will ACTUALLY read,
- * and only fall back to creating `AGENTS.md` when the directory has none of
- * them. The block is spliced between markers either way — these are the user's
- * own instruction files, and everything outside the markers is left alone.
- *
- * Note the `agent` segment, as in omp: `~/.pi/` is also the project-local
- * config directory name, and only the user-level files live under `agent/`.
- *
- * ── Why there IS an extension here, when omp got none ────────────────────────
- *
- * omp-context.ts declines to install hooks, and the reason is specific rather
- * than a general policy: omp discovers hooks from `.omp/hooks/` *inside a
- * project*, so wiring the sidebar that way would mean writing into every
- * repository the user opens — issue #132's complaint exactly. It then says an
- * extension "is the right shape for a follow-up, since extensions CAN be
- * configured globally".
- *
- * pi is that follow-up's other half. It auto-discovers extensions from
- * `~/.pi/agent/extensions/`, globally, for every session — one file, in the
- * user's own config root, removable, and gated behind the same consent as
- * everything else. No repository is touched. See resources/pi-extension/wmux.js
- * for what it reports and why each event maps the way it does.
+ * Pi's extension scopes instructions to wmux sessions without installing them in
+ * personal context files. Compact rules load automatically; the detailed reference is
+ * read on demand. Instructions and status reporting have independent consent.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { injectWmuxBlock, readRenderedInstructions } from './agent-instructions';
-import { stripWmuxBlock, stripLegacyBlocks } from './claude-context';
-import { isWmuxPluginFile, pluginNeedsUpdate } from './agent-plugin-file';
+import { readRenderedInstructions } from './agent-instructions';
+import { stripWmuxBlock } from './claude-context';
+import { isWmuxPluginFile } from './agent-plugin-file';
 
-/**
- * The context-file names pi looks for, in pi's own priority order.
- *
- * Copied from pi rather than reduced to "AGENTS.md" because the ORDER is the
- * load-bearing part: see the header. Kept as a literal list so a future reader
- * can diff it against pi's `loadContextFileFromDir` when pi changes.
- */
+/** Sweep every legacy context filename, including ones Pi no longer selects. */
 export const PI_CONTEXT_FILE_NAMES = [
   'AGENTS.override.md',
   'AGENTS.md',
@@ -67,8 +19,12 @@ export const PI_CONTEXT_FILE_NAMES = [
   'CLAUDE.MD',
 ] as const;
 
-/** What wmux creates when the directory holds none of the above. */
-const PI_DEFAULT_CONTEXT_FILE = 'AGENTS.md';
+export interface PiExtensionFeatures {
+  instructions: boolean;
+  hooks: boolean;
+}
+
+const REFERENCE_MARKER = '<!-- wmux-pi-reference — AUTO-MANAGED BY wmux. -->';
 
 /**
  * `~/.pi/agent`, honouring the same env override pi itself honours.
@@ -93,47 +49,9 @@ export function getPiAgentDir(): string {
 }
 
 /**
- * The file pi will read for user-scope context — the first candidate that
- * exists, else the one to create.
- *
- * Deliberately resolved on every call rather than cached: the user can add an
- * `AGENTS.override.md` between two launches, and a cached answer would keep
- * writing to a file that has stopped being read.
- */
-export function getPiContextFilePath(agentDir = getPiAgentDir()): string {
-  for (const name of PI_CONTEXT_FILE_NAMES) {
-    const candidate = path.join(agentDir, name);
-    try {
-      if (fs.statSync(candidate).isFile()) return candidate;
-    } catch { /* next candidate */ }
-  }
-  return path.join(agentDir, PI_DEFAULT_CONTEXT_FILE);
-}
-
-/** Ensures pi's user-scope context file contains the wmux block. */
-export function ensurePiContext(): void {
-  try {
-    // Rendered, not read: carries this install's absolute CLI path (#158).
-    const wmuxBlock = readRenderedInstructions();
-    if (wmuxBlock === null) return;
-
-    const contextPath = getPiContextFilePath();
-    fs.mkdirSync(path.dirname(contextPath), { recursive: true });
-    const existing = fs.existsSync(contextPath) ? fs.readFileSync(contextPath, 'utf-8') : '';
-    const next = injectWmuxBlock(existing, wmuxBlock, stripLegacyBlocks);
-    // Don't churn the mtime when nothing changed — pi reloads these on /reload.
-    if (next === existing) return;
-    fs.writeFileSync(contextPath, next, 'utf-8');
-    console.log('[wmux] Updated wmux context in', contextPath);
-  } catch (err) {
-    console.warn('[wmux] Failed to update pi context:', err);
-  }
-}
-
-/**
  * Remove the wmux block (#132's inverse requirement).
  *
- * Sweeps EVERY candidate name rather than only the one currently being written.
+ * Sweeps every candidate name, not just the filename selected by older releases.
  * A user who adds an `AGENTS.override.md` after wmux has already written
  * `AGENTS.md` would otherwise be left with an orphaned block in a file nothing
  * reads and nothing can ever clean up — an uninstall that does not uninstall is
@@ -159,9 +77,9 @@ export function removePiContext(): void {
   }
 }
 
-/** Where the extension lands: `<agentDir>/extensions/wmux.js`. */
+/** Pi discovers the directory through its index.js entry point. */
 export function getPiExtensionPath(agentDir = getPiAgentDir()): string {
-  return path.join(agentDir, 'extensions', 'wmux.js');
+  return path.join(agentDir, 'extensions', 'wmux', 'index.js');
 }
 
 /**
@@ -183,8 +101,47 @@ function getPiExtensionSrcPath(): string {
   return path.join(__dirname, '../../resources/pi-extension/wmux.js');
 }
 
-/** Installs/updates the wmux pi extension into `<agentDir>/extensions/`. */
-export function ensurePiExtension(): void {
+/** A Markdown sibling is not auto-loaded as an extension, skill, or context file. */
+function getPiReferencePath(): string {
+  return path.join(path.dirname(getPiExtensionPath()), 'reference.md');
+}
+
+/** Reuse the shared command guide without its global-session presence checks. */
+function ensurePiReference(): string | null {
+  try {
+    const block = readRenderedInstructions();
+    if (block === null) return null;
+    const start = block.indexOf('## Browser');
+    if (start === -1) throw new Error('wmux command reference is missing');
+    const reference = `${REFERENCE_MARKER}\n\n# wmux command reference\n\n${block.slice(start)
+      .replace('`wmux ping` says wmux is absent', 'wmux is unavailable')
+      .replace(/\s*<!-- wmux:end -->\s*$/, '\n')}`;
+    const dest = getPiReferencePath();
+    const existing = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf-8') : null;
+    if (existing !== null && !existing.startsWith(REFERENCE_MARKER)) {
+      throw new Error(`Leaving an unmanaged pi reference untouched: ${dest}`);
+    }
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    if (existing !== reference) fs.writeFileSync(dest, reference, 'utf-8');
+    return dest;
+  } catch (err) {
+    console.warn('[wmux] Failed to install the pi reference:', err);
+    return null;
+  }
+}
+
+/** Never remove a reference just because its filename matches. */
+function removePiReference(): void {
+  try {
+    const dest = getPiReferencePath();
+    if (fs.existsSync(dest) && fs.readFileSync(dest, 'utf-8').startsWith(REFERENCE_MARKER)) fs.unlinkSync(dest);
+  } catch (err) {
+    console.warn('[wmux] Failed to remove the pi reference:', err);
+  }
+}
+
+/** Embed a consent snapshot so changes apply on Pi's next reload, without polling. */
+export function ensurePiExtension(features: PiExtensionFeatures): void {
   try {
     const srcPath = getPiExtensionSrcPath();
     if (!fs.existsSync(srcPath)) {
@@ -193,11 +150,37 @@ export function ensurePiExtension(): void {
     }
     const src = fs.readFileSync(srcPath, 'utf-8');
     const dest = getPiExtensionPath();
+    // Pi prefers these entry points over index.js; do not migrate into a user's extension.
+    if (['index.ts', 'package.json'].some(name => fs.existsSync(path.join(path.dirname(dest), name)))) {
+      console.warn('[wmux] Leaving an existing pi extension directory untouched');
+      return;
+    }
+    const legacy = path.join(getPiAgentDir(), 'extensions', 'wmux.js');
     const target = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf-8') : null;
-    if (!pluginNeedsUpdate(src, target)) return;
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, src, 'utf-8');
-    console.log('[wmux] Installed the wmux pi extension to', dest);
+    const previous = fs.existsSync(legacy) ? fs.readFileSync(legacy, 'utf-8') : null;
+    if ((target !== null && !isWmuxPluginFile(target)) || (previous !== null && !isWmuxPluginFile(previous))) {
+      console.warn('[wmux] Leaving an unmanaged pi extension untouched');
+      return;
+    }
+    const reference = ensurePiReference();
+    const instructions = features.instructions && reference ? [
+      '# wmux',
+      'This session is running inside wmux; no presence check is needed.',
+      '- Prefer `wmux browser` for browsing so the user can watch; an explicit user tool choice takes precedence.',
+      '- Open documents for user review with `wmux markdown` instead of dumping them into the terminal.',
+      '- When asking the user a question, declare `wmux report-agent --blocked` with the actual answer keys/text; report `--unblocked` after acting on the answer.',
+      '- Declare background workers with `wmux report-subagent` and mark them `--done` when finished.',
+      `Before using these commands, read \`${reference}\` for syntax, examples, and limitations.`,
+      'If wmux is unavailable, report the failure and use your normal tools.',
+    ].join('\n') : '';
+    const rendered = `${src.trimEnd()}\n\nwmuxExtension.config = ${JSON.stringify({ instructions, hooks: features.hooks })};\n`;
+    if (target !== rendered) {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, rendered, 'utf-8');
+      console.log('[wmux] Installed the wmux pi extension to', dest);
+    }
+    // Remove the old entry point only after its replacement is on disk.
+    if (previous !== null) fs.unlinkSync(legacy);
   } catch (err) {
     console.warn('[wmux] Failed to install the pi extension:', err);
   }
@@ -212,12 +195,19 @@ export function ensurePiExtension(): void {
  * that happens to share a name.
  */
 export function removePiExtension(): void {
+  removePiReference();
   try {
     const dest = getPiExtensionPath();
-    if (!fs.existsSync(dest)) return;
-    if (!isWmuxPluginFile(fs.readFileSync(dest, 'utf-8'))) return;
-    fs.unlinkSync(dest);
-    console.log('[wmux] Removed the wmux pi extension from', dest);
+    const legacy = path.join(getPiAgentDir(), 'extensions', 'wmux.js');
+    let removedEntry = false;
+    for (const file of [dest, legacy]) {
+      if (!fs.existsSync(file) || !isWmuxPluginFile(fs.readFileSync(file, 'utf-8'))) continue;
+      fs.unlinkSync(file);
+      if (file === dest) removedEntry = true;
+      console.log('[wmux] Removed the wmux pi extension from', file);
+    }
+    const dir = path.dirname(dest);
+    if (removedEntry && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
   } catch (err) {
     console.warn('[wmux] Failed to remove the pi extension:', err);
   }

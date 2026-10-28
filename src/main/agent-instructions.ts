@@ -1,12 +1,7 @@
 /**
- * The wmux block that gets spliced into every agent's global context file.
- *
- * One source (`resources/claude-instructions.md`), read by three writers —
- * claude-context.ts, opencode-context.ts and kiro-context.ts — each of which
- * used to carry its own copy of the path lookup. It is centralised here because
- * the block is no longer a static file: it carries one interpolated fact, and a
- * fact interpolated in two of three places is worse than one interpolated
- * nowhere.
+ * Shared wmux instruction source for context files, skills, and extension references.
+ * Centralised path rendering keeps install-specific CLI locations consistent
+ * across delivery mechanisms.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -53,10 +48,8 @@ const END_MARKER = '<!-- wmux:end -->';
 /**
  * Splice the wmux block into a context file the user also writes in.
  *
- * Shared by every agent whose context file is a single shared document
- * (Claude Code's CLAUDE.md, OpenCode's AGENTS.md, omp's AGENTS.md, and whichever
- * of pi's candidate names pi will actually read — see pi-context.ts). Kiro is
- * the exception: it gets a file of wmux's own, so it has nothing to splice.
+ * Used for shared context files such as Claude Code's CLAUDE.md and OpenCode's
+ * or omp's AGENTS.md. Integrations with a dedicated file have nothing to splice.
  *
  * `trimEnd()` on the block is load-bearing and not cosmetic. The block ends
  * with a newline and so does the text following the old END_MARKER, so keeping
@@ -190,7 +183,7 @@ export function buildContextStub(cliBinDir: string, skillPath: string): string {
 /**
  * Read and render the block, or null when the resource is missing.
  *
- * Returning null rather than throwing keeps the three callers' existing
+ * Returning null rather than throwing keeps callers' existing
  * behaviour: a missing resource warns and skips, it does not stop startup.
  */
 export function readRenderedInstructions(): string | null {

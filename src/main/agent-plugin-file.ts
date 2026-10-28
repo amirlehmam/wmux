@@ -1,20 +1,9 @@
 /**
- * The version marker wmux stamps into every plugin/extension file it installs
- * into another program's config directory, and the two decisions that depend
- * on it.
- *
- * There are now two of these — the OpenCode plugin (#149/#191) and the pi
- * extension (#231) — and they need exactly the same two answers:
- *
- *   install  is the copy on disk a different version of OURS?
- *   remove   is the copy on disk ours at all?
- *
- * The second is the one that must not be reimplemented per agent. Removing a
- * file the user wrote under a name wmux happens to use is unrecoverable data
- * loss, and it is the kind of guard a second copy loses first: the copy written
- * for omp had already dropped `trimEnd()` from the block splice (see
- * agent-instructions.ts), which is the same failure mode with a cosmetic
- * consequence instead of a destructive one.
+ * Shared ownership markers and version-based update checks for agent plugins.
+ * Installers with embedded configuration, such as Pi's, compare full contents
+ * for updates and use the marker only to establish ownership.
+ * Never infer ownership from a filename: replacing or removing a user's own
+ * file under the same name would be unrecoverable data loss.
  */
 
 /**
