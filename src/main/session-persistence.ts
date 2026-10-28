@@ -4,6 +4,7 @@
  * (#113, #145) and the scheduled `Auto-save …` snapshots (#238).
  */
 import fs from 'fs';
+import { createHash } from 'crypto';
 import path from 'path';
 import { getAppDataDir } from '../shared/instance';
 import type { BrowserHistory } from '../shared/browser-history';
@@ -121,6 +122,16 @@ export function getSessionPath(): string {
 const AUTO_BACKUP_PREFIX = 'Auto-backup';
 const AUTO_BACKUP_KEEP = 3;
 
+export interface AutoSessionBackup {
+  name: string;
+  fingerprint: string;
+}
+
+/** Exact content provenance, independent of the automatic backup's display name. */
+export function sessionBackupFingerprint(session: unknown): string {
+  return createHash('sha256').update(JSON.stringify(withoutTerminalHistory(session))).digest('hex');
+}
+
 /**
  * Archive the volatile auto-session as a *named* session before it is cleared
  * on a version change (issue #113: a user lost 20+ renamed tabs by updating
@@ -138,16 +149,16 @@ const AUTO_BACKUP_KEEP = 3;
  * own thing": browsers back on the default page, pinned tabs unpinned, and a
  * second window's workspaces simply gone.
  */
-function backupAutoSession(previousVersion: string): void {
+export function backupAutoSession(previousVersion: string): AutoSessionBackup | null {
   try {
-    if (!fs.existsSync(SESSION_FILE)) return;
+    if (!fs.existsSync(SESSION_FILE)) return null;
     const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')) as SessionData;
     const windows = Array.isArray(data?.windows) ? data.windows : [];
     // Every window's workspaces, in window order. A named session restores into
     // a single window, so a multi-window layout comes back flattened — losing
     // the window split is a far smaller surprise than losing the tabs.
     const workspaces = windows.flatMap(w => (Array.isArray(w?.workspaces) ? w.workspaces : []));
-    if (workspaces.length === 0) return;
+    if (workspaces.length === 0) return null;
 
     const backup = {
       name: previousVersion ? `${AUTO_BACKUP_PREFIX} v${previousVersion}` : AUTO_BACKUP_PREFIX,
@@ -177,14 +188,18 @@ function backupAutoSession(previousVersion: string): void {
     // Write directly instead of via saveNamedSession: a safety net must not
     // hijack the user's last-session pointer.
     if (!fs.existsSync(SAVED_DIR)) fs.mkdirSync(SAVED_DIR, { recursive: true });
-    fs.writeFileSync(
-      path.join(SAVED_DIR, sanitizeName(backup.name) + '.json'),
-      JSON.stringify(withoutTerminalHistory(backup), null, 2),
-      'utf-8'
-    );
+    const file = path.join(SAVED_DIR, sanitizeName(backup.name) + '.json');
+    const temp = file + '.tmp';
+    try {
+      fs.writeFileSync(temp, JSON.stringify(withoutTerminalHistory(backup), null, 2), 'utf-8');
+      fs.renameSync(temp, file);
+    } finally {
+      try { fs.unlinkSync(temp); } catch { /* only our abandoned temporary file */ }
+    }
     pruneAutoBackups();
+    return { name: backup.name, fingerprint: sessionBackupFingerprint(backup) };
   } catch {
-    /* best-effort — never block startup on a backup failure */
+    return null;
   }
 }
 
@@ -242,15 +257,24 @@ export function savedVersion(): string {
   } catch { return ''; }
 }
 
-export function handleVersionChange(currentVersion: string): boolean {
+export function handleVersionChange(currentVersion: string, history?: {
+  pending(): boolean;
+  prepare(backup: AutoSessionBackup | null, session: SessionData): boolean;
+}): boolean {
   ensureDirectories();
   try {
     const saved = fs.existsSync(VERSION_FILE) ? fs.readFileSync(VERSION_FILE, 'utf-8').trim() : '';
     if (saved === currentVersion) return false;
     // Archive, then reset, only the volatile auto-session. Named sessions
     // (SAVED_DIR) and the last-session pointer are intentionally preserved.
-    backupAutoSession(saved);
-    try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch {}
+    // A crash after auto-session removal must not overwrite the durable handoff
+    // with an empty backup on the next launch, even before the version stamp.
+    if (!history?.pending()) {
+      const session = loadSession();
+      const backup = backupAutoSession(saved);
+      if (session && history && !history.prepare(backup, session)) return false;
+    }
+    if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE);
     fs.writeFileSync(VERSION_FILE, currentVersion, 'utf-8');
     return true;
   } catch { return false; }

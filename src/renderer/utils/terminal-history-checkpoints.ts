@@ -148,6 +148,15 @@ export class TerminalHistoryCheckpoints {
     };
   }
 
+  /** Destructive close precedes React cleanup and must cancel even a pending write fence. */
+  close(surface: string): void {
+    const terminal = this.options.terminals().get(surface);
+    const candidate = terminal && this.candidates.get(terminal);
+    if (!candidate) return;
+    candidate.ready = () => false;
+    candidate.cancellation.abort();
+  }
+
   lineLimitChanged(terminal: Terminal): void {
     const candidate = this.candidates.get(terminal);
     if (candidate) candidate.revision++;

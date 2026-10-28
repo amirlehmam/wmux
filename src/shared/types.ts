@@ -882,6 +882,7 @@ export const IPC_CHANNELS = {
   SESSION_HISTORY_DONE: 'session:history-done',
   SESSION_SAVE_NAMED: 'session:save-named',
   SESSION_LOAD_NAMED: 'session:load-named',
+  SESSION_LOAD_STARTUP_FALLBACK: 'session:load-startup-fallback',
   SESSION_LIST_NAMED: 'session:list-named',
   /** Pick a wmux.workspace.json and open it (#284). Main does all of it. */
   WORKSPACE_FILE_OPEN: 'workspace-file:open',

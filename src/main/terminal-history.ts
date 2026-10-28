@@ -26,6 +26,7 @@ interface Association {
   incarnation: string;
   binding: TerminalHistoryBinding | null;
   startup: boolean;
+  readable: boolean;
   committedRevision: number;
   revision: number;
   retryRevision: boolean;
@@ -75,6 +76,7 @@ export class TerminalHistoryStore {
   private readonly associations = new Map<number, Map<string, Association>>();
   private readonly startup = new Map<number, Map<string, TerminalHistoryReference>>();
   private readonly revoked = new Set<string>();
+  private readonly detached = new Map<number, TerminalHistoryReference[]>();
   private readonly pending = new Set<Promise<unknown>>();
   private readonly retryDeletes = new Set<string>();
 
@@ -105,6 +107,7 @@ export class TerminalHistoryStore {
         for (const group of this.associations.values()) {
           for (const association of group.values()) {
             association.startup = false;
+            association.readable = false;
             association.committedRevision = 0;
           }
         }
@@ -150,7 +153,7 @@ export class TerminalHistoryStore {
     if (!association) {
       association = {
         owner, surface, incarnation: randomUUID(), binding: null,
-        startup: false, committedRevision: 0, revision: 0, retryRevision: false, tail: Promise.resolve(),
+        startup: false, readable: false, committedRevision: 0, revision: 0, retryRevision: false, tail: Promise.resolve(),
       };
       group.set(surface, association);
     }
@@ -169,6 +172,7 @@ export class TerminalHistoryStore {
         incarnation: association.incarnation,
       };
       association.startup = reference !== undefined;
+      association.readable = reference !== undefined;
       association.revision = 0;
       association.committedRevision = 0;
       association.retryRevision = false;
@@ -230,6 +234,7 @@ export class TerminalHistoryStore {
         if (!this.current(association, binding, revision)) return failure('stale');
         association.committedRevision = revision;
         association.startup = false;
+        association.readable = false;
         return success({ reference: { recordId: binding.recordId, generation: binding.generation }, revision });
       } catch (error) {
         return failure(this.ioError(error));
@@ -246,9 +251,9 @@ export class TerminalHistoryStore {
   /** Fresh associations cannot read a coincidentally matching surface or record identity. */
   read(owner: number, surface: string, binding: TerminalHistoryBinding): Promise<HistoryResult<TerminalHistoryRecord>> {
     const association = this.authorized(owner, surface, binding);
-    if (!association || !association.startup) return Promise.resolve(failure(this.canUse() ? 'unauthorized' : 'disabled'));
+    if (!association || !association.readable) return Promise.resolve(failure(this.canUse() ? 'unauthorized' : 'disabled'));
     return this.enqueue(association, async () => {
-      if (!this.current(association, binding) || !association.startup) return failure('stale');
+      if (!this.current(association, binding) || !association.readable) return failure('stale');
       try {
         await this.ensureDirectory(false);
         const target = this.recordPath(binding.recordId);
@@ -261,7 +266,7 @@ export class TerminalHistoryStore {
           if (!opened.isFile() || opened.ino !== before.ino || opened.dev !== before.dev) return failure('invalid-target');
           raw = await handle.readFile('utf8');
         } finally { await handle.close(); }
-        if (!this.current(association, binding)) return failure('stale');
+        if (!this.current(association, binding) || !association.readable) return failure('stale');
         const envelope = JSON.parse(raw) as { generation?: unknown; record?: unknown } | null;
         if (!envelope || envelope.generation !== this.generation) return failure('stale');
         const validated = validateTerminalHistory(envelope.record);
@@ -288,10 +293,11 @@ export class TerminalHistoryStore {
   }
 
   /** An explicit named-layout load cannot consume automatic startup read grants. */
-  discardStartup(owner: number): void {
+  discardStartup(owner: number, retained: ReadonlySet<string> = new Set()): void {
     this.startup.delete(owner);
     for (const association of this.associations.get(owner)?.values() ?? []) {
-      if (!association.startup) continue;
+      association.readable = false;
+      if (!association.startup || retained.has(association.surface)) continue;
       association.startup = false;
       association.binding = null;
     }
@@ -299,8 +305,37 @@ export class TerminalHistoryStore {
 
   /** Revoking a destroyed renderer is not a decision to erase its automatic-session history. */
   revokeOwner(owner: number): void {
+    const references = this.ownerReferences(owner);
+    if (references.length) this.detached.set(owner, references);
     this.associations.delete(owner);
     this.startup.delete(owner);
+  }
+
+  surfacesFor(owner: number): string[] {
+    return [...(this.associations.get(owner)?.keys() ?? [])];
+  }
+
+  private ownerReferences(owner: number): TerminalHistoryReference[] {
+    return [...(this.detached.get(owner) ?? []),
+      ...(this.startup.get(owner)?.values() ?? []),
+      ...[...(this.associations.get(owner)?.values() ?? [])].flatMap((entry) => entry.binding
+        ? [{ recordId: entry.binding.recordId, generation: entry.binding.generation }] : [])];
+  }
+
+  /** Window discard may arrive after destroyed revoked authority. Keep IDs until that decision. */
+  discardOwner(owner: number, references: readonly TerminalHistoryReference[] = []): Promise<HistoryResult> {
+    const all = [...this.ownerReferences(owner), ...references];
+    this.revokeOwner(owner);
+    this.detached.delete(owner);
+    const ids = new Set(all.filter(isTerminalHistoryReference).map((ref) => ref.recordId));
+    for (const id of ids) this.revoked.add(id);
+    const pending = [...this.pending];
+    return this.track(Promise.allSettled(pending).then(async () => {
+      const removed = await Promise.all([...ids].map((id) => this.removeFile(this.recordPath(id))));
+      if (removed.every(Boolean)) return success(undefined);
+      this.error = 'cleanup';
+      return failure('cleanup');
+    }));
   }
 
   /** Call only after main has enumerated ALL automatic window/handoff references. No age eviction. */

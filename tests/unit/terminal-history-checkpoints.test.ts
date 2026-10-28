@@ -272,6 +272,28 @@ describe('dirty terminal checkpoints', () => {
     expect(kit.records[0].record.normal.ansi).toContain('late');
   });
 
+  it('destructive close cancels capture before unmount and an old fence cannot recapture a reopened ID', async () => {
+    const kit = setup();
+    const old = kit.add('a');
+    await write(old.terminal, 'closed');
+    const serialize = vi.spyOn(old.serializer, 'serialize');
+    const queue = gate(old.terminal);
+    const pending = kit.coordinator.request();
+    await queue.arrived;
+    kit.coordinator.close('a');
+    expect(await pending).toBe(true);
+    // The old instance is still mounted; even new mutations must remain excluded.
+    old.terminal.write('after-close');
+    expect(await kit.coordinator.request()).toBe(true);
+    expect(kit.bridge.checkpoint).not.toHaveBeenCalled();
+    const replacement = kit.add('a');
+    await write(replacement.terminal, 'replacement');
+    await queue.drain();
+    expect(serialize).not.toHaveBeenCalled();
+    expect(await kit.coordinator.request()).toBe(true);
+    expect(kit.records.map((row) => row.record.normal.ansi)).toEqual(['replacement']);
+  });
+
   it('does not strand future checkpoints when a candidate is disposed before its fence callback', async () => {
     const kit = setup();
     const old = kit.add('a');

@@ -45,6 +45,7 @@ import { sessionWindows, toRestorePayload, restoreAnswerFor } from './session-wi
 import { loadSettings, saveSetting } from './settings-store';
 import { TerminalHistoryStore, TERMINAL_HISTORY_SETTINGS_KEY } from './terminal-history';
 import { TerminalHistoryIntegration } from './terminal-history-integration';
+import { TerminalHistoryHandoff } from './terminal-history-handoff';
 import { notificationEffects } from './notification-effects';
 import { stampAgentSessionIds } from './agent-session-persistence';
 import { readConsent, updateConsent } from './agent-integration';
@@ -104,6 +105,7 @@ let historyWindowManager: WindowManager | undefined;
 
 // One process-wide store; the desktop manager becomes available at IPC setup.
 export const terminalHistory = new TerminalHistoryIntegration({
+  handoff: new TerminalHistoryHandoff(),
   store: new TerminalHistoryStore({ settings: { load: loadSettings, save: saveSetting } }),
   ownerWindow: (owner) => {
     if (!historyWindowManager) return null;
@@ -744,6 +746,10 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.on(IPC_CHANNELS.PTY_KILL, (_event, id: SurfaceId) => {
+    const closedHistory = terminalHistory.closeSurface(_event.sender.id, id);
+    const owner = surfaceOwners.get(id);
+    // An exited terminal's history grants no authority over another window's replacement child.
+    if (owner !== undefined ? owner !== _event.sender.id : !closedHistory) return;
     ptyManager.kill(id);
     forgetSurface(id);
   });
@@ -1185,7 +1191,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_NAMED, (event, name: string) => {
     const session = loadNamedSession(name);
-    if (session) terminalHistory.discardStartup(event.sender.id);
+    if (session) terminalHistory.selectNamed(event.sender.id, session);
     return session;
   });
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_NAMED, () => {

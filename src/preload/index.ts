@@ -385,6 +385,8 @@ contextBridge.exposeInMainWorld('wmux', {
   session: {
     save: (session: any) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SAVE_NAMED, session),
     load: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD_NAMED, name),
+    loadStartupFallback: (name: string): Promise<import('../shared/types').SavedSession | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD_STARTUP_FALLBACK, name),
     list: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_NAMED),
     delete: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE_NAMED, name),
     loadAuto: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD_AUTO),

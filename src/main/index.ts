@@ -44,7 +44,6 @@ import { resolveUserDataDir } from './chromium-profile';
 import { WORKSPACE_MANIFEST_METHODS, handleWorkspaceManifestV2, pickAndOpenManifest, type ManifestHostDeps } from './workspace-manifest-v2';
 import {
   loadSession,
-  saveSession,
   handleVersionChange,
   savedVersion,
   SessionData,
@@ -462,9 +461,7 @@ const windowManager = new WindowManager();
 // everything for the next launch.
 windowManager.onWindowClosed = (id, webContentsId) => {
   clearFileGrants(webContentsId);
-  if (isQuitting || windowManager.getCount() === 0) return;
-  sessionWindows.forget(id);
-  saveSession({ version: 1, windows: sessionWindows.toArray() });
+  terminalHistory.closeWindow(id, webContentsId, isQuitting, windowManager.getCount());
 };
 
 // Agent exit → renderer. Without this broadcast, sidebar agent lines would
@@ -1497,7 +1494,7 @@ process.on('uncaughtExceptionMonitor', (err: unknown) => {
   });
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // A losing second instance is already quitting; don't run startup side effects.
   if (!gotInstanceLock) return;
 
@@ -1624,7 +1621,10 @@ app.whenReady().then(() => {
 
   // Clear stale session data on version change (clean start for upgrades/fresh installs)
   const previousVersion = savedVersion();
-  handleVersionChange(app.getVersion());
+  handleVersionChange(app.getVersion(), {
+    pending: () => terminalHistory.hasUpgrade(loadSession()),
+    prepare: (backup, session) => terminalHistory.prepareUpgrade(backup, session),
+  });
   // Did this update change the app icon? If so the taskbar may still draw the
   // old one (issues #137/#226) — the renderer asks for this once and turns it
   // into a bell notification pointing at Settings → General.
@@ -1643,6 +1643,7 @@ app.whenReady().then(() => {
   // up empty instead of cloning one, which would duplicate its surface ids —
   // and PTY id is surface id, so the clone would attach to live PTYs (#143).
   const savedSession = loadSession();
+  await terminalHistory.cleanupStartup(savedSession);
   const savedWindows = (savedSession?.windows ?? []).slice(0, MAX_RESTORED_WINDOWS);
   pruneRestoredClaudeSessions(savedWindows);
   pruneRestoredQwenSessions(savedWindows);

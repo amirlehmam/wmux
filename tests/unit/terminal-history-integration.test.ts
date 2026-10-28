@@ -222,6 +222,112 @@ describe('automatic history publication and ownership', () => {
     expect(broadcast).toHaveBeenLastCalledWith(expect.objectContaining({ error: 'cleanup' }));
   });
 
+  it('a delayed close cannot erase a reopened same-ID terminal or publish an old write', async () => {
+    integration.associate(1, 'surf-a');
+    windows.prime('win-a', windowState('surf-a'));
+    const old = binding(integration);
+    const rename = fs.promises.rename.bind(fs.promises);
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (...args) => {
+      entered(); await gate; return rename(...args);
+    });
+    const pending = integration.checkpoint(1, 'surf-a', old, 1, record('closed-output'));
+    await started;
+    expect(integration.closeSurface(2, 'surf-a')).toBe(false);
+    expect(integration.closeSurface(1, 'surf-a')).toBe(true);
+    expect(integration.getBinding(1, 'surf-a').ok).toBe(false);
+    expect(windows.get('win-a')!.terminalHistory).toBeUndefined();
+    integration.associate(1, 'surf-a');
+    const replacement = binding(integration);
+    expect(replacement.incarnation).not.toBe(old.incarnation);
+    expect(await integration.checkpoint(1, 'surf-a', replacement, 1, record('replacement'))).toMatchObject({ ok: true });
+    release();
+    expect(await pending).toMatchObject({ ok: false });
+    await vi.waitFor(() => expect(fs.existsSync(path.join(root, 'history', old.recordId + '.json'))).toBe(false));
+    expect(binding(integration)).toEqual(replacement);
+    expect(windows.get('win-a')!.terminalHistory?.['surf-a'].recordId).toBe(replacement.recordId);
+  });
+
+  it.each([[false, 1, false], [false, 0, true], [true, 1, true]] as const)(
+    'window close quitting=%s remaining=%s retains=%s even after destroyed revoked authority', async (quitting, remaining, retained) => {
+      integration.associate(1, 'surf-a');
+      windows.prime('win-a', windowState('surf-a'));
+      const token = binding(integration);
+      await integration.checkpoint(1, 'surf-a', token, 1, record());
+      integration.revokeOwner(1);
+      owners.delete(1);
+      expect(integration.getBinding(1, 'surf-a').ok).toBe(false);
+      integration.closeWindow('win-a', 1, quitting, remaining);
+      const file = path.join(root, 'history', token.recordId + '.json');
+      if (!retained) await vi.waitFor(() => expect(fs.existsSync(file)).toBe(false));
+      expect(fs.existsSync(file)).toBe(retained);
+      expect(windows.get('win-a') !== null).toBe(retained);
+    });
+
+  it('window discard also deletes an unpublished rename after destroyed has already revoked its owner', async () => {
+    integration.associate(1, 'surf-a');
+    windows.prime('win-a', windowState('surf-a'));
+    const old = binding(integration);
+    const rename = fs.promises.rename.bind(fs.promises);
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (...args) => { entered(); await gate; return rename(...args); });
+    const pending = integration.checkpoint(1, 'surf-a', old, 1, record());
+    await started;
+    expect(windows.get('win-a')!.terminalHistory).toBeUndefined();
+    integration.revokeOwner(1);
+    owners.delete(1);
+    integration.closeWindow('win-a', 1, false, 1);
+    release();
+    expect(await pending).toMatchObject({ ok: false });
+    await vi.waitFor(() => expect(fs.readdirSync(path.join(root, 'history'))).toEqual([]));
+    expect(windows.get('win-a')).toBeNull();
+  });
+
+  it('disable strips every window immediately while retaining lifetime metadata for open buffers', async () => {
+    const tokens = [];
+    for (const [owner, surface] of [[1, 'surf-a'], [2, 'surf-b']] as const) {
+      integration.associate(owner, surface);
+      windows.prime(owners.get(owner)!, windowState(surface));
+      const issued = binding(integration, owner, surface);
+      tokens.push(issued);
+      expect(await integration.checkpoint(owner, surface, issued, 1, record())).toMatchObject({ ok: true });
+    }
+    const disabled = integration.setEnabled(false);
+    expect(windows.toArray().map((state) => state.terminalHistory)).toEqual([undefined, undefined]);
+    expect(persist.mock.lastCall![0].windows.map((state: SessionWindowState) => state.terminalHistory)).toEqual([undefined, undefined]);
+    expect(await disabled).toMatchObject({ ok: true });
+    expect(integration.getBinding(1, 'surf-a')).toMatchObject({ value: { binding: null, incarnation: tokens[0].incarnation } });
+    expect(integration.getBinding(2, 'surf-b')).toMatchObject({ value: { binding: null, incarnation: tokens[1].incarnation } });
+    await integration.setEnabled(true);
+    expect(windows.toArray().map((state) => state.terminalHistory)).toEqual([undefined, undefined]);
+  });
+
+  it('manual selection preserves reused open buffers but drops other associations and saved-ID grants', async () => {
+    integration.associate(1, 'surf-a');
+    integration.associate(1, 'surf-dropped');
+    const state = windowState('surf-a');
+    state.workspaces[0].splitTree.surfaces.push({ id: 'surf-dropped', type: 'terminal' });
+    windows.prime('win-a', state);
+    const kept = binding(integration);
+    const dropped = binding(integration, 1, 'surf-dropped');
+    await integration.checkpoint(1, 'surf-a', kept, 1, record('visible-live-buffer'));
+    await integration.checkpoint(1, 'surf-dropped', dropped, 1, record('dropped'));
+    const incoming = { name: 'manual', savedAt: 1, workspaces: windowState('surf-a').workspaces };
+    integration.selectNamed(1, incoming as any);
+    expect(binding(integration)).toEqual(kept);
+    expect(integration.getBinding(1, 'surf-dropped').ok).toBe(false);
+    await vi.waitFor(() => expect(fs.existsSync(path.join(root, 'history', dropped.recordId + '.json'))).toBe(false));
+    integration.associate(1, 'surf-dropped');
+    expect(binding(integration, 1, 'surf-dropped').recordId).not.toBe(dropped.recordId);
+    expect(await integration.read(1, 'surf-dropped', binding(integration, 1, 'surf-dropped'))).toMatchObject({ ok: false });
+  });
+
   it('reports actual store failures and broadcasts disabled generations, rejecting old writes', async () => {
     integration.associate(1, 'surf-a');
     windows.prime('win-a', windowState('surf-a'));
@@ -292,6 +398,85 @@ describe('production IPC ownership hooks and preload capture', () => {
     }
     expect(first.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.TERMINAL_HISTORY_STATE, ipc.terminalHistory.getState());
     expect(second.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.TERMINAL_HISTORY_STATE, ipc.terminalHistory.getState());
+  });
+
+  it('destructive PTY_KILL is owner-bound even after EXIT and while history is disabled', async () => {
+    const exits = new Map<string, (code: number) => void>();
+    vi.spyOn(ipc.ptyManager, 'onData').mockReturnValue(() => {});
+    vi.spyOn(ipc.ptyManager, 'onExit').mockImplementation((surface, callback) => { exits.set(surface, callback); return () => {}; });
+    vi.spyOn(ipc.ptyManager, 'create').mockReturnValue({ id: 'surf-close-after-exit', shell: 'pwsh', reused: false } as any);
+    await electron.handlers.get(IPC_CHANNELS.PTY_CREATE)!({ sender: first.webContents }, {});
+    const before = ipc.terminalHistory.getBinding(11, 'surf-close-after-exit');
+    exits.get('surf-close-after-exit')!(0);
+    expect(ipc.terminalHistory.getBinding(11, 'surf-close-after-exit')).toEqual(before);
+    const kill = vi.spyOn(ipc.ptyManager, 'kill').mockImplementation(() => {});
+    const close = electron.listeners.get(IPC_CHANNELS.PTY_KILL)!;
+    close({ sender: second.webContents }, 'surf-close-after-exit');
+    expect(kill).not.toHaveBeenCalled();
+    await ipc.terminalHistory.setEnabled(false);
+    expect(ipc.terminalHistory.getBinding(11, 'surf-close-after-exit')).toMatchObject({ ok: true, value: { binding: null } });
+    close({ sender: first.webContents }, 'surf-close-after-exit');
+    expect(kill).toHaveBeenCalledExactlyOnceWith('surf-close-after-exit');
+    expect(ipc.terminalHistory.getBinding(11, 'surf-close-after-exit').ok).toBe(false);
+    await ipc.terminalHistory.setEnabled(true);
+  });
+
+  it.each([true, false])('closing exited A cannot kill B after B creates the same saved ID (history enabled=%s)', async (enabled) => {
+    await ipc.terminalHistory.setEnabled(enabled);
+    const id = `surf-cross-owner-${enabled}`;
+    let live = false;
+    let exit!: (code: number) => void;
+    vi.spyOn(ipc.ptyManager, 'has').mockImplementation((surface) => surface === id && live);
+    vi.spyOn(ipc.ptyManager, 'onData').mockReturnValue(() => {});
+    vi.spyOn(ipc.ptyManager, 'onExit').mockImplementation((_surface, callback) => { exit = callback; return () => {}; });
+    const create = vi.spyOn(ipc.ptyManager, 'create').mockImplementation(() => {
+      live = true;
+      return { id, shell: 'pwsh', reused: false } as any;
+    });
+    const handler = electron.handlers.get(IPC_CHANNELS.PTY_CREATE)!;
+    const close = electron.listeners.get(IPC_CHANNELS.PTY_KILL)!;
+    await handler({ sender: first.webContents }, { shell: 'pwsh' });
+    const old = ipc.terminalHistory.getBinding(11, id);
+    if (!old.ok) throw new Error('Missing original lifetime');
+    if (enabled) {
+      ipc.terminalHistory.saveWindow(11, windowState(id));
+      expect(await ipc.terminalHistory.checkpoint(11, id, old.value.binding!, 1, record('A-output'))).toMatchObject({ ok: true });
+    }
+    const beforeExit = ipc.terminalHistory.getBinding(11, id);
+    live = false;
+    exit(0);
+    expect(ipc.terminalHistory.getBinding(11, id)).toEqual(beforeExit);
+    await handler({ sender: second.webContents }, { shell: 'claude' });
+    if (enabled) {
+      ipc.terminalHistory.saveWindow(22, windowState(id));
+      expect(await ipc.terminalHistory.checkpoint(22, id, binding(ipc.terminalHistory, 22, id), 1, record('B-output'))).toMatchObject({ ok: true });
+    }
+    const replacement = ipc.terminalHistory.getBinding(22, id);
+    const metadata = ipc.agentIdentity.identify(id);
+    expect(metadata).not.toBeNull();
+    const kill = vi.spyOn(ipc.ptyManager, 'kill').mockImplementation(() => { live = false; });
+    close({ sender: first.webContents }, id);
+    expect(kill).not.toHaveBeenCalled();
+    expect(ipc.ptyManager.has(id as any)).toBe(true);
+    expect(ipc.agentIdentity.identify(id)).toEqual(metadata);
+    expect(ipc.terminalHistory.getBinding(11, id).ok).toBe(false);
+    expect(ipc.terminalHistory.getBinding(22, id)).toEqual(replacement);
+    if (enabled) {
+      const directory = path.join(os.tmpdir(), `wmux-history-integration-runtime-${process.pid}`, 'terminal-history');
+      await vi.waitFor(() => expect(fs.existsSync(path.join(directory, old.value.binding!.recordId + '.json'))).toBe(false));
+      const current = binding(ipc.terminalHistory, 22, id);
+      expect(fs.existsSync(path.join(directory, current.recordId + '.json'))).toBe(true);
+      expect(await ipc.terminalHistory.checkpoint(22, id, current, 2, record('B-still-owned'))).toMatchObject({ ok: true });
+    }
+    // Idempotent create must still see B as the owner, not reclaim an owner erased by A's close.
+    create.mockReturnValue({ id, shell: 'pwsh', reused: true } as any);
+    await handler({ sender: first.webContents }, { shell: 'pwsh' });
+    expect(ipc.terminalHistory.getBinding(11, id).ok).toBe(false);
+    expect(ipc.agentIdentity.identify(id)).toEqual(metadata);
+    close({ sender: second.webContents }, id);
+    expect(kill).toHaveBeenCalledExactlyOnceWith(id);
+    expect(ipc.agentIdentity.identify(id)).toBeNull();
+    await ipc.terminalHistory.setEnabled(true);
   });
 
   it.each([
@@ -373,6 +558,15 @@ describe('production IPC ownership hooks and preload capture', () => {
     expect(channel).toBe(IPC_CHANNELS.SESSION_REQUEST);
     unsubscribe();
     expect(electron.removeListener).toHaveBeenCalledWith(channel, listener);
+  });
+
+  it('uses a distinct startup-only preload channel rather than a generic load flag', async () => {
+    const session = electron.expose.mock.calls.find(([name]) => name === 'wmux')![1].session;
+    await session.load('backup');
+    await session.loadStartupFallback('backup');
+    expect(electron.invoke.mock.calls.slice(-2)).toEqual([
+      [IPC_CHANNELS.SESSION_LOAD_NAMED, 'backup'], [IPC_CHANNELS.SESSION_LOAD_STARTUP_FALLBACK, 'backup'],
+    ]);
   });
 
   it('forwards only typed history operations and unsubscribes the exact listener', async () => {

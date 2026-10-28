@@ -106,6 +106,10 @@ export class SessionWindowRegistry {
     return [...this.slots.values()];
   }
 
+  entries(): IterableIterator<[string, SessionWindowState]> {
+    return this.slots.entries();
+  }
+
   get size(): number {
     return this.slots.size;
   }

@@ -224,7 +224,7 @@ async function restoreNamedSession(t: T, setWidth: SetWidth): Promise<boolean> {
     const sessions = await window.wmux?.session?.list();
     const name = sessions?.[0]?.name;
     if (!name) return false;
-    const session = await window.wmux?.session?.load(name);
+    const session = await window.wmux?.session?.loadStartupFallback(name);
     if (!session) return false;
     useStore.getState().replaceAllWorkspaces(session.workspaces, undefined, t);
     if (session.sidebarWidth) setWidth(session.sidebarWidth);

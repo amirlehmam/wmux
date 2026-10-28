@@ -583,6 +583,8 @@ export function forgetSurfaceTitle(surfaceId: string): void {
   surfaceTitle.delete(surfaceId);
 }
 
+const terminalCloseCancellations = new Map<string, () => void>();
+
 /**
  * Drop every module map entry a CLOSED terminal surface left behind (#385).
  *
@@ -594,6 +596,9 @@ export function forgetSurfaceTitle(surfaceId: string): void {
  * never ran, and every one of these kept an entry per surface ever opened.
  */
 export function forgetClosedTerminal(surfaceId: string): void {
+  terminalCloseCancellations.get(surfaceId)?.();
+  terminalCloseCancellations.delete(surfaceId);
+  terminalHistoryCheckpoints.close(surfaceId);
   forgetPendingTerminalHistoryCreation(surfaceId);
   forgetSurfaceTitle(surfaceId);
   surfaceMouseModes.delete(surfaceId);
@@ -1115,7 +1120,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     let disposed = false;
     let liveAttached = false;
     const preparation = new AbortController();
-    const isCurrent = () => !disposed && xtermRef.current === terminal
+    const cancelClosed = () => { liveAttached = false; preparation.abort(); };
+    if (surfaceId) terminalCloseCancellations.set(surfaceId, cancelClosed);
+    const isCurrent = () => !disposed && !preparation.signal.aborted && xtermRef.current === terminal
       && (!surfaceId || (surfaceTerminalRegistry.get(surfaceId) === terminal
         && useStore.getState().workspaces.some((ws) => treeHasSurface(ws.splitTree, surfaceId))));
 
@@ -2003,6 +2010,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // before touching the soon-to-be-disposed terminal.
       disposed = true;
       preparation.abort();
+      if (surfaceId && terminalCloseCancellations.get(surfaceId) === cancelClosed) terminalCloseCancellations.delete(surfaceId);
       resizeObserver.disconnect();
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       dataDisposable.dispose();
