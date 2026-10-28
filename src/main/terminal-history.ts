@@ -170,6 +170,7 @@ export class TerminalHistoryStore {
       };
       association.startup = reference !== undefined;
       association.revision = 0;
+      association.committedRevision = 0;
       association.retryRevision = false;
     }
     return { ...association.binding };
@@ -178,6 +179,11 @@ export class TerminalHistoryStore {
   /** Disabled terminals still need lifetime-specific closure, without allocating an output identity. */
   incarnationFor(owner: number, surface: string): string | null {
     return this.associations.get(owner)?.get(surface)?.incarnation ?? null;
+  }
+
+  /** Renderer mutation counters can restart while this association remains alive. */
+  revisionFloor(owner: number, surface: string): number {
+    return this.associations.get(owner)?.get(surface)?.revision ?? 0;
   }
 
   /** Store persistence is not session-link publication; the IPC caller must acknowledge both later. */

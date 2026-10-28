@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import * as os from 'os';
 import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, type UpdateTriggerResult,
-  type KeepAwakeMode, type KeepAwakeState,
+  type KeepAwakeMode, type KeepAwakeState, type SessionSaveRequest,
   type WorktreeCloseMode, type WorktreeInspectResult, type WorktreeRemoveResult,
 } from '../shared/types';
 import type { BrowserHistory } from '../shared/browser-history';
@@ -388,12 +388,13 @@ contextBridge.exposeInMainWorld('wmux', {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST_NAMED),
     delete: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE_NAMED, name),
     loadAuto: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD_AUTO),
-    onAutoSaveRequest: (callback: () => void) => {
-      const handler = () => callback();
-      ipcRenderer.on('session:request', handler);
-      return () => ipcRenderer.removeListener('session:request', handler);
+    onAutoSaveRequest: (callback: (request?: SessionSaveRequest) => void) => {
+      const handler = (_event: unknown, request?: SessionSaveRequest) => callback(request);
+      ipcRenderer.on(IPC_CHANNELS.SESSION_REQUEST, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.SESSION_REQUEST, handler);
     },
-    pushAutoSave: (data: any) => ipcRenderer.send('session:save', data),
+    pushAutoSave: (data: any, token?: string) => ipcRenderer.send(IPC_CHANNELS.SESSION_SAVE, data, token),
+    historyDone: (token: string, success: boolean) => ipcRenderer.send(IPC_CHANNELS.SESSION_HISTORY_DONE, token, success),
   },
   markdown: {
     // Manual "open markdown file" entry point (issue #54): native file picker +

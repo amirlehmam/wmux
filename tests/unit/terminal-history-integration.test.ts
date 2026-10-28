@@ -14,14 +14,14 @@ const electron = vi.hoisted(() => ({
   listeners: new Map<string, (...args: any[]) => any>(),
   contents: new Map<number, any>(),
   windows: [] as any[],
-  expose: vi.fn(), invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn(),
+  expose: vi.fn(), invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn(), send: vi.fn(),
 }));
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, callback: (...args: any[]) => unknown) => electron.handlers.set(channel, callback),
     on: (channel: string, callback: (...args: any[]) => unknown) => electron.listeners.set(channel, callback),
   },
-  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: electron.removeListener, send: vi.fn(), sendSync: vi.fn() },
+  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: electron.removeListener, send: electron.send, sendSync: vi.fn() },
   contextBridge: { exposeInMainWorld: electron.expose }, webUtils: {},
   webContents: { fromId: (id: number) => electron.contents.get(id) },
   BrowserWindow: { getAllWindows: () => electron.windows, fromWebContents: (wc: any) => wc.window, getFocusedWindow: () => null },
@@ -168,6 +168,34 @@ describe('automatic history publication and ownership', () => {
     const write = vi.spyOn(store, 'checkpoint');
     expect(await integration.checkpoint(1, 'surf-a', token, 2, record('second'))).toMatchObject({ ok: true });
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it('issues the surviving association revision floor and resets it only for a new generation or lifetime', async () => {
+    integration.associate(1, 'surf-a');
+    windows.prime('win-a', windowState('surf-a'));
+    const original = binding(integration);
+    expect(await integration.checkpoint(1, 'surf-a', original, 9000, record('before-recovery'))).toMatchObject({ ok: true });
+    // A full renderer reload can reset all of its counters, but not main's association.
+    integration.associate(1, 'surf-a');
+    expect(integration.getBinding(1, 'surf-a')).toMatchObject({ ok: true, value: { binding: original, revisionFloor: 9000 } });
+    const recovered = integration.getBinding(1, 'surf-a');
+    if (!recovered.ok) throw new Error('Missing association');
+    expect(await integration.checkpoint(1, 'surf-a', original, recovered.value.revisionFloor + 1, record('after-recovery')))
+      .toMatchObject({ ok: true });
+    // Failed writes also reserve revisions, so a reload cannot reuse an older number.
+    vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(new Error('fixture'));
+    expect(await integration.checkpoint(1, 'surf-a', original, 9500, record())).toMatchObject({ ok: false });
+    expect(integration.getBinding(1, 'surf-a')).toMatchObject({ value: { revisionFloor: 9500 } });
+    await integration.setEnabled(false);
+    await integration.setEnabled(true);
+    const generation = binding(integration);
+    expect(integration.getBinding(1, 'surf-a')).toMatchObject({ value: { revisionFloor: 0 } });
+    expect(await integration.checkpoint(1, 'surf-a', generation, 1, record())).toMatchObject({ ok: true });
+    await integration.forget(1, 'surf-a', generation.incarnation);
+    integration.associate(1, 'surf-a');
+    expect(binding(integration).incarnation).not.toBe(generation.incarnation);
+    expect(integration.getBinding(1, 'surf-a')).toMatchObject({ value: { revisionFloor: 0 } });
+    expect(await integration.checkpoint(1, 'surf-a', binding(integration), 1, record())).toMatchObject({ ok: true });
   });
 
   it('cannot acknowledge a record without terminal membership in the automatic slot', async () => {
@@ -325,6 +353,26 @@ describe('production IPC ownership hooks and preload capture', () => {
     electron.listeners.get(IPC_CHANNELS.SETTINGS_SET)!({ sender: first.webContents }, TERMINAL_HISTORY_SETTINGS_KEY, { enabled: false, generation: 999 });
     expect(loadSettings()[TERMINAL_HISTORY_SETTINGS_KEY]).toEqual(before);
     expect(ipc.terminalHistory.getState().enabled).toBe(true);
+  });
+
+  it('forwards optional final request metadata without exposing the Electron event', () => {
+    const session = electron.expose.mock.calls.find(([name]) => name === 'wmux')![1].session;
+    const callback = vi.fn();
+    const unsubscribe = session.onAutoSaveRequest(callback);
+    const [channel, listener] = electron.on.mock.lastCall!;
+    const request = { token: 'final-request', deadline: 1234 };
+    listener({ sender: 'not-metadata' }, request);
+    listener({ sender: 'periodic' });
+    expect(callback.mock.calls).toEqual([[request], [undefined]]);
+    const data = { version: 1, windows: [] };
+    session.pushAutoSave(data, request.token);
+    session.historyDone(request.token, false);
+    expect(electron.send.mock.calls.slice(-2)).toEqual([
+      [IPC_CHANNELS.SESSION_SAVE, data, request.token], [IPC_CHANNELS.SESSION_HISTORY_DONE, request.token, false],
+    ]);
+    expect(channel).toBe(IPC_CHANNELS.SESSION_REQUEST);
+    unsubscribe();
+    expect(electron.removeListener).toHaveBeenCalledWith(channel, listener);
   });
 
   it('forwards only typed history operations and unsubscribes the exact listener', async () => {

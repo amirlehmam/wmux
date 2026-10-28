@@ -53,7 +53,8 @@ import {
   shouldSnapshot,
   writeSessionSnapshot,
 } from './session-persistence';
-import { SessionFlushWaiters } from './session-flush';
+import { randomUUID } from 'crypto';
+import { SessionFlushWaiters, SESSION_FLUSH_TIMEOUT_MS } from './session-flush';
 import { hardenWebviewPreferences } from './webview-prefs';
 import { applyHistoryRestore, claimHistoryRestore, forgetHistoryRestore, parkHistoryRestore } from './browser-history-restore';
 import { stampAgentSessionIds } from './agent-session-persistence';
@@ -555,8 +556,10 @@ let quitFlushDone = false;
 /** Ask one window for its state and resolve once it is on disk (or timed out). */
 function flushSessionFrom(win: BrowserWindow): Promise<boolean> {
   if (win.isDestroyed()) return Promise.resolve(false);
-  const saved = sessionFlush.wait(win.webContents.id);
-  win.webContents.send('session:request');
+  const token = randomUUID();
+  const deadline = Date.now() + SESSION_FLUSH_TIMEOUT_MS;
+  const saved = sessionFlush.wait(win.webContents.id, token);
+  win.webContents.send(IPC_CHANNELS.SESSION_REQUEST, { token, deadline });
   return saved;
 }
 
@@ -618,7 +621,7 @@ function scheduleAutoSave(): void {
     autoSaveTimer = null;
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) {
-        win.webContents.send('session:request');
+        win.webContents.send(IPC_CHANNELS.SESSION_REQUEST);
       }
     });
   }, AUTO_SAVE_INTERVAL_MS);
@@ -1523,7 +1526,7 @@ app.whenReady().then(() => {
   // the last responder from overwriting every other window's workspaces —
   // before this, a second window silently cost you the first one's tabs and
   // browser pages on the next 30s tick (issue #118).
-  ipcMain.on('session:save', (event, data: SessionData) => {
+  ipcMain.on(IPC_CHANNELS.SESSION_SAVE, (event, data: SessionData, token?: string) => {
     const state = data?.windows?.[0];
     if (!state) return;
     // Before anything downstream copies this tree (issue #186).
@@ -1543,11 +1546,17 @@ app.whenReady().then(() => {
     if (!isQuitting) {
       sessionWindows.retainOnly(windowManager.getAllWindows().map((w) => w.id));
     }
-    if (terminalHistory.saveWindow(event.sender.id, state)) {
-      maybeSnapshotSession({ version: 1, windows: sessionWindows.toArray() });
-      sessionFlush.notifySaved(event.sender.id);
-    }
+    const saved = terminalHistory.saveWindow(event.sender.id, state);
+    if (saved) maybeSnapshotSession({ version: 1, windows: sessionWindows.toArray() });
+    sessionFlush.notifySaved(event.sender.id, token, saved);
     if (!isQuitting) scheduleAutoSave();
+  });
+
+  ipcMain.on(IPC_CHANNELS.SESSION_HISTORY_DONE, (event, token: unknown, success: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed() || win.webContents !== event.sender
+      || !windowManager.idForWebContents(event.sender) || typeof success !== 'boolean') return;
+    sessionFlush.notifyHistory(event.sender.id, token, success);
   });
 
   registerIpcHandlers(windowManager, cdpProxy);
@@ -1559,7 +1568,7 @@ app.whenReady().then(() => {
       sessionSavePending = undefined;
       if (isQuitting) return;
       for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) win.webContents.send('session:request');
+        if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.SESSION_REQUEST);
       }
     }, 100);
   });

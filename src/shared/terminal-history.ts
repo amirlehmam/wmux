@@ -31,7 +31,7 @@ export interface TerminalHistoryBridge {
   getState(): Promise<HistoryResult<TerminalHistoryState>>;
   onState(callback: (state: TerminalHistoryState) => void): () => void;
   setEnabled(enabled: boolean): Promise<HistoryResult<TerminalHistoryState>>;
-  getBinding(surface: string): Promise<HistoryResult<{ binding: TerminalHistoryBinding | null; incarnation: string }>>;
+  getBinding(surface: string): Promise<HistoryResult<{ binding: TerminalHistoryBinding | null; incarnation: string; revisionFloor?: number }>>;
   read(surface: string, binding: TerminalHistoryBinding): Promise<HistoryResult<TerminalHistoryRecord>>;
   checkpoint(surface: string, binding: TerminalHistoryBinding, revision: number,
     record: TerminalHistoryRecord): Promise<HistoryResult<{ revision: number }>>;

@@ -44,6 +44,7 @@ import { forgetProgressTurn, noteSurfaceProgress } from '../utils/progress-turn'
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
 import { connectTerminalWithHistory, forgetPendingTerminalHistoryCreation, type RetainedTerminalEvents } from '../utils/terminal-history';
+import { TerminalHistoryCheckpoints } from '../utils/terminal-history-checkpoints';
 import { RemountSnapshotCache, serializeRemountSnapshot, type RemountSnapshot } from '../utils/remount-snapshot';
 import { anchorViewportLikeConpty, captureCursorLine, captureViewportTop, restoreCursorLine } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
@@ -458,6 +459,14 @@ export function showPaneNotice(surfaceId: string, text: string): void {
  * deleted under the same identity check.
  */
 export const surfaceSerializerRegistry = new Map<string, SerializeAddon>();
+
+export const terminalHistoryCheckpoints = new TerminalHistoryCheckpoints({
+  terminals: () => surfaceTerminalRegistry,
+  serializer: (surface) => surfaceSerializerRegistry.get(surface),
+  bridge: () => window.wmux?.terminalHistory,
+  lines: () => useStore.getState().terminalPrefs.scrollbackLines,
+  report: (error) => { console.warn('[terminal-history] Checkpoint failed:', error); },
+});
 
 /**
  * surfaceId → count of PTY chunks written into that terminal.
@@ -1181,6 +1190,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       surfaceTerminalRegistry.set(surfaceId, terminal);
       surfaceSerializerRegistry.set(surfaceId, serializeAddon);
     }
+
+    const stopHistoryObservation = terminalHistoryCheckpoints.observe(terminal, () => isCurrent() && liveAttached);
 
     const titleDisposable = recordTitleChanges(terminal, surfaceId);
     const screenEventsDisposable = trackScreenEventsFor(surfaceId, terminal);
@@ -2024,6 +2035,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // Snapshot the buffer before disposal so a remount can replay it
       // (see snapshotSurfaceBuffer).
       if (liveAttached) snapshotSurfaceBuffer(surfaceId, serializeAddon, terminal);
+      stopHistoryObservation();
 
       // Drop the read-screen registry entry — but only if it still points at
       // THIS terminal (StrictMode re-setup may already have registered the
@@ -2208,7 +2220,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     term.options.fontSize = prefs.fontSize || term.options.fontSize;
     term.options.cursorStyle = prefs.cursorStyle || term.options.cursorStyle;
     term.options.cursorBlink = prefs.cursorBlink ?? term.options.cursorBlink;
-    term.options.scrollback = prefs.scrollbackLines || term.options.scrollback;
+    const scrollback = prefs.scrollbackLines || term.options.scrollback;
+    if (term.options.scrollback !== scrollback) {
+      term.options.scrollback = scrollback;
+      terminalHistoryCheckpoints.lineLimitChanged(term);
+    }
     // A font change alters the cell size, so the same viewport now fits a
     // different col/row count. Refit and tell the PTY (SIGWINCH) or apps
     // anchored to the bottom row (prompts, TUIs) end up past the viewport

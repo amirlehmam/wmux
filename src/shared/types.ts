@@ -689,6 +689,12 @@ export interface InsertionResult {
   failure?: { destination: string; detail: string };
 }
 
+/** Only final saves carry a token and the single main-owned shutdown deadline. */
+export interface SessionSaveRequest {
+  token: string;
+  deadline: number;
+}
+
 // IPC channel names
 export const IPC_CHANNELS = {
   // PTY
@@ -870,7 +876,10 @@ export const IPC_CHANNELS = {
   CLAUDE_ACTIVITY: 'claude:activity',
   // Declared agent run state (pane.report_agent → main → renderer, issue #128)
   AGENT_STATE: 'agent:state',
-  // Named sessions
+  // Automatic and named sessions
+  SESSION_REQUEST: 'session:request',
+  SESSION_SAVE: 'session:save',
+  SESSION_HISTORY_DONE: 'session:history-done',
   SESSION_SAVE_NAMED: 'session:save-named',
   SESSION_LOAD_NAMED: 'session:load-named',
   SESSION_LIST_NAMED: 'session:list-named',

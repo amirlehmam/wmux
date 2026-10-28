@@ -91,7 +91,8 @@ export class TerminalHistoryIntegration {
   getBinding(owner: number, surface: string) {
     const incarnation = this.store.incarnationFor(owner, surface);
     return this.options.ownerWindow(owner) && incarnation
-      ? { ok: true as const, value: { binding: this.store.bindingFor(owner, surface), incarnation } }
+      ? { ok: true as const, value: { binding: this.store.bindingFor(owner, surface), incarnation,
+        revisionFloor: this.store.revisionFloor(owner, surface) } }
       : unauthorized;
   }
 
