@@ -15,7 +15,7 @@ export default defineConfig({
     // build has to say what that closure is. Written as a plain file at the
     // outDir root rather than Vite's default `.vite/manifest.json`: a dot
     // directory is not guaranteed to survive electron-builder's `dist/**/*`
-    // glob or the manual `asar pack`, and a manifest that silently went
+    // glob, and a manifest that silently went
     // missing from a release is a console that answers 503 `ui-not-built`.
     manifest: REMOTE_MANIFEST_FILE,
     // Vite 8 bundles with Rolldown; `rolldownOptions` is the current spelling

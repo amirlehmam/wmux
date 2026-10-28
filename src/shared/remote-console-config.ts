@@ -16,8 +16,8 @@ import type { RemoteScope } from './remote-console-protocol';
 export const REMOTE_DEFAULT_PORT = 9790;
 /**
  * Vite's manifest, emitted at `dist/renderer/remote-manifest.json` rather than
- * the default `.vite/manifest.json`: neither electron-builder's `dist/**` glob
- * nor the manual `asar pack` is guaranteed to keep a dot directory.
+ * the default `.vite/manifest.json`: electron-builder's `dist/**` glob is not
+ * guaranteed to keep a dot directory.
  */
 export const REMOTE_MANIFEST_FILE = 'remote-manifest.json';
 /** The phone page's key in that manifest; the static server walks its closure only. */

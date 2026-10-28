@@ -19,8 +19,8 @@ import path from 'node:path';
  * `config.get` returns it.
  *
  * Spawned from dist/, not from resources/cli/wmux.js. dist/cli/wmux.js is the
- * file a released wmux runs — package.json's `bin` points at it, electron-builder
- * copies it into the package, and the release staging step copies it into the zip.
+ * file a released wmux runs — package.json's `bin` points at it, and
+ * electron-builder copies it into the package the release workflow zips.
  * resources/cli/wmux.js is a checked-in copy of that build with nothing enforcing
  * the copy, so it drifts from src/; a test spawning it asserts against whatever
  * was committed last rather than against this branch's source.
