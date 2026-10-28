@@ -15,9 +15,10 @@
  * when a turn ends without completing (Ctrl+C, a declined permission, the turn
  * limit) and `StopFailure` instead of it on an API error; without them an
  * interrupted Grok turn left the pane reading `working` until the trust window
- * aged it out. wmux-hook.js reports both as the turn ending — as `Stop`, or as
- * `SubagentStop` when the payload has `subagentType` — which is what ends an
- * interrupted turn.
+ * aged it out. wmux-hook.js reports both as `Stop`, which is what ends an
+ * interrupted turn; fired inside a subagent (`subagentType` on the payload)
+ * they become `SubagentStop`, which ends only the child and never the
+ * parent's turn (see `reportedEvent`).
  *
  * Duplicating the Claude entries is safe because Grok dedupes handlers across
  * sources on (event, command, url, matcher) — so with compat on each hook runs
@@ -43,7 +44,7 @@
  * Nothing is written unless Grok's home directory exists: creating ~/.grok on a
  * machine that has never run Grok would be the #132 mistake.
  *
- * ── Three things the PR's live test could not reach ──────────────────────────
+ * ── Three things #259's live test could not reach ────────────────────────────
  *
  * The account had no usage, so no successful turn, no subagent and no
  * background task; Grok's own hook docs settle all three.

@@ -10,8 +10,8 @@
 //     `[wmux] …` notice) and runs nothing there; its dependents still go (with
 //     their own waits), so one dead service cannot hang the whole bring-up.
 //   - Commands are typed through PtyManager's one delivery path (#251):
-//     `PtyManager.deliverCommands`, the gated typing path, now also used for a
-//     shell that is already running.
+//     `PtyManager.deliverCommands`, the same readiness-gated typing a cold
+//     start uses, applied to a shell that is already running.
 //   - Notices are written to xterm (the renderer's `showPaneNotice`, parked
 //     until the pane mounts), never to the PTY.
 //

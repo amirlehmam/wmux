@@ -7,16 +7,18 @@
 //      workspace-manifest-v2.ts). Nothing on the pipe can answer it — there is
 //      deliberately no `--trust` flag, because an agent holding the pipe token
 //      could pass it, and "a repo I cloned runs its commands without asking" is
-//      exactly the hole this closes. The answer is keyed on the file's sha256
-//      in `%APPDATA%\wmux\workspace-trust.json` (workspace-trust.ts), so any
-//      byte changed re-prompts, with an added/removed diff.
+//      exactly the hole this closes. The answer is recorded per manifest path,
+//      with the sha256 of the bytes that were shown, in
+//      `%APPDATA%\wmux\workspace-trust.json` (workspace-trust.ts), so any byte
+//      changed re-prompts, with an added/removed diff.
 //   2. What the dialog shows is `formatPlan` of the SAME plan the scheduler
 //      runs. Re-reading the file between the two would let it change after
 //      the user looked; it is read once, hashed, and that text is the plan.
 //
-// Manifest commands never enter the store or session.json — the workspace is
-// created from folders, titles and env only, and the commands go straight to
-// the scheduler — because a restart would replay them without asking again.
+// Manifest commands never enter the store or session.json — the workspace spec
+// carries the layout, folders, titles, env and browser tabs, never a command,
+// and the commands go straight to the scheduler — because a restart would
+// replay them without asking again.
 // Re-opening a manifest that is already open focuses it instead of opening a
 // second copy; the map that knows this is live-only, so it is empty after a
 // restart.

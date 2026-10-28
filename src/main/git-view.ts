@@ -15,7 +15,7 @@
  * - **No shell, and no renderer string in an option slot.** Arguments go
  *   through `execFile` as an array. A ref arrives from the renderer and lands
  *   in argv, so `isSafeRev` refuses anything that could read as an option
- *   (`--output=…`), a range and an object path, and paths only ever follow
+ *   (`--output=…`), a range or an object path; paths only ever follow
  *   `--`, under `--literal-pathspecs` so a `:(top)` file name is a name and
  *   not magic. git itself is an ABSOLUTE path (`gitCandidates`: PATH dirs,
  *   then Git for Windows' install roots), never a bare `git` resolved per

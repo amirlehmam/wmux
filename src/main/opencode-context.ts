@@ -2,58 +2,26 @@
  * OpenCode integration: the wmux block in `~/.config/opencode/AGENTS.md`, and
  * `resources/opencode-plugin/wmux.js` installed into `~/.config/opencode/plugin/`.
  *
- * ── The plugin file ─────────────────────────────────────────────────────────
- *
- * Installing it is gated on the `// wmux-plugin-version:` marker
+ * Installing the plugin is gated on its `// wmux-plugin-version:` marker
  * (`pluginNeedsUpdate` compares it verbatim), so any change to the plugin needs
  * a bump or it reaches nobody — every broken install already has the old file
  * on disk.
  *
- * That file must export `WmuxPlugin` and the default definition, nothing else
- * (#191, #271). OpenCode v1's legacy loader calls EVERY export as a plugin
- * factory and then invokes a `config` hook on the result, so an exported helper
- * returning a plain value crashes OpenCode at startup. Helpers hang off
- * `WmuxPlugin.__wmuxInternals` for the tests; a test pins the export set.
- *
- * OpenCode v2 rejects any file without `export default { id, effect | setup }`
- * (#271 — the plugin silently never loaded), so the default is ONE object both
- * generations accept: `{ id, server: WmuxPlugin, setup }`. v1 ≥ 1.3.4 sees the
- * `id`, calls only `default.server` and stops walking the exports; v2's schema
- * ignores `server` and runs `setup`, which adapts v2's `tool`/`shell` hooks and
- * event stream onto the SAME handlers through `fromV2Event` — v2 renamed the
- * events and moved the payload to `data`, and its core never publishes
- * `session.idle` (a turn ends with
- * `session.execution.succeeded|interrupted|failed`). `filesystem.changed` is
- * deliberately unmapped: it fires on the user's own saves and would clear
- * "Needs you". OpenCode ≤ 1.3.3 calls the default object as a factory and
- * cannot load a v2-compatible file at all. Verified against real
+ * Rules that bind the plugin file, explained there: it exports only
+ * `WmuxPlugin` and the default `{ id, server: WmuxPlugin, setup }` (#191, #271
+ * — OpenCode v1 calls every export as a factory, v2 rejects a file without
+ * `export default { id, effect | setup }`); `setupV2` maps v2's hooks and
+ * events onto the v1 handlers through `fromV2Event` and leaves
+ * `filesystem.changed` unmapped; v2's prompt-admission hook is the prompt
+ * log's only OpenCode producer (#304), and v1 has none. Verified against
  * `@opencode/cli@2.0.24` and `opencode-ai@1.18.35` with an isolated
  * `XDG_CONFIG_HOME`.
  *
- * The v2 half also registers `ctx.session.hook("prompt")` and forwards the
- * submitted text as `wmux hook --event UserPromptSubmit --prompt` (#304) — the
- * prompt log's only OpenCode producer, capped at `wmux-hook.js`'s 4000 chars
- * and deduped by `messageID`. v1 has no prompt log.
- *
- * ── The CLI-side (TUI) half is NOT installed here (#310) ────────────────────
- *
- * It must land in the environment that hosts the TUI (WSL distro,
- * devcontainer, native Windows), so `wmux opencode-tui` copies
- * `resources/opencode-plugin/wmux-tui.js` + `wmux-tui-core.js` to
- * `<config>/plugins/wmux-cli/{tui,core}.js` from inside that environment — own
- * marker on `tui.js`, removal guarded by it. It reports the viewed session
- * (`report-session`, subagents→root, release on quit) and, since its v2, user
- * prompts from `session.inbox.enqueued` (only `item.type === "user"`; `inboxID`
- * dedupe; attributed only to a session being viewed or open in a tab, because
- * the event stream is the whole server's). Since v3 it also reports blocked
- * state from `permission.asked`/`form.created`, cleared only by explicit
- * replies/cancellations or a turn-ending `session.execution.interrupted|failed`
- * — tool/streaming events never unblock (#189). Since v4 it declares
- * working/idle from `session.execution.started|succeeded|failed|interrupted`
- * with ABSOLUTE `--run-depth` (never `--run-start`/`--run-end`, so a second
- * producer converges rather than inflating); running sessions are tracked by
- * id so an end still clears after the view moved, and a subagent's end cannot
- * idle a pane whose parent is running.
+ * The CLI-side (TUI) half is NOT installed here (#310): it must land in the
+ * environment that hosts the TUI, so `wmux opencode-tui`
+ * (src/cli/opencode-tui-install.ts) copies `wmux-tui.js` + `wmux-tui-core.js`
+ * to `<config>/plugins/wmux-cli/{tui,core}.js` from inside it. What that half
+ * reports, and from which events, is documented in those two files.
  */
 import * as fs from 'fs';
 import * as path from 'path';

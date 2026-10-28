@@ -6,7 +6,9 @@
 // aliases are normalized before explorer-fs.ts ever reasons about them.
 //
 // The root is the pane's TERMINAL cwd, not its active surface's — a pane
-// showing a markdown tab still belongs to the folder its shell is in. It is
+// showing a markdown tab still belongs to the folder its shell is in (the
+// renderer asks with that terminal's surface id — `pickRootSurface` in
+// explorer-state.ts). It is
 // normalized through `trustedWindowsCwd` (and then the realpath above), so a
 // Git Bash `/c/Users/...` report and a PowerShell junction alias both land on
 // the same spelling main can jail against.

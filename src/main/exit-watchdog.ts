@@ -21,10 +21,10 @@
 // script. It polls the parent's pid every 250 ms and exits the moment the
 // parent is gone, which on a healthy quit is well under a second. Only a parent
 // that outlives the deadline (`QUIT_TEARDOWN_BUDGET_MS + 15 s`, set by
-// ./index) is terminated, and the kill is logged as `exit-watchdog killed=` in
-// main.log — and then whatever it was stuck on no longer matters. Chromium's
-// child processes exit on their own once their browser process's IPC channel
-// breaks.
+// ./index) is terminated — and then whatever it was stuck on no longer
+// matters. The kill is logged to main.log as `exit-watchdog killed=<pid>`.
+// Chromium's child processes exit on their own once their browser process's
+// IPC channel breaks.
 //
 // Deliberately not a .cmd or PowerShell helper: a hidden detached script that
 // kills a process is the dropper shape zip-updater.ts goes out of its way to

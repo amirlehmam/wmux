@@ -19,13 +19,14 @@
 // (measured: the restore rejected with ERR_ABORTED and the stack lost an entry).
 //
 // Covers a restart AND a split-tree remount: every mount is a fresh
-// WebContents. The sentinel src is `about:blank#wmux-history=<json>`. What is
-// kept is decided in shared/browser-history.ts: persisted as
-// `SurfaceRef.browserHistory` / `workspace.browserHistory` beside the URL; url
-// + title only, never `pageState` (it carries form values); http(s) only; 50
-// entries, keeping Back over Forward. The renderer (BrowserPane.tsx) uses a
-// history only when its active entry IS the URL the #232 rules chose, so it can
-// add Back/Forward but never pick the page. Reading a live stack back goes
+// WebContents. The sentinel src is `about:blank#wmux-history=` plus the
+// URL-encoded history JSON. It is persisted as `SurfaceRef.browserHistory` /
+// `workspace.browserHistory` beside the URL, and shared/browser-history.ts
+// decides what is kept: url + title only, never `pageState` (it carries form
+// values); http(s) only; 50 entries, keeping Back over Forward. The renderer
+// (BrowserPane.tsx) uses a history only when its active entry IS the URL the
+// #232 rules chose, so it can add Back/Forward but never pick the page. Reading
+// a live stack back goes
 // through `browser:get-history` (ipc-handlers.ts), which answers only for a
 // guest the asking window hosts.
 

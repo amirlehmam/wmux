@@ -8,7 +8,8 @@
 // with both installed whichever started first owned the lock and the other got
 // `gotLock false` and quit on launch — handing its command line to the WRONG
 // app as a `second-instance`. Reproduced in a standalone Electron 43 harness:
-// CONTROL `false`, after the move both `true`. They also shared one Chromium
+// with the shared directory the second app's `gotLock` was `false`; after the
+// move both got `true`. They also shared one Chromium
 // profile: one Local Storage (where wmux keeps most of its settings), one
 // cookie jar for both browser panels.
 //

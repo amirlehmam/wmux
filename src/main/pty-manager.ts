@@ -24,9 +24,10 @@ import { bashAlias, gitBashCandidates, isWslBashLauncher, isGitBashLauncher, GIT
 import { deliverStartupCommandsWhenReady } from './startup-commands';
 import { browserEnvFor, WSL_ENV_PASSTHROUGH } from './pane-browser-env';
 
-// Applied once, at load, before any PTY can exist — the exit callback it guards
-// is registered by node-pty inside pty.spawn(), so a later install would leave
-// every already-spawned pane on the unguarded path (issue #150).
+// Applied once, at load, before any PTY can exist, so no pane can exit before
+// the guard is in place (issue #150). node-pty 1.1.0 looks the exit callback up
+// through the prototype on every exit, so this ordering is about exits that
+// could otherwise happen first, not about panes spawned earlier.
 //
 // The result is kept rather than discarded so it can be RECORDED. "Installed at
 // module load" was a design claim nobody could check against a process that had

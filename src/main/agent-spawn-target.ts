@@ -29,8 +29,9 @@ import { distributeAgents, PaneLoadInfo } from './agent-manager';
  * renderer — which is exactly what makes the decision worth separating from the
  * asking. This is the shape `close-guard.ts` and `agent-browser-verbs.ts` use
  * for the same reason: a rule you can test without an Electron app. The impure
- * half is `spawnTargetLookups` in `index.ts`, which asks EVERY window, first
- * real answer wins (#143).
+ * half is `spawnTargetLookups` in `index.ts`, which asks EVERY window for a
+ * pane's or surface's workspace and for pane loads, first real answer wins
+ * (#143); the active workspace is the first window's.
  */
 
 export interface SpawnTargetLookups {

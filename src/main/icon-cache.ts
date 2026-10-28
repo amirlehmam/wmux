@@ -31,7 +31,7 @@
  * 2. `refreshShellIconCache` — the Explorer restart, from Settings → General →
  *    *Refresh taskbar icons*, behind a native confirm in ipc-handlers.ts that
  *    says File Explorer windows will close. Absolute System32 paths
- *    throughout: a writeable PATH dir must not get to shadow `taskkill.exe`
+ *    throughout: a writeable PATH dir must not get to shadow `powershell.exe`
  *    for a command wmux runs on the user's behalf (the rule `win32-process.ts`
  *    and `system32.ts` already state).
  */

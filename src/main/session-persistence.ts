@@ -334,9 +334,9 @@ export function setLastSessionName(name: string): void {
  * An "Auto-backup" existed already but only fires on a version change, so
  * between two updates there is nothing behind the live file at all.
  *
- * Snapshots ride the existing 30s auto-save tick (index.ts's
- * `maybeSnapshotSession` runs on each save it writes) rather than a timer of
- * their own: a second timer would have a second idea of what the layout is.
+ * Snapshots have no timer of their own: index.ts calls `maybeSnapshotSession`
+ * on every `session:save` it writes, and the 30 s auto-save tick is what drives
+ * those. A second timer would have a second idea of what the layout is.
  *
  * Three decisions, each of which the obvious implementation gets wrong:
  *

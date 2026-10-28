@@ -29,10 +29,9 @@
  * says no once should not have to say it again after an update, and should not
  * have to hand-delete the leftovers either.
  *
- * That makes this module the ONLY way in. Nothing in claude-context.ts,
- * opencode-context.ts, kiro-context.ts, omp-context.ts, pi-context.ts or
- * grok-context.ts may be called directly from startup any more — route it
- * through here.
+ * That makes this module the ONLY way in. None of the `*-context.ts` writers
+ * imported below (claude, opencode, kiro, omp, pi, grok, agy, qwen) may be
+ * called directly from startup any more — route it through here.
  */
 import {
   ensureClaudeContext,

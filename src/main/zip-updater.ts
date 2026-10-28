@@ -235,8 +235,9 @@ function mustKeepLeftover(
 /**
  * Removes update leftovers from `tmpDir`. Every rule fails towards keeping:
  *
- *   - a fresh entry (mtime within maxAgeMs — 1 h by default — in the future, or
- *     unreadable) may belong to a helper that is still running — cmd reads a
+ *   - a fresh entry (mtime within maxAgeMs, 1 h by default; an mtime in the
+ *     future; or an unreadable entry) may belong to a helper that is still
+ *     running — cmd reads a
  *     batch file line by line, so deleting it mid-run skips its own `rmdir`;
  *   - a zip or extract dir whose PID has a fresh helper beside it is kept
  *     whatever its own age: after "Later" the payload can be days old by the
@@ -291,9 +292,9 @@ export interface StagedZipUpdate {
 }
 
 /**
- * The apply helper's batch text. It runs in the OLD wmux — the one being
- * replaced writes it — so a fix here reaches users only on the update AFTER
- * the one that ships it.
+ * The apply helper's batch text. The OLD wmux — the version being replaced —
+ * writes it, and cmd.exe runs it after that wmux quits, so a fix here reaches
+ * users only on the update AFTER the one that ships it.
  */
 export function buildApplyUpdateCmd(): string {
   // Arguments: %1 = pid to wait for, %2 = payload dir, %3 = install dir, %4 = exe to relaunch.
@@ -683,14 +684,10 @@ export async function runPortableZipUpdate(opts: {
  *   - the helper cannot be written, or cmd.exe fails to start (an antivirus
  *     blocking either): rejects with that error, and the payload is still good.
  *
- * What the caller (updater.ts) does with each: PAYLOAD_MISSING forgets the
- * staged update, so the next click downloads; any other rejection keeps the
- * payload, so the next click shows the install dialog again — never a straight
- * quit from a badge reading "Click to try again" — and after two failures of
- * the same payload the click answers `install_failed` with the release page
- * URL. That retry keeps the phase at `error` and starts the dialog
- * synchronously: flipping to `ready` first let a second quick click install
- * behind the dialog. Quit waits for 'spawn'.
+ * What the caller does with each — PAYLOAD_MISSING forgets the staged update;
+ * any other rejection re-offers the install dialog, up to two failures, then
+ * the release page — lives in updater.ts (`requestUpdateNow`,
+ * `applyStagedZipOrReset`), with the reasons. Quit waits for 'spawn'.
  *
  * The 'error' listener stays attached after 'spawn', so a late error on the
  * child is a no-op rather than an uncaught exception in main.

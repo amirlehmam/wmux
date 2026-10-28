@@ -49,7 +49,7 @@ docs/             Planning docs
 
 ### Main Process (`src/main/`)
 
-One line per module. Each module's design notes, and the history behind them, are in its own comments, starting with the header. Read them before changing the module.
+One line per module: what it is for, plus any rule that code in other files must follow. The design notes, and the history behind them, are in the module's own comments, starting with its header (for `remote-console/`, its own `AGENTS.md`). Read them before changing the module.
 
 | File | Role |
 |------|------|
@@ -68,10 +68,10 @@ One line per module. Each module's design notes, and the history behind them, ar
 | `agent-browser-daemon.ts` | Refcounts the agent-browser dashboard by live agent-mode surfaces, and never stops a dashboard it adopted rather than started |
 | `agent-browser-runtime.ts` | The single `SessionRegistry` and `DashboardDaemon` plus their impure hooks and teardown; never construct another, and take dashboard refs only here |
 | `dashboard-content-type.ts` | Relabels the agent-browser dashboard's octet-stream deep-link response as `text/html`, so restoring an agent-mode pane opens no Save dialog (#269) |
-| `agent-spawn-target.ts` | Which (pane, workspace) pair a spawn means (#242): a named pane is authoritative, else the caller's workspace, else the active one; lookups ask every window |
+| `agent-spawn-target.ts` | Which (pane, workspace) pair a spawn means (#242): a named pane is authoritative, else the named workspace, else the caller's, else the active one; pane and surface lookups ask every window |
 | `agent-manager.ts` | Agent PTY spawning and round-robin distribution across panes; the agent command is a `startupCommands` entry that PtyManager delivers |
 | `startup-commands.ts` | When a startup command may be typed into a shell with no init seam (#251). PtyManager owns delivery; no caller may type startup commands itself |
-| `git-bash.ts` | Resolves a bare `bash.exe` / `git-bash.exe` spec to Git for Windows' bash, never the WSL launcher, with Git Bash's login flags (#252) |
+| `git-bash.ts` | What a bare `bash.exe` / `git-bash.exe` spec means (#252): an honest PATH bash, else Git for Windows' `binash.exe` with its login flags; the WSL launcher only as the last resort |
 | `remote-console/*` | The phone Remote Console (#254): watch and answer agent panes from a phone browser. **Off by default, loopback by default.** Before changing anything here, read `src/main/remote-console/AGENTS.md`: the seven invariants (I1–I7), the lazy-loaded runtime, teardown on `will-quit`, and the binding replay |
 | `pty-keys.ts` | Named key → raw PTY bytes, shared by `surface.send_key`, the `pane.answer_agent` writer and the phone key bar so all three type the same bytes (#254) |
 | `window-manager.ts` | Electron BrowserWindow creation/management |
@@ -86,10 +86,10 @@ One line per module. Each module's design notes, and the history behind them, ar
 | `claude-resume.ts` | `claude --resume` on restore (#186): stamps session ids into session.json; ids validated at `reportAgentSession` and in the renderer, never recorded on `SessionEnd` |
 | `codex-launcher.ts` / `codex-resume.ts` | Codex restore (#261): a PATH shim + app-server relay capture the thread id. Off = no shim, no `where codex.exe`; PowerShell gets only the `.ps1`; relay loads lazily |
 | `opencode-resume.ts` | OpenCode restore (#290) as `opencode -s <id>`; strict `ses_<base62>` ids from wmux's plugin (no subagent or shared-server sessions); release refused while wmux quits |
-| `agy-resume.ts` / `agy-context.ts` | Antigravity CLI restore as `agy --conversation <id>`, via wmux's own agy plugin; released when the shell returns to its prompt (never stale, never while quitting) |
-| `qwen-context.ts` / `qwen-resume.ts` | Qwen Code at Claude parity: wmux block, hooks and browser MCP in `$QWEN_HOME`, restore as `qwen --resume <id>`; hook commands bare and tagged `--provider qwen` |
+| `agy-resume.ts` / `agy-context.ts` | Antigravity CLI restore as `agy --conversation <id>`, via wmux's own agy plugin; released when the shell returns to its prompt (refused for an out-of-sequence prompt or while wmux quits) |
+| `qwen-context.ts` / `qwen-resume.ts` | Qwen Code at Claude parity: wmux block, hooks and browser MCP in `$QWEN_HOME`, restore as `qwen --resume <id>`; hook commands unquoted where possible (through a stub in `$QWEN_HOME`) and tagged `--provider qwen` |
 | `pi-resume.ts` | pi restore (#382) as `pi --session <file>`; `isValidPiSessionFile` guards report, prune and renderer; `PiSeqGate` stops a late report outliving a quit |
-| `agent-state.ts` | Declared agent run state (#128): blocked/working/idle, run refcount, `seq` dedupe, metadata TTL, plus the answer back-channel and resumable session handles |
+| `agent-state.ts` | Declared agent run state (#128): blocked/working/idle, run refcount, `seq` dedupe, metadata TTL, plus the answer back-channel (answering never clears `blocked`) and resumable session handles (a PTY exit keeps them) |
 | `agent-state-rpc.ts` | `pane.report_agent` & friends, routed off the main V2 switch |
 | `awake-manager.ts` | Keep Windows awake (#363): one `powerSaveBlocker`, modes smart/always/off, owned and persisted by main; renderers read it via `awake.getState`, never a copy |
 | `agent-hook-bridge.ts` | Claude Code hooks → declared state, so it works with no plugin to install |
@@ -99,9 +99,9 @@ One line per module. Each module's design notes, and the history behind them, ar
 | `icon-cache.ts` | Stale taskbar icon (#137, #226): one notice after an icon change, and a user-confirmed Explorer restart that clears the icon cache |
 | `changelog.ts` | Release notes in the app (#211): fetches GitHub `/releases`, caches every success in wmux's own dir, and falls back to that cache on any failure |
 | `chromium-profile.ts` | Electron's userData (`%APPDATA%\wmux\chromium`) and its one-time migration (#282). wmux's own files: `getAppDataDir()`, never `app.getPath('userData')` |
-| `workspace-manifest.ts` + `workspace-open.ts` / `-scheduler.ts` / `-trust.ts` / `-manifest-v2.ts`, `wait-probes.ts`, `surface-env.ts` | Project-local workspace manifests (#284): validate, trust, schedule, open. No `--trust` flag; manifest commands never enter the store or session.json |
+| `workspace-manifest.ts`, `workspace-open.ts`, `workspace-scheduler.ts`, `workspace-trust.ts`, `workspace-manifest-v2.ts`, `wait-probes.ts`, `surface-env.ts` | Project-local workspace manifests (#284): validate, trust, schedule, open. No `--trust` flag; manifest commands never enter the store or session.json |
 | `session-persistence.ts` | Auto-save/restore of window state: atomic `session.json` writes, named sessions, version-change backups and the scheduled `Auto-save …` snapshot ring |
-| `session-flush.ts` | The last save before a window closes or the app quits (#285): the close or quit waits for each window's `session:save`, bounded to 1 s |
+| `session-flush.ts` | The last save before the last window closes or the app quits (#285): that close, or the quit, waits for each window's `session:save`, bounded to 1 s |
 | `webview-prefs.ts` | The hardened prefs (and gesture-gated autoplay, #287) every browser-panel `<webview>` attaches with, applied from the HOST window's `will-attach-webview` |
 | `browser-history-restore.ts` | Restores a browser pane's Back/Forward stack across a restart or split-tree remount (#315), via a sentinel `<webview>` src and three Electron events |
 | `exit-watchdog.ts` | Arms a detached watchdog process at `will-quit` that ends a quit wedged in native teardown (#289). Never a .cmd or PowerShell helper |
@@ -123,12 +123,12 @@ One line per module. Each module's design notes, and the history behind them, ar
 | `explorer-roots.ts` | surfaceId → the explorer root for a pane: its terminal's reported cwd, normalized and realpath'd so main jails against one spelling |
 | `terminal-file-link.ts` | What a Ctrl+click on a path printed in a terminal may open: the printed path goes through the explorer jail, and past it only markdown-whitelisted files |
 | `code-file.ts` | Which files the code viewer reads and writes, and how. Not the security boundary: `code:read-file` applies `explorer-fs.ts`'s jail first |
-| `file-grants.ts` | The single gate for every renderer→disk write (`markdown:save-file`, `code:write-file`): only a path opened into a live pane in this window and session, unchanged on disk since |
+| `file-grants.ts` | The single gate for every renderer→disk write (`markdown:save-file`, `code:write-file`): only a path opened into a live pane in this window and session through the jail, unchanged on disk since; the unjailed `markdown:read-file` never grants |
 | `markdown-image.ts` | Local images in the markdown pane (#380), behind `markdown:read-image`: a `data:` URL, where the boundary is the file's type, not its location. Read-only |
 | `config-loader.ts` | WT/Ghostty config import. Reachable from Settings → Terminal → Import. WT spells opacity two ways — modern `opacity` (0-100, independent of `useAcrylic`) and pre-1.12 `acrylicOpacity` (0-1, only with `useAcrylic`) |
 | `shell-detector.ts` | Available shells detection |
 | `updater.ts` | Auto-update, routed by install layout: NSIS → `electron-updater`, portable zip → `zip-updater.ts`, Scoop → a `scoop update wmux` dialog |
-| `zip-updater.ts` | In-place update for portable zip extracts (#184): download, extract, then a detached cmd helper that waits for wmux to quit, copies over the install and relaunches |
+| `zip-updater.ts` | In-place update for portable zip extracts (#184): download, extract, then a detached cmd helper that waits for wmux to quit, copies over the install and relaunches. Detection keys on electron-builder's `Uninstall wmux.exe`, so renaming `productName`/`executableName` breaks it |
 
 ### Renderer (`src/renderer/`)
 
@@ -722,4 +722,4 @@ Task procedures live in repo skills, loaded only when a task matches. `.agents/s
 - **PTY IDs = Surface IDs**: Always pass `surfaceId` when creating PTYs for reliable re-attachment
 - **No MCP**: All Claude Code integration via CLI commands
 - **French comms**: User communicates in French, code/docs in English
-- **This file**: a module's design notes and post-mortems go in its own comments or the PR. Add a line here only for a rule that crosses modules, and keep each table row to one line
+- **This file**: a module's design notes and post-mortems go in its own comments or the PR description, not here. Add text here only for a rule that crosses modules, and keep each module's entry to a short summary: what it is for, plus any rule other files must follow. Older entries outside the main-process table still carry notes; move them into the code when you touch one rather than adding to them

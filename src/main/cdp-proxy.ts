@@ -101,7 +101,9 @@ export function isAllowedCdpOrigin(origin: string | undefined): boolean {
  * — the same bug, unreported.
  *
  * Normalization accepts only what Chrome accepts: an unknown route still 404s
- * in both spellings, and neither guard above is on this path.
+ * in both spellings. Neither guard above reads the route, so folding spellings
+ * cannot loosen them — the Host check runs before `cdpRoutePath` on every
+ * request.
  *
  * Pure and exported so the whole table of accepted spellings is testable
  * without binding a port, exactly as the two guards above are.

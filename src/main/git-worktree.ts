@@ -4,7 +4,8 @@
  * A worktree workspace is a checkout wmux created on a NEW branch, under
  * `%LOCALAPPDATA%\wmux\wt\<repo-slug>\<branch-dir>`, from
  * `wmux new-workspace --worktree <branch> [--base <ref>]` or the sidebar menu,
- * and recorded (repo, branch, base SHA) in `worktrees.json` there. Creating
+ * and recorded (repo, branch, base SHA) in `worktrees.json` at the `wt` root
+ * (`registryPath`). Creating
  * one is cheap; REMOVING one is where user work dies, so the whole module is
  * organised around one rule: **wmux never destroys work it was not explicitly
  * told to destroy, and when in doubt it leaves the files on disk and says so.**
