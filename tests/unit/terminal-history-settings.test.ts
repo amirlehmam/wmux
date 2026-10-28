@@ -33,7 +33,6 @@ let root: Root;
 let bridge: TerminalHistoryBridge;
 let current: TerminalHistoryState;
 let listeners: Set<(value: TerminalHistoryState) => void>;
-let calls: string[];
 function emit(value: TerminalHistoryState) {
   current = value;
   for (const listener of listeners) listener(value);
@@ -46,15 +45,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   current = state();
   listeners = new Set();
-  calls = [];
   bridge = {
-    getState: vi.fn(async () => { calls.push('get'); return ok(current); }),
+    getState: vi.fn(async () => ok(current)),
     onState: vi.fn((listener) => {
-      calls.push('subscribe'); listeners.add(listener);
+      listeners.add(listener);
       return () => { listeners.delete(listener); };
     }),
     setEnabled: vi.fn(async (enabled) => { emit(state(enabled)); return ok(current); }),
-    getBinding: vi.fn(), read: vi.fn(), checkpoint: vi.fn(), forget: vi.fn(),
+    getBinding: vi.fn(), read: vi.fn(), checkpoint: vi.fn(),
   };
   window.wmux = { terminalHistory: bridge };
   host = document.createElement('div');
@@ -73,7 +71,8 @@ describe('main-owned terminal output setting', () => {
     const seed = deferred<HistoryResult<TerminalHistoryState>>();
     vi.mocked(bridge.getState).mockReturnValue(seed.promise);
     await mount();
-    expect(calls).toEqual(['subscribe']);
+    expect(vi.mocked(bridge.onState).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(bridge.getState).mock.invocationCallOrder[0]);
     expect(toggle().checked).toBe(false);
     expect(toggle().disabled).toBe(true);
     await act(async () => { seed.resolve(ok(state())); });
@@ -125,7 +124,7 @@ describe('main-owned terminal output setting', () => {
     act(() => emit(state(false, 'cleanup')));
     await act(async () => { change.resolve(ok(state(true))); });
     expect(toggle().checked).toBe(false);
-    expect(status()).toContain('not completely deleted');
+    expect(status()).toContain('cleanup did not finish');
   });
 
   it('explains failed preference persistence without claiming the next restart is disabled', async () => {
@@ -140,9 +139,10 @@ describe('main-owned terminal output setting', () => {
     expect(toggle().disabled).toBe(false);
     expect(status()).toContain('off for this run');
     expect(status()).toContain('previous preference may apply after restart');
+    expect(status()).toContain('then restart wmux and try again');
   });
 
-  it.each([false, true])('keeps actual main consent after incomplete deletion (enabled=%s)', async (enabled) => {
+  it.each([false, true])('keeps actual main consent after incomplete cleanup (enabled=%s)', async (enabled) => {
     current = state(!enabled);
     await mount();
     vi.mocked(bridge.setEnabled).mockImplementation(async () => {
@@ -151,8 +151,7 @@ describe('main-owned terminal output setting', () => {
     });
     await act(async () => toggle().click());
     expect(toggle().checked).toBe(enabled);
-    expect(status()).toContain('not completely deleted');
-    expect(status()).toContain('Old-generation output cannot be restored');
+    expect(status()).toContain('cleanup did not finish');
     expect(toggle().disabled).toBe(false);
   });
 
@@ -167,8 +166,8 @@ describe('main-owned terminal output setting', () => {
     if (broadcast) act(() => emit(state(true)));
     await act(async () => { change.resolve({ ok: false, error: 'cleanup' }); });
     expect(report).toHaveBeenCalledExactlyOnceWith('cleanup');
-    if (broadcast) expect(status()).not.toContain('not completely deleted');
-    else expect(status()).toContain('not completely deleted');
+    if (broadcast) expect(status()).not.toContain('cleanup did not finish');
+    else expect(status()).toContain('cleanup did not finish');
     await act(async () => { refresh.resolve(ok(state(true))); });
     expect(toggle().checked).toBe(true);
     expect(toggle().disabled).toBe(false);
@@ -182,7 +181,7 @@ describe('main-owned terminal output setting', () => {
     vi.mocked(bridge.setEnabled).mockResolvedValue({ ok: false, error: 'cleanup' });
     await act(async () => toggle().click());
     expect(toggle().disabled).toBe(true);
-    expect(status()).toContain('not completely deleted');
+    expect(status()).toContain('cleanup did not finish');
     act(() => emit(state(true, 'cleanup')));
     await act(async () => {
       if (outcome === 'healthy') refresh.resolve(ok(state(false)));
@@ -191,7 +190,7 @@ describe('main-owned terminal output setting', () => {
     });
     expect(toggle().checked).toBe(true);
     expect(toggle().disabled).toBe(false);
-    expect(status()).toContain('not completely deleted');
+    expect(status()).toContain('cleanup did not finish');
     expect(status()).not.toContain('unavailable');
   });
 
@@ -201,7 +200,7 @@ describe('main-owned terminal output setting', () => {
     vi.mocked(bridge.setEnabled).mockReturnValue(new Promise(() => {}));
     act(() => toggle().click());
     expect(status()).toContain('Updating');
-    expect(status()).toContain('not completely deleted');
+    expect(status()).toContain('cleanup did not finish');
   });
 
   it('shows main broadcasts in both mounted consumers and unsubscribes on unmount', async () => {
@@ -233,14 +232,14 @@ describe('main-owned terminal output setting', () => {
     expect(bridge.setEnabled).not.toHaveBeenCalled();
   });
 
-  it.each(['failed', 'rejected'] as const)('keeps incomplete deletion visible when refresh is %s', async (failure) => {
+  it.each(['failed', 'rejected'] as const)('keeps incomplete cleanup visible when refresh is %s', async (failure) => {
     await mount();
     vi.mocked(bridge.setEnabled).mockResolvedValue({ ok: false, error: 'cleanup' });
     if (failure === 'failed') vi.mocked(bridge.getState).mockResolvedValue({ ok: false, error: 'unauthorized' });
     else vi.mocked(bridge.getState).mockRejectedValue(new Error('secret-path'));
     await act(async () => toggle().click());
     expect(toggle().disabled).toBe(true);
-    expect(status()).toContain('not completely deleted');
+    expect(status()).toContain('cleanup did not finish');
     expect(status()).toContain('unavailable');
     expect(status()).not.toContain('secret-path');
   });

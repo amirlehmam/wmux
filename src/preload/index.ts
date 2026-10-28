@@ -41,7 +41,6 @@ const terminalHistory: TerminalHistoryBridge = {
   read: (surface, binding) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_READ, surface, binding),
   checkpoint: (surface, binding, revision, record) =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_CHECKPOINT, surface, binding, revision, record),
-  forget: (surface, incarnation) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_FORGET, surface, incarnation),
   onState: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, state: TerminalHistoryState) => callback(state);
     ipcRenderer.on(IPC_CHANNELS.TERMINAL_HISTORY_STATE, handler);

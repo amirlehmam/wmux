@@ -105,7 +105,7 @@ function setup(history: TerminalHistoryRecord, terminal = make(), source?: Retur
     setEnabled: vi.fn(),
     getBinding: vi.fn(async () => ({ ok: true, value: { binding, incarnation: binding.incarnation } })),
     read: vi.fn(async () => ({ ok: true, value: history })),
-    checkpoint: vi.fn(), forget: vi.fn(),
+    checkpoint: vi.fn(),
   };
   const fit = vi.fn(() => terminal.resize(30, 5));
   const has = vi.fn(async () => false);

@@ -81,7 +81,7 @@ describe('automatic history publication and ownership', () => {
     const call = (channel: string, owner: number, ...args: any[]) => electron.handlers.get(channel)!({ sender: { id: owner } }, ...args);
     for (const channel of [IPC_CHANNELS.TERMINAL_HISTORY_GET_STATE, IPC_CHANNELS.TERMINAL_HISTORY_SET_ENABLED,
       IPC_CHANNELS.TERMINAL_HISTORY_BINDING, IPC_CHANNELS.TERMINAL_HISTORY_READ,
-      IPC_CHANNELS.TERMINAL_HISTORY_CHECKPOINT, IPC_CHANNELS.TERMINAL_HISTORY_FORGET]) {
+      IPC_CHANNELS.TERMINAL_HISTORY_CHECKPOINT]) {
       expect(await call(channel, 99, 'surf-a', token, 1, record())).toEqual({ ok: false, error: 'unauthorized' });
     }
     expect(await call(IPC_CHANNELS.TERMINAL_HISTORY_CHECKPOINT, 2, 'surf-a', token, 1, record())).toMatchObject({ ok: false });
@@ -590,12 +590,10 @@ describe('production IPC ownership hooks and preload capture', () => {
     const token = { recordId: `hist-${randomUUID()}`, generation: 0, incarnation: randomUUID() };
     await bridge.getState(); await bridge.setEnabled(true); await bridge.getBinding('surf-a');
     await bridge.read('surf-a', token); await bridge.checkpoint('surf-a', token, 2, record());
-    await bridge.forget('surf-a', token.incarnation);
-    expect(electron.invoke.mock.calls.slice(-6)).toEqual([
+    expect(electron.invoke.mock.calls.slice(-5)).toEqual([
       [IPC_CHANNELS.TERMINAL_HISTORY_GET_STATE], [IPC_CHANNELS.TERMINAL_HISTORY_SET_ENABLED, true],
       [IPC_CHANNELS.TERMINAL_HISTORY_BINDING, 'surf-a'], [IPC_CHANNELS.TERMINAL_HISTORY_READ, 'surf-a', token],
       [IPC_CHANNELS.TERMINAL_HISTORY_CHECKPOINT, 'surf-a', token, 2, record()],
-      [IPC_CHANNELS.TERMINAL_HISTORY_FORGET, 'surf-a', token.incarnation],
     ]);
     const callback = vi.fn();
     const unsubscribe = bridge.onState(callback);

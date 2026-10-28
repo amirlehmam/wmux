@@ -7,6 +7,7 @@ import { TerminalHistoryCheckpoints } from '../../src/renderer/utils/terminal-hi
 import { subscribeTerminalHistoryState } from '../../src/renderer/utils/terminal-history-state';
 import { connectTerminalWithHistory } from '../../src/renderer/utils/terminal-history';
 import { ReplayHold } from '../../src/renderer/utils/replay-hold';
+import { en } from '../../src/renderer/i18n/locales/en';
 
 let feedback: typeof import('../../src/renderer/utils/terminal-history-feedback');
 const cleanups: (() => void)[] = [];
@@ -44,6 +45,12 @@ describe('coalesced terminal history feedback', () => {
     }
     expect(notice).not.toHaveBeenCalled();
     const t = (_key: string, fallback?: string) => fallback ?? _key;
+    for (const translate of [t, (key: keyof typeof en) => en[key]]) {
+      expect(feedback.terminalHistoryWarningText('settings', translate)).toBe(
+        'The preference could not be saved. Saving and restoring are off for this run, but the previous preference may apply after restart. Check disk space and permissions, then restart wmux and try again.');
+      expect(feedback.terminalHistoryWarningText('cleanup', translate)).toBe(
+        'Saved-output cleanup did not finish. Check folder permissions.');
+    }
     for (const error of ['io', 'session', 'invalid-target', 'checkpoint', 'revision', 'unsafe-content',
       'capture', 'replay', 'cleanup', 'settings', 'state']) {
       feedback.reportTerminalHistoryFailure(error);
@@ -68,7 +75,7 @@ describe('coalesced terminal history feedback', () => {
     const bridge: TerminalHistoryBridge = {
       getState: vi.fn(async () => ({ ok: true, value: state })),
       onState: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-      setEnabled: vi.fn(), read: vi.fn(), forget: vi.fn(),
+      setEnabled: vi.fn(), read: vi.fn(),
       getBinding: vi.fn(async (surface) => ({ ok: true, value: { incarnation: surface, revisionFloor: 0,
         binding: { recordId: surface, incarnation: surface, generation: 1 } } })),
       checkpoint: vi.fn(async (_surface, _binding, revision) => {
@@ -120,7 +127,7 @@ describe('coalesced terminal history feedback', () => {
         normal: { startLine: 0, lineCount: 4, ansi: 'fixture output' } };
       const bridge: TerminalHistoryBridge = {
         getState: vi.fn(async () => ({ ok: true, value: { enabled: true, generation: 1, error: null } })),
-        onState: () => () => {}, setEnabled: vi.fn(), checkpoint: vi.fn(), forget: vi.fn(),
+        onState: () => () => {}, setEnabled: vi.fn(), checkpoint: vi.fn(),
         getBinding: vi.fn(async () => ({ ok: true, value: { binding, incarnation: 'live' } })),
         read: vi.fn(async () => ({ ok: true, value: record as any })),
       };

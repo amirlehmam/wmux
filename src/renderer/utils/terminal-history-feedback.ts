@@ -20,8 +20,8 @@ export function terminalHistoryWarningText(category: TerminalHistoryWarning, t: 
     case 'record': return t('terminalHistory.record', 'Some terminal output could not be saved or restored because its format was not supported. Live terminals are unaffected.');
     case 'restore': return t('terminalHistory.restore', 'Some saved terminal output could not be restored. A fresh terminal will open instead.');
     case 'capture': return t('terminalHistory.capture', 'Some terminal output could not be captured for saving. Live terminals are unaffected; wmux will retry.');
-    case 'cleanup': return t('terminalHistory.cleanup', 'Saved terminal output was not completely deleted. Old-generation output cannot be restored. Check folder permissions and try turning saving off again.');
-    case 'settings': return t('terminalHistory.settings', 'The preference could not be saved. Saving and restoring are off for this run, but the previous preference may apply after restart. Check disk space and permissions, then try again.');
+    case 'cleanup': return t('terminalHistory.cleanup', 'Saved-output cleanup did not finish. Check folder permissions.');
+    case 'settings': return t('terminalHistory.settings', 'The preference could not be saved. Saving and restoring are off for this run, but the previous preference may apply after restart. Check disk space and permissions, then restart wmux and try again.');
     case 'state': return t('terminalHistory.state', 'Terminal output saving is unavailable. Reopen Settings to retry; if it persists, restart wmux when convenient.');
   }
 }

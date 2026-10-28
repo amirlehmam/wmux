@@ -30,7 +30,7 @@ function setup(enabled = true, seed?: Promise<HistoryResult<TerminalHistoryState
   const bridge: TerminalHistoryBridge = {
     getState: vi.fn(async () => seed ?? ({ ok: true, value: { enabled, generation, error: null } })),
     onState: (callback) => { listeners.add(callback); return () => { listeners.delete(callback); }; },
-    setEnabled: vi.fn(), read: vi.fn(), forget: vi.fn(),
+    setEnabled: vi.fn(), read: vi.fn(),
     getBinding: vi.fn(async (surface) => ({ ok: true, value: {
       binding: { incarnation: 'live', recordId: `hist-${surface}`, generation }, incarnation: 'live',
       revisionFloor: floors.get(surface) ?? 0,

@@ -711,7 +711,6 @@ export const IPC_CHANNELS = {
   TERMINAL_HISTORY_BINDING: 'terminal-history:binding',
   TERMINAL_HISTORY_READ: 'terminal-history:read',
   TERMINAL_HISTORY_CHECKPOINT: 'terminal-history:checkpoint',
-  TERMINAL_HISTORY_FORGET: 'terminal-history:forget',
   // Remote file upload (ssh panes) — main resolves the whole paste/drop
   REMOTE_RESOLVE_PASTE: 'remote:resolve-paste',
   REMOTE_RESOLVE_DROP: 'remote:resolve-drop',

@@ -337,10 +337,6 @@ describe('saveSession never leaves the session file missing', () => {
     };
     expect(mod.saveSession(previous)).toBe(true);
     const original = fs.readFileSync(mod.getSessionPath(), 'utf8');
-    // No update handoff remains to rescue a destructive replacement failure.
-    const retiredHandoff = path.join(path.dirname(mod.getSessionPath()), 'history-handoff.json');
-    fs.writeFileSync(retiredHandoff, '{}');
-    fs.unlinkSync(retiredHandoff);
     const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
       throw Object.assign(new Error('locked'), { code: 'EPERM' });
     });

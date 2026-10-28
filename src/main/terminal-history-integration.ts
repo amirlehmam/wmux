@@ -332,6 +332,5 @@ export class TerminalHistoryIntegration {
     handle(IPC_CHANNELS.TERMINAL_HISTORY_READ, (owner, surface, binding) => this.read(owner, surface, binding));
     handle(IPC_CHANNELS.TERMINAL_HISTORY_CHECKPOINT, (owner, surface, binding, revision, record) =>
       this.checkpoint(owner, surface, binding, revision, record));
-    handle(IPC_CHANNELS.TERMINAL_HISTORY_FORGET, (owner, surface, incarnation) => this.forget(owner, surface, incarnation));
   }
 }

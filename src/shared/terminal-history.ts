@@ -35,7 +35,6 @@ export interface TerminalHistoryBridge {
   read(surface: string, binding: TerminalHistoryBinding): Promise<HistoryResult<TerminalHistoryRecord>>;
   checkpoint(surface: string, binding: TerminalHistoryBinding, revision: number,
     record: TerminalHistoryRecord): Promise<HistoryResult<{ revision: number }>>;
-  forget(surface: string, incarnation: string): Promise<HistoryResult>;
 }
 
 export type TerminalHistoryColor =
