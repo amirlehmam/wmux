@@ -216,13 +216,14 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     (await resizedTail.draw())();
     s.create.mockImplementation(async () => {
       expect([s.terminal.cols, s.terminal.rows]).toEqual([18, 8]);
-      expect(viewport(s.terminal).every((row) => row === '')).toBe(true);
+      expect(viewport(s.terminal).join('')).toContain('[New terminal session');
       return { id: 'surf-history', reused: false };
     });
     await connect;
     expect(s.create).toHaveBeenCalledOnce();
     expect(s.attach).toHaveBeenCalledOnce();
     expect(s.restoreLive).toHaveBeenCalledExactlyOnceWith(false);
+    expect(s.create).toHaveBeenCalledExactlyOnceWith(true);
     expect(s.hold.isHolding).toBe(false);
     expect(text(s.terminal)).toContain('retained-before');
     expect(s.ptyWrite).not.toHaveBeenCalled();
@@ -346,7 +347,7 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(s.create).toHaveBeenCalledOnce();
   });
 
-  it('finishes asynchronous post-draw authorization before cleaning the CURRENT viewport', async () => {
+  it('finishes asynchronous post-draw authorization before placing the divider at the current size', async () => {
     const s = setup(await record());
     const authorizing = deferred<void>();
     const authorization = deferred<Awaited<ReturnType<TerminalHistoryBridge['getBinding']>>>();
@@ -363,10 +364,12 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     authorization.resolve({ ok: true, value: { binding: s.binding, incarnation: s.binding.incarnation } });
     await connect;
     expect([s.terminal.cols, s.terminal.rows]).toEqual([75, 12]);
-    expect(viewport(s.terminal).every((row) => row === '')).toBe(true);
+    expect(viewport(s.terminal)).toContain('retained-last');
     expect(text(s.terminal)).toContain('retained-before-restart');
+    const promptRow = s.terminal.buffer.normal.cursorY;
     await write(s.terminal, 'fresh-shell>');
-    expect(viewport(s.terminal)[0]).toBe('fresh-shell>');
+    expect(viewport(s.terminal)[promptRow]).toBe('fresh-shell>');
+    expect(viewport(s.terminal)).toContain('retained-last');
   });
 
   it('rechecks the lifetime token after a deferred read, not just the surface ID', async () => {
@@ -432,7 +435,7 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     else if (outcome === 'throw') vi.mocked(s.bridge.read).mockRejectedValue(new Error('sensitive payload must never be reported'));
     else vi.mocked(s.bridge.read).mockResolvedValue({ ok: false, error: outcome });
     await s.run();
-    expect(s.create).toHaveBeenCalledOnce();
+    expect(s.create).toHaveBeenCalledExactlyOnceWith(false);
     expect(s.attach).toHaveBeenCalledOnce();
     expect(text(s.terminal).trim()).toBe('');
     expect(s.hold.isHolding).toBe(false);
@@ -474,7 +477,7 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(attachedBeforeConfirmation).toBe(0);
     expect(text(replacement.terminal).replaceAll('\n', '').match(/retained-before-restart/g)).toHaveLength(1);
     expect([replacement.terminal.cols, replacement.terminal.rows]).toEqual([18, 8]);
-    expect(viewport(replacement.terminal).every((row) => row === '')).toBe(true);
+    expect(viewport(replacement.terminal).join('')).toContain('[New terminal session');
     expect(replacement.create).not.toHaveBeenCalled();
     expect(replacement.attach).toHaveBeenCalledOnce();
     expect(original.create).toHaveBeenCalledOnce();
@@ -903,7 +906,8 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     await s.run();
     await write(s.terminal, '');
     expect(text(s.terminal)).toContain('retained-before-restart');
-    expect(viewport(s.terminal)[0]).toBe('fresh-shell> immediate');
+    expect(viewport(s.terminal)).toContain('fresh-shell> immediate');
+    expect(viewport(s.terminal).join('')).toContain('retained-last');
     expect(s.ptyWrite).not.toHaveBeenCalled();
     expect(s.unsubscribe).toHaveBeenCalledOnce();
   });
@@ -945,7 +949,8 @@ describe('useTerminal history ownership wiring', () => {
     expect(source).toContain('retained.attach(onData, onExit, (callback) =>');
     expect(source).toContain('window.wmux.pty.onData(id, onData), window.wmux.pty.onExit(id, onExit)');
     expect(source).toContain('const reflows = !!ptyIdRef.current &&');
-    expect(source).toMatch(/create: \(\) => \{[\s\S]*?proposeInitialDims\(fitAddon\)/);
+    expect(source).toMatch(/create: \(inheritCursor\) => \{[\s\S]*?inheritCursor \? terminal : proposeInitialDims\(fitAddon\)/);
+    expect(source).toContain('conptyInheritCursor: inheritCursor');
   });
   it('only reaps an abandoned new process for a closed surface with no replacement owner', () => {
     expect(source).toContain('if (!created.reused && !open && (!replacement || replacement === terminal)) window.wmux.pty.kill(created.id)');

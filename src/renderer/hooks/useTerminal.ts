@@ -1909,9 +1909,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       signal: preparation.signal, isCurrent, events: window.wmux.pty,
       has: surfaceId && window.wmux.pty.has ? () => window.wmux.pty.has(surfaceId) : undefined,
       fit,
-      create: () => {
-        // History drawing and current-size fitting must finish BEFORE spawn.
-        const { cols, rows } = proposeInitialDims(fitAddon);
+      create: (inheritCursor) => {
+        // Cursor inheritance needs the geometry replay actually finished at,
+        // including hidden panes where dimensions cannot currently be measured.
+        const { cols, rows } = inheritCursor ? terminal : proposeInitialDims(fitAddon);
         const spawnCommands = surfaceId && window.wmux.pty.has ? withClaudeResume({
           base: startupCommandsRef.current,
           surfaceId,
@@ -1932,7 +1933,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           shell: effectiveShell,
         }) : startupCommandsRef.current;
         return window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd,
-          env: envRef.current ?? {}, surfaceId, startupCommands: spawnCommands, cols, rows }) as
+          env: envRef.current ?? {}, surfaceId, startupCommands: spawnCommands, cols, rows,
+          conptyInheritCursor: inheritCursor }) as
           Promise<{ id: string; shell: string; reused: boolean; shellFallbackFrom?: string }>;
       },
       captureCompleted: () => ({ text: serializeRemountSnapshot(serializeAddon), cols: terminal.cols, rows: terminal.rows }),

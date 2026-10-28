@@ -608,6 +608,8 @@ interface PtyEntry {
   writeChain: Promise<void>;
   pendingChunks: number;
   alive: boolean;
+  awaitingInheritedCursor: boolean;
+  deferredDA1: boolean;
   // Last applied size. Used to drop redundant same-size resizes, which would
   // otherwise make the shell (PSReadLine/oh-my-posh) redraw the prompt for no
   // reason — a cause of the doubled prompt on startup.
@@ -625,6 +627,8 @@ export interface CreateOptions {
   env: Record<string, string>;
   cols?: number;
   rows?: number;
+  /** A fresh shell must start below restored output, not redraw over its first row. */
+  conptyInheritCursor?: boolean;
   /** When provided, use this as the PTY key instead of generating a new one.
    *  This keeps Surface IDs and PTY IDs in sync for reliable re-attachment. */
   surfaceId?: SurfaceId;
@@ -672,6 +676,9 @@ export interface CreateResult {
 // eslint-disable-next-line no-control-regex -- ESC is intentional: this matches the DA1 query byte-for-byte
 const DA1_QUERY = /\x1b\[\d*c/;
 const DA1_REPLY = '\x1b[?62;4;9;22c';
+// ConPTY stops accepting the inherited cursor once DA1 completes startup.
+// eslint-disable-next-line no-control-regex -- Match xterm's cursor-position reply, not ordinary input.
+const CURSOR_POSITION_REPLY = /^\x1b\[\d+;\d+R$/;
 
 export class PtyManager {
   private ptys = new Map<SurfaceId, PtyEntry>();
@@ -834,6 +841,7 @@ export class PtyManager {
       cwd: spawnCwd,
       env,
       useConpty: true,
+      conptyInheritCursor: options.conptyInheritCursor === true,
       // The OS-inbox ConPTY garbles fast TUI repaints (stray inverse cells at
       // the app's cursor position — issues #23/#30). Use node-pty's bundled
       // modern conpty.dll instead; it resolves relative to the loaded
@@ -864,6 +872,8 @@ export class PtyManager {
       writeChain: Promise.resolve(),
       pendingChunks: 0,
       alive: true,
+      awaitingInheritedCursor: spawnOptions.conptyInheritCursor === true,
+      deferredDA1: false,
       cols: spawnOptions.cols ?? 80,
       rows: spawnOptions.rows ?? 24,
       shell,
@@ -875,7 +885,10 @@ export class PtyManager {
       // reply (see DA1_QUERY note above). Only the escape character is common
       // enough to warrant the cheap guard before the regex scan.
       if (entry.alive && data.indexOf('\x1b[') !== -1 && DA1_QUERY.test(data)) {
-        try { ptyProcess.write(DA1_REPLY); } catch { /* pty disposed between events */ }
+        if (entry.awaitingInheritedCursor) entry.deferredDA1 = true;
+        else {
+          try { ptyProcess.write(DA1_REPLY); } catch { /* pty disposed between events */ }
+        }
       }
       for (const listener of entry.dataListeners) {
         listener(data);
@@ -939,6 +952,16 @@ export class PtyManager {
   write(id: SurfaceId, data: string): void {
     const entry = this.ptys.get(id);
     if (!entry || !entry.alive || data.length === 0) return;
+    if (entry.awaitingInheritedCursor && CURSOR_POSITION_REPLY.test(data)) {
+      // Protocol replies must not wait behind a paste while ConPTY is waiting
+      // for startup. Submit CPR before allowing any DA1 to complete the probe.
+      try {
+        entry.pty.write(data + (entry.deferredDA1 ? DA1_REPLY : ''));
+        entry.awaitingInheritedCursor = false;
+        entry.deferredDA1 = false;
+      } catch { /* pty disposed between lookup and reply */ }
+      return;
+    }
 
     // Fast path: single keystrokes, control sequences, short responses bypass
     // the queue entirely so typing latency is unchanged.

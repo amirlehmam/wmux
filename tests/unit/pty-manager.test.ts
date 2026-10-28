@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Terminal } from '@xterm/xterm';
 import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShell, resolveShellForCwd, resolveExistingShellPath, comparePackageVersion, appExecAliasTarget, shellEnv, shellProbe, resetShellPathCache, buildShellArgs } from '../../src/main/pty-manager';
 import { workspaceFallbackCwd } from '../../src/shared/paths';
 import type { SurfaceId } from '../../src/shared/types';
@@ -74,6 +75,60 @@ describe('PtyManager', { timeout: 60_000 }, () => {
       env: TEST_ENV,
     });
     expect(id).toMatch(/^surf-/);
+  });
+
+  it('lets a fresh ConPTY shell inherit the cursor below visible restored output', async () => {
+    const manager = makeManager();
+    const terminal = new Terminal({ cols: 100, rows: 12, allowProposedApi: true });
+    await new Promise<void>((resolve) => terminal.write('saved output\r\n[new session]\r\n', resolve));
+    const { id } = manager.create({
+      shell: TEST_SHELL, cwd: process.env.USERPROFILE || 'C:\\', env: TEST_ENV,
+      cols: terminal.cols, rows: terminal.rows, conptyInheritCursor: true,
+    });
+    const entry = (manager as unknown as {
+      ptys: Map<SurfaceId, { pendingChunks: number; writeChain: Promise<void> }>;
+    }).ptys.get(id)!;
+    let releaseQueue!: () => void;
+    // A held paste queue must not trap startup protocol replies.
+    entry.pendingChunks = 1;
+    entry.writeChain = new Promise<void>((resolve) => { releaseQueue = resolve; });
+    let received = '';
+    let inherited = false;
+    const reply = terminal.onData((data) => {
+      if (data === '\x1b[3;1R') {
+        inherited = true;
+        manager.write(id, data);
+      }
+    });
+    const unsubscribe = manager.onData(id, (data) => { received += data; terminal.write(data); });
+    try {
+      await vi.waitFor(() => {
+        expect(received).toContain('\x1b[6n');
+        expect(inherited).toBe(true);
+        const rows = Array.from({ length: terminal.rows }, (_, y) =>
+          terminal.buffer.normal.getLine(terminal.buffer.normal.baseY + y)!.translateToString(true));
+        expect(rows[0]).toBe('saved output');
+        expect(rows[1]).toBe('[new session]');
+        expect(rows.slice(2).join('')).toContain('>');
+      }, { timeout: 10_000 });
+      entry.pendingChunks = 0;
+      releaseQueue();
+      terminal.resize(102, 12);
+      manager.resize(id, 102, 12);
+      manager.write(id, 'echo CURSOR_INHERIT_TYPED_OK\r');
+      await vi.waitFor(() => {
+        const rows = Array.from({ length: terminal.buffer.normal.length }, (_, y) =>
+          terminal.buffer.normal.getLine(y)!.translateToString(true));
+        expect(rows[0]).toBe('saved output');
+        expect(rows[1]).toBe('[new session]');
+        expect(rows).toContain('CURSOR_INHERIT_TYPED_OK');
+      }, { timeout: 10_000 });
+    } finally {
+      releaseQueue();
+      unsubscribe();
+      reply.dispose();
+      terminal.dispose();
+    }
   });
 
   it('has() returns true after create and false after kill', () => {

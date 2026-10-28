@@ -165,8 +165,8 @@ export type TerminalHistoryReplayResult =
  * Only for a fresh, unattached xterm. No PTY or registry is touched here. The
  * owner must route concurrent fit requests through the supplied ReplayHold;
  * fitCurrentSize runs after drawing drains and must not spawn/write a PTY.
- * A fit deferred during the tail requires another clean viewport at that new
- * size; scrolling before clearing keeps any newly exposed history intact.
+ * The fresh prompt follows a visible history divider. A deferred fit reflows
+ * that tail without duplicating it or clearing the restored rows.
  * The owner supplies identity/consent checks, including inside write callbacks.
  */
 export async function replayTerminalHistory(
@@ -185,7 +185,7 @@ export async function replayTerminalHistory(
   const record = validated.record;
   const checkpoint = new Date(record.capturedAt).toISOString();
   // These wrappers are trusted code, never part of the on-disk drawing language.
-  let drawing = RESET + record.normal.ansi + RESET + `\x1b[${record.rows};1H\r\n`;
+  let drawing = RESET + record.normal.ansi + RESET + '\r\n';
   if (record.alternate) drawing += `[Frozen alternate screen | checkpoint ${checkpoint}]\r\n`
     + renderAlternate(record.alternate) + RESET + '\r\n';
   hold.hold();
@@ -196,14 +196,14 @@ export async function replayTerminalHistory(
   } finally {
     hold.release();
   }
-  // Authorization can involve IPC. Finish it BEFORE the final geometry/tail
-  // loop, so no later await can expose old rows after the viewport is cleaned.
+  // Authorization can involve IPC. Finish it before the final geometry/tail
+  // loop so the divider and fresh prompt use the current authorized geometry.
   if (lifecycle.beforeTail) {
     if (!current()) return cancelled;
     await lifecycle.beforeTail();
     if (!current()) return cancelled;
   }
-  let divider = `[New terminal session | checkpoint ${checkpoint}]`;
+  let divider = `\r\n[New terminal session | checkpoint ${checkpoint}]\r\n`;
   let fitOwed: boolean;
   do {
     if (!current()) return cancelled;
@@ -211,11 +211,9 @@ export async function replayTerminalHistory(
     if (!current()) return cancelled;
     hold.hold();
     try {
-      // The tail is geometry-dependent too. Keep its size through parsing,
-      // then honour any deferred fit without printing a duplicate divider.
-      // Scroll all current rows before ED, including history exposed by a fit.
-      if (!await write(terminal, RESET + `\x1b[${terminal.rows};1H` + divider
-        + '\r\n'.repeat(terminal.rows) + '\x1b[H\x1b[2J', current, lifecycle.signal)
+      // Keep the divider's geometry through parsing, then honour a deferred
+      // fit without padding a blank screen between history and the new prompt.
+      if (!await write(terminal, RESET + divider, current, lifecycle.signal)
         || !current()) return cancelled;
     } finally {
       fitOwed = hold.release();
@@ -397,7 +395,7 @@ interface TerminalHistoryConnection<T extends CreatedTerminal> {
   signal: AbortSignal;
   isCurrent(): boolean;
   has?: () => Promise<boolean>;
-  create(): Promise<T>;
+  create(inheritCursor: boolean): Promise<T>;
   fit(): void;
   captureCompleted?(): RemountSnapshot | null;
   events?: HistoryPtyEvents;
@@ -568,7 +566,7 @@ export async function connectTerminalWithHistory<T extends CreatedTerminal>(
     }
     if (!current()) return;
     // create() computes dimensions now, not before the disk read/current fit.
-    const created = await options.create();
+    const created = await options.create(restored && eligible());
     if (pendingCreation) {
       pendingCreation.confirmed = true;
       pendingCreation.fresh = !created.reused;

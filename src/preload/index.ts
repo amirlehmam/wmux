@@ -52,7 +52,7 @@ const terminalHistory: TerminalHistoryBridge = {
 contextBridge.exposeInMainWorld('wmux', {
   terminalHistory,
   pty: {
-    create: (options: { shell: string; cwd: string; env: Record<string, string>; surfaceId?: string; startupCommands?: string[]; cols?: number; rows?: number }) =>
+    create: (options: { shell: string; cwd: string; env: Record<string, string>; surfaceId?: string; startupCommands?: string[]; cols?: number; rows?: number; conptyInheritCursor?: boolean }) =>
       ipcRenderer.invoke(IPC_CHANNELS.PTY_CREATE, options) as Promise<{ id: string; shell: string; startupCommandsConsumed?: boolean; reused: boolean; shellFallbackFrom?: string }>,
     write: (id: string, data: string) =>
       ipcRenderer.send(IPC_CHANNELS.PTY_WRITE, id, data),

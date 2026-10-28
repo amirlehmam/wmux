@@ -61,6 +61,21 @@ function emptyRecord(): TerminalHistoryRecord {
 }
 
 describe('terminal history codec with real xterm and SerializeAddon', () => {
+  it('keeps restored output visible immediately above the divider and fresh prompt', async () => {
+    const source = make(80, 12);
+    await write(source.terminal, 'OLD> ls\r\none.txt\r\ntwo.txt');
+    const destination = make(80, 12).terminal;
+    expect(await replayTerminalHistory(destination, capture(source), new ReplayHold(), () => {}))
+      .toEqual({ ok: true, restored: true });
+    await write(destination, 'NEW> ');
+    const visible = lines(destination).slice(destination.buffer.normal.baseY);
+    expect(visible.slice(0, 6)).toEqual([
+      'OLD> ls', 'one.txt', 'two.txt', '',
+      '[New terminal session | checkpoint 1970-01-01T00:00:01.234Z]', 'NEW> ',
+    ]);
+    expect(destination.buffer.normal.viewportY).toBe(destination.buffer.normal.baseY);
+  });
+
   it('retains source rows, colours, background blanks, soft wraps and wide/combining text without a final cursor restore', async () => {
     const source = make();
     await write(source.terminal, Array.from({ length: 12 }, (_, i) => `line-${i}`).join('\r\n') + '\r\n');
@@ -185,19 +200,19 @@ describe('terminal history codec with real xterm and SerializeAddon', () => {
     expect(before.join('')).toContain('wrapped-output-'.repeat(4));
     expect(before.join('')).toContain('retained-last');
     expect(destination.buffer.normal.cursorX).toBe(0);
-    expect(destination.buffer.normal.cursorY).toBe(0);
-    expect(lines(destination).slice(destination.buffer.normal.baseY)).toEqual(Array(rows).fill(''));
+    expect(lines(destination)[destination.buffer.normal.baseY + destination.buffer.normal.cursorY]).toBe('');
+    expect(destination.buffer.normal.viewportY).toBe(destination.buffer.normal.baseY);
     await write(destination, 'PS> ');
     expect(lines(destination).filter(Boolean)).toEqual([...before, 'PS> ']);
   });
 
-  it('holds the asynchronous tail at its geometry and refits a clean viewport without erasing history', async () => {
+  it('holds the asynchronous tail and refits visible history without erasing or duplicating it', async () => {
     const source = make(32, 4);
     await write(source.terminal, 'history1\r\nhistory2\r\nhistory3\r\nhistory4');
     const record = capture(source);
-    const destination = make(32, 4).terminal;
+    const destination = make(32, 5).terminal;
     const hold = new ReplayHold();
-    let desiredRows = 4;
+    let desiredRows = 5;
     const fit = vi.fn(() => { destination.resize(32, desiredRows); });
     const realWrite = destination.write.bind(destination);
     let releaseTail!: () => void;
@@ -216,7 +231,7 @@ describe('terminal history codec with real xterm and SerializeAddon', () => {
     await tailQueued;
     desiredRows = 10;
     if (hold.request()) fit();
-    expect(destination.rows).toBe(4);
+    expect(destination.rows).toBe(5);
     releaseTail();
     expect(await replay).toEqual({ ok: true, restored: true });
     expect(hold.isHolding).toBe(false);
@@ -225,10 +240,11 @@ describe('terminal history codec with real xterm and SerializeAddon', () => {
     const output = logicalLines(destination).map((line) => line.text);
     for (const line of ['history1', 'history2', 'history3', 'history4']) expect(output).toContain(line);
     expect(output.filter((line) => line.includes('[New terminal session | checkpoint '))).toHaveLength(1);
-    expect(lines(destination).slice(destination.buffer.normal.baseY)).toEqual(Array(10).fill(''));
-    expect([destination.buffer.normal.cursorX, destination.buffer.normal.cursorY]).toEqual([0, 0]);
+    expect(lines(destination).slice(destination.buffer.normal.baseY)).toContain('history4');
+    expect(destination.buffer.normal.cursorX).toBe(0);
+    const before = lines(destination).filter(Boolean);
     await write(destination, 'PS> ');
-    expect(lines(destination).slice(destination.buffer.normal.baseY)).toEqual(['PS> ', ...Array(9).fill('')]);
+    expect(lines(destination).filter(Boolean)).toEqual([...before, 'PS> ']);
     for (const line of ['history1', 'history2', 'history3', 'history4']) expect(lines(destination)).toContain(line);
   });
 
