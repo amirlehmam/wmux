@@ -81,8 +81,9 @@ describe('close-path wiring (#385)', () => {
   it('a terminal torn down while pty.has() is in flight never attaches PTY listeners', () => {
     // Attaching after cleanup ran registers onData/onExit listeners nothing will
     // ever remove, each holding the disposed terminal and its whole buffer.
-    expect(read('hooks/useTerminal.ts')).toMatch(
-      /pty\.has\(surfaceId\)\.then\(\(exists: boolean\) => \{[^}]*?if \(disposed\) return;\s*if \(exists\)/,
+    expect(read('hooks/useTerminal.ts')).toContain('signal: preparation.signal, isCurrent');
+    expect(read('utils/terminal-history.ts')).toMatch(
+      /const exists = options\.has \? await options\.has\(\) : false;\s*if \(!current\(\)\) return;/,
     );
   });
 });

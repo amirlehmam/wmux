@@ -65,19 +65,11 @@ describe('useTerminal wiring', () => {
     expect(restore).toBeGreaterThan(fit);
     expect(take).toBeGreaterThan(restore);
 
-    // Runtime order, not just text order: the fit runs synchronously in the
-    // mount effect, and every call of the restore sits in a callback of the
-    // async PTY lookup (has()/create() .then), which cannot run before that
-    // synchronous effect body has returned.
-    const lookup = USE_TERMINAL.indexOf('if (surfaceId && window.wmux.pty.has)');
-    expect(lookup).toBeGreaterThan(fit);
-    const calls = [...USE_TERMINAL.matchAll(/restoreSurfaceState\(/g)]
-      .map((m) => m.index ?? -1)
-      .filter((i) => i !== restore + 'const '.length);
-    expect(calls.length).toBeGreaterThan(0);
-    for (const call of calls) {
-      expect(USE_TERMINAL.lastIndexOf('.then((', call)).toBeGreaterThan(lookup);
-    }
+    // Runtime lookup/restore ordering is exercised by the production helper's
+    // behavioral lifecycle tests. The initial synchronous fit still precedes it.
+    const connection = USE_TERMINAL.indexOf('void connectTerminalWithHistory({');
+    expect(connection).toBeGreaterThan(fit);
+    expect(USE_TERMINAL.indexOf('restoreLive: restoreSurfaceState', connection)).toBeGreaterThan(connection);
   });
 
   it('replays a snapshot at the size it was taken at, before writing it', () => {

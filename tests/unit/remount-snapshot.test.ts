@@ -219,10 +219,12 @@ describe('useTerminal wiring', () => {
   it('replays a snapshot only once the PTY lookup says whether the PTY was reused', () => {
     // Nothing reads the cache at mount, before the lookup has answered.
     expect(USE_TERMINAL).not.toMatch(/surfaceBufferCache\.get\(/);
-    // Each attach is preceded by the restore, told what the lookup found.
-    expect(USE_TERMINAL).toMatch(/restoreSurfaceState\(true\);\s*attachToPty\(surfaceId!\);/);
-    const created = USE_TERMINAL.match(/restoreSurfaceState\(created\.reused\);[\s\S]{0,200}?attachToPty\(created\.id\);/g);
-    expect(created).toHaveLength(2);
+    // The production connection helper owns lookup/attach ordering; its races
+    // are exercised with real xterm in terminal-history-lifecycle.test.ts.
+    expect(USE_TERMINAL).toContain('restoreLive: restoreSurfaceState');
+    const connection = fs.readFileSync(path.join(__dirname, '../../src/renderer/utils/terminal-history.ts'), 'utf8');
+    expect(connection).toMatch(/options\.restoreLive\(true\);\s*options\.attach\(surfaceId, undefined, retained\);/);
+    expect(connection).toMatch(/options\.restoreLive\(created\.reused\);[\s\S]{0,250}?options\.attach\(created\.id, created, retained\);/);
   });
 
   it('replays mouse modes on the same decision, and forgets them for a fresh PTY', () => {
