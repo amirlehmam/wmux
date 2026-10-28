@@ -69,9 +69,9 @@ describe('terminal history codec with real xterm and SerializeAddon', () => {
       .toEqual({ ok: true, restored: true });
     await write(destination, 'NEW> ');
     const visible = lines(destination).slice(destination.buffer.normal.baseY);
-    expect(visible.slice(0, 6)).toEqual([
+    expect(visible.slice(0, 7)).toEqual([
       'OLD> ls', 'one.txt', 'two.txt', '',
-      '[New terminal session | checkpoint 1970-01-01T00:00:01.234Z]', 'NEW> ',
+      '[New terminal session | checkpoint 1970-01-01T00:00:01.234Z]', '', 'NEW> ',
     ]);
     expect(destination.buffer.normal.viewportY).toBe(destination.buffer.normal.baseY);
   });
@@ -210,9 +210,9 @@ describe('terminal history codec with real xterm and SerializeAddon', () => {
     const source = make(32, 4);
     await write(source.terminal, 'history1\r\nhistory2\r\nhistory3\r\nhistory4');
     const record = capture(source);
-    const destination = make(32, 5).terminal;
+    const destination = make(32, 6).terminal;
     const hold = new ReplayHold();
-    let desiredRows = 5;
+    let desiredRows = 6;
     const fit = vi.fn(() => { destination.resize(32, desiredRows); });
     const realWrite = destination.write.bind(destination);
     let releaseTail!: () => void;
@@ -231,7 +231,7 @@ describe('terminal history codec with real xterm and SerializeAddon', () => {
     await tailQueued;
     desiredRows = 10;
     if (hold.request()) fit();
-    expect(destination.rows).toBe(5);
+    expect(destination.rows).toBe(6);
     releaseTail();
     expect(await replay).toEqual({ ok: true, restored: true });
     expect(hold.isHolding).toBe(false);

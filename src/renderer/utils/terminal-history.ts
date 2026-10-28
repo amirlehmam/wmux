@@ -203,7 +203,7 @@ export async function replayTerminalHistory(
     await lifecycle.beforeTail();
     if (!current()) return cancelled;
   }
-  let divider = `\r\n[New terminal session | checkpoint ${checkpoint}]\r\n`;
+  let divider = `\r\n[New terminal session | checkpoint ${checkpoint}]\r\n\r\n`;
   let fitOwed: boolean;
   do {
     if (!current()) return cancelled;

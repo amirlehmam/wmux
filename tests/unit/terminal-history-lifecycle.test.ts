@@ -17,7 +17,7 @@ function deferred<T>() {
 }
 
 const terminals: Terminal[] = [];
-function make(cols = 30, rows = 5) {
+function make(cols = 30, rows = 6) {
   const terminal = new Terminal({ cols, rows, scrollback: 1000, allowProposedApi: true,
     windowsPty: { backend: 'conpty', buildNumber: 26200 }, reflowCursorLine: true });
   terminals.push(terminal);
@@ -107,7 +107,7 @@ function setup(history: TerminalHistoryRecord, terminal = make(), source?: Retur
     read: vi.fn(async () => ({ ok: true, value: history })),
     checkpoint: vi.fn(),
   };
-  const fit = vi.fn(() => terminal.resize(30, 5));
+  const fit = vi.fn(() => terminal.resize(30, 6));
   const has = vi.fn(async () => false);
   const create = vi.fn(async () => ({ id: 'surf-history', reused: false }));
   const remounts = new RemountSnapshotCache({ capacity: 2, isOpen: () => current });
@@ -204,7 +204,7 @@ describe('fresh terminal history lifecycle with real xterm', () => {
     expect(s.fit).not.toHaveBeenCalled();
     finishDrawing();
     const tail = await writes.next();
-    expect([s.terminal.cols, s.terminal.rows]).toEqual([30, 5]);
+    expect([s.terminal.cols, s.terminal.rows]).toEqual([30, 6]);
     s.fit.mockImplementation(() => s.terminal.resize(18, 8));
     expect(s.hold.request()).toBe(false);
     const finishTail = await tail.draw();
