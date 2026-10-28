@@ -1,7 +1,9 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { startGpuProbe } from './utils/gpu-watchdog';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from './store';
+import type { NotificationSlice } from './store/notification-slice';
+import { fireNotification } from './utils/notifications';
 import { getStoredWorkspaceLabel, useWorkspaceLabels } from './components/SplitPane/use-osc-title';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
@@ -177,7 +179,7 @@ type StoreAction = (...args: any[]) => void;
 type T = (key: TranslationKey, fallback?: string) => string;
 type MetaDeps = {
   updateWorkspaceMetadata: StoreAction;
-  addNotification: StoreAction;
+  addNotification: NotificationSlice['addNotification'];
   runningStartTimes: React.MutableRefObject<Record<string, number>>;
   t: T;
 };
@@ -245,18 +247,6 @@ function dispatchPaletteReset(action: string, terminalSurfaceId: string | null):
   // (#357): choosing it by name already says "leave it anyway".
   const leaveAlternateScreen = action === RESET_TERMINAL_LEAVE_ALT_ACTION;
   document.dispatchEvent(new CustomEvent('wmux:reset-terminal', { detail: { surfaceId: terminalSurfaceId, leaveAlternateScreen } }));
-}
-
-function fireNotification(
-  surfaceId: string,
-  workspaceId: WorkspaceId | null,
-  text: string,
-  addNotification: StoreAction,
-): void {
-  if (workspaceId) {
-    addNotification({ surfaceId: (surfaceId || '') as SurfaceId, workspaceId, text });
-  }
-  window.wmux?.notification?.fire({ surfaceId: surfaceId || '', text, title: 'wmux' });
 }
 
 /** Resolve the workspace that owns a surface, or undefined. */
@@ -336,15 +326,15 @@ function handlePortsUpdate(cmd: any, updateWorkspaceMetadata: StoreAction): void
 }
 
 /** `wmux notify <text>` — works even outside a pane (falls back to active workspace). */
-function handleNotifyCommand(cmd: any, addNotification: StoreAction, t: T): void {
+function handleNotifyCommand(cmd: any, addNotification: NotificationSlice['addNotification'], t: T): void {
   const text = (cmd.args || []).join(' ').trim() || t('app.notificationDefault', 'Notification');
   const ws = workspaceForSurface(cmd.surfaceId);
-  const wsId = ws?.id || useStore.getState().activeWorkspaceId;
+  const wsId = cmd.surfaceId ? ws?.id ?? null : useStore.getState().activeWorkspaceId;
   fireNotification(cmd.surfaceId, wsId, text, addNotification);
 }
 
 /** Remote Console bells (#254): main sends the facts, the UI language words them. */
-function handleRemoteNotice(cmd: any, addNotification: StoreAction, t: T): void {
+function handleRemoteNotice(cmd: any, addNotification: NotificationSlice['addNotification'], t: T): void {
   const text = formatRemoteNotice(cmd.args, t);
   if (!text) return;
   fireNotification('', useStore.getState().activeWorkspaceId, text, addNotification);
@@ -481,7 +471,7 @@ function recordPromptSubmission(event: any): void {
 }
 
 /** Agent Notification (needs input) / Stop (turn finished) hook events — Claude Code, Grok, anything on its hooks. */
-function handleAgentLifecycleEvent(event: any, addNotification: StoreAction, t: T): void {
+function handleAgentLifecycleEvent(event: any, addNotification: NotificationSlice['addNotification'], t: T): void {
   const state = useStore.getState();
   const prefs = state.notificationPrefs;
   if (event.event === 'Notification' && prefs.agentInputNotify === false) return;
@@ -500,7 +490,7 @@ function handleAgentLifecycleEvent(event: any, addNotification: StoreAction, t: 
 
   const sid = (event.surfaceId as string) || '';
   const ws = workspaceForSurface(sid);
-  const wsId = ws?.id || state.activeWorkspaceId;
+  const wsId = sid ? ws?.id ?? null : state.activeWorkspaceId;
   const labelled = ws ?? state.workspaces.find(w => w.id === wsId);
   const wsTitle = labelled ? getStoredWorkspaceLabel(labelled) : '';
 
@@ -603,6 +593,7 @@ export default function App() {
   const t = useT();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
+  const [zoomedPaneId, setZoomedPaneId] = useState<PaneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Which tab Settings opens on. Only "Manage layouts…" sets one; every other
   // opener clears it, so they keep opening on the default tab.
@@ -1340,28 +1331,21 @@ export default function App() {
   }, [activeWorkspace?.id, activeWorkspace?.splitTree]);
 
   /**
-   * Tell every `prompts` PANE which terminal it is listing (issue #207 follow-up).
-   *
-   * A prompts pane is not attached to the terminal it describes — it lives
-   * somewhere else in the split tree — so the focused terminal has to be pushed
-   * to it. Computed here because this is where focus lives; `focusedPaneId` is
-   * component state, not store state.
-   *
-   * The `if` is the whole rule. Focus landing on ANYTHING that is not a terminal
-   * leaves the last value standing, so clicking into the prompts pane itself —
-   * to filter it, to scroll it, to click a row — does not blank the list the
-   * user just reached for. `setPromptSourceSurface` no-ops on an unchanged
-   * value, which matters because this runs on every split-tree edit.
+   * Publish focus before notifications can arrive after a commit. Non-terminal
+   * selections clear notification focus but preserve the prompt pane's source.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const leaf = activeWorkspace && focusedPaneId
       ? findLeaf(activeWorkspace.splitTree, focusedPaneId)
       : undefined;
     const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
-    if (surface?.type === 'terminal') {
-      useStore.getState().setPromptSourceSurface(surface.id);
-    }
-  }, [activeWorkspace?.splitTree, focusedPaneId]);
+    const terminalId = surface?.type === 'terminal' ? surface.id : null;
+    // Keyboard navigation can select a pane that zoom keeps off-screen.
+    const visible = !zoomedPaneId || zoomedPaneId === focusedPaneId;
+    useStore.getState().setNotificationFocusedSurface(visible ? terminalId : null);
+    if (terminalId) useStore.getState().setPromptSourceSurface(terminalId);
+    return () => useStore.getState().setNotificationFocusedSurface(null);
+  }, [activeWorkspace?.id, activeWorkspace?.splitTree, focusedPaneId, zoomedPaneId]);
 
   const handleRatioChange = useCallback(
     (leftPaneId: PaneId, rightPaneId: PaneId, ratio: number) => {
@@ -1581,7 +1565,6 @@ export default function App() {
     setNotifPanelOpen((o) => !o);
   }, []);
 
-  const [zoomedPaneId, setZoomedPaneId] = useState<PaneId | null>(null);
   const [surfaceDrag, setSurfaceDrag] = useState<SurfaceDragPayload | null>(null);
   const [surfaceDragPreview, setSurfaceDragPreview] = useState<SurfaceDragPreview | null>(null);
   const surfaceDragRef = useRef<SurfaceDragPayload | null>(null);

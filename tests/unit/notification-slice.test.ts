@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { create } from 'zustand';
 import { createWorkspaceSlice, WorkspaceSlice } from '../../src/renderer/store/workspace-slice';
 import { createNotificationSlice, MAX_NOTIFICATIONS, NotificationSlice } from '../../src/renderer/store/notification-slice';
 import { WorkspaceId, SurfaceId } from '../../src/shared/types';
+import { fireNotification } from '../../src/renderer/utils/notifications';
 
 type TestStore = WorkspaceSlice & NotificationSlice;
 
@@ -23,6 +24,10 @@ describe('notification-slice', () => {
     workspaceId = useStore.getState().createWorkspace({ title: 'Test WS' });
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('starts with empty notifications', () => {
     expect(useStore.getState().notifications).toEqual([]);
   });
@@ -41,6 +46,102 @@ describe('notification-slice', () => {
     useStore.getState().addNotification({ surfaceId, workspaceId, text: 'ping' });
     const ws = useStore.getState().workspaces.find((w) => w.id === workspaceId);
     expect(ws?.unreadCount).toBe(1);
+  });
+
+  it('records focused-terminal notifications as read without transient unread state or external alerts', () => {
+    vi.stubGlobal('document', { hasFocus: () => true });
+    const fire = vi.fn();
+    vi.stubGlobal('window', { wmux: { notification: { fire } } });
+    useStore.getState().setNotificationFocusedSurface(surfaceId);
+    const seenUnread: boolean[] = [];
+    const unsubscribe = useStore.subscribe(state => {
+      seenUnread.push(state.notifications.some(notification => !notification.read));
+    });
+
+    fireNotification(surfaceId, workspaceId, 'Finished', useStore.getState().addNotification);
+    unsubscribe();
+
+    expect(useStore.getState().notifications).toEqual([
+      expect.objectContaining({ surfaceId, text: 'Finished', read: true }),
+    ]);
+    expect(seenUnread).toEqual([false]);
+    expect(useStore.getState().workspaces.find(w => w.id === workspaceId)?.unreadCount).toBe(0);
+    expect(fire).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'another pane', focused: 'surf-other', windowFocused: true, target: surfaceId },
+    { name: 'a hidden tab', focused: surfaceId, windowFocused: true, target: 'surf-hidden' },
+    { name: 'an inactive window', focused: surfaceId, windowFocused: false, target: surfaceId },
+    { name: 'a non-terminal selection', focused: null, windowFocused: true, target: surfaceId },
+    { name: 'an untargeted notification', focused: surfaceId, windowFocused: true, target: '' },
+  ])('preserves unread history and external alerts for $name', ({ focused, windowFocused, target }) => {
+    vi.stubGlobal('document', { hasFocus: () => windowFocused });
+    const fire = vi.fn();
+    vi.stubGlobal('window', { wmux: { notification: { fire } } });
+    useStore.getState().setNotificationFocusedSurface(focused as SurfaceId | null);
+
+    fireNotification(target, workspaceId, 'Needs you', useStore.getState().addNotification, 'Agent');
+
+    expect(useStore.getState().notifications[0].read).toBe(false);
+    expect(useStore.getState().workspaces.find(w => w.id === workspaceId)?.unreadCount).toBe(1);
+    expect(fire).toHaveBeenCalledExactlyOnceWith({ surfaceId: target, text: 'Needs you', title: 'Agent' });
+  });
+
+  it('ignores a targeted broadcast in a window that does not own the surface', () => {
+    const fire = vi.fn();
+    vi.stubGlobal('window', { wmux: { notification: { fire } } });
+
+    fireNotification(surfaceId, null, 'Finished elsewhere', useStore.getState().addNotification);
+
+    expect(useStore.getState().notifications).toEqual([]);
+    expect(fire).not.toHaveBeenCalled();
+  });
+
+  it('still delivers untargeted notices without a workspace', () => {
+    const fire = vi.fn();
+    vi.stubGlobal('window', { wmux: { notification: { fire } } });
+
+    fireNotification('', null, 'Application notice', useStore.getState().addNotification);
+
+    expect(fire).toHaveBeenCalledExactlyOnceWith({ surfaceId: '', text: 'Application notice', title: 'wmux' });
+  });
+
+  it('does not suppress another workspace during a focus hand-off', () => {
+    vi.stubGlobal('document', { hasFocus: () => true });
+    useStore.getState().setNotificationFocusedSurface(surfaceId);
+    const otherWorkspaceId = useStore.getState().createWorkspace({ title: 'Other' });
+    useStore.getState().selectWorkspace(otherWorkspaceId);
+
+    const notification = useStore.getState().addNotification({ surfaceId, workspaceId, text: 'Finished' });
+
+    expect(notification.read).toBe(false);
+  });
+
+  it('applies focus changes only to new notifications', () => {
+    vi.stubGlobal('document', { hasFocus: () => true });
+    const add = useStore.getState().addNotification;
+    add({ surfaceId, workspaceId, text: 'Before focus' });
+    useStore.getState().setNotificationFocusedSurface(surfaceId);
+    add({ surfaceId, workspaceId, text: 'While focused' });
+    useStore.getState().setNotificationFocusedSurface(null);
+    add({ surfaceId, workspaceId, text: 'After focus' });
+
+    expect(useStore.getState().notifications.map(n => n.read)).toEqual([false, true, false]);
+    expect(useStore.getState().workspaces.find(w => w.id === workspaceId)?.unreadCount).toBe(2);
+  });
+
+  it('keeps unread counters intact when a focused notification arrives at the retention cap', () => {
+    for (let i = 0; i < MAX_NOTIFICATIONS; i++) {
+      useStore.getState().addNotification({ surfaceId, workspaceId, text: `unread ${i}` });
+    }
+    vi.stubGlobal('document', { hasFocus: () => true });
+    useStore.getState().setNotificationFocusedSurface(surfaceId);
+    useStore.getState().addNotification({ surfaceId, workspaceId, text: 'Focused' });
+
+    expect(useStore.getState().notifications).toHaveLength(MAX_NOTIFICATIONS);
+    expect(useStore.getState().notifications.every(n => !n.read)).toBe(true);
+    expect(useStore.getState().workspaces.find(w => w.id === workspaceId)?.unreadCount).toBe(MAX_NOTIFICATIONS);
   });
 
   it('markRead marks notifications for a surface as read and decrements unreadCount', () => {

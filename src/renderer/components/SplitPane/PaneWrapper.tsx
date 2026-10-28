@@ -125,28 +125,17 @@ export default function PaneWrapper({
     for (const surfaceId of surfaceIds) markRead(surfaceId as SurfaceId);
   }, [surfaceIds, markRead]);
 
-  // When pane receives focus, mark all surfaces as read.
-  //
-  // Deliberately keyed on the focus TRANSITION and nothing else. Adding
-  // `hasUnread` here is the tempting one-word fix for the stuck ring below, and
-  // it is wrong: the effect would then run on the same render the notification
-  // arrives, so a pane you are already looking at would clear its ring before
-  // ever painting it — no glow, and the 950ms flash above cut off mid-animation.
-  // That trades a ring that will not leave for one you can never see.
-  //
-  // Still needed alongside the interaction listener: switching panes by keyboard
-  // (Ctrl+Alt+arrow) lands no click and no keystroke inside the new pane.
+  // Arrival-time focus is handled by addNotification. Keep this keyed only on
+  // focus transitions so hidden-tab alerts remain unread until acknowledged.
+  // Keyboard pane navigation lands no interaction inside the destination pane.
   useEffect(() => {
     if (isFocused && hasUnread) markPaneRead();
   }, [isFocused]);
 
   // ...and clear it on actual INTERACTION, which is the case focus alone misses.
   //
-  // A notification that arrives while the pane is ALREADY focused never changes
-  // `isFocused`, so the effect above does not re-run and the ring sits there
-  // while the user types into the very pane it is pointing at. The only way out
-  // was to click another pane and click back — manufacturing the transition by
-  // hand.
+  // Notifications from hidden tabs or an inactive window can still be unread
+  // when the pane is already focused; the next interaction acknowledges them.
   //
   // Capture phase is load-bearing for keydown: xterm's hidden helper textarea is
   // a descendant of this element and consumes the event, so a bubble-phase

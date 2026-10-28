@@ -52,7 +52,9 @@ function decrementUnread(state: NotificationSlice & WorkspaceSlice, dropped: rea
 
 export interface NotificationSlice {
   notifications: NotificationInfo[];
-  addNotification: (notification: Omit<NotificationInfo, 'id' | 'timestamp' | 'read'>) => void;
+  notificationFocusedSurface: SurfaceId | null;
+  setNotificationFocusedSurface: (surfaceId: SurfaceId | null) => void;
+  addNotification: (notification: Omit<NotificationInfo, 'id' | 'timestamp' | 'read'>) => NotificationInfo;
   markRead: (surfaceId: SurfaceId) => void;
   markAllRead: (workspaceId?: WorkspaceId) => void;
   clearNotification: (id: string) => void;
@@ -71,13 +73,23 @@ export const createNotificationSlice: StateCreator<
   NotificationSlice
 > = (set, get) => ({
   notifications: [],
+  notificationFocusedSurface: null,
 
-  addNotification(notification: Omit<NotificationInfo, 'id' | 'timestamp' | 'read'>): void {
+  setNotificationFocusedSurface(surfaceId): void {
+    if (get().notificationFocusedSurface !== surfaceId) set({ notificationFocusedSurface: surfaceId });
+  },
+
+  addNotification(notification: Omit<NotificationInfo, 'id' | 'timestamp' | 'read'>): NotificationInfo {
+    const { notificationFocusedSurface, activeWorkspaceId } = get();
+    const read = !!notification.surfaceId
+      && notification.surfaceId === notificationFocusedSurface
+      && notification.workspaceId === activeWorkspaceId
+      && typeof document !== 'undefined' && document.hasFocus();
     const newNotification: NotificationInfo = {
       ...notification,
       id: `notif-${uuid()}`,
       timestamp: Date.now(),
-      read: false,
+      read,
     };
 
     let evictedUnread: NotificationInfo[] = [];
@@ -87,11 +99,11 @@ export const createNotificationSlice: StateCreator<
       return { notifications: kept };
     });
 
-    // Increment unreadCount on the workspace
+    // Focused notifications enter history as read, without briefly flashing a ring.
     const { workspaceId } = notification;
     const state = get();
     const workspace = state.workspaces.find((w) => w.id === workspaceId);
-    if (workspace) {
+    if (!read && workspace) {
       state.updateWorkspaceMetadata(workspaceId, {
         unreadCount: workspace.unreadCount + 1,
       });
@@ -99,6 +111,7 @@ export const createNotificationSlice: StateCreator<
     // An unread notification pushed out by the cap no longer exists to be
     // read, so its workspace must stop counting it.
     decrementUnread(get(), evictedUnread);
+    return newNotification;
   },
 
   markRead(surfaceId: SurfaceId): void {

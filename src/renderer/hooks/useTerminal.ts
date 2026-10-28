@@ -10,7 +10,8 @@ import { ProgressAddon } from '@xterm/addon-progress';
 import { useStore } from '../store';
 import { useT } from '../i18n';
 import type { Translator } from '../i18n/core';
-import { collectActiveTerminalSurfaceIds } from '../store/split-utils';
+import { collectActiveTerminalSurfaceIds, findSurfaceOwner } from '../store/split-utils';
+import { fireNotification } from '../utils/notifications';
 import { SplitNode, SurfaceId, ThemeConfig, type InsertionResult } from '../../shared/types';
 import { UserColorScheme } from '../store/settings-slice';
 import { normalizeOscTitle, isConsoleDefaultTitle } from '../store/osc-title-slice';
@@ -1536,6 +1537,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       cleanupFnsRef.current.push(installXtermCompositionClauses(terminal, compositionHelper, xtermCore.textarea));
     }
 
+    const notify = (text: string, title?: string) => {
+      const id = ptyIdRef.current || '';
+      const state = useStore.getState();
+      const owner = findSurfaceOwner(state.workspaces, id as SurfaceId);
+      fireNotification(id, owner?.workspaceId ?? null, text, state.addNotification, title);
+    };
+
     // Register OSC notification handlers
     // OSC 9: basic notification (iTerm2 style)
     terminal.parser.registerOscHandler(9, (data) => {
@@ -1551,10 +1559,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // progress bar never fired at all (dead since it shipped in 0.23.0).
       // Declining passes the sequence down the chain to the addon.
       if (isConEmuSubcommand(data)) return false;
-      window.wmux.notification.fire({
-        surfaceId: ptyIdRef.current || '',
-        text: data,
-      });
+      notify(data);
       return true;
     });
 
@@ -1566,11 +1571,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         const [k, ...v] = part.split('=');
         if (k && v.length) params[k.trim()] = v.join('=').trim();
       });
-      window.wmux.notification.fire({
-        surfaceId: ptyIdRef.current || '',
-        text: params.body || params.d || data,
-        title: params.title || params.t,
-      });
+      notify(params.body || params.d || data, params.title || params.t);
       return true;
     });
 
@@ -1578,11 +1579,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     terminal.parser.registerOscHandler(777, (data) => {
       const parts = data.split(';');
       if (parts[0] === 'notify' && parts.length >= 3) {
-        window.wmux.notification.fire({
-          surfaceId: ptyIdRef.current || '',
-          text: parts.slice(2).join(';'),
-          title: parts[1],
-        });
+        notify(parts.slice(2).join(';'), parts[1]);
       }
       return true;
     });
@@ -1622,10 +1619,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         const now = Date.now();
         if (now - lastBellAt < 3000) return;
         lastBellAt = now;
-        window.wmux.notification.fire({
-          surfaceId: ptyIdRef.current || '',
-          text: t('terminal.bell', 'Terminal bell'),
-        });
+        notify(t('terminal.bell', 'Terminal bell'));
       }
     });
 
