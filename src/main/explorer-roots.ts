@@ -5,6 +5,12 @@
 // through fs.realpath.native exactly once, here, so 8.3 short names and casing
 // aliases are normalized before explorer-fs.ts ever reasons about them.
 //
+// The root is the pane's TERMINAL cwd, not its active surface's — a pane
+// showing a markdown tab still belongs to the folder its shell is in. It is
+// normalized through `trustedWindowsCwd` (and then the realpath above), so a
+// Git Bash `/c/Users/...` report and a PowerShell junction alias both land on
+// the same spelling main can jail against.
+//
 // The reported cwd is NOT a consent boundary — a process running in the
 // terminal can influence it. It is a UX root; the jail's job is to keep
 // enumeration inside whatever that root turned out to be.

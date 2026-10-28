@@ -1,7 +1,10 @@
 // ─── Write grants: which paths a renderer may save to ────────────────────────
-// Every renderer→disk write in wmux passes through this set. It began as
-// markdown-grants.ts for issue #116 (F3) and is now shared by the markdown and
-// code surfaces, because two grant sets would be two answers to "may this be
+// Every renderer→disk write in wmux passes through this set: both
+// `markdown:save-file` and `code:write-file` check it. It began as
+// markdown-grants.ts for issue #116 (F3) and was renamed when the code surface
+// became editable, because it was always a generic
+// `Map<webContentsId, Set<path>>`. It is now shared by the markdown and code
+// surfaces, because two grant sets would be two answers to "may this be
 // written" and the failure mode of that drift is a silent write to a file one
 // of them would have refused.
 //

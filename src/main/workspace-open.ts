@@ -3,13 +3,23 @@
 // → type each pane's commands in order.
 //
 // The trust question is the security boundary, and two things keep it one:
-//   1. It is asked by a NATIVE dialog in main (`deps.confirm`). Nothing on the
-//      pipe can answer it — there is deliberately no `--trust` flag, because
-//      an agent holding the pipe token could pass it, and "a repo I cloned
-//      runs its commands without asking" is exactly the hole this closes.
+//   1. It is asked by a NATIVE dialog in main (`deps.confirm`, implemented in
+//      workspace-manifest-v2.ts). Nothing on the pipe can answer it — there is
+//      deliberately no `--trust` flag, because an agent holding the pipe token
+//      could pass it, and "a repo I cloned runs its commands without asking" is
+//      exactly the hole this closes. The answer is keyed on the file's sha256
+//      in `%APPDATA%\wmux\workspace-trust.json` (workspace-trust.ts), so any
+//      byte changed re-prompts, with an added/removed diff.
 //   2. What the dialog shows is `formatPlan` of the SAME plan the scheduler
 //      runs. Re-reading the file between the two would let it change after
 //      the user looked; it is read once, hashed, and that text is the plan.
+//
+// Manifest commands never enter the store or session.json — the workspace is
+// created from folders, titles and env only, and the commands go straight to
+// the scheduler — because a restart would replay them without asking again.
+// Re-opening a manifest that is already open focuses it instead of opening a
+// second copy; the map that knows this is live-only, so it is empty after a
+// restart.
 //
 // "Open without running commands" is a real answer, not a cancel: the layout,
 // folders and env still come up, which is what graceful degradation means for
@@ -80,7 +90,11 @@ function readManifest(manifestPath: string): { text: string } | { error: string 
   try { return { text: fs.readFileSync(manifestPath, 'utf-8') }; } catch { return { error: `cannot read ${manifestPath}` }; }
 }
 
-/** realpath every pane folder that exists: a symlink must not walk out of the repo. */
+/**
+ * realpath every pane folder that exists: a symlink or junction must not walk
+ * out of the repo. The lexical half (relative, no `..`) is `containedCwd` in
+ * workspace-manifest.ts.
+ */
 function checkFolders(plan: WorkspacePlan): string[] {
   const errors: string[] = [];
   let realRoot: string;
@@ -125,7 +139,8 @@ export function analyzeManifest(manifestPath: string):
   // What trust is granted OVER: everything the file can run, runOnce steps
   // included whether or not they already ran here. Taken from the plan with
   // that history applied, the next prompt's diff reported a runOnce step that
-  // had simply been done as "removed".
+  // had simply been done as "removed" (the first version did that; a test
+  // caught it).
   const trustLines = planCommandLines(buildPlan(parsed.manifest, manifestPath, new Set()));
   return { plan, hash: manifestHash(read.text), trustLines, warnings: parsed.warnings };
 }

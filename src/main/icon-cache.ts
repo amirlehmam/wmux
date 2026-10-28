@@ -23,15 +23,17 @@
  *
  * 1. `iconNoticeDue` — did the shipped icon change since this machine last ran
  *    wmux? Decided from a fingerprint of the .ico stored under wmux's own
- *    APPDATA dir, so the user is told ONCE, after the update that changed it,
+ *    APPDATA dir, so the user is told ONCE — one bell notification the
+ *    renderer posts on the first launch after the update that changed it —
  *    that the taskbar may lag and where the button is. Reading a bug report
  *    two rebrands apart is the alternative.
  *
- * 2. `refreshShellIconCache` — the Explorer restart, behind a native confirm
- *    in ipc-handlers.ts. Absolute System32 paths throughout: a writeable PATH
- *    dir must not get to shadow `taskkill.exe` for a command wmux runs on the
- *    user's behalf (the rule `win32-process.ts` and `system32.ts` already
- *    state).
+ * 2. `refreshShellIconCache` — the Explorer restart, from Settings → General →
+ *    *Refresh taskbar icons*, behind a native confirm in ipc-handlers.ts that
+ *    says File Explorer windows will close. Absolute System32 paths
+ *    throughout: a writeable PATH dir must not get to shadow `taskkill.exe`
+ *    for a command wmux runs on the user's behalf (the rule `win32-process.ts`
+ *    and `system32.ts` already state).
  */
 
 import * as fs from 'fs';
@@ -83,6 +85,9 @@ let noticePending = false;
  * Record this run's icon and decide whether a notice is owed. Called once at
  * startup, BEFORE the renderer can ask (`takeIconChangeNotice`), so the answer
  * is never raced by the page loading after main has already spoken.
+ *
+ * `upgraded` must come from the version saved by the PREVIOUS run: index.ts
+ * reads `savedVersion()` before `handleVersionChange` overwrites it.
  */
 export function noteIconRevision(opts: { iconPath: string | undefined; upgraded: boolean }): boolean {
   const file = iconRevisionFile();

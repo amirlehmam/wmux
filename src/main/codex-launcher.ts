@@ -1,3 +1,25 @@
+// ─── Codex resume, launcher side (#261) ──────────────────────────────────────
+//
+// Codex conversation restore (#261, contributed), behind
+// `workspacePrefs.restoreCodexSessions` (default off). No hooks: a private PATH
+// shim (`src/codex-bin`, `src/codex-bin-ps`) runs `cli/wmux-codex.js`, which
+// starts `codex app-server` behind an authenticated 127.0.0.1 relay
+// (`codex-relay.ts`, the one CLI file that needs an npm package — `ws`, shipped
+// in `cli/node_modules`) and reads the thread id off its responses. This module
+// picks which shim dirs a pane gets; codex-resume.ts stamps the id it reports.
+//
+// Three rules from review, each enforced where it applies:
+//
+//   1. With the pref OFF a pane gets no shim and pays no `where codex.exe` —
+//      `codex` must be exactly what the shell would run, and pane create is
+//      the #176 hot path. Gated in pty-manager.ts (`codexShimDirsForPane`)
+//      before this function is ever called.
+//   2. PowerShell gets the `.ps1` shim or NOTHING, never the `.cmd` (#154:
+//      cmd.exe re-parses the argv). The `powershell` branch below.
+//   3. The relay is `require`d lazily and a failure falls back to plain codex,
+//      so a packaging miss costs the feature and never every `codex` launch
+//      (`startRelay` in cli/wmux-codex.ts).
+
 import fs from 'fs';
 import path from 'path';
 import { stripMarkOfTheWeb } from './powershell-shim';

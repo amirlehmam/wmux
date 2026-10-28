@@ -15,13 +15,23 @@
  * when a turn ends without completing (Ctrl+C, a declined permission, the turn
  * limit) and `StopFailure` instead of it on an API error; without them an
  * interrupted Grok turn left the pane reading `working` until the trust window
- * aged it out. wmux-hook.js reports both as the turn ending.
+ * aged it out. wmux-hook.js reports both as the turn ending — as `Stop`, or as
+ * `SubagentStop` when the payload has `subagentType` — which is what ends an
+ * interrupted turn.
  *
  * Duplicating the Claude entries is safe because Grok dedupes handlers across
  * sources on (event, command, url, matcher) — so with compat on each hook runs
  * once, and with `compat.claude.hooks = false` this file alone still carries
- * the full set. That only holds while the bytes match, which is why the command
- * strings come from claude-context.ts rather than being spelled again here.
+ * the full set. That only holds while the bytes match — any drift in the
+ * command bytes runs every hook twice — which is why the command strings come
+ * from claude-context.ts (`applyWmuxHooks` + `wmuxEventHookCommand`) rather
+ * than being spelled again here.
+ *
+ * The helper also reads Grok's camelCase envelope (`notificationType`,
+ * `toolName`, `toolInput`; grok 1.0.44 sends the notification type ONLY in
+ * camelCase), and never forwards a session id when `GROK_HOOK_EVENT` is set:
+ * Grok sends a snake_case `session_id` alias too, and it would reach a
+ * `claude --resume` line on restore.
  *
  * ── Instructions: $GROK_HOME/rules/wmux.md, only when Grok would miss them ───
  *
@@ -32,6 +42,30 @@
  *
  * Nothing is written unless Grok's home directory exists: creating ~/.grok on a
  * machine that has never run Grok would be the #132 mistake.
+ *
+ * ── Three things the PR's live test could not reach ──────────────────────────
+ *
+ * The account had no usage, so no successful turn, no subagent and no
+ * background task; Grok's own hook docs settle all three.
+ *
+ *  1. A Grok subagent is its OWN session firing the same hooks on the parent's
+ *     pane, marked `subagentType`. Its `SessionEnd` released the pane's record
+ *     mid-turn, and its `UserPromptSubmit` — the task brief — cleared a "Needs
+ *     you" nobody answered and entered the prompt log as something the user
+ *     typed. So `reportedEvent` in wmux-hook.js reports neither (its tool
+ *     events and Notifications still pass).
+ *  2. `task_complete` fires when a background shell exits. Under the
+ *     unknown-type default of `claude-notification.ts` that was "Needs you"
+ *     plus the bell, so it is `info` there.
+ *  3. Ownership of hooks/wmux.json is STRUCTURAL, not "contains `wmux-hook`" —
+ *     see `isWmuxHooksFile` below.
+ *
+ * ── Known gap, not fixed ─────────────────────────────────────────────────────
+ *
+ * Grok documents that a `StopCancelled` report may arrive AFTER the next
+ * turn's `UserPromptSubmit` (it is dispatched off the command loop; the fix is
+ * tracking `promptId`), so a cancel followed at once by a queued prompt can
+ * read idle until that turn's first tool call.
  */
 import * as fs from 'fs';
 import * as path from 'path';

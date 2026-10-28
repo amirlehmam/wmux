@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './update-checker';
 
-// ── Portable zip in-place update ────────────────────────────────────────────
+// ── Portable zip in-place update (#184) ─────────────────────────────────────
 // wmux's README install is "extract the win-x64 zip anywhere and run
 // wmux.exe". That layout has no NSIS uninstaller, so electron-updater's
 // NsisUpdater cannot replace it: a zip listed in latest.yml downloads and
@@ -35,16 +35,18 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 // twice over: dropping `detached` risks the helper dying with wmux, which is
 // the one failure the user cannot recover from (wmux has already quit), and a
 // hidden detached script that overwrites an unsigned exe and relaunches it is
-// the dropper shape #3 is about. So the window states its purpose instead.
+// the dropper shape #3 is about. So the window states its purpose instead,
+// in English.
 //
 // The helper does NOT strip Mark of the Web, and that step must not be
 // reintroduced (#3).
 // There is nothing to strip: net.request + createWriteStream write no
 // :Zone.Identifier stream, so neither the zip nor its extracted payload has
-// one, and executables under the install dir are already unblocked in-process
-// by stripMotw() in index.ts on every launch. A hidden PowerShell recursively
-// running Unblock-File is, on the other hand, a MOTW-bypass pattern (MITRE
-// T1553.005) and the strongest behavioural-AV signal the helper used to emit.
+// one, robocopy replaces the destination's streams, and executables under the
+// install dir are already unblocked in-process by stripMotw() in index.ts on
+// every launch. A hidden PowerShell recursively running Unblock-File is, on
+// the other hand, a MOTW-bypass pattern (MITRE T1553.005) and the strongest
+// behavioural-AV signal the helper used to emit.
 //
 // No extra runtime downloads (no curl, no npm unzip, no Invoke-WebRequest):
 //   download — Electron net.request (Chromium). Always present in a packaged build.
@@ -52,6 +54,9 @@ import { fetchLatestRelease, compareVersions, type GithubReleaseAsset } from './
 //              already requires), then Windows PowerShell Expand-Archive.
 //   apply    — cmd.exe + robocopy/tasklist/waitfor/findstr, all via System32.
 
+// Detection is the whole contract: `wmux.exe` present, this name absent. It is
+// electron-builder's `Uninstall ${productFilename}.exe`, so it moves if
+// `productName`/`executableName` ever change.
 const UNINSTALLER_NAME = 'Uninstall wmux.exe';
 
 export function isPortableZipInstall(installRoot: string): boolean {
@@ -181,7 +186,8 @@ export function isPidAlive(
   }
 }
 
-/** How long after startup the sweep runs; see the call site in index.ts. */
+/** How long after startup the sweep runs — on every packaged Windows start,
+ *  whatever the install type; see the call site in index.ts. */
 export const UPDATE_SWEEP_DELAY_MS = 60_000;
 const UPDATE_LEFTOVER_MAX_AGE_MS = 60 * 60 * 1000;
 
@@ -229,9 +235,9 @@ function mustKeepLeftover(
 /**
  * Removes update leftovers from `tmpDir`. Every rule fails towards keeping:
  *
- *   - a fresh entry (mtime within maxAgeMs, or in the future) may belong to a
- *     helper that is still running — cmd reads a batch file line by line, so
- *     deleting it mid-run skips its own `rmdir`;
+ *   - a fresh entry (mtime within maxAgeMs — 1 h by default — in the future, or
+ *     unreadable) may belong to a helper that is still running — cmd reads a
+ *     batch file line by line, so deleting it mid-run skips its own `rmdir`;
  *   - a zip or extract dir whose PID has a fresh helper beside it is kept
  *     whatever its own age: after "Later" the payload can be days old by the
  *     time a helper starts copying from it, and only the helper's mtime is set
@@ -284,6 +290,11 @@ export interface StagedZipUpdate {
   exePath: string;
 }
 
+/**
+ * The apply helper's batch text. It runs in the OLD wmux — the one being
+ * replaced writes it — so a fix here reaches users only on the update AFTER
+ * the one that ships it.
+ */
 export function buildApplyUpdateCmd(): string {
   // Arguments: %1 = pid to wait for, %2 = payload dir, %3 = install dir, %4 = exe to relaunch.
   // Keep this free of caller-supplied paths so a hostile extract cannot
@@ -344,7 +355,8 @@ export function buildApplyUpdateCmd(): string {
     // waitfor, not timeout: this script is spawned with stdio 'ignore', so its
     // stdin is NUL, and timeout.exe refuses a redirected stdin outright
     // ("ERROR: Input redirection is not supported") — measured at 66 ms for a
-    // /t 3, which turned the wait into a tasklist spin with no pause at all.
+    // /t 3, which turned the wait into a tasklist spin with no pause at all
+    // (0.31 s of CPU over an 8 s wait).
     // waitfor honours /t with NUL stdin (2.1 s measured for /t 2) and times out
     // by design, so its own "Timed out waiting" goes to nul. Not `ping -n`,
     // which is the textbook batch-sleep idiom in droppers — the one shape this
@@ -442,6 +454,7 @@ export function buildApplyUpdateCmd(): string {
  * exactly that pair and leaves every inner quote alone. That only holds if
  * nothing inside adds a quote of its own, which a Windows path cannot contain;
  * one that somehow does is refused rather than allowed to re-split the line.
+ * The result is spawned verbatim as `cmd /d /s /c ""<helper>" "<arg>"…"`.
  *
  * Quotes do not stop the other rewrite cmd performs on a command line: a
  * `%NAME%` naming a defined variable is expanded inside them (measured:
@@ -669,6 +682,15 @@ export async function runPortableZipUpdate(opts: {
  *     rejects with code PAYLOAD_MISSING, and only a fresh download can help;
  *   - the helper cannot be written, or cmd.exe fails to start (an antivirus
  *     blocking either): rejects with that error, and the payload is still good.
+ *
+ * What the caller (updater.ts) does with each: PAYLOAD_MISSING forgets the
+ * staged update, so the next click downloads; any other rejection keeps the
+ * payload, so the next click shows the install dialog again — never a straight
+ * quit from a badge reading "Click to try again" — and after two failures of
+ * the same payload the click answers `install_failed` with the release page
+ * URL. That retry keeps the phase at `error` and starts the dialog
+ * synchronously: flipping to `ready` first let a second quick click install
+ * behind the dialog. Quit waits for 'spawn'.
  *
  * The 'error' listener stays attached after 'spawn', so a late error on the
  * child is a no-op rather than an uncaught exception in main.

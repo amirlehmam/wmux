@@ -1,3 +1,26 @@
+/**
+ * Claude Code integration: injects wmux's instructions into
+ * `~/.claude/CLAUDE.md`, configures hooks in `~/.claude/settings.json`, and
+ * points chrome-devtools-mcp at the browser panel — and, since 0.40.0, the
+ * inverse of each (issue #132).
+ *
+ * Since #386 the instructions are a SKILL, `~/.claude/skills/wmux/SKILL.md`,
+ * built by `buildSkillFile` from the same `readRenderedInstructions` text, and
+ * CLAUDE.md keeps only `buildContextStub`: the `wmux ping` check, the moments
+ * to load the skill, and the SKILL.md's absolute path for readers that load
+ * CLAUDE.md but not skills (Grok compat). The stub replaces the full block ONLY
+ * when the skill is on disk and carries `SKILL_OWNER_MARKER`; a user's own
+ * `skills/wmux` is never touched and keeps the full block inline. Other agents
+ * (OpenCode, Kiro, pi, omp, Qwen) still get the full block.
+ *
+ * Two things it no longer does, both because they were writing into files on
+ * terms Claude Code does not use, and both now only taken back:
+ *
+ *  - the orchestrator plugin, DEPRECATED and uninstall-only (#239) — see
+ *    `removeOrchestratorPlugin` below;
+ *  - the `chrome-devtools` MCP entry in `~/.claude/settings.json`, which goes
+ *    to `~/.claude.json` instead (#237) — see `getClaudeConfigPath` below.
+ */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -390,7 +413,9 @@ export function applyWmuxHooks(settings: any, hookScript: string): any {
   // context, so there is nothing for Claude Code to wait on — and it did wait,
   // a measured 125-145 ms per hook process (Git Bash wrapper + node boot + the
   // pipe round trip) on the critical path of EVERY tool call. `async: true` is
-  // honoured since Claude Code 2.1.x; older versions ignore the field.
+  // honoured since Claude Code 2.1.x; older versions ignore the field. This
+  // function rewrites wmux's own entries on every launch, so an install that
+  // predates the flag picks it up without a migration.
   //
   // Ordering is not a concern: each report carries the wall-clock it fired at,
   // and agent-state.ts drops a report older than the one it already accepted,

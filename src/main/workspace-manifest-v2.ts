@@ -5,10 +5,11 @@
 //   workspace.export    {to, name?}                → the manifest to write
 //   workspace.list                                 → manifests trusted on this machine
 //
-// None of these writes a file. `export` RETURNS the manifest and the CLI —
-// running as the user, in the user's folder — writes it: main never writes a
-// path a pipe caller named. And none of them can grant trust: `open` asks a
-// native dialog (workspace-open.ts explains why that is the boundary).
+// None of these writes a file. `export` (behind `wmux workspace save`) RETURNS
+// the manifest and the CLI — running as the user, in the user's folder —
+// writes it: main never writes a path a pipe caller named. And none of them
+// can grant trust: `open` asks a native dialog (workspace-open.ts explains why
+// that is the boundary).
 
 import * as path from 'path';
 import { BrowserWindow, dialog } from 'electron';

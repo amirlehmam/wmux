@@ -1,10 +1,11 @@
 // Which workspace manifests the user has said may run on this machine (#284).
 //
-// Kept in wmux's own data dir and NEVER beside the manifest: a repo must not
-// be able to ship its own "trusted" flag. Keyed on the manifest's absolute
-// path, holding the content hash that was trusted — any byte changed is a new
-// question — and the exact command lines that were shown, so the next prompt
-// can say what changed instead of making the user re-read everything.
+// Kept in wmux's own data dir (`%APPDATA%\wmux\workspace-trust.json`) and NEVER
+// beside the manifest: a repo must not be able to ship its own "trusted" flag.
+// Keyed on the manifest's absolute path, holding the content hash (sha256,
+// `manifestHash` in workspace-manifest.ts) that was trusted — any byte changed
+// is a new question — and the exact command lines that were shown, so the next
+// prompt can say what changed instead of making the user re-read everything.
 
 import * as fs from 'fs';
 import * as path from 'path';

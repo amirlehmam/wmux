@@ -18,7 +18,10 @@
  * the machine, and hands the answer down as `WMUX_NODE`. The last resort is
  * wmux's own Electron binary, which runs plain Node when spawned with
  * `ELECTRON_RUN_AS_NODE=1` — meaning the chain never dead-ends, even on a
- * machine with no Node installed at all.
+ * machine with no Node installed at all. But that flag is what makes it a
+ * runtime instead of a second wmux window, hence the separate
+ * `WMUX_NODE_ELECTRON` signal (set beside `WMUX_NODE` when the answer is
+ * wmux's own binary).
  */
 import * as fs from 'fs';
 import * as path from 'path';

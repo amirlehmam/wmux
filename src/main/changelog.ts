@@ -15,8 +15,9 @@
  * opening the panel a second time is free, and opening it with no network
  * shows what was there last time rather than an error.
  *
- * The cache is inside `%APPDATA%\wmux`, so it needs no part of the #132 consent
- * gate — that gate is about writes OUTSIDE wmux's own directory.
+ * The cache is `%APPDATA%\wmux\cache`, inside wmux's own directory, so it needs
+ * no part of the #132 consent gate — that gate is about writes OUTSIDE wmux's
+ * own directory.
  *
  * ## What is deliberately not here
  *
@@ -76,9 +77,10 @@ export interface ChangelogResult {
 /**
  * Turn the API payload into what the panel shows. Pure, and separated from the
  * fetch because everything that can be wrong about a changelog is in here:
- * drafts that must not appear, a `body` that is null rather than absent, and
- * ordering — GitHub returns releases by CREATION date, which is not version
- * order once a patch for an older line is published after a newer minor.
+ * drafts that must not appear, a `body` that is null rather than absent, a
+ * `name` that is `''` on a bare-tag release (so `??` would keep the wrong
+ * thing), and ordering — GitHub returns releases by CREATION date, which is not
+ * version order once a patch for an older line is published after a newer minor.
  */
 export function toChangelogEntries(releases: unknown, limit = CHANGELOG_LIMIT): ChangelogEntry[] {
   if (!Array.isArray(releases)) return [];
@@ -92,7 +94,8 @@ export function toChangelogEntries(releases: unknown, limit = CHANGELOG_LIMIT): 
       version: r.tag_name.replace(/^v/, ''),
       tag: r.tag_name,
       // `name` is optional and is empty on a release published from a tag with
-      // no title, which is most of wmux's. The tag is always something.
+      // no title, which is most of wmux's. The tag is always something. `||`,
+      // not `??`: the empty string is not nullish, so `??` would keep it.
       name: (r as { name?: string }).name?.trim() || r.tag_name,
       publishedAt: r.published_at ?? null,
       url: r.html_url,

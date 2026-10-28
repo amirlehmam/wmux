@@ -21,6 +21,9 @@ import type { SurfaceId } from '../shared/types';
 //   * `freezeSurfaceCwds()` already showed the pattern for baking a live value
 //     into the persisted copy of the tree at save time (issue #134).
 //
+// Behind `workspacePrefs.restoreClaudeSessions`, which is OFF by default:
+// every such pane starts an agent at once on restore.
+//
 // The id is stamped in the MAIN process rather than the renderer, even though
 // #134's cwd freeze is renderer-side: the id lives in `agent-state.ts`'s record
 // map, which main owns and the renderer has never seen. Routing it through IPC
@@ -30,7 +33,11 @@ import type { SurfaceId } from '../shared/types';
 // SECURITY: the id arrives over the named pipe — from a hook wmux registered,
 // but the pipe is a public interface — and ends up on a command line. Anything
 // that is not a bare session handle is refused at the door, so a crafted
-// `report-session` cannot smuggle `; rm -rf` into a pane's startup.
+// `report-session` cannot smuggle `; rm -rf` into a pane's startup. That makes
+// `CLAUDE_SESSION_ID_RE` below a security boundary, enforced twice: at
+// `reportAgentSession` (agent-state.ts), and again in the renderer's
+// claude-resume-command.ts before the command is built, because session.json
+// is user-editable.
 
 /**
  * Claude Code session ids are UUIDs today. The pattern is deliberately wider
@@ -113,7 +120,10 @@ type SessionIdLookup = (surfaceId: SurfaceId) => string | null | undefined;
  * calls `releaseAgent`) looks up to `null` and has any previously stamped id
  * REMOVED rather than left behind. That is what makes "exit Claude, restart
  * wmux, get a plain shell" work, and it is why the delete branch is not an
- * optimisation that can be skipped.
+ * optimisation that can be skipped. It also depends on `handleHookEvent`
+ * (index.ts) skipping `SessionEnd` when it records ids: SessionEnd carries a
+ * session_id like every hook, but `releaseAgent()` has just run for it, and
+ * recording there would resume a Claude the user deliberately quit.
  *
  * `undefined` is the other answer and means "no opinion": a restored pane
  * whose `claude --resume` has not reported yet — or whose tab has not even

@@ -3,9 +3,13 @@
 // Workspace manifests are COMMITTED, so the issue's own guardrail is that a
 // secret must never be written into one: a value can instead name a variable
 // from the environment wmux itself was started with, `${env:NAME}`. That
-// reference is what the manifest, the store and session.json all carry; it is
-// resolved here, at spawn, and nowhere earlier, so the resolved value exists
-// only in the shell's environment block.
+// reference is what the manifest, the store (`SurfaceRef.env`) and session.json
+// all carry; it is resolved here, at spawn, and nowhere earlier, so the
+// resolved value exists only in the shell's environment block.
+//
+// Applied on the IPC `pty:create` path only (ipc-handlers.ts). agent-manager
+// passes its own `WMUX_AGENT_ID` straight to `PtyManager.create()`, and that
+// must not be filtered — `isReservedEnvKey` would drop it.
 
 /** A key a manifest may set. POSIX-ish names; nothing else reaches CreateProcess. */
 export const ENV_KEY_RE = /^[A-Za-z_]\w{0,127}$/;

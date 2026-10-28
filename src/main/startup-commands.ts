@@ -13,7 +13,8 @@
 //   * everything else (cmd, bash, WSL, PowerShell with no integration): TYPED
 //     into the PTY. That used to happen in two places with two different rules.
 //     The renderer wrote `<cmd>\r` on a blind 600 ms timer after pty.create,
-//     and "pty created" is not "shell reading". agent-manager.ts had its own
+//     and "pty created" is not "shell reading" — cmd measured 372 ms, pwsh
+//     1.5 s to ready on the reporter's machine. agent-manager.ts had its own
 //     prompt sniff for `wmux agent spawn`. Two deliveries with two ideas of
 //     "ready" is how one of them stays broken while the other gets fixed.
 //
@@ -26,10 +27,21 @@
 //     the timer never lost a character — the console input buffer holds
 //     type-ahead — and a restored pwsh pane was never on this path at all. No
 //     wmux path drops that dash; the open question is what `claude` resolves
-//     to on the reporter's machine. Do not "fix" #251 here again.
+//     to on the reporter's machine. Do not "fix" #251 here again: ask for the
+//     `CommandLine` of the running `claude.exe` (from `Get-CimInstance
+//     Win32_Process`) before touching delivery.
+//
+//     What that hunt did find: the PowerShell integration cleared
+//     WMUX_STARTUP_COMMANDS AFTER its loop, so the command it launched
+//     inherited the variable. Fixed in 2.16.0 and pinned by
+//     `startup-commands-env.test.ts` — whose first version asserted on an
+//     `echo %VAR%` and passed with the bug present, because the leaked value
+//     was the probe's own text.
 //
 // So PtyManager owns delivery now, for every caller, and this module is the
-// rule it applies. Readiness, strongest signal first:
+// rule it applies. PtyManager's `startupCommandsConsumed` is therefore simply
+// "were there any", and no caller may type them again. Readiness, strongest
+// signal first:
 //
 //   1. an OSC 133 prompt mark (A = prompt start, B = input start). The cmd
 //      integration emits both from PROMPT, the bash integration from PS1: the

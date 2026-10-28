@@ -1,11 +1,23 @@
 /**
- * The main-process half of the GPU watchdog (issue #229): the decision, and
- * the one effect — restarting wmux's own GPU process.
+ * The main-process half of the GPU watchdog (issue #229, 2.10.4): the
+ * decision, and the one effect — restarting wmux's own GPU process.
+ *
+ * ## The report
+ *
+ * After ~2.5 days the reporter's window kept its last frame while every PTY
+ * lived on, `Responding=True`, 0% CPU everywhere; killing ONLY the GPU process
+ * restored rendering with the same renderer PID and nothing lost. No repro
+ * (hybrid NVIDIA/Intel + two DisplayLink adapters, a 3456×1408 `clear`
+ * window).
  *
  * ## Why main decides
  *
- * The renderer probe (`src/renderer/utils/gpu-watchdog.ts`) can only say "no
- * frame has been produced for 15 s while my document believes it is visible".
+ * The renderer probe (`src/renderer/utils/gpu-watchdog.ts`) is a rAF race:
+ * `requestAnimationFrame` runs on BeginFrames from the display compositor in
+ * the GPU process, so when that wedges rAF stops while `setTimeout` keeps
+ * going, and 3 unanswered requests 5 s apart while `document.visibilityState`
+ * is visible is a report. So it can only say "no frame has been produced for
+ * 15 s while my document believes it is visible".
  * That is necessary and not sufficient: a document is also "visible" under an
  * always-on-top overlay, on a monitor that has gone to sleep, behind a locked
  * session for a moment, and every one of those is a window nobody is looking

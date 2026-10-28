@@ -25,11 +25,23 @@
  * owner element is not rendered (both captures time out in the hidden row).
  *
  * The renderer therefore keeps such a webview on the visible-but-transparent
- * path (BrowserPane's `webviewHiding`). It does so only on a LEASE that main
- * grants when an agent drives the surface. A page the user left open in another
+ * path (BrowserPane's `webviewHiding`: `visibility: visible; opacity: 0;
+ * pointer-events: none` plus `tabIndex -1`). It does so only on a LEASE that
+ * main grants when an agent drives the surface: every web verb (v2-browser's
+ * runner) and every proxied CDP command renews it through
+ * `window.__wmux_keepBrowserRendering`. A page the user left open in another
  * workspace stays throttled like any background tab, and an agent's page goes
  * back to sleep KEEP_RENDERING_MS after its last command instead of painting
  * forever.
+ *
+ * The parent that hides a pane passes `visible` (BrowserPane's prop), and the
+ * panel hides inactive workspaces with `visibility`, never `display: none`,
+ * which no descendant can override.
+ *
+ * A MINIMIZED window gets no CDP frame at all: `withFrameKick`
+ * (cdp-bridge.ts) falls back to `capturePage({ stayHidden: true })` (viewport
+ * only) after 1 s, which works if the pane was painting when the window went
+ * down.
  */
 import { BrowserWindow } from 'electron';
 

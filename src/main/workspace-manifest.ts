@@ -1,21 +1,33 @@
-// Project-local workspace manifests (#284): `wmux.workspace.json` (or
+// Project-local workspace manifests (#284, 2.23.0): `wmux.workspace.json` (or
 // `.wmux/workspace.json`) — panes, their folders, what each runs, extra env,
-// ordering, browser tabs — committed next to the code it brings up.
+// ordering, browser tabs — committed next to the code it brings up. Per pane:
+// `cwd`, `run`, `runOnce`, `env`, `after`, `waitFor`. User docs:
+// `docs/workspace-manifest.md`.
+//
+// The module family: this file (pure validation and the plan), workspace-open.ts
+// (end to end), workspace-scheduler.ts (ordering), workspace-trust.ts (the trust
+// store), workspace-manifest-v2.ts (pipe methods and the native dialog),
+// wait-probes.ts (`waitFor`) and surface-env.ts (`${env:NAME}`).
 //
 // Pure: reading the file, asking for trust, creating panes and typing commands
 // are workspace-open.ts. Everything here is a decision that can be tested
-// against plain values, and the security-relevant ones in particular:
+// against plain values, and the security-relevant ones in particular, since
+// for an untrusted file the design IS the guardrails:
 //
 //   - A manifest arrives with `git clone`, so it is UNTRUSTED input. Nothing
 //     in it may name a folder outside its own repo (`cwd` is relative and
-//     contained), and nothing it runs may differ from what the trust prompt
-//     showed — `formatPlan` is that prompt's text, built from the same
+//     contained here, plus a realpath check in workspace-open.ts so a junction
+//     cannot walk out), and nothing it runs may differ from what the trust
+//     prompt showed — `formatPlan` is that prompt's text, built from the same
 //     resolved plan the scheduler executes, so the two cannot drift.
 //   - A command may not contain a line break. Multi-line text would type as
 //     several commands, and a preview shows a line break poorly.
 //   - `waitFor` probes only loopback: it exists to wait for the services this
 //     manifest starts, and must not turn wmux into a port scanner for a file
 //     somebody else wrote.
+//   - `WMUX_*` env keys are refused, and a literal value under a
+//     secret-looking key warns toward `${env:NAME}` (resolved at spawn by
+//     surface-env.ts, so the secret never sits in the file).
 
 import * as crypto from 'crypto';
 import * as path from 'path';
@@ -476,6 +488,9 @@ export interface LiveWorkspaceDescription {
  * folder the file will live in). A pane whose folder is outside `root` cannot
  * be expressed — a manifest may not point outside its repo — so it is written
  * at the root with a warning rather than silently moved.
+ *
+ * A pane's `run` comes from its live startup commands, which are editable on a
+ * live tab (right-click → Startup command…, `StartupCommandDialog.tsx`).
  */
 export function manifestFromWorkspace(desc: LiveWorkspaceDescription, root: string, name?: string): { manifest: Record<string, unknown>; warnings: string[] } {
   const warnings: string[] = [];

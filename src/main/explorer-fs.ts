@@ -4,6 +4,10 @@
 // arrives from explorer-roots.ts, which has already resolved it through
 // fs.realpath.native, and IS trusted.
 //
+// `resolveInRoot` is the security boundary. The renderer sends a surfaceId and
+// a RELATIVE path and NEVER an absolute one, because a renderer-supplied root
+// would not be a jail — a compromised renderer would simply pass `C:\`.
+//
 // MARKDOWN reads are deliberately NOT governed here. markdown.readFile accepts
 // any absolute path and is gated only on its extension whitelist, by existing
 // design — adding a second read guard there is the duplication markdown-file.ts
@@ -207,9 +211,10 @@ export async function resolveInRoot(
   if (escapes || path.isAbsolute(rel)) {
     return fail('Path is outside the root', 'outside_root');
   }
-  // Belt and braces for Windows spellings (8.3 short names are already gone —
-  // the root was realpath'd on the way in). The explicit trailing separator is
-  // what stops a SIBLING sharing a name prefix from passing as a child.
+  // Belt and braces for Windows spellings (8.3 short names and junction
+  // aliases are already gone — the root was realpath'd on the way in). The
+  // explicit trailing separator is what stops a SIBLING sharing a name prefix
+  // from passing as a child.
   //
   // A drive root already ENDS in one: path.resolve('C:\') is 'C:\', not 'C:'.
   // Appending unconditionally spells it 'c:\\', which no child can match, and

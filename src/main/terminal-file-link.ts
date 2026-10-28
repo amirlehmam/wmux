@@ -1,3 +1,18 @@
+// ─── Terminal file links: what a Ctrl+click on a printed path may open ───────
+// Ctrl+click on a file path printed in a terminal. The renderer
+// (`utils/terminal-file-links.ts`) only finds path-shaped text; this module
+// decides what it may open.
+//
+// It is the one channel that takes the path AS PRINTED, relative or absolute,
+// because the renderer has no root to relativize against: main resolves it
+// against the pane's explorer root and sends it through explorer-fs.ts's
+// `resolveInRoot`, so a printed path gets exactly the reach a click in the
+// explorer tree has. The only thing allowed past the jail is a file on
+// markdown's extension whitelist, which `markdown.readFile` already opens from
+// any absolute path. An ssh pane gets nothing — its handler in ipc-handlers.ts
+// refuses it before this module is called. The renderer opens a jailed text
+// file in the preview tab.
+
 import * as path from 'path';
 import { promises as fsp } from 'fs';
 import type { TerminalFileLinkResult } from '../shared/types';

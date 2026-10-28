@@ -13,6 +13,9 @@
  *   ~/.qwen/settings.json   `hooks` — the Claude set plus StopFailure (hooks)
  *                           `mcpServers.chrome-devtools` (browserMcp)
  *
+ * Verified live against qwen 0.25.3 + Ollama: every event reports, and
+ * `--resume` reopens the conversation (qwen-resume.ts).
+ *
  * ── Why every hook carries `--provider qwen` ────────────────────────────────
  *
  * The payload is shaped like Claude's, so without a tag wmux-hook.js would
@@ -21,7 +24,8 @@
  * and lets the helper translate the two places Qwen's payload differs: tool
  * names (`run_shell_command`, not `Bash`) and `UserPromptSubmit`, which Qwen
  * also fires for tool-result continuations (only `submitted_prompt` is text a
- * human typed).
+ * human typed). The helper also forwards only a strict UUID session id for
+ * Qwen: a subagent's `<uuid>-agent-<name>` would overwrite the pane's handle.
  *
  * ── Never on a machine that has not run Qwen ────────────────────────────────
  *
@@ -157,8 +161,9 @@ export const QWEN_HOOK_EVENTS = ['PostToolUse', ...QWEN_EVENT_HOOKS.map(h => h.e
  * `node "C:/Users/me/OneDrive - Org/…/wmux-hook.js"` arrived as
  * `"C:/Users/me/OneDrive` and died on MODULE_NOT_FOUND, so a Qwen pane started
  * from pwsh never reported a single event. Measured on Qwen 0.26.1; from Git
- * Bash it picks bash instead, which is why a probe run THERE passes. A command
- * with no quotes at all reads the same to cmd, bash and PowerShell.
+ * Bash it picks bash instead, which is why a probe run THERE passes — verify
+ * from pwsh. A command with no quotes at all reads the same to cmd, bash and
+ * PowerShell. Bare (through the stub below) is the 2.42.1 fix.
  */
 export function qwenHookTarget(hookScript: string): string {
   return /^[\w.:/~-]+$/.test(hookScript) ? hookScript : `"${hookScript}"`;

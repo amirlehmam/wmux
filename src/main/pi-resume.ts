@@ -1,27 +1,41 @@
 // ─── pi resume, main side (#382) ─────────────────────────────────────────────
 //
 // The seventh provider, beside Claude (#186), Codex (#261), OpenCode (#290),
-// agy, Qwen and omp (#316). The handle is the session FILE, not an id: pi
-// resumes `pi --session <path>` exactly, and a bare id would have to be
+// agy, Qwen and omp (#316), behind `workspacePrefs.restorePiSessions` (default
+// off). The handle is the session FILE, not an id: pi resumes
+// `pi --session <path>` exactly — quoted per shell by `quoteOmpArg`
+// (agent-launcher.ts), never `--continue` — and a bare id would have to be
 // re-resolved against a per-cwd directory wmux does not own. It comes from
-// wmux's own pi extension (resources/pi-extension/wmux.js), which reports it
-// only once the file exists — pi writes it with the first assistant message,
-// so a path known at `session_start` may never exist at all.
+// wmux's own pi extension (resources/pi-extension/wmux.js, reporting since its
+// version marker 3), which reports it only once the file exists and is
+// non-empty — pi writes it with the first assistant message, so a path known
+// at `session_start` may never exist at all. So `session_start` reports only a
+// resumed or forked session, and a new one reports at its first
+// `turn_end`/`agent_settled`.
 //
 // Three pi behaviours shape the rest, each checked against pi 1.4.0 by the
 // reporter of #382:
 //
 //   - `session_shutdown` fires for `/reload`, `/new`, `/resume` and `/fork` as
-//     well as for a quit. Only `reason: "quit"` releases; on a switch the next
-//     session reports its own file.
-//   - A previous session's messages can land late. Every report carries a
-//     `seq` (a timestamp-derived counter in the extension), and the gate below
-//     keeps the newest per surface — past `forget()`, which is what lets a
-//     report that loses the race to its own quit be dropped instead of
-//     re-creating the handle the user just left.
+//     well as for a quit. Only `reason: "quit"` sends
+//     `pane.release_pi_session`; on a switch the next session reports its own
+//     file.
+//   - A previous session's messages can land late. Every report and release
+//     carries a `--seq` (a timestamp-derived counter in the extension), and
+//     the gate below keeps the newest per surface — past `forget()`, which is
+//     what lets a report that loses the race to its own quit be dropped
+//     instead of re-creating the handle the user just left.
 //   - `pi --session <path>` on a missing or EMPTY file silently starts a new
 //     empty session in its place. So a handle whose file is gone or empty is
 //     dropped at startup (`pruneDeadPiSessions`) rather than typed.
+//
+// A pi crash keeps the handle (the orphan rule in agent-state.ts).
+//
+// A pi launcher already in the pane's startup commands keeps its args, with
+// `--continue`/`-c`/`--resume`/`-r` (value-less in pi, unlike omp) and any
+// `--session` replaced by `--session <path>`; one carrying `--no-session`,
+// `--fork` or `--session-id` is left alone (`mergePiResume` in
+// agent-launcher.ts).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,7 +66,8 @@ const UNSAFE_PATH_CHARS = /[\u0000-\u001f\u007f"]/;
  * pipe and round-trips through session.json, a file the user can edit, and it
  * ends up on a restored pane's command line — so it is checked at the door
  * (`reportAgentSession`), again when the restored tree is pruned, and its shape
- * once more in the renderer before the command is built. Containment is what
+ * once more in the renderer (claude-resume-command.ts) before the command is
+ * built. Containment is what
  * stops a reported "session" from being any file on disk pi would then open
  * and append to.
  *

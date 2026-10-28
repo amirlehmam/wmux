@@ -142,9 +142,11 @@ export function attachErrorSink(
 /**
  * Install the exit-callback guard on node-pty's real WindowsPtyAgent.
  *
- * Called once from pty-manager at module load. Windows-only because ConPTY is,
- * and fully defensive: this is a hardening pass, so failing to apply it must
- * never be worse than not having it.
+ * Called once from pty-manager at module load, before any PTY can exist:
+ * node-pty registers the exit callback inside `pty.spawn()`, so installing
+ * after a spawn is too late for that pane, which stays on the unguarded path.
+ * Windows-only because ConPTY is, and fully defensive: this is a hardening
+ * pass, so failing to apply it must never be worse than not having it.
  */
 export function installPtyCrashGuard(): boolean {
   if (process.platform !== 'win32') return false;

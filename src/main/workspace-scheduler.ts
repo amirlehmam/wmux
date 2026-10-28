@@ -6,10 +6,14 @@
 // The rules, each one a line in the issue's guardrails:
 //   - A pane runs once everything in its `after` has been DISPATCHED, and its
 //     own `waitFor` (if any) has passed. Panes with neither go at t=0.
-//   - Every wait is bounded. A wait that gives up says so IN THAT PANE and
-//     runs nothing there; its dependents still go (with their own waits), so
-//     one dead service cannot hang the whole bring-up.
-//   - Commands are typed through PtyManager's one delivery path (#251).
+//   - Every wait is bounded. A wait that gives up says so IN THAT PANE (a
+//     `[wmux] …` notice) and runs nothing there; its dependents still go (with
+//     their own waits), so one dead service cannot hang the whole bring-up.
+//   - Commands are typed through PtyManager's one delivery path (#251):
+//     `PtyManager.deliverCommands`, the gated typing path, now also used for a
+//     shell that is already running.
+//   - Notices are written to xterm (the renderer's `showPaneNotice`, parked
+//     until the pane mounts), never to the PTY.
 //
 // I/O is injected, which is what makes the ordering testable without a PTY,
 // a socket or a clock.

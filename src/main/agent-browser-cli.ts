@@ -5,10 +5,14 @@
  * PATH. wmux hands its panes a curated environment, and npm's global bin
  * directory is frequently absent from the PATH the Electron process inherited.
  *
- * A second, sharper lesson, found while wiring this up: `npm i -g agent-browser`
- * puts a `.cmd` shim on Windows, and Node's own `child_process` refuses to
+ * Two traps sit on top of that, both found by running the real binary rather
+ * than by reading its docs. One is how a run ends: `execFile` never returns
+ * for a command that starts the daemon (see `runAgentBrowser`). The other, a
+ * sharper lesson found while wiring this up: `npm i -g agent-browser` puts a
+ * `.cmd` shim on Windows, and Node's own `child_process` refuses to
  * spawn a `.bat`/`.cmd` without `shell: true` (the CVE-2024-27980 mitigation) —
- * it throws a synchronous EINVAL, not a callback error. `shell: true` is not an
+ * it throws a synchronous EINVAL, not a callback error, and in main that is an
+ * uncaught throw rather than a failed command. `shell: true` is not an
  * acceptable fix here: argv can carry agent-controlled URLs and `eval` JS, and
  * shelling out would run them through cmd.exe's parser, the exact trap
  * `powershell-shim.ts` documents (#154). The actual fix is that the npm package ships
@@ -18,8 +22,10 @@
  * spawn by ABSOLUTE path regardless.
  *
  * Resolution is pure (`resolveAgentBrowserBinary`) so it is testable with no
- * filesystem, and memoised at the module boundary because it is read on the
- * pane-render path (#176: `where` cost 2x pty.spawn).
+ * filesystem, and memoised at the module boundary, like `node-runtime.ts`,
+ * because it is read on the pane-render path (#176: `where` cost 2x
+ * pty.spawn). The memo is keyed on the configured path, so a Settings change
+ * invalidates it without every caller remembering to ask (`agentBrowserPath`).
  */
 import { spawn } from 'child_process';
 import * as fs from 'fs';
@@ -419,7 +425,8 @@ const STDIO_DRAIN_MS = 50;
  * process is done". `'error'` is where a spawn-level failure surfaces under
  * `spawn` (there is no callback `err` to inspect), which is what now drives
  * `spawnFailed`. The timeout is reimplemented here because `spawn` has no
- * `timeout` option with `execFile`'s semantics.
+ * `timeout` option with `execFile`'s semantics. Anyone "simplifying" this
+ * back to `execFile` breaks agent mode completely and silently.
  *
  * Argv stays an ARRAY and `shell` is deliberately never set. Resolution above
  * only ever returns a real executable (a native `.exe`/extensionless binary,

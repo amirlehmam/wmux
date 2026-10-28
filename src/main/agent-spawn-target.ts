@@ -9,8 +9,9 @@ import { distributeAgents, PaneLoadInfo } from './agent-manager';
  * from a non-active workspace and the agent starts, runs, and is recorded
  * against the wrong workspace — after which every lookup that goes through the
  * workspace record fails, including `read-screen`, whose error then names three
- * causes that are all wrong ("markdown/browser pane, another window, or
- * closed"). The reporter restarted three orchestration waves chasing it.
+ * causes that are all wrong ("no terminal for surface … (markdown/browser pane,
+ * another window, or closed)"). The reporter restarted three orchestration
+ * waves chasing it.
  *
  * The fix is to make the pane AUTHORITATIVE whenever it is given. A pane
  * belongs to exactly one workspace and the split tree says which, so there is
@@ -27,7 +28,9 @@ import { distributeAgents, PaneLoadInfo } from './agent-manager';
  * store and main has no copy, so every question here is a round trip into a
  * renderer — which is exactly what makes the decision worth separating from the
  * asking. This is the shape `close-guard.ts` and `agent-browser-verbs.ts` use
- * for the same reason: a rule you can test without an Electron app.
+ * for the same reason: a rule you can test without an Electron app. The impure
+ * half is `spawnTargetLookups` in `index.ts`, which asks EVERY window, first
+ * real answer wins (#143).
  */
 
 export interface SpawnTargetLookups {
@@ -40,7 +43,8 @@ export interface SpawnTargetLookups {
   /**
    * Which workspace holds this SURFACE, across every window, or null (#246).
    * Asked about the caller's own terminal — the `caller` every CLI call carries
-   * as `$WMUX_SURFACE_ID` — so it has the same every-window rule. A miss is not
+   * as `$WMUX_SURFACE_ID` — so it has the same every-window rule (`index.ts`
+   * resolves it through `__wmux_locateSurface` in every window). A miss is not
    * an error here: it is a stale id or a shell wmux did not start, and the
    * resolution simply moves on to the active workspace.
    */

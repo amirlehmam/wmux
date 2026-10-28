@@ -23,6 +23,12 @@
  * Windows: BGRA, PREMULTIPLIED alpha. A PNG wants straight alpha, so a
  * translucent pixel is un-premultiplied; an opaque image (every screenshot) is
  * written as RGB, a quarter less to deflate.
+ *
+ * The Electron half lives in remote-insert.ts. `readClipboardSource` still
+ * copies the bitmap SYNCHRONOUSLY, before the paste queue, so the snapshot
+ * semantics hold; `materializeClipboard` encodes and writes with
+ * `fs.promises`. A bitmap whose length does not match its size falls back to
+ * `toPNG()`.
  */
 
 import * as zlib from 'zlib';

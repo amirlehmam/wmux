@@ -13,6 +13,17 @@ import {
   type StagedZipUpdate,
 } from './zip-updater';
 
+// ── Auto-update, routed by install layout ────────────────────────────────────
+// NSIS → electron-updater; portable zip extract → zip-updater.ts (#184).
+// initAutoUpdater() returns before registering NsisUpdater on a zip extract,
+// so a portable install can never enter the #96 "update ready" loop.
+//
+// A Scoop install (#321) matches the zip shape too, so it is checked FIRST
+// (isScoopManagedInstall: Scoop's manifest.json + install.json beside the exe)
+// and never updates in place — the badge answers with a `scoop update wmux`
+// dialog. The repo is its own Scoop bucket (bucket/wmux.json), bumped by the
+// last step of release.yml via scripts/update-scoop-manifest.mjs.
+
 // ── Auto-update hardening (issue #29) ────────────────────────────────────────
 // The old flow auto-downloaded AND silently auto-installed on quit, with no
 // authenticity check. Anyone able to publish a release to the repo got near-

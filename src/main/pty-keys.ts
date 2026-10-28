@@ -1,10 +1,11 @@
 /**
  * Named key → raw PTY bytes.
  *
- * Moved out of index.ts for the Remote Console (#254): `surface.send_key` and
- * the phone's key bar must type the SAME bytes for the same name, and two
- * tables would drift. `PTY_KEY_MAP` and `translateKeyName` are byte-identical
- * to the originals; `REMOTE_KEY_BYTES` is the phone's closed subset, keyed by
+ * Moved out of index.ts for the Remote Console (#254): `surface.send_key`, the
+ * `pane.answer_agent` writer and the phone's key bar must type the SAME bytes
+ * for the same name, and two tables would drift. `PTY_KEY_MAP` and
+ * `translateKeyName` are byte-identical to the originals; `REMOTE_KEY_BYTES` is
+ * the phone's closed subset, keyed by
  * the protocol's `RemoteKey` so a key the protocol accepts can never be
  * missing a byte sequence here.
  */

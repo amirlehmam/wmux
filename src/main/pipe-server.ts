@@ -1,3 +1,9 @@
+/**
+ * The named pipe server (`\\.\pipe\wmux` by default): the V1 text protocol
+ * the shell hooks speak, and V2 JSON-RPC for the CLI and agents. One request
+ * per connection, and the server closes the connection right behind its
+ * reply — see `reply` in `start()` for why that close is a `destroy()`.
+ */
 import net from 'net';
 import { EventEmitter } from 'events';
 import { tokensMatch } from '../shared/instance';
@@ -76,7 +82,9 @@ export class PipeServer extends EventEmitter {
       // one that closes the socket — but the framing loop below can pull two
       // lines out of one chunk, and closing on the first reply would eat the
       // second. So a reply closes only when nothing is still owed AND no
-      // further complete line is waiting in the buffer.
+      // further complete line is waiting in the buffer. The destroy below is
+      // safe only because every client sends one request per connection; this
+      // gate is pinned by a test in tests/unit/pipe-server.test.ts.
       let pending = 0;
 
       // Close the connection ourselves, right behind the reply — and with
@@ -86,14 +94,17 @@ export class PipeServer extends EventEmitter {
       // clients used to finish with `socket.end()` (a half-close) against a
       // server that never closed its side, and on a Windows named pipe libuv
       // answers a half-close by arming a 50 ms `eof_timeout` (libuv
-      // src/win/pipe.c) before it will report EOF: `wmux ping` measured 96 ms
+      // src/win/pipe.c) before it will report EOF, and releases the handle only
+      // on the peer's EOF or on that timer's expiry: `wmux ping` measured 96 ms
       // against a pipe that answers in 1 ms, a Claude Code hook process 95 ms.
       // Replying with `socket.end()` does NOT help — then both sides arm the
       // timer (measured 93 ms, unchanged). The server has to write the reply
       // and, in the write callback (the bytes are with the OS by then, so a
       // client that is still reading gets them before it sees EOF), destroy
       // the handle: ping 36 ms, hook 37 ms. Anyone "simplifying" this back to
-      // `end()` restores the timer.
+      // `end()` restores the timer. The clients (src/cli/wmux.ts,
+      // src/cli/wmux-hook.ts) likewise `destroy()` on the first reply chunk,
+      // never `end()`.
       const reply = (text: string): void => {
         pending = Math.max(0, pending - 1);
         const last = pending === 0 && !buffer.includes('\n');

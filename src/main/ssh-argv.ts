@@ -1,6 +1,7 @@
 /**
  * ssh-argv.ts — parse an `ssh` command line into the connection facts needed to
- * re-open the same connection with `scp` (remote file upload on paste/drop).
+ * re-open the same connection with `scp` (remote file upload on paste/drop,
+ * issue #195).
  *
  * Pure: no I/O, no process spawning, no platform calls. Every caller in
  * `ssh-detect.ts` funnels an argv through here, so the detection sources (a

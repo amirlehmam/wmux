@@ -22,7 +22,15 @@
 // back down.
 //
 // A renderer that is GONE (crashed, OOM-killed) leaves a blank window behind;
-// that gets the same offer, minus the waiting.
+// that gets the same offer, minus the waiting — on any `render-process-gone`
+// that is not a clean exit.
+//
+// This file is the copy and the decisions; `WindowManager.watchRendererHealth`
+// (window-manager.ts) asks the question. `'responsive'` aborts the dialog via
+// its `signal`. A hung renderer is `forcefullyCrashRenderer()`d before
+// `reload()`, since it may never run the navigation it is asked for, and a
+// `reloading` flag stops that kill's own `render-process-gone` from asking a
+// second time.
 
 export type RendererTrouble = 'unresponsive' | 'gone';
 

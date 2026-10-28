@@ -2,10 +2,20 @@
 //
 // The fourth provider beside Claude (#186), Codex (#261) and OpenCode (#290).
 // The handle comes from wmux's own agy plugin (agy-context.ts), whose hooks
-// read `conversationId` off agy's hook payload and report it with
-// `provider: 'agy'`; restore types `agy --conversation <id>`. Same shape as
+// read `conversationId` off agy's hook payload and report it as
+// `pane.report_agent_session` with `provider: 'agy'` (validated as a UUID
+// below); restore types `agy --conversation <id>`. Same shape as
 // opencode-resume.ts on purpose — one stamp per provider, mutually exclusive
-// through agent-session-persistence.ts.
+// through agent-session-persistence.ts. Behind
+// `workspacePrefs.restoreAgySessions` (default off).
+//
+// agy has no session-end hook, so its exit is the shell returning to its
+// prompt (`report_shell_state`): `releaseAgyAtPrompt` (agent-state.ts) drops an
+// agy handle, or — when the command that ended was `agy` but it never reported
+// — the restored id. That second case is known only from a preexec
+// `report_command`, which the PowerShell integration sends for ssh alone, so in
+// pwsh such an agy keeps its id. The release is refused for a stale
+// (out-of-sequence) prompt and while wmux is quitting (index.ts).
 
 import { SurfaceId } from '../shared/types';
 import { mapSurfaces } from './claude-resume';

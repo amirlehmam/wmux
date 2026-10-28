@@ -3,7 +3,8 @@
 // The renderer cannot load it itself: in a packaged build the page is
 // `file:///…/dist/renderer/index.html`, so a relative src resolves against the
 // APP directory, and a drive path or a `file:` URL is stripped by DOMPurify.
-// So main reads the file and hands back a `data:` URL.
+// So main reads the file and hands back a `data:` URL, behind
+// `markdown:read-image`: read-only, and it mints nothing.
 //
 // ─── What this lets a document reach, stated honestly ───────────────────────
 // The document is untrusted (it arrives from agents, CLI callers and files),

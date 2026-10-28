@@ -12,14 +12,16 @@
 // The repair here is to correct the header on the way in, for exactly that
 // response, rather than to handle the download afterwards. The two
 // alternatives proposed in the issue both lose:
-//  - cancel the download and `loadURL` the same URL again: the server answers
-//    the same URL with the same wrong type, so it is a download loop;
+//  - cancel the download and `loadURL` the same URL again (a `will-download`
+//    handler that re-issues the navigation): the server answers the same URL
+//    with the same wrong type, so it is a download loop;
 //  - cancel and log: the pane stays blank with nothing to say why.
 // A web-mode pane keeps the browser's ordinary download behaviour — a Save
 // dialog for a real download a user clicked is correct, and is not touched.
 //
 // Pure, so the decision is testable without Electron; `index.ts` installs it
-// with `session.webRequest.onHeadersReceived`.
+// with `session.webRequest.onHeadersReceived` on the DEFAULT session, because
+// webviews have no partition and so share it.
 
 import { DASHBOARD_PORT } from './agent-browser-session';
 

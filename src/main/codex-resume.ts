@@ -1,3 +1,11 @@
+// ─── Codex resume, main side (#261) ──────────────────────────────────────────
+//
+// The persisted half of Codex conversation restore: the thread id the launcher
+// (codex-launcher.ts, cli/wmux-codex.js) reports is stamped into the copy of
+// the tree that goes into session.json. Only a clean exit (code 0) forgets the
+// id — that is when the launcher sends `pane.release_codex_session`, which main
+// refuses while wmux is quitting — so a crash or a wmux quit keeps it.
+
 import { SurfaceId } from '../shared/types';
 import { mapSurfaces } from './claude-resume';
 

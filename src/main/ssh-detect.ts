@@ -14,6 +14,11 @@
  *                 that process owns the foreground, so this source may only
  *                 corroborate one of the two authoritative sources above.
  *
+ * That precedence is a security boundary, not a preference: Windows has no tty
+ * foreground process group, so a descendant `ssh.exe` may be a *background*
+ * process, and a probe that could establish a session on its own could upload
+ * a file to a host the pane is not talking to.
+ *
  * (1) and (3) are the two sources cmux has — its `.workspaceRemote` and its
  * `ps -t <tty>` foreground probe. (2) has no cmux counterpart and exists purely
  * because of a platform difference: on macOS `ps` answers in milliseconds, so

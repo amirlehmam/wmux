@@ -1,14 +1,18 @@
 import type { KeepAwakeMode, KeepAwakeState } from '../shared/types';
 
 /**
- * Keep Windows awake while coding agents work (issue #363).
+ * Keep Windows awake while coding agents work (issue #363), with one
+ * `powerSaveBlocker` and three modes: `smart` (the default — held while any
+ * pane's DECLARED state is `working`, so only agents that report through
+ * hooks/`report-agent` count), `always` and `off`.
  *
  * MAIN owns the choice: the mode and the display flag are persisted in wmux's
  * own settings.json (`KEEP_AWAKE_SETTINGS_KEY`) and read when the manager is
  * built, so the mode picked in one window is the mode every window shows and
- * the one the next launch starts in. A renderer copy would be a second answer
- * to "what mode are we in", and the first one that disagreed would be the one
- * the user had actually chosen.
+ * the one the next launch starts in. The titlebar menu and Settings read it
+ * through `awake.getState`/`onStateChange` (useKeepAwake.ts), never a renderer
+ * copy: that would be a second answer to "what mode are we in", and the first
+ * one that disagreed would be the one the user had actually chosen.
  */
 
 export type BlockerType = KeepAwakeState['blockerType'];
@@ -249,7 +253,9 @@ export interface AgentStateSource {
 
 /**
  * Feeds the working count into the manager on every agent broadcast, and while
- * anything is working, re-counts once the oldest claim expires.
+ * anything is working, re-counts once the oldest claim expires: at
+ * `WORKING_TRUST_MS` (agent-state.ts; index.ts passes it as `trustMs`), because
+ * that downgrade is never broadcast (see nextWorkingExpiryDelay).
  */
 export function bindAwakeToAgentStates(
   manager: AwakeManager,

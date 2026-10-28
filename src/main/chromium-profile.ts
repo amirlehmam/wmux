@@ -4,17 +4,28 @@
 // Until 2.22.0 Electron's userData was `%APPDATA%\wmux`: the default for a
 // productName of "wmux", and therefore ALSO the default of openwong2kim/wmux,
 // a different Electron app with the same name. Electron keys its single-
-// instance lock on the userData directory, so with both installed whichever
-// started first owned the lock and the other quit on launch — handing its
-// command line to the WRONG app as a `second-instance`. They also shared one
-// Chromium profile: one Local Storage (where wmux keeps most of its settings),
-// one cookie jar for both browser panels.
+// instance lock (`requestSingleInstanceLock`) on the userData directory, so
+// with both installed whichever started first owned the lock and the other got
+// `gotLock false` and quit on launch — handing its command line to the WRONG
+// app as a `second-instance`. Reproduced in a standalone Electron 43 harness:
+// CONTROL `false`, after the move both `true`. They also shared one Chromium
+// profile: one Local Storage (where wmux keeps most of its settings), one
+// cookie jar for both browser panels.
 //
-// wmux's own files (settings.json, sessions, pipe-token, logs…) stay exactly
-// where they are, in getAppDataDir() — the CLI, the hooks and `wmux
-// crash-report` all read them there, and so may an older wmux after a
-// downgrade. Only Electron's profile moves, to a subdirectory: a different
-// directory is a different lock, and a profile nobody else opens.
+// wmux's own files (settings.json, sessions, pipe-token, logs, agent-detection…)
+// stay exactly where they are, in getAppDataDir() — the CLI, the hooks and
+// `wmux crash-report` all read them there, and so may an older wmux after a
+// downgrade. Only Electron's profile moves, to a subdirectory
+// (`%APPDATA%\wmux\chromium`): a different directory is a different lock, and a
+// profile nobody else opens. So wmux's own files must NEVER be reached through
+// `app.getPath('userData')` — that is this profile now, not wmux's data dir.
+// `user-manifests.ts` did, and was moved to getAppDataDir().
+//
+// Other collisions with that app are handled elsewhere: `wmux-hook.js` exits
+// when `WMUX_SURFACE_ID` comes with none of our markers (`WMUX=1`, `WMUX_PIPE`,
+// `WMUX_REMOTE`), because theirs exports the same name; and the agent-context
+// block no longer reads a non-`pong` bare `wmux` as absence, since theirs puts
+// its own `wmux.cmd` on the user PATH.
 //
 // The state worth keeping is COPIED, never moved: an older wmux (a downgrade)
 // and the other app may both still be reading the old location, and a copy

@@ -1,16 +1,23 @@
 /**
  * Git worktree workspaces (#366) — the main-process half.
  *
- * A worktree workspace is a checkout wmux created for one branch, under
- * `%LOCALAPPDATA%\wmux\wt\<repo-slug>\<branch-dir>`. Creating one is cheap;
- * REMOVING one is where user work dies, so the whole module is organised
- * around one rule: **wmux never destroys work it was not explicitly told to
- * destroy, and when in doubt it leaves the files on disk and says so.**
+ * A worktree workspace is a checkout wmux created on a NEW branch, under
+ * `%LOCALAPPDATA%\wmux\wt\<repo-slug>\<branch-dir>`, from
+ * `wmux new-workspace --worktree <branch> [--base <ref>]` or the sidebar menu,
+ * and recorded (repo, branch, base SHA) in `worktrees.json` there. Creating
+ * one is cheap; REMOVING one is where user work dies, so the whole module is
+ * organised around one rule: **wmux never destroys work it was not explicitly
+ * told to destroy, and when in doubt it leaves the files on disk and says so.**
  *
  * - There is no background sweep. A startup collector once removed "unclaimed
- *   clean" worktrees, and every update restored from a backup that had dropped
- *   the claim, so it removed live checkouts. Closing a worktree workspace any
- *   way other than the dialog's two buttons leaves the directory alone.
+ *   clean" worktrees, and every update restored from an Auto-backup that had
+ *   dropped the `worktree` binding, so it removed live checkouts. The binding
+ *   now survives auto-save, the Auto-backup, named sessions and snapshots
+ *   (session-persistence.ts).
+ * - Only the close dialog removes, and only after a read-only `inspect`
+ *   (`inspectWorktree`) while the workspace is still open. The CLI, closing
+ *   the last tab, or any other way of closing a worktree workspace than the
+ *   dialog's two buttons leaves the folder on disk.
  * - Keep (the default) never forces. `git worktree remove` without `--force`
  *   refuses modified and untracked files but deletes IGNORED ones (`.env`,
  *   local config) and exits 0, so a `status --ignored --untracked-files=all`
@@ -22,8 +29,19 @@
  *   under the worktree root, be recorded in main's own registry (repo, branch,
  *   base — never anything the renderer says), and be listed by
  *   `git worktree list --porcelain` of that repository.
- * - Git is an ABSOLUTE executable (`gitExecutable` in git-view.ts) with no
- *   shell; a ref or a branch name can never reach an option slot.
+ * - Git is an ABSOLUTE executable (`gitExecutable` in git-view.ts, so a
+ *   `git.exe` committed to the repo never runs) with no shell and
+ *   `GIT_TERMINAL_PROMPT=0` / `GIT_OPTIONAL_LOCKS=0`; a ref or a branch name
+ *   can never reach an option slot (`--base` passes `isSafeRev`, the branch
+ *   the whitelist plus `check-ref-format --branch`).
+ *
+ * Two rules that live outside this file but are about it:
+ *
+ * - A pipe-created worktree branches from the CALLER's folder (`--cwd`, else
+ *   the caller surface's reported cwd, via `prepareWorkspaceCreateParams` in
+ *   v2-bridge.ts), never the focused workspace (#246).
+ * - The Diff view compares against `baseSha` only for a surface whose cwd is
+ *   inside the worktree (renderer/components/Diff/diff-base.ts).
  */
 import fs from 'fs';
 import path from 'path';
@@ -499,7 +517,8 @@ function drain(ms: number): Promise<void> {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 
-/** Discard's second half: the branch MAIN recorded, never one the renderer named. */
+/** Discard's second half: the branch MAIN recorded, never one the renderer named
+ *  — there is no IPC that names a branch to delete. */
 async function deleteRecordedBranch(record: WorktreeRecord): Promise<WorktreeRemoveResult> {
   const branch = await runGit(record.repoRoot, ['branch', '-D', record.branch]);
   return branch.code === 0

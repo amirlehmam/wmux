@@ -1,5 +1,8 @@
 /**
- * The project Git view (#362) — the main-process half.
+ * The project Git view (#362) — the main-process half of the `git` surface:
+ * worktrees, working changes, branch changes and the commit graph, all over ONE
+ * IPC channel (`git:view`, carrying a tagged `GitViewRequest` from
+ * `shared/git-view.ts`).
  *
  * Read-only by construction: every git sub-command this module runs is one
  * that reads (`worktree list`, `status`, `log`, `diff`, `show`, `for-each-ref`,
@@ -12,8 +15,11 @@
  * - **No shell, and no renderer string in an option slot.** Arguments go
  *   through `execFile` as an array. A ref arrives from the renderer and lands
  *   in argv, so `isSafeRev` refuses anything that could read as an option
- *   (`--output=…`) and paths only ever follow `--`, under
- *   `--literal-pathspecs` so a `:(top)` file name is a name and not magic.
+ *   (`--output=…`), a range and an object path, and paths only ever follow
+ *   `--`, under `--literal-pathspecs` so a `:(top)` file name is a name and
+ *   not magic. git itself is an ABSOLUTE path (`gitCandidates`: PATH dirs,
+ *   then Git for Windows' install roots), never a bare `git` resolved per
+ *   spawn.
  * - **`GIT_OPTIONAL_LOCKS=0`.** `git status` refreshes the index and takes
  *   `.git/index.lock` to write the refresh back; a poll doing that beside an
  *   agent that is committing makes the agent's `git commit` fail with
@@ -482,6 +488,12 @@ async function resolveCommit(cwd: string, rev: string): Promise<string> {
   }
 }
 
+/**
+ * What a branch did since it forked from `base`. THREE-dot, i.e.
+ * `merge-base(base, HEAD)..HEAD`, so commits that landed on the base after the
+ * fork never read as the agent's work. Uncommitted changes stay out of it (they
+ * are the working-changes view).
+ */
 async function branchChanges(cwd: string, worktree: unknown, base: unknown): Promise<GitBranchChanges> {
   const wt = await resolveWorktree(cwd, worktree);
   if (!isSafeRev(base)) throw new GitError('Invalid base branch', 'invalid');

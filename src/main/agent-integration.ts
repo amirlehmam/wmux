@@ -28,6 +28,11 @@
  * `declined` is deliberately sticky and re-asserted on every launch: a user who
  * says no once should not have to say it again after an update, and should not
  * have to hand-delete the leftovers either.
+ *
+ * That makes this module the ONLY way in. Nothing in claude-context.ts,
+ * opencode-context.ts, kiro-context.ts, omp-context.ts, pi-context.ts or
+ * grok-context.ts may be called directly from startup any more — route it
+ * through here.
  */
 import {
   ensureClaudeContext,
@@ -185,11 +190,12 @@ function applyFeature(feature: IntegrationFeature, enabled: boolean): void {
       }
       break;
     case 'hooks':
-      // The pi extension belongs here and not under `orchestrator` because the
-      // panel's own label for this toggle is "Status hooks", and that is
-      // precisely what it is: a per-event reporter, no orchestration. The
-      // OpenCode plugin does the same job from under `orchestrator`, which is a
-      // pre-existing mismatch deliberately left alone — moving it would
+      // Which FEATURE a new integration hangs off is a real decision, not a
+      // slot. The pi extension belongs here and not under `orchestrator`
+      // because the panel's own label for this toggle is "Status hooks", and
+      // that is precisely what it is: a per-event reporter, no orchestration.
+      // The OpenCode plugin does the same job from under `orchestrator`, which
+      // is a pre-existing mismatch deliberately left alone — moving it would
       // silently re-enable a status bridge for every user who switched that
       // toggle off, which is the #132 complaint in reverse.
       // The agy plugin likewise: it reports which conversation a pane holds,

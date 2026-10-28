@@ -1,3 +1,17 @@
+/**
+ * Agent PTY spawning (`wmux agent spawn` / `spawn-batch`), and the round-robin
+ * distribution of agents across a workspace's panes.
+ *
+ * The agent command travels as a `startupCommands` entry that the PowerShell
+ * integration runs during init (see `pty-manager.ts`), not as keystrokes typed
+ * after a sniffed prompt. The sniff is what this module used to do, and it
+ * broke silently: the prompt regex stopped matching the moment #207 wrapped the
+ * prompt in OSC 133 marks, so every `wmux agent spawn` fell into the 1500 ms
+ * debounce (moving the command to `startupCommands` took first output from
+ * 1.71 s to 0.56 s). It no longer types anything itself: since #251
+ * PtyManager delivers startup commands for every caller (see
+ * `startup-commands.ts`), and `looksLikePrompt` is re-exported from there.
+ */
 import { v4 as uuid } from 'uuid';
 import { PtyManager } from './pty-manager';
 import { AgentId, AgentInfo, AgentSpawnParams, PaneId, SurfaceId, WorkspaceId } from '../shared/types';

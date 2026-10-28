@@ -1,4 +1,4 @@
-// ─── Code viewer: which files are text, and how they are read ────────────────
+// ─── Code viewer: which files are text, and how they are read and written ───
 // Sibling to markdown-file.ts. It deliberately does NOT import from it and does
 // not change it: markdown's extension whitelist stays exactly as narrow as it
 // is, for exactly the callers it already has.
@@ -169,6 +169,13 @@ export interface CodeWriteOk {
 
 /**
  * Write text back to a file the user opened in a pane.
+ *
+ * It adds two things a naive save gets wrong, and both show up as a whole-file
+ * rewrite in the next commit: a `<textarea>` normalizes its value to LF, so a
+ * CRLF file's endings are restored from what is on disk (`usesCrlf`), and the
+ * file's encoding (UTF-8, UTF-8+BOM, UTF-16LE) is probed from the preamble of
+ * the file being overwritten rather than round-tripped through the renderer
+ * (`probeEncoding`).
  *
  * `absPath` MUST already have been through resolveInRoot AND the grant check in
  * file-grants.ts. This function knows about neither; it is the last step, not

@@ -22,7 +22,9 @@ import * as path from 'path';
 // The fix is to treat a bare `bash` / `git-bash` spec as the alias it is: an
 // honest PATH hit still wins (an MSYS2 or Cygwin bash the user put there on
 // purpose), but the WSL launcher does not count as one — Git for Windows'
-// bash is looked up at its install root before falling back to it.
+// bash is looked up at its install root before falling back to it. A spec
+// that still fails to resolve now says so in the pane (pty-manager.ts's
+// `shellFallbackFrom`) instead of only in main's log.
 //
 // Pure: every filesystem and PATH question is the caller's, so the whole rule
 // is testable on a machine with no Git installed.

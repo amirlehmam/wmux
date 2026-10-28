@@ -71,8 +71,9 @@ export function toAgentBrowserArgv(method: string, params: any, session: string)
       // AGENT_BROWSER_DEFAULT_TIMEOUT, applies, with no per-invocation override).
       // A caller-supplied timeout alongside a ref is therefore unrepresentable
       // in argv and is deliberately dropped — ref wins. This is a real, visible
-      // behavioural gap between the two engines and needs a line in the docs
-      // task; it is not something this pure function can close.
+      // behavioural gap between the two engines, and the ONE engine divergence:
+      // this is where it is recorded. It is not something this pure function
+      // can close.
       if (ref) return [...head, 'wait', ref];
       if (typeof p.timeout === 'number') return [...head, 'wait', String(p.timeout)];
       throw Object.assign(new Error(`${method} requires a "ref" or a "timeout" param`), { rpcCode: -32602 });

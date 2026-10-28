@@ -13,6 +13,14 @@
 // because a renderer that is not answering is exactly the window the user is
 // trying to close, and "cannot quit" is worse than "lost the last 30 s".
 //
+// Two holds, both in ./index: `WindowManager.beforeClose` holds the LAST
+// window's close, and `before-quit` holds the quit — once, guarded by
+// `quitFlushDone` — until each window's `session:save` lands, bounded by
+// SESSION_FLUSH_TIMEOUT_MS (1 s). Both are skipped on `session-end`: Windows
+// is ending the session and the OS is on a deadline. The startup-command
+// dialog also writes at once, via `requestSessionSaveNow()`
+// (`renderer/utils/session-save-now.ts`).
+//
 // Pure bookkeeping, no Electron: the waiters are keyed by webContents id and
 // resolved from the `session:save` listener in ./index.
 

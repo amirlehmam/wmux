@@ -7,12 +7,14 @@
  * × — or Alt+F4, or a mis-aimed click on a machine so loaded the pointer barely
  * moves, which is how #227 was reported — ends every PTY in it at once, and the
  * agents in them with it. Opt-in, like #90: most people quit wmux by closing
- * the window and must not be asked every time.
+ * the window and must not be asked every time. Shipped in 2.10.2, behind the
+ * pref `confirmAppClose`.
  *
  * This module is the DECISION only. The effect — `event.preventDefault()` and
- * a native `dialog.showMessageBox` — lives in `window-manager.ts`, because a
- * BrowserWindow `close` event needs a real Electron app to reach, and the part
- * worth pinning is which of three things happens to a close request.
+ * a native `dialog.showMessageBox`, Cancel as the default button — lives in
+ * `window-manager.ts`, because a BrowserWindow `close` event needs a real
+ * Electron app to reach, and the part worth pinning is which of three things
+ * happens to a close request.
  *
  * Why a native dialog rather than the renderer's ConfirmCloseDialog: the close
  * has already been requested in MAIN by the time anyone can intervene, and the
@@ -22,16 +24,23 @@
  */
 
 export interface CloseGuardInput {
-  /** The `confirmAppClose` pref, read at close time. */
+  /**
+   * The `confirmAppClose` pref, read at close time. Read off settings.json
+   * (the renderer persists it there synchronously), so no IPC.
+   */
   enabled: boolean;
   /**
    * The app is quitting on its own account — an update installing, a relaunch
    * for a transparency change, Windows ending the session. The user either
    * already chose this or cannot be asked, and a dialog there would block an
-   * update or a shutdown.
+   * update or a shutdown. index.ts supplies `isQuitting || sessionEndHandled`.
    */
   bypass: boolean;
-  /** The user has just answered "close" to the dialog for THIS window. */
+  /**
+   * The user has just answered "close" to the dialog for THIS window. Also set
+   * by `closeWindow()` in window-manager.ts (the pipe, another window): the
+   * same "programmatic closes never prompt" contract as #90.
+   */
   confirmed: boolean;
   /** A dialog for this window is already on screen. */
   pending: boolean;

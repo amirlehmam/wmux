@@ -20,7 +20,13 @@ export function powershellPath(): string {
 }
 
 /**
- * The Windows OpenSSH installation wmux should use for a bare managed spec.
+ * The Windows OpenSSH installation wmux should use for a bare managed spec
+ * (#193).
+ *
+ * Why it has to be Windows' own ssh rather than whichever one PATH finds first:
+ * Git for Windows puts an MSYS2 ssh ahead of System32 on PATH, and it cannot
+ * talk to the Windows named-pipe ssh-agent — so a bare `ssh` spec died on
+ * "Permission denied (publickey)" wherever keys live only in an agent.
  *
  * Microsoft's standalone upgrade is installed under Program Files and should
  * win over the older in-box copy when both exist. System32 is the stable

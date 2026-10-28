@@ -1,4 +1,18 @@
 // src/main/cdp-proxy.ts
+/**
+ * The CDP WebSocket proxy for the browser panel, plus the HTTP endpoints a
+ * CDP client probes before it opens one.
+ *
+ * The rule the route table has to be read against is that this proxy
+ * IMPERSONATES CHROME, so its contract is not "what wmux documented" but
+ * "what real Chrome accepts": anything that attaches to Chrome must attach
+ * here. Exact-match routing quietly broke that once (#233, see
+ * `cdpRoutePath`).
+ *
+ * Since 2.12.0 it is also a BROWSER rather than a pipe (#237): the
+ * browser-level protocol is answered by wmux itself — see
+ * `cdp-browser-domain.ts`.
+ */
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { webContents } from 'electron';
@@ -83,7 +97,11 @@ export function isAllowedCdpOrigin(origin: string | undefined): boolean {
  * like a Playwright bug rather than ours.
  *
  * A query string is dropped for the same reason: it is not part of the route,
- * and an exact-match comparison silently treats `/json/list?for=me` as unknown.
+ * and an exact-match comparison silently treats `/json/list?for=me` as unknown
+ * — the same bug, unreported.
+ *
+ * Normalization accepts only what Chrome accepts: an unknown route still 404s
+ * in both spellings, and neither guard above is on this path.
  *
  * Pure and exported so the whole table of accepted spellings is testable
  * without binding a port, exactly as the two guards above are.

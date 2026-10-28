@@ -32,6 +32,8 @@
  *
  * ── The two details that are easy to get wrong ──────────────────────────────
  *
+ * Both were found by pointing real puppeteer at this, not by reading it.
+ *
  * 1. **A response to a session-scoped command MUST echo its `sessionId`.**
  *    Puppeteer's connection dispatches an incoming message by looking at
  *    `sessionId` FIRST and only falls back to its own callback table when there
@@ -172,7 +174,8 @@ function handleBrowserDomain(method: string, ctx: BrowserDomainContext): Browser
  * attachment for the same target. Real puppeteer 24 went from `connect()` to
  * a 4 GB heap and `Ineffective mark-compacts near heap limit` inside
  * `browser.pages()`. A single webContents has no child targets, and saying so
- * is what terminates the recursion.
+ * is what terminates the recursion. A unit test asserting only the return
+ * value passes either way: the bug is in the events.
  */
 function handleSessionTargetDomain(
   method: string,

@@ -5,7 +5,8 @@
 // same snake_case payload, `session_id` on every one — so the handle arrives the
 // way Claude's does: wmux-hook.js reads it off the payload and `handleHookEvent`
 // records it, tagged `provider: 'qwen'` because qwen-context.ts registers every
-// Qwen hook with `--provider qwen`. Restore types `qwen --resume <id>`.
+// Qwen hook with `--provider qwen`. Restore types `qwen --resume <id>`, behind
+// `workspacePrefs.restoreQwenSessions` (default off).
 //
 // Same shape as claude-resume.ts on purpose, pruning included: Qwen answers a
 // resume of a session it no longer has with "No saved session found" and exit

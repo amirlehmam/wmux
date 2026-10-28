@@ -11,7 +11,8 @@
  *
  * Nothing is written unless agy has run on this machine (its
  * ~/.gemini/antigravity-cli exists): creating ~/.gemini for a program the user
- * never installed would be the #132 mistake.
+ * never installed would be the #132 mistake. Where it does exist, the plugin is
+ * installed under the Status hooks consent (agent-integration.ts).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -20,7 +21,11 @@ import { isWmuxPluginFile, pluginNeedsUpdate } from './agent-plugin-file';
 
 const HOOK_SCRIPT = 'wmux-agy-hook.cjs';
 
-/** The two events the hook script reports from — see its header for why both. */
+/**
+ * The two events the hook script reports from — see its header for why both:
+ * `SessionStart` (a new conversation) and `PreInvocation` (the first model call
+ * of a turn — the only sign of a `--conversation` resume).
+ */
 const AGY_HOOK_EVENTS = ['SessionStart', 'PreInvocation'] as const;
 
 function agyHome(home = os.homedir()): string {
