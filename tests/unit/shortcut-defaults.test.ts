@@ -79,6 +79,18 @@ describe('shortcut default promotion (#249)', () => {
     expect(shortcuts.prevSurface).toEqual(DEFAULT_SHORTCUTS.prevSurface);
   });
 
+  it('preserves an explicit unbind across reloads and default promotions', async () => {
+    const { shortcuts, writes } = await loadWith({
+      [SHORTCUTS_KEY]: legacyTable({ nextSurface: { key: '' }, splitRight: { key: '' } }),
+    });
+    expect(shortcuts.nextSurface).toEqual({ key: '' });
+    expect(shortcuts.splitRight).toEqual({ key: '' });
+    expect(shortcuts.prevSurface).toEqual(DEFAULT_SHORTCUTS.prevSurface);
+    const reloaded = await loadWith(writes);
+    expect(reloaded.shortcuts.nextSurface).toEqual({ key: '' });
+    expect(reloaded.shortcuts.splitRight).toEqual({ key: '' });
+  });
+
   it('keeps every other stored binding while promoting', async () => {
     const mine = { key: 'F6' };
     const { shortcuts } = await loadWith({ [SHORTCUTS_KEY]: legacyTable({ newWorkspace: mine }) });

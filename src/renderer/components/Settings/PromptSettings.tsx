@@ -117,7 +117,7 @@ export default function PromptSettings() {
 
         <ToggleRow
           label={t('settings.prompt.pin', 'Pin the last prompt')}
-          hint={t(
+          hint={!shortcuts.togglePinnedPrompt.key ? t('settings.prompt.pinHintUnbound') : t(
             'settings.prompt.pinHint',
             'Keeps the last prompt in a header above the pane so you can still read what you asked while the answer scrolls. Costs a couple of rows, which is why it is off by default. {binding} pins or releases one by hand.',
           ).replace('{binding}', formatBinding(shortcuts.togglePinnedPrompt))}
@@ -150,7 +150,7 @@ export default function PromptSettings() {
 
         <ToggleRow
           label={t('settings.prompt.anchor', 'Hold the view at the start of the answer')}
-          hint={t(
+          hint={!shortcuts.followOutput.key ? t('settings.prompt.anchorHintUnbound') : t(
             'settings.prompt.anchorHint',
             'When an answer starts, keep the first line in view instead of chasing the output downwards. {binding} goes back to following the output.',
           ).replace('{binding}', formatBinding(shortcuts.followOutput))}
@@ -183,7 +183,7 @@ export default function PromptSettings() {
 
         <ToggleRow
           label={t('settings.prompt.outline', 'Prompt outline')}
-          hint={t(
+          hint={!shortcuts.togglePromptOutline.key ? t('settings.prompt.outlineHintUnbound') : t(
             'settings.prompt.outlineHint',
             'A list of every prompt in the pane, click one to jump back to it. It stays closed until you ask for it — {binding} opens and closes it.',
           ).replace('{binding}', formatBinding(shortcuts.togglePromptOutline))}

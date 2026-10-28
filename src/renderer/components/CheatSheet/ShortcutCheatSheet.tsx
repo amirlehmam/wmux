@@ -51,7 +51,7 @@ export default function ShortcutCheatSheet({ onClose }: ShortcutCheatSheetProps)
         .filter(([action]) => action !== 'openHub' || hubEnabled)
         .map(([action, binding]) => ({
           label: actionLabel(action, t),
-          binding: formatBinding(binding),
+          binding: formatBinding(binding) || t('settings.shortcutRecorder.unassigned', 'Unassigned'),
           category: CATEGORY[action] ?? 'Other',
         })),
       ...getIndexBindings(keyboardPrefs, t),

@@ -11,6 +11,13 @@ import { DEFAULT_SHORTCUTS, PRE_249_SURFACE_CYCLE } from '../../src/renderer/sto
 const ev = (o: Partial<KeyboardEvent>) =>
   ({ key: '', code: '', ctrlKey: false, shiftKey: false, altKey: false, ...o }) as KeyboardEvent;
 
+describe('unbound shortcuts', () => {
+  it('never dispatches an explicitly cleared binding, even for an empty-key event', () => {
+    expect(matchesBinding(ev({ key: 'd', ctrlKey: true }), { key: '' })).toBe(false);
+    expect(matchesBinding(ev({}), { key: '' })).toBe(false);
+  });
+});
+
 describe('matchesBinding with shifted punctuation', () => {
   it('matches Ctrl+Shift+] against the stored "]" binding', () => {
     expect(matchesBinding(

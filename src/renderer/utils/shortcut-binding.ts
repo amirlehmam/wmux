@@ -45,7 +45,7 @@ export function bindingsEqual(a: ShortcutBinding, b: ShortcutBinding): boolean {
 
 /** Build a binding from a keydown-like event; null for a bare modifier press. */
 export function bindingFromEvent(e: KeyEventLike): ShortcutBinding | null {
-  if (MODIFIER_KEYS.has(e.key)) return null;
+  if (!e.key || MODIFIER_KEYS.has(e.key)) return null;
   return {
     key: e.key,
     ctrl: e.ctrlKey || undefined,

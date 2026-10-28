@@ -34,6 +34,7 @@ const UNSHIFTED_BY_CODE: Readonly<Record<string, string>> = {
 };
 
 export function matchesBinding(e: KeyboardEvent, binding: ShortcutBinding): boolean {
+  if (!binding.key) return false;
   // Case-insensitive compare for single-letter keys: Shift uppercases e.key on Windows,
   // but bindings are stored lowercase. Without toLowerCase, Ctrl+Shift+letter combos
   // never match (e.g. Ctrl+Shift+N fires with e.key='N' vs binding.key='n').

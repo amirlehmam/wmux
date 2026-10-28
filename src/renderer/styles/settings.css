@@ -390,6 +390,28 @@
   gap: 8px;
 }
 
+.shortcut-recorder__control {
+  display: flex;
+  align-items: stretch;
+  background: var(--ui-bg-4);
+  border: 1px solid rgba(var(--ui-overlay-rgb), 0.12);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.shortcut-recorder__control:hover,
+.shortcut-recorder__control:focus-within {
+  border-color: rgba(var(--ui-accent-rgb), 0.5);
+}
+
+.shortcut-recorder__control--unbound {
+  border-style: dashed;
+}
+
+.shortcut-recorder__control--recording {
+  border-color: var(--ui-accent);
+}
+
 .shortcut-recorder__btn,
 .shortcut-filter-capture__btn {
   padding: 3px 10px;
@@ -403,6 +425,47 @@
   font-family: 'Consolas', 'Menlo', monospace;
   cursor: pointer;
   transition: border-color 0.1s, background 0.1s;
+}
+
+.shortcut-recorder__control .shortcut-recorder__btn {
+  border: none;
+  border-radius: 0;
+}
+
+.shortcut-recorder__control--unbound:not(.shortcut-recorder__control--recording) .shortcut-recorder__btn {
+  color: rgba(var(--ui-overlay-rgb), 0.45);
+  font-family: inherit;
+}
+
+.shortcut-recorder__action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  padding: 0;
+  border: none;
+  border-left: 1px solid rgba(var(--ui-overlay-rgb), 0.12);
+  background: transparent;
+  color: rgba(var(--ui-overlay-rgb), 0.45);
+  cursor: pointer;
+}
+
+.shortcut-recorder__action:hover {
+  background: rgba(255, 107, 107, 0.1);
+  color: #ff6b6b;
+}
+
+.shortcut-recorder__action--restore {
+  color: var(--ui-accent);
+}
+
+.shortcut-recorder__action--restore:hover {
+  background: rgba(var(--ui-accent-rgb), 0.1);
+  color: var(--ui-accent);
+}
+
+.shortcut-recorder__control button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
 }
 
 .shortcut-recorder__btn:hover,

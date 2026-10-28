@@ -135,6 +135,7 @@ export default function SurfaceTabBar({
   const shortcuts = useStore((state) => state.shortcuts);
   const bindingFor = (action: ShortcutAction): string => {
     const b: ShortcutBinding = shortcuts[action];
+    if (!b.key) return t('settings.shortcutRecorder.unassigned', 'Unassigned');
     const parts: string[] = [];
     if (b.ctrl) parts.push('Ctrl');
     if (b.alt) parts.push('Alt');

@@ -130,7 +130,7 @@ function persist<T>(key: string, value: T): void {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ShortcutBinding {
-  key: string; // e.g., 'n', 'd', 'w', 'b', 'PageDown'
+  key: string; // Empty means explicitly unbound; deleting the entry would restore its default.
   ctrl?: boolean;
   shift?: boolean;
   alt?: boolean;

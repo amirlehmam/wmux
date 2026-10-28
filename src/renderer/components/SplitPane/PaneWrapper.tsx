@@ -180,7 +180,7 @@ export default function PaneWrapper({
 
       // Match find shortcut (default: Ctrl+F)
       const matchesFind =
-        e.key === findBinding.key &&
+        !!findBinding.key && e.key === findBinding.key &&
         !!findBinding.ctrl === e.ctrlKey &&
         !!findBinding.shift === e.shiftKey &&
         !!findBinding.alt === e.altKey;
@@ -193,7 +193,7 @@ export default function PaneWrapper({
 
       // Match copy mode shortcut (default: Ctrl+Alt+[)
       const matchesCopyMode =
-        e.key === copyModeBinding.key &&
+        !!copyModeBinding.key && e.key === copyModeBinding.key &&
         !!copyModeBinding.ctrl === e.ctrlKey &&
         !!copyModeBinding.shift === e.shiftKey &&
         !!copyModeBinding.alt === e.altKey;

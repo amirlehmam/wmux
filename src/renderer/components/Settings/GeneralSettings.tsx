@@ -388,8 +388,10 @@ export default function GeneralSettings() {
       <p className="settings-hint">
         {/* The LIVE binding, not the default — a rebind in the panel one tab
             over must not leave this hint advertising a dead combo. */}
-        {t('settings.general.hubEnableHint', 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables {binding}.')
-          .replace('{binding}', formatBinding(openHubBinding))}
+        {!openHubBinding.key
+          ? t('settings.general.hubEnableHintUnbound')
+          : t('settings.general.hubEnableHint', 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables {binding}.')
+            .replace('{binding}', formatBinding(openHubBinding))}
       </p>
     </div>
   );
