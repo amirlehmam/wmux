@@ -78,6 +78,7 @@ export default function PaneWrapper({
   const shortcuts = useStore((s) => s.shortcuts);
   const workspace = useStore((s) => s.workspaces.find(w => w.id === workspaceId));
   const globalProfiles = useStore((s) => s.quickLaunchProfiles);
+  const defaultShell = useStore((s) => s.workspacePrefs.defaultShell);
   const [projectProfiles, setProjectProfiles] = useState<QuickLaunchProfile[]>([]);
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
 
@@ -279,7 +280,7 @@ export default function PaneWrapper({
               surfaceId={surface.id}
               onActivate={onActivate}
               shell={surface.shell || workspace?.shell}
-              cwd={surface.cwd || workspaceFallbackCwd(surface.shell || workspace?.shell, workspace)}
+              cwd={surface.cwd || workspaceFallbackCwd(surface.shell || workspace?.shell || defaultShell, workspace)}
               colorScheme={surface.colorScheme}
               startupCommands={surface.startupCommands}
               env={surface.env}

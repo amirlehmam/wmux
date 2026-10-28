@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShell, resolveShellForCwd, resolveExistingShellPath, comparePackageVersion, appExecAliasTarget, shellEnv, shellProbe, resetShellPathCache } from '../../src/main/pty-manager';
+import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShell, resolveShellForCwd, resolveExistingShellPath, comparePackageVersion, appExecAliasTarget, shellEnv, shellProbe, resetShellPathCache, buildShellArgs } from '../../src/main/pty-manager';
+import { workspaceFallbackCwd } from '../../src/shared/paths';
 import type { SurfaceId } from '../../src/shared/types';
 
 const TEST_SHELL = 'cmd.exe';
@@ -610,6 +611,22 @@ describe('comparePackageVersion (WindowsApps package ordering)', () => {
 });
 
 
+describe('WSL launch cwd', () => {
+  it.each([
+    '/home/user/project',
+    'C:\\Users\\First Last\\project',
+    '\\\\wsl.localhost\\Ubuntu\\home\\user\\project',
+  ])('passes the saved path directly to WSL: %s', (cwd) => {
+    expect(buildShellArgs('wsl', {}, '', cwd)).toEqual(['--cd', cwd]);
+  });
+
+  it.each([undefined, '~', '%USERPROFILE%\\projects', 'C:relative', '   '])(
+    'keeps the distro-home fallback for an unreported or non-absolute cwd: %s', (cwd) => {
+      expect(buildShellArgs('wsl', {}, '', cwd)).toEqual(['--cd', '~']);
+    },
+  );
+});
+
 /**
  * CreateProcess fails with error 267 (ERROR_DIRECTORY) when handed a working
  * dir that isn't a real directory, and node-pty surfaces it as an opaque
@@ -683,6 +700,12 @@ describe('resolveShellForCwd (POSIX cwd → WSL shell)', () => {
     expect(resolveShellForCwd('pwsh.exe', POSIX)).toBe('wsl.exe');
     expect(resolveShellForCwd('powershell.exe', POSIX)).toBe('wsl.exe');
     expect(resolveShellForCwd('cmd.exe', POSIX)).toBe('wsl.exe');
+  });
+
+  it('keeps a new Windows pane in PowerShell after a WSL pane reports its cwd', () => {
+    const cwd = workspaceFallbackCwd('pwsh.exe', { cwd: '/home/user/project' });
+    expect(resolveShellForCwd('pwsh.exe', cwd)).toBe('pwsh.exe');
+    expect(shellEnv.hasWsl).not.toHaveBeenCalled();
   });
 
   it('leaves a Win32 cwd alone', () => {

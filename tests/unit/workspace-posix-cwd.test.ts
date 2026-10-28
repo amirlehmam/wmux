@@ -52,6 +52,15 @@ describe('isWslShell', () => {
     expect(isWslShell(undefined)).toBe(false);
   });
 
+  it('recognises a quoted WSL executable without matching directories or arguments', () => {
+    expect(isWslShell('"C:\\Program Files\\Tools\\wsl.exe" -d Ubuntu')).toBe(true);
+    expect(isWslShell('C:\\Program Files\\WSL\\wsl.exe')).toBe(true);
+    expect(isWslShell('C:\\Program Files\\PowerShell\\7\\pwsh.exe -File C:\\tools\\wsl.exe')).toBe(false);
+    expect(isWslShell('C:\\Users\\wsl-admin\\pwsh.exe')).toBe(false);
+    expect(isWslShell('ssh user@wsl-build')).toBe(false);
+    expect(isWslShell('wsl.cmd')).toBe(false);
+  });
+
   it('does not guess POSIX for a remote command line (issue #78)', () => {
     // wmux has no idea where `ssh user@host` lands; handing it a POSIX path
     // would be a guess, and a wrong one whenever the far end is Windows.
@@ -113,10 +122,17 @@ describe('workspaceFallbackCwd', () => {
     expect(workspaceFallbackCwd('wsl.exe', { cwd: '/home/u/proj' })).toBe('/home/u/proj');
   });
 
-  it('returns undefined rather than handing wsl.exe a path it cannot open', () => {
-    // `--cd C:\Users\lsi2abt` is not something wsl.exe can honour, so there is
-    // nothing to gain by passing it; undefined keeps "we do not know" legible.
+  it('keeps the WSL home when only a neighbouring Windows directory is known', () => {
     expect(workspaceFallbackCwd('wsl.exe', { cwd: 'C:\\Users\\lsi2abt' })).toBeUndefined();
+  });
+
+  it('retains a Windows-spelled WSL report after a neighbouring Windows report', () => {
+    const cwd = '\\\\wsl.localhost\\Ubuntu\\home\\u\\project';
+    expect(workspaceFallbackCwd('wsl.exe', { cwd: 'C:\\other', posixCwd: cwd })).toBe(cwd);
+  });
+
+  it.each(['pwsh.exe', 'cmd.exe', undefined])('does not give a POSIX workspace cwd to %s', (shell) => {
+    expect(workspaceFallbackCwd(shell, { cwd: '/home/u/project' })).toBeUndefined();
   });
 
   it('returns undefined for a surface with no workspace', () => {

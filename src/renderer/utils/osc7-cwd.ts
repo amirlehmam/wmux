@@ -8,6 +8,7 @@
 import { useStore } from '../store';
 import { findLeaf, findSurfaceOwner } from '../store/split-utils';
 import type { SurfaceId } from '../../shared/types';
+import { isWslShell } from '../../shared/paths';
 
 export async function applyOsc7Cwd(surfaceId: SurfaceId, data: string): Promise<void> {
   let cwd: string | null;
@@ -17,13 +18,19 @@ export async function applyOsc7Cwd(surfaceId: SurfaceId, data: string): Promise<
     return;
   }
   if (!cwd) return;
-  const { workspaces, updateSurface } = useStore.getState();
+  const { workspaces, workspacePrefs, updateSurface, updateWorkspaceMetadata } = useStore.getState();
   const owner = findSurfaceOwner(workspaces, surfaceId);
   if (!owner) return;
-  // A prompt re-reports the same directory every time; an unchanged write would
-  // still re-render every subscriber of the tree.
   const ws = workspaces.find((w) => w.id === owner.workspaceId);
   const surface = ws && findLeaf(ws.splitTree, owner.paneId)?.surfaces.find((s) => s.id === surfaceId);
-  if (surface?.currentCwd === cwd) return;
-  updateSurface(owner.workspaceId, owner.paneId, surfaceId, { currentCwd: cwd });
+  if (!ws || !surface) return;
+  const isWsl = isWslShell(surface.shell || ws.shell || workspacePrefs.defaultShell);
+  if (ws.cwd !== cwd || (isWsl && ws.posixCwd !== cwd)) {
+    updateWorkspaceMetadata(ws.id, { cwd, ...(isWsl ? { posixCwd: cwd } : {}) });
+  }
+  // Repeated prompts must not re-render the tree, but may need to restore the
+  // workspace metadata after a neighbouring pane reported a different cwd.
+  if (surface.currentCwd !== cwd) {
+    updateSurface(owner.workspaceId, owner.paneId, surfaceId, { currentCwd: cwd });
+  }
 }

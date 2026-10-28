@@ -464,14 +464,10 @@ export interface WorkspaceInfo {
    * so an agent running cd .. moves it.
    */
   worktree?: WorktreeMetadata;
-  // The last POSIX/WSL directory known for this workspace, kept apart from
-  // `cwd` because one workspace can hold panes in two filesystems at once.
-  // `cwd` is whichever pane reported last, so a single pwsh/cmd pane rewrites
-  // it to a Win32 path — and a WSL pane with no cwd of its own then falls back
-  // to a path wsl.exe cannot open, so `--cd` degrades to `~` and the pane
-  // silently lands in the WSL home instead of the project. Only POSIX reports
-  // (and a POSIX folder at creation) write here, so the WSL fallback survives
-  // a Win32 pane living in the same workspace.
+  /**
+   * The WSL fallback survives a neighbouring Windows pane's cwd report. May be
+   * POSIX, a drive path or WSL UNC: wsl.exe --cd accepts all three spellings.
+   */
   posixCwd?: string;
   prNumber?: number;
   prStatus?: 'open' | 'merged' | 'closed';

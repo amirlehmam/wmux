@@ -24,6 +24,10 @@ describe('shortenCwd — `~` means the home directory and nothing else', () => {
     ['a WSL home', '/home/richard/repos/ai', '~/repos/ai'],
     ['WSL root\'s home', '/root/x', '~/x'],
     ['a POSIX path outside any home', '/mnt/l/repos', '/mnt/l/repos'],
+    ['a WSL UNC path', '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\apps', '/home/user/apps'],
+    ['a legacy WSL UNC path', '\\\\wsl$\\Ubuntu\\mnt\\c\\src', '/mnt/c/src'],
+    ['a WSL distro root', '\\\\wsl.localhost\\Ubuntu', '/'],
+    ['another UNC server keeps its prefix', '\\\\server\\share\\src', '//server/share/src'],
   ])('%s', (_name, cwd, expected) => {
     expect(shortenCwd(cwd, HOME)).toBe(expected);
   });
@@ -32,7 +36,7 @@ describe('shortenCwd — `~` means the home directory and nothing else', () => {
     expect(shortenCwd('C:\\Users\\amir\\dev', 'C:\\Users\\amir\\')).toBe('~/dev');
   });
 
-  it('with no home known, a Windows path is never shortened', () => {
+  it('with no home known, a drive-rooted Windows path is never shortened', () => {
     expect(shortenCwd('C:\\Users\\amir\\dev')).toBe('C:/Users/amir/dev');
   });
 });

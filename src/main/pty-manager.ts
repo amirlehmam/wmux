@@ -481,8 +481,8 @@ export function resolveShellForCwd(shell: string, cwd: string | undefined): stri
 // inherited split — passes through here too, and gets the same courtesy for
 // free. Expansion happens only for the SPAWN dir; resolveShellForCwd and
 // buildShellArgs above still see the raw string, which is what keeps `~` on a
-// wsl.exe pane meaning "the distro's home" (`--cd ~`) instead of a Win32 path
-// that distro cannot open.
+// wsl.exe pane meaning "the distro's home" (`--cd ~`) rather than expanding it
+// to the Windows user's home.
 export function resolveSpawnCwd(raw: string | undefined): string {
   const cwd = expandPathVars(raw ?? '', process.env);
   const fallback = process.env.USERPROFILE || 'C:\\';
@@ -503,10 +503,11 @@ export function resolveSpawnCwd(raw: string | undefined): string {
   return fallback;
 }
 
-// Build the launch args for a shell and mutate `env` with shell-specific vars.
-// Kept out of create() so that hot path stays under the cognitive-complexity
-// budget. `env` is mutated in place (integration script paths, WSLENV, etc.).
-function buildShellArgs(
+/**
+ * WSL needs the reported directory as --cd independently of the Windows-side
+ * spawn cwd; its CLI accepts POSIX, Windows drive and WSL UNC paths.
+ */
+export function buildShellArgs(
   shellType: ReturnType<typeof getShellType>,
   env: { [key: string]: string },
   integrationDir: string,
@@ -541,8 +542,8 @@ function buildShellArgs(
     // --cd is BEST-EFFORT: WSL applies it before the interactive login shell
     // reads its rc, so a distro whose /etc/profile or ~/.profile cds to $HOME
     // discards it and the pane opens at home. See docs/config.md.
-    const posixCwd = cwd && isPosixPath(cwd) ? cwd : null;
-    return ['--cd', posixCwd ?? '~'];
+    const reportedCwd = cwd && (isPosixPath(cwd) || path.win32.isAbsolute(cwd));
+    return ['--cd', reportedCwd ? cwd : '~'];
   }
   return [];
 }

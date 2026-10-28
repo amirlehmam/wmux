@@ -38,14 +38,16 @@ export function sidebarDetails(prefs: Pick<SidebarPrefs,
 }
 
 /**
- * Shorten a cwd for display: forward slashes, and `~` for the home directory
- * ONLY. A Windows home is matched case-insensitively (NTFS is, and the shell
+ * WSL UNC paths retain their Linux spelling, without the Windows redirector
+ * or distro prefix. Other paths use forward slashes and `~` for home ONLY. A Windows home is matched case-insensitively (NTFS is, and the shell
  * may report `c:\users\…`), on a whole path segment — `C:\Users\amir2` is not
  * under `C:\Users\amir`. A POSIX `/home/<user>` (a WSL pane) is the home of
  * that distro's user and is shortened too; every other path keeps its drive.
  */
 export function shortenCwd(cwd: string, homeDir?: string): string {
   const path = cwd.replace(/\\/g, '/');
+  const wsl = /^\/\/(?:wsl\.localhost|wsl\$)\/[^/]+(?:\/(.*))?$/i.exec(path);
+  if (wsl) return `/${wsl[1] ?? ''}`;
   if (homeDir) {
     let home = homeDir.replace(/\\/g, '/');
     while (home.endsWith('/')) home = home.slice(0, -1);
