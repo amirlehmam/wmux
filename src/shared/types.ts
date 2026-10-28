@@ -699,6 +699,13 @@ export const IPC_CHANNELS = {
   PTY_HAS: 'pty:has',
   PTY_DATA: 'pty:data',
   PTY_EXIT: 'pty:exit',
+  TERMINAL_HISTORY_STATE: 'terminal-history:state',
+  TERMINAL_HISTORY_GET_STATE: 'terminal-history:get-state',
+  TERMINAL_HISTORY_SET_ENABLED: 'terminal-history:set-enabled',
+  TERMINAL_HISTORY_BINDING: 'terminal-history:binding',
+  TERMINAL_HISTORY_READ: 'terminal-history:read',
+  TERMINAL_HISTORY_CHECKPOINT: 'terminal-history:checkpoint',
+  TERMINAL_HISTORY_FORGET: 'terminal-history:forget',
   // Remote file upload (ssh panes) — main resolves the whole paste/drop
   REMOTE_RESOLVE_PASTE: 'remote:resolve-paste',
   REMOTE_RESOLVE_DROP: 'remote:resolve-drop',

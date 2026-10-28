@@ -2,7 +2,11 @@ import { randomUUID } from 'crypto';
 import { constants, promises as fs } from 'fs';
 import path from 'path';
 import { getAppDataDir } from '../shared/instance';
-import { validateTerminalHistory, type TerminalHistoryRecord } from '../shared/terminal-history';
+import { validateTerminalHistory, type TerminalHistoryRecord, type TerminalHistoryReference,
+  type TerminalHistoryBinding, type TerminalHistoryStoreError, type HistoryResult,
+  type TerminalHistoryState } from '../shared/terminal-history';
+export type { TerminalHistoryReference, TerminalHistoryBinding, TerminalHistoryStoreError,
+  HistoryResult, TerminalHistoryState } from '../shared/terminal-history';
 
 /**
  * Main alone issues identities and startup grants. Surface names are not restore
@@ -10,29 +14,6 @@ import { validateTerminalHistory, type TerminalHistoryRecord } from '../shared/t
  * Nothing touches settings or disk until a store is constructed/used.
  */
 export const TERMINAL_HISTORY_SETTINGS_KEY = 'wmux-terminal-history';
-
-export interface TerminalHistoryReference {
-  recordId: string;
-  generation: number;
-}
-
-export interface TerminalHistoryBinding extends TerminalHistoryReference {
-  incarnation: string;
-}
-
-export type TerminalHistoryStoreError =
-  | 'disabled' | 'unauthorized' | 'stale' | 'missing' | 'invalid-record'
-  | 'invalid-target' | 'io' | 'settings' | 'cleanup';
-
-export type HistoryResult<T = undefined> =
-  | { ok: true; value: T }
-  | { ok: false; error: TerminalHistoryStoreError };
-
-export interface TerminalHistoryState {
-  enabled: boolean;
-  generation: number;
-  error: 'settings' | 'cleanup' | null;
-}
 
 interface Consent {
   enabled: boolean;
@@ -45,7 +26,7 @@ interface Association {
   incarnation: string;
   binding: TerminalHistoryBinding | null;
   startup: boolean;
-  committed: boolean;
+  committedRevision: number;
   revision: number;
   retryRevision: boolean;
   tail: Promise<void>;
@@ -124,7 +105,7 @@ export class TerminalHistoryStore {
         for (const group of this.associations.values()) {
           for (const association of group.values()) {
             association.startup = false;
-            association.committed = false;
+            association.committedRevision = 0;
           }
         }
       }
@@ -169,7 +150,7 @@ export class TerminalHistoryStore {
     if (!association) {
       association = {
         owner, surface, incarnation: randomUUID(), binding: null,
-        startup: false, committed: false, revision: 0, retryRevision: false, tail: Promise.resolve(),
+        startup: false, committedRevision: 0, revision: 0, retryRevision: false, tail: Promise.resolve(),
       };
       group.set(surface, association);
     }
@@ -206,8 +187,14 @@ export class TerminalHistoryStore {
     if (pending) return { ...pending };
     const association = this.associations.get(owner)?.get(surface);
     const binding = association?.binding;
-    return binding && (association.committed || association.startup)
+    return binding && binding.generation === this.generation && (association.committedRevision > 0 || association.startup)
       ? { recordId: binding.recordId, generation: binding.generation } : null;
+  }
+
+  /** Link-publication retries need not rewrite a record that already committed. */
+  hasCheckpoint(owner: number, surface: string, binding: TerminalHistoryBinding, revision: number): boolean {
+    const association = this.authorized(owner, surface, binding);
+    return !!association && association.committedRevision === revision && revision > 0;
   }
 
   checkpoint(owner: number, surface: string, binding: TerminalHistoryBinding, revision: number,
@@ -235,7 +222,7 @@ export class TerminalHistoryStore {
         if (!this.current(association, binding, revision)) return failure('stale');
         await fs.rename(temp, target);
         if (!this.current(association, binding, revision)) return failure('stale');
-        association.committed = true;
+        association.committedRevision = revision;
         association.startup = false;
         return success({ reference: { recordId: binding.recordId, generation: binding.generation }, revision });
       } catch (error) {
@@ -292,6 +279,16 @@ export class TerminalHistoryStore {
       if (!removed) this.error = 'cleanup';
       return removed ? success(undefined) : failure('cleanup');
     }));
+  }
+
+  /** An explicit named-layout load cannot consume automatic startup read grants. */
+  discardStartup(owner: number): void {
+    this.startup.delete(owner);
+    for (const association of this.associations.get(owner)?.values() ?? []) {
+      if (!association.startup) continue;
+      association.startup = false;
+      association.binding = null;
+    }
   }
 
   /** Revoking a destroyed renderer is not a decision to erase its automatic-session history. */

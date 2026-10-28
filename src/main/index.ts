@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
-import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys, sshDetector, agentIdentity, replayRemoteBindings } from './ipc-handlers';
+import { registerIpcHandlers, agentManager, ptyManager, reapOrphanedPtys, sshDetector, agentIdentity, replayRemoteBindings, terminalHistory } from './ipc-handlers';
+import { prepareAgentSpawn } from './agent-spawn-window';
 import { sequenceFrom, splitSequencedReport } from './ssh-detect';
 import { handleDetectionV2 } from './detection-rpc';
 import { isPtyCrashGuardInstalled } from './pty-manager';
@@ -430,15 +431,14 @@ function spawnAgentBatch(
   agentParams: any[],
   assignments: string[],
   workspaceId: any,
-  win: BrowserWindow | undefined,
+  spawnAgent: typeof agentManager.spawn,
 ): any[] {
   const results: any[] = [];
   agentParams.forEach((p, i) => {
     try {
       const agentCmd = p.cmd || p.prompt; // accept both 'cmd' and 'prompt'
       if (!agentCmd) { results.push({ error: `Agent ${i}: missing required field 'cmd'` }); return; }
-      const result = agentManager.spawn({ ...p, cmd: agentCmd, paneId: assignments[i] as any, workspaceId });
-      if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
+      const result = spawnAgent({ ...p, cmd: agentCmd, paneId: assignments[i] as any, workspaceId });
       BrowserWindow.getAllWindows().forEach((w) => {
         if (!w.isDestroyed()) {
           w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, {
@@ -1537,24 +1537,16 @@ app.whenReady().then(() => {
     }
 
     const windowId = windowManager.idForWebContents(event.sender);
-    if (windowId) {
-      sessionWindows.update(windowId, state);
-      // Forget windows the user closed — but never while quitting, when every
-      // window is being torn down and pruning would erase what we're saving.
-      if (!isQuitting) {
-        sessionWindows.retainOnly(windowManager.getAllWindows().map((w) => w.id));
-      }
-      const merged: SessionData = { version: 1, windows: sessionWindows.toArray() };
-      saveSession(merged);
-      maybeSnapshotSession(merged);
-    } else {
-      // Unattributable sender (a window created outside WindowManager). Better
-      // to persist its state alone than to drop the save entirely.
-      const lone: SessionData = { version: 1, windows: [state] };
-      saveSession(lone);
-      maybeSnapshotSession(lone);
+    if (!windowId || !win || win.isDestroyed() || win.webContents !== event.sender) return;
+    // Never prune during shutdown, when the slots being destroyed are exactly
+    // the ones the next launch must restore.
+    if (!isQuitting) {
+      sessionWindows.retainOnly(windowManager.getAllWindows().map((w) => w.id));
     }
-    sessionFlush.notifySaved(event.sender.id);
+    if (terminalHistory.saveWindow(event.sender.id, state)) {
+      maybeSnapshotSession({ version: 1, windows: sessionWindows.toArray() });
+      sessionFlush.notifySaved(event.sender.id);
+    }
     if (!isQuitting) scheduleAutoSave();
   });
 
@@ -1655,6 +1647,12 @@ app.whenReady().then(() => {
       const id = windowManager.createWindow(saved.bounds, saved.maximized);
       sessionWindows.prime(id, saved);
       sessionWindows.markStartup(id);
+      const win = windowManager.getWindow(id);
+      if (win) {
+        const owner = win.webContents.id;
+        terminalHistory.seedWindow(owner);
+        win.webContents.once('destroyed', () => terminalHistory.revokeOwner(owner));
+      }
     }
   }
 
@@ -2313,13 +2311,11 @@ app.whenReady().then(() => {
             // claimed it, the workspace because it is either that pane's owner
             // or a renderer's own active id. That is a stronger guarantee than
             // the old code had, which passed `params.paneId` through as `any`.
-            const result = agentManager.spawn({
+            const spawnAgent = await prepareAgentSpawn(workspaceId, [paneId]);
+            const result = spawnAgent({
               cmd, label: params.label, cwd: params.cwd, env: params.env,
               paneId: paneId as PaneId, workspaceId: workspaceId as WorkspaceId,
             });
-
-            const win = BrowserWindow.getAllWindows()[0];
-            if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
 
             BrowserWindow.getAllWindows().forEach(w => {
               if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, { type: 'spawned', ...result, paneId, workspaceId, label: params.label, replaceTab: !!params.replaceTab });
@@ -2350,8 +2346,8 @@ app.whenReady().then(() => {
             }
 
             const assignments = resolveAgentAssignments(strategy, agentParams.length, paneLoads);
-            const win = BrowserWindow.getAllWindows()[0];
-            respond({ agents: spawnAgentBatch(agentParams, assignments, workspaceId, win) });
+            const spawnAgent = await prepareAgentSpawn(workspaceId, assignments);
+            respond({ agents: spawnAgentBatch(agentParams, assignments, workspaceId, spawnAgent) });
           } catch (err: any) { respondError(-32000, err.message); }
         })();
         break;

@@ -4,6 +4,40 @@
  */
 export const TERMINAL_HISTORY_VERSION = 1;
 
+export interface TerminalHistoryReference {
+  recordId: string;
+  generation: number;
+}
+
+export interface TerminalHistoryBinding extends TerminalHistoryReference {
+  incarnation: string;
+}
+
+export type TerminalHistoryStoreError =
+  | 'disabled' | 'unauthorized' | 'stale' | 'missing' | 'invalid-record'
+  | 'invalid-target' | 'io' | 'settings' | 'cleanup' | 'session';
+
+export type HistoryResult<T = undefined> =
+  | { ok: true; value: T }
+  | { ok: false; error: TerminalHistoryStoreError };
+
+export interface TerminalHistoryState {
+  enabled: boolean;
+  generation: number;
+  error: TerminalHistoryStoreError | null;
+}
+
+export interface TerminalHistoryBridge {
+  getState(): Promise<HistoryResult<TerminalHistoryState>>;
+  onState(callback: (state: TerminalHistoryState) => void): () => void;
+  setEnabled(enabled: boolean): Promise<HistoryResult<TerminalHistoryState>>;
+  getBinding(surface: string): Promise<HistoryResult<{ binding: TerminalHistoryBinding | null; incarnation: string }>>;
+  read(surface: string, binding: TerminalHistoryBinding): Promise<HistoryResult<TerminalHistoryRecord>>;
+  checkpoint(surface: string, binding: TerminalHistoryBinding, revision: number,
+    record: TerminalHistoryRecord): Promise<HistoryResult<{ revision: number }>>;
+  forget(surface: string, incarnation: string): Promise<HistoryResult>;
+}
+
 export type TerminalHistoryColor =
   | { kind: 'default' }
   | { kind: 'palette'; value: number }

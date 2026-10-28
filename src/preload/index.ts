@@ -5,6 +5,7 @@ import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, t
   type WorktreeCloseMode, type WorktreeInspectResult, type WorktreeRemoveResult,
 } from '../shared/types';
 import type { BrowserHistory } from '../shared/browser-history';
+import type { TerminalHistoryBridge, TerminalHistoryState } from '../shared/terminal-history';
 import type {
   RemoteConsoleBridge,
   RemoteConsoleStatus,
@@ -33,7 +34,23 @@ const remoteConsole: RemoteConsoleBridge = {
   replyRenderer: (reqId, result) => ipcRenderer.send(IPC_CHANNELS.REMOTE_RENDERER_REPLY, reqId, result),
 };
 
+const terminalHistory: TerminalHistoryBridge = {
+  getState: () => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_GET_STATE),
+  setEnabled: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_SET_ENABLED, enabled),
+  getBinding: (surface) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_BINDING, surface),
+  read: (surface, binding) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_READ, surface, binding),
+  checkpoint: (surface, binding, revision, record) =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_CHECKPOINT, surface, binding, revision, record),
+  forget: (surface, incarnation) => ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_HISTORY_FORGET, surface, incarnation),
+  onState: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: TerminalHistoryState) => callback(state);
+    ipcRenderer.on(IPC_CHANNELS.TERMINAL_HISTORY_STATE, handler);
+    return () => { ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_HISTORY_STATE, handler); };
+  },
+};
+
 contextBridge.exposeInMainWorld('wmux', {
+  terminalHistory,
   pty: {
     create: (options: { shell: string; cwd: string; env: Record<string, string>; surfaceId?: string; startupCommands?: string[]; cols?: number; rows?: number }) =>
       ipcRenderer.invoke(IPC_CHANNELS.PTY_CREATE, options) as Promise<{ id: string; shell: string; startupCommandsConsumed?: boolean; reused: boolean; shellFallbackFrom?: string }>,
