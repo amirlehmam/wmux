@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe('main-owned terminal output setting', () => {
-  it('defaults off, subscribes before seeding and associates the warning with the control', async () => {
+  it('defaults off, subscribes before seeding and associates the description with the control', async () => {
     const seed = deferred<HistoryResult<TerminalHistoryState>>();
     vi.mocked(bridge.getState).mockReturnValue(seed.promise);
     await mount();
@@ -82,9 +82,7 @@ describe('main-owned terminal output setting', () => {
     expect(toggle().labels?.[0]).toBe(label);
     const hint = host.querySelector('#terminal-history-hint')!;
     expect(toggle().getAttribute('aria-describedby')).toContain(hint.id);
-    for (const disclosure of ['plaintext', 'not encrypted', 'sensitive', 'leaves open terminals intact', 'Secure erasure is not guaranteed', 'save output still visible']) {
-      expect(hint.textContent).toContain(disclosure);
-    }
+    expect(hint.textContent).toBe('Saved locally as unencrypted text. Turning this off removes saved copies without clearing open terminals.');
     expect(settings.setTerminalPrefs).not.toHaveBeenCalled();
   });
 

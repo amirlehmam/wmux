@@ -591,7 +591,7 @@ export const en = {
   'settings.terminalPanel.scrollbackSection': 'Scrollback',
   'settings.terminalPanel.scrollbackLines': 'Scrollback lines',
   'settings.terminalPanel.saveOutput': 'Save terminal output across restarts',
-  'settings.terminalPanel.saveOutputHint': 'Stores terminal output locally as plaintext, not encrypted; it may contain passwords, tokens or other sensitive information. Turning this off deletes saved output but leaves open terminals intact. Secure erasure is not guaranteed. Turning it on again may save output still visible in live terminals.',
+  'settings.terminalPanel.saveOutputHint': 'Saved locally as unencrypted text. Turning this off removes saved copies without clearing open terminals.',
   'settings.terminalPanel.saveOutputPending': 'Updating saved-output preference…',
   'terminalHistory.title': 'Terminal output history',
   'terminalHistory.storage': 'Terminal output could not be saved or read. Check available disk space and folder permissions; wmux will retry saves.',

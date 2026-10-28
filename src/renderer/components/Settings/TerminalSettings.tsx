@@ -519,7 +519,7 @@ export default function TerminalSettings() {
         />
       </div>
       <p className="settings-hint" id="terminal-history-hint">
-        {t('settings.terminalPanel.saveOutputHint', 'Stores terminal output locally as plaintext, not encrypted; it may contain passwords, tokens or other sensitive information. Turning this off deletes saved output but leaves open terminals intact. Secure erasure is not guaranteed. Turning it on again may save output still visible in live terminals.')}
+        {t('settings.terminalPanel.saveOutputHint', 'Saved locally as unencrypted text. Turning this off removes saved copies without clearing open terminals.')}
       </p>
       <p className="settings-hint" id="terminal-history-status" role="status">
         {history.pending && <>{t('settings.terminalPanel.saveOutputPending', 'Updating saved-output preference…')} </>}
