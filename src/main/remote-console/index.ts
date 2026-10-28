@@ -10,7 +10,7 @@
  *
  * A missing runtime is logged as `remote-console-missing` and answered with
  * `null`, never a throw into startup. That makes a packaging miss SILENT to the
- * user, which is why the release checklist greps for `runtime.js` in the asar.
+ * user, which is why release.yml checks for `runtime.js` in the packaged asar.
  */
 import type { RemoteV2Status } from '../../shared/remote-console-config';
 import { DEFAULT_REMOTE_CONFIG } from '../../shared/remote-console-config';

@@ -161,8 +161,8 @@ export function readCookies(header: string | undefined): string[] {
 }
 
 /**
- * Sent on EVERY response, errors included. The CSP is byte-exact with spec §7
- * and the release checklist greps for it in dist/main/remote-console/guards.js.
+ * Sent on EVERY response, errors included. The CSP is byte-exact with spec §7,
+ * pinned by remote-console-guards.test.ts.
  * `connect-src ws: wss:` rather than a host: the page cannot know which of the
  * allowlisted names it was opened under, and the server's Origin check is what
  * actually decides who may connect. No `Server` header is ever set.
