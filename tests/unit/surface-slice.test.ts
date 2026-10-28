@@ -304,8 +304,14 @@ describe('surface-slice', () => {
         path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'useTerminal.ts'),
         'utf8',
       );
-      const exitHandler = hook.slice(hook.indexOf('window.wmux.pty.onExit('));
-      expect(exitHandler).toMatch(/clearPrForSurface\(id/);
+      const exitHandler = hook.match(/const onExit = \(_code: number\) => \{([\s\S]*?)\n {6}\};/);
+      expect(exitHandler).not.toBeNull();
+      expect(exitHandler?.[1]).toMatch(/clearPrForSurface\(id/);
+
+      const exitSubscriptions = hook.match(/if \(retained\) \{([\s\S]*?)\n {6}\} else \{([\s\S]*?)\n {6}\}/);
+      expect(exitSubscriptions).not.toBeNull();
+      expect(exitSubscriptions?.[1]).toMatch(/retained\.attach\(onData, onExit,/);
+      expect(exitSubscriptions?.[2]).toMatch(/window\.wmux\.pty\.onExit\(id, onExit\)/);
     });
   });
 
