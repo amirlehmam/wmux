@@ -418,7 +418,7 @@ died) is the anchor's cue to let go rather than hold a row that no longer exists
 
 ## Release Process
 
-CI builds and publishes every release when a `v<version>` tag is pushed (`.github/workflows/release.yml`): the NSIS installer, the portable zip and `latest.yml`. Never build or upload one by hand. The `wmux-release` skill covers the version bump, what each CI gate checks, what to do when a run fails, packaging changes, and checking that a fix shipped.
+CI builds and publishes every release when a `v<version>` tag is pushed (`.github/workflows/release.yml`): the NSIS installer, the portable zip and `latest.yml`. Never build or upload one by hand, and never dispatch the workflow to test: every run publishes. The `wmux-release` skill (`.agents/skills/wmux-release/SKILL.md`) covers the version bump and tag, what each CI gate checks, release notes and the Scoop bucket, what to do when a run fails, packaging changes, and checking that a fix shipped.
 
 ---
 
