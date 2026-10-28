@@ -26,8 +26,8 @@
 //     what lets a report that loses the race to its own quit be dropped
 //     instead of re-creating the handle the user just left.
 //   - `pi --session <path>` on a missing or EMPTY file silently starts a new
-//     empty session in its place. So a handle whose file is gone or empty is
-//     dropped at startup (`pruneDeadPiSessions`) rather than typed.
+//     empty session in its place. Windows files that are gone or empty are
+//     dropped at startup (`pruneDeadPiSessions`); WSL files are left to Pi.
 //
 // A pi crash keeps the handle (the orphan rule in agent-state.ts).
 //
@@ -59,29 +59,29 @@ export function piSessionsDir(agentDir = getPiAgentDir()): string {
 const UNSAFE_PATH_CHARS = /[\u0000-\u001f\u007f"]/;
 
 /**
- * A pi session handle: an absolute drive-letter path to a `.jsonl` file inside
- * pi's sessions directory.
+ * A Pi session handle is an absolute `.jsonl` path. Windows paths must stay
+ * inside Pi's sessions directory; Linux paths are resolved by Pi inside WSL.
  *
  * This is a security boundary, not tidiness. The value arrives over the named
  * pipe and round-trips through session.json, a file the user can edit, and it
  * ends up on a restored pane's command line — so it is checked at the door
  * (`reportAgentSession`), again when the restored tree is pruned, and its shape
  * once more in the renderer (claude-resume-command.ts) before the command is
- * built. Containment is what
- * stops a reported "session" from being any file on disk pi would then open
- * and append to.
+ * built. Windows containment prevents a reported handle from naming an
+ * unrelated host file. Linux paths are not opened by main; only the WSL
+ * launcher may use them, under the distro user's filesystem permissions.
  *
- * Deliberately narrow: a POSIX path (pi inside WSL) or a UNC path is refused,
- * as is a `--session-dir` outside `<agentDir>/sessions` and a
- * `PI_CODING_AGENT_DIR` exported per shell after wmux started (pi-context.ts
- * cannot see it). Each is a pane that is not resumed, never a wrong file.
+ * Windows cannot resolve a Linux path against its own Pi directory or check
+ * that file on disk. Such handles are retained for Pi to resolve inside WSL.
+ * UNC paths and Windows files outside the configured sessions root stay refused.
  */
 export function isValidPiSessionFile(file: unknown, sessionsDir = piSessionsDir()): file is string {
   if (typeof file !== 'string' || file.length === 0 || file.length > 4096) return false;
   if (UNSAFE_PATH_CHARS.test(file)) return false;
-  if (!/^[a-zA-Z]:[\\/]/.test(file)) return false;
   if (!file.toLowerCase().endsWith('.jsonl')) return false;
   if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(file)) return false;
+  if (file.startsWith('/')) return !file.startsWith('//');
+  if (!/^[a-zA-Z]:[\\/]/.test(file)) return false;
   const rel = path.win32.relative(sessionsDir.toLowerCase(), path.win32.normalize(file).toLowerCase());
   return rel !== '' && !rel.startsWith('..') && !path.win32.isAbsolute(rel);
 }
@@ -118,7 +118,8 @@ function fileSize(file: string): number | null {
 /**
  * Drop saved pi handles that would resume nothing, before restore types them:
  * invalid (session.json is editable), gone, or empty — the two cases
- * `pi --session` silently turns into a brand-new session.
+ * `pi --session` silently turns into a brand-new session. Linux files are kept
+ * without host-side existence checks, as with omp; Pi handles them inside WSL.
  */
 export function pruneDeadPiSessions<T>(
   tree: T,
@@ -129,7 +130,7 @@ export function pruneDeadPiSessions<T>(
   const pruned = mapSurfaces(tree, surface => {
     if (surface.type !== 'terminal' || surface.piSessionFile === undefined) return surface;
     const file = surface.piSessionFile;
-    if (isValidPiSessionFile(file, sessionsDir) && (sizeOf(file) ?? 0) > 0) return surface;
+    if (isValidPiSessionFile(file, sessionsDir) && (file.startsWith('/') || (sizeOf(file) ?? 0) > 0)) return surface;
     dropped++;
     const rest = { ...surface };
     delete rest.piSessionFile;

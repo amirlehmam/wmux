@@ -762,9 +762,12 @@ export class PtyManager {
     // the race: they run during init and the first prompt render — the only one
     // that triggers the leaky query — happens afterward, exactly as it does for a
     // plain terminal that shows no junk.
-    const startupCommands = (options.startupCommands ?? []).filter(
+    const requestedStartupCommands = (options.startupCommands ?? []).filter(
       (cmd): cmd is string => typeof cmd === 'string' && cmd.trim().length > 0,
     );
+    // A fallback can change shell language or drop the requested WSL distro arguments.
+    const startupCommands = getShellType(spec.command) === 'wsl' && (requested === undefined || shellType !== 'wsl')
+      ? [] : requestedStartupCommands;
     //
     // Every other shell (cmd, bash, WSL, PowerShell without the integration)
     // has no such seam and gets them TYPED — but by this class, gated on the
@@ -777,7 +780,7 @@ export class PtyManager {
       // (so a stray CR is harmless) and runs it via Invoke-Expression.
       env.WMUX_STARTUP_COMMANDS = startupCommands.join('\n');
     }
-    const startupCommandsConsumed = startupCommands.length > 0;
+    const startupCommandsConsumed = requestedStartupCommands.length > 0;
 
     // CreateProcess fails with error 267 (ERROR_DIRECTORY) when the working dir
     // isn't a real directory, and node-pty surfaces that as an opaque "Cannot
@@ -865,7 +868,7 @@ export class PtyManager {
     this.ptys.set(id, entry);
     // After the entry is registered (onData/write look it up by id) and before
     // any output can arrive — node-pty delivers data asynchronously.
-    if (startupCommandsConsumed && !bakeIntoInit) this.typeStartupCommands(id, entry, startupCommands);
+    if (startupCommands.length > 0 && !bakeIntoInit) this.typeStartupCommands(id, entry, startupCommands);
     const fellBack = spec.command !== '' && requested === undefined;
     return { id, shell, startupCommandsConsumed, reused: false, ...(fellBack ? { shellFallbackFrom: spec.command } : {}) };
   }

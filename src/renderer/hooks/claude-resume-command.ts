@@ -21,17 +21,17 @@ function isValidOmpHandle(id: unknown): id is string {
 }
 
 /**
- * Mirrors the SHAPE half of isValidPiSessionFile in src/main/pi-resume.ts
- * (#382): an absolute drive-letter `.jsonl` path with no traversal segment and
- * nothing the restore command cannot carry. Containment in pi's sessions dir
- * is checked by main, which knows where that is, when the restored tree is
- * pruned at startup.
+ * Mirrors the shape checks in isValidPiSessionFile (main/pi-resume.ts): an
+ * absolute Windows or Linux `.jsonl` path with no traversal or control
+ * characters. Main checks Windows containment; Linux paths are left to Pi
+ * inside WSL, not checked against the Windows filesystem.
  */
 function isValidPiHandle(id: unknown): id is string {
   if (typeof id !== 'string' || id.length === 0 || id.length > 4096) return false;
   // eslint-disable-next-line no-control-regex -- matching control characters is the point
   if (/[\u0000-\u001f\u007f"]/.test(id)) return false;
-  if (!/^[a-zA-Z]:[\\/]/.test(id) || !id.toLowerCase().endsWith('.jsonl')) return false;
+  if (!id.toLowerCase().endsWith('.jsonl')) return false;
+  if (!/^[a-zA-Z]:[\\/]/.test(id) && !(id.startsWith('/') && !id.startsWith('//'))) return false;
   return !/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(id);
 }
 

@@ -221,6 +221,22 @@ describe('PtyManager', { timeout: 60_000 }, () => {
     expect(manager.deliverCommands('surf-nope' as SurfaceId, ['echo x'])).toBe(false);
   });
 
+  it.each([process.env.USERPROFILE || 'C:\\', '/home/user'])('does not execute WSL startup commands after a fallback, with cwd %s', (cwd) => {
+    const manager = makeManager();
+    const typeCommands = vi.spyOn(manager as any, 'typeStartupCommands');
+    const shell = path.join(os.tmpdir(), 'wmux-no-such-wsl-shell', 'wsl.exe');
+    const created = manager.create({
+      shell: `"${shell}" -d Ubuntu-24.04`,
+      cwd,
+      env: TEST_ENV,
+      startupCommands: ["pi --session '/home/user/session.jsonl'"],
+    });
+    expect(created.shellFallbackFrom).toBe(shell);
+    expect(created.startupCommandsConsumed).toBe(true);
+    expect(typeCommands).not.toHaveBeenCalled();
+    typeCommands.mockRestore();
+  });
+
   it('reports the requested shell when it fell back to the default (#252)', () => {
     const manager = makeManager();
     const created = manager.create({

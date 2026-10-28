@@ -32,6 +32,7 @@ const SESSIONS = `${AGENT_DIR}\\sessions`;
 const FILE_A = `${SESSIONS}\\--C--work-app--\\2026-10-27T10-00-00-000Z_aaaa.jsonl`;
 const FILE_B = `${SESSIONS}\\--C--work-app--\\2026-10-27T11-00-00-000Z_bbbb.jsonl`;
 const FILE_SPACE = `${SESSIONS}\\--C--my projects-R&D--\\it's $HOME.jsonl`;
+const WSL_FILE = '/home/user/.pi/agent/sessions/--home-user-project--/session.jsonl';
 const SA = 'surf-11111111' as SurfaceId;
 const SB = 'surf-22222222' as SurfaceId;
 
@@ -101,7 +102,8 @@ describe('#382 pi session file validation (the command-line boundary)', () => {
     ['traversal out of it', `${SESSIONS}\\..\\auth.jsonl`],
     ['traversal back into it', `${SESSIONS}\\x\\..\\a.jsonl`],
     ['another drive', 'D:\\pi-test\\agent\\sessions\\a.jsonl'],
-    ['a POSIX path (pi in WSL)', '/home/me/.pi/agent/sessions/x/a.jsonl'],
+    ['a POSIX network path', '//server/share/a.jsonl'],
+    ['a POSIX traversal', '/home/user/.pi/agent/sessions/../auth.jsonl'],
     ['a UNC path', '\\\\server\\share\\sessions\\a.jsonl'],
     ['a line break', `${SESSIONS}\\x\\a\n.jsonl`],
     ['a carriage return', `${SESSIONS}\\x\\a\r.jsonl`],
@@ -110,6 +112,11 @@ describe('#382 pi session file validation (the command-line boundary)', () => {
     ['too long', `${SESSIONS}\\${'x'.repeat(4100)}.jsonl`],
   ])('refuses %s', (_label, file) => {
     expect(isValidPiSessionFile(file)).toBe(false);
+  });
+
+  it('accepts absolute Linux session files without resolving them against the Windows Pi root', () => {
+    expect(isValidPiSessionFile(WSL_FILE)).toBe(true);
+    expect(isValidPiSessionFile('/home/user/pi sessions/it\'s $HOME.jsonl')).toBe(true);
   });
 
   it('is enforced at report time: an invalid file is stored as no handle at all', () => {
@@ -133,6 +140,16 @@ describe('#382 pi report and save', () => {
     const tree = stampAgentSessionIds(leaf([terminal(SA), terminal(SB)]));
     expect(tree.surfaces.map(s => s.piSessionFile)).toEqual([FILE_A, FILE_B]);
     expect(getAgentState(SA)?.sessionProvider).toBe('pi');
+  });
+
+  it('retains a WSL session through reporting, saving, and startup pruning without a Windows filesystem probe', () => {
+    report(SA, WSL_FILE);
+    expect(getAgentState(SA)?.sessionId).toBe(WSL_FILE);
+    const tree = stampAgentSessionIds(leaf([terminal(SA)]));
+    expect(tree.surfaces[0].piSessionFile).toBe(WSL_FILE);
+    const sizeOf = vi.fn(() => { throw new Error('Linux files cannot be checked from Windows'); });
+    expect(pruneDeadPiSessions(tree, sizeOf)).toEqual({ tree, dropped: 0 });
+    expect(sizeOf).not.toHaveBeenCalled();
   });
 
   it('a newer session in the same pane replaces the older one (a /new, /resume or /fork)', () => {
@@ -346,9 +363,29 @@ describe('#382 the restore command', () => {
   });
 
   it('re-checks the shape of the stored file before building the command', () => {
-    for (const file of ['relative.jsonl', 'C:\\x\\a.json', `C:\\x\\..\\a.jsonl`, 'C:\\x\\a\n.jsonl', 'C:\\x\\a".jsonl', '/home/me/a.jsonl']) {
+    for (const file of ['relative.jsonl', 'C:\\x\\a.json', `C:\\x\\..\\a.jsonl`, 'C:\\x\\a\n.jsonl', 'C:\\x\\a".jsonl', '//server/share/a.jsonl']) {
       expect(restore(terminal(SA, { piSessionFile: file }))).toBeUndefined();
     }
+  });
+
+  it.each(['wsl.exe -d Ubuntu-24.04', '"C:\\Program Files\\WSL\\wsl.exe" -d Ubuntu-24.04'])('restores a Linux session with a plain Pi command in %s', (shell) => {
+    expect(restore(terminal(SA, { piSessionFile: WSL_FILE }), { shell })).toEqual([
+      `pi --session '${WSL_FILE}'`,
+    ]);
+  });
+
+  it.each(['pwsh.exe', 'cmd.exe', 'C:\\Program Files\\Git\\bin\\bash.exe', 'C:\\Users\\wsl-admin\\bin\\bash.exe', 'cmd.exe /c wsl', 'wsl.cmd', undefined])('does not send a Linux resume to the non-WSL shell %s', (shell) => {
+    const surface = terminal(SA, { piSessionFile: WSL_FILE });
+    expect(restore(surface, { shell })).toBeUndefined();
+    expect(restore(surface, { shell: 'wsl.exe' })).toHaveLength(1);
+  });
+
+  it('preserves setup commands and quotes the WSL path when merging into an existing Pi launcher', () => {
+    const file = "/home/user/pi sessions/it's $HOME.jsonl";
+    const quoted = `'${file.replace(/'/g, "'\\''")}'`;
+    expect(mergeResume(['echo setup', 'pi --model m --continue'], 'pi', file, 'wsl.exe')).toEqual([
+      'echo setup', `pi --model m --session ${quoted}`,
+    ]);
   });
 
   it('types nothing when the tab also carries another provider handle', () => {

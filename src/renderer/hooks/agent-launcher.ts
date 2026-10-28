@@ -358,6 +358,11 @@ export function mergeResume(
   id: string,
   shell?: string,
 ): string[] | null {
+  // A Linux session path must not be reinterpreted by a Windows shell.
+  if (agent === 'pi' && id.startsWith('/')) {
+    const executable = tokensOf(shell ?? '')[0]?.replace(/^["']|["']$/g, '').replace(/\\/g, '/').split('/').pop();
+    if (!/^wsl(?:\.exe)?$/i.test(executable ?? '')) return null;
+  }
   const commands = base ?? [];
   const launcher = lastAgentLauncher(commands);
   if (!launcher) {
