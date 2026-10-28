@@ -26,19 +26,20 @@ export function loadSettings(): SettingsMap {
   }
 }
 
-export function saveSetting(key: string, value: unknown): void {
+export function saveSetting(key: string, value: unknown): boolean {
   try {
     const dir = getAppDataDir();
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const current = loadSettings();
     current[key] = value;
-    // Atomic write: temp file then rename (mirrors session-persistence.ts).
+    // A failed replacement must leave the last persisted preference intact.
     const tmp = SETTINGS_FILE + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(current, null, 2), 'utf-8');
-    if (fs.existsSync(SETTINGS_FILE)) fs.unlinkSync(SETTINGS_FILE);
     fs.renameSync(tmp, SETTINGS_FILE);
+    return true;
   } catch (err) {
     console.error('Failed to save setting:', err);
+    return false;
   }
 }
 
