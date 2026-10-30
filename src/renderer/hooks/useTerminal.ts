@@ -754,9 +754,10 @@ function pointerCell(
 //
 // A private property rather than `ev.isTrusted`, which answers "who dispatched
 // this" and not "what gesture is this": the next synthetic wheel from anywhere
-// else would silently inherit touch semantics. The producer and the consumer
-// are forty lines apart in this file, so this is a local protocol and not a
-// module.
+// else would silently inherit touch semantics. A real-Chromium harness also
+// shows both synthetic events read `isTrusted: false`, so a test cannot observe
+// trust. The producer and the consumer are forty lines apart in this file, so
+// this is a local protocol and not a module.
 const TOUCH_WHEEL = Symbol('wmux:touch-wheel');
 type TouchWheelSource = Exclude<WheelSource, 'wheel'>;
 function markTouchWheel(ev: WheelEvent, source: TouchWheelSource): WheelEvent {

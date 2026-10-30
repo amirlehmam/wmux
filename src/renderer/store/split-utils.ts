@@ -47,9 +47,9 @@ export type { WorkspaceLayout };
  * Upper bound on a configured pane count.
  *
  * Not a technical limit — the tree is arbitrarily deep. It is a guard on a
- * value that comes from a hand-edited TOML file and is acted on by SPAWNING A
- * SHELL PER PANE: `panes = 500` is a typo, and honouring it means 500 PTYs on
- * a keypress. Eight is past any layout anyone has asked for.
+ * value that comes from a hand-edited TOML file or over the pipe, and is acted
+ * on by SPAWNING A SHELL PER PANE: `panes = 500` is a typo, and honouring it
+ * means 500 PTYs on a keypress. Eight is past any layout anyone has asked for.
  */
 export const MAX_WORKSPACE_PANES = 8;
 

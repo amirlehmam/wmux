@@ -54,7 +54,8 @@
  * Where it is not 1 (opencode's `scroll_speed` is 3) the screen outruns the
  * finger, and no value of the app's own setting serves both gestures: the wheel
  * wants 3 rows per detent, the finger wants 1 row per cell (#267). So the PAN
- * has a gain, `terminalPrefs.touchPanGain` — reports per cell crossed, 1/3 for
+ * has a gain, `terminalPrefs.touchPanGain` (`[terminal] touch-pan-gain` in
+ * config.toml) — reports per cell crossed, 1/3 for
  * that app — and `touchPanReports` carries the fraction so a slow drag still
  * moves. Two things it deliberately does not touch: scrollback and the arrow
  * branch (already 1:1, nothing multiplies them), and the FLING, which is its
