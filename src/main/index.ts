@@ -1058,9 +1058,11 @@ function hardenWebContents(): void {
   app.on('web-contents-created', (_event, contents) => {
     const type = contents.getType();
 
-    // Electron emits wheel zoom through zoom-changed, not the keyboard-only
-    // before-input-event. Guest pages zoom independently of the desktop UI.
-    if (type === 'window' || type === 'webview') {
+    // Guest pages zoom through Electron's zoom-changed. The desktop already
+    // handles its captured DOM gesture through WINDOW_ZOOM: Electron emits
+    // zoom-changed even when that gesture is prevented, so handling both
+    // would apply two zoom steps to the same wheel input.
+    if (type === 'webview') {
       installPageZoom(contents);
     }
 
