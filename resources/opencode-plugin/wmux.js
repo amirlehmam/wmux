@@ -1,4 +1,4 @@
-// wmux-plugin-version: 8
+// wmux-plugin-version: 9
 // wmux OpenCode plugin — bridges OpenCode hooks/events to the wmux sidebar.
 // Auto-installed by wmux to ~/.config/opencode/plugin/wmux.js.
 // No-ops entirely outside wmux (WMUX !== '1').

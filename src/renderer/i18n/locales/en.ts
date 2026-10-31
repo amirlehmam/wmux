@@ -215,6 +215,7 @@ export const en = {
   'surfaceLabel.tab': 'Tab',
   // SplitPane — drag-to-split preview overlay
   'splitPreview.dropHere': 'Drop here',
+  'splitPreview.workspaceEdge': 'Workspace edge',
   // SplitPane — surface tab bar controls & context menu
   'surfaceTab.newTab': 'New terminal tab ({binding})',
   'surfaceTab.newTabType': 'New tab type…',

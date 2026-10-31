@@ -123,6 +123,23 @@ button { cursor: pointer; }
   padding-right: var(--safe-right);
 }
 
+/* Keep the mirror and draft mounted while giving the terminal the entire
+   viewport. The restore button stays a 44px touch target in landscape. */
+.rc-attach--immersive > .rc-bar,
+.rc-attach--immersive > .rc-attach__stack { display: none; }
+.rc-attach__restore {
+  position: absolute;
+  top: calc(4px + var(--safe-top));
+  right: calc(4px + var(--safe-right));
+  z-index: 5;
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  opacity: 0.8;
+}
+
 .rc-bar {
   display: flex;
   align-items: center;

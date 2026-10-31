@@ -10,6 +10,8 @@
  * TEXT, never as HTML.
  */
 export const en = {
+  'attach.hideControls': 'Hide all controls',
+  'attach.showControls': 'Show controls',
   'common.cancel': 'Cancel',
   'common.back': 'Back',
   'common.reload': 'Reload',

@@ -11,6 +11,34 @@ export interface SplitPreviewResult {
 
 type LeafNode = SplitNode & { type: 'leaf' };
 
+/** Move a tab outside the whole layout, preserving every remaining subtree.
+ * Used for both the workspace-edge preview and the committed move (#405). */
+export function moveSurfaceToWorkspaceEdge(
+  tree: SplitNode,
+  sourcePaneId: PaneId,
+  surfaceId: SurfaceId,
+  direction: SplitPreviewDirection,
+  destinationPaneId: PaneId,
+): SplitPreviewResult | null {
+  const removal = removeSurfaceForPreview(tree, sourcePaneId, surfaceId);
+  if (!removal?.tree) return null;
+  const destination: LeafNode = {
+    type: 'leaf', paneId: destinationPaneId,
+    surfaces: [removal.surface], activeSurfaceIndex: 0,
+  };
+  return {
+    tree: {
+      type: 'branch',
+      direction: direction === 'left' || direction === 'right' ? 'horizontal' : 'vertical',
+      ratio: 0.5,
+      children: direction === 'left' || direction === 'up'
+        ? [destination, removal.tree] : [removal.tree, destination],
+    },
+    destinationPaneId,
+    collapsesSourcePane: removal.collapsesSourcePane,
+  };
+}
+
 interface SurfaceRemovalResult {
   tree: SplitNode | null;
   surface: SurfaceRef;

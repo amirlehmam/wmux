@@ -1,5 +1,7 @@
 /** Phone console strings — Czech. Keys mirror en.ts exactly (parity test). */
 export const cs: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'Skrýt všechny ovládací prvky',
+  'attach.showControls': 'Zobrazit ovládací prvky',
   'common.cancel': 'Zrušit',
   'common.back': 'Zpět',
   'common.reload': 'Znovu načíst',

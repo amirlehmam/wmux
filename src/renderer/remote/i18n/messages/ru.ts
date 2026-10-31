@@ -1,5 +1,7 @@
 /** Phone console strings — Russian. Keys mirror en.ts exactly (parity test). */
 export const ru: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'Скрыть все элементы управления',
+  'attach.showControls': 'Показать элементы управления',
   'common.cancel': 'Отмена',
   'common.back': 'Назад',
   'common.reload': 'Перезагрузить',

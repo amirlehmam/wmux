@@ -87,6 +87,18 @@ export function AttachScreen({ client, s, entry, status, operator, maxText, font
   // Per attach, never remembered: a composer that stayed hidden from last week
   // reads as a console that cannot type.
   const [controls, setControls] = useState(true);
+  const [immersive, setImmersive] = useState(false);
+  const restoreControls = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (immersive) restoreControls.current?.focus();
+  }, [immersive]);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImmersive(false);
+    };
+    globalThis.addEventListener('keydown', escape);
+    return () => globalThis.removeEventListener('keydown', escape);
+  }, []);
   const vv = useVisualViewport();
 
   // Disarm when the window lapses, so the red key goes back to normal by itself.
@@ -150,7 +162,7 @@ export function AttachScreen({ client, s, entry, status, operator, maxText, font
   const canType = acceptsInput(operator, termStatus);
 
   return (
-    <main className="rc-screen rc-attach" style={style}>
+    <main className={`rc-screen rc-attach${immersive ? ' rc-attach--immersive' : ''}`} style={style}>
       <header className="rc-bar">
         <button type="button" className="rc-bar__btn" onClick={onBack} aria-label={t.t('common.back')}>‹</button>
         {/* The state chip sits UNDER the title: beside it, with the back and
@@ -175,7 +187,11 @@ export function AttachScreen({ client, s, entry, status, operator, maxText, font
             ⌨
           </button>
         )}
+        <button type="button" className="rc-bar__btn" aria-label={t.t('attach.hideControls')} onClick={() => { setArm(null); setImmersive(true); }}>⛶</button>
       </header>
+      {immersive && (
+        <button ref={restoreControls} type="button" className="rc-attach__restore" aria-label={t.t('attach.showControls')} onClick={() => setImmersive(false)}>☰</button>
+      )}
 
       <TermView client={client} s={s} mode={mode} fontScale={fontScale} dark={dark} t={t} operator={operator} onLink={setLink} onStatus={setTermStatus} />
 

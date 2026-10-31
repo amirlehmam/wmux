@@ -110,6 +110,38 @@ export default function SurfaceTabBar({
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
+  // Keep keyboard-selected and newly opened tabs reachable without moving
+  // any ancestor (scrollIntoView also scrolls the workspace).
+  useEffect(() => {
+    const strip = tabsRef.current;
+    if (!strip) return;
+    const reveal = () => {
+      const tab = strip.children[activeSurfaceIndex] as HTMLElement | undefined;
+      if (!tab) return;
+      const box = strip.getBoundingClientRect();
+      const item = tab.getBoundingClientRect();
+      if (item.left < box.left) strip.scrollLeft -= box.left - item.left;
+      else if (item.right > box.right) strip.scrollLeft += item.right - box.right;
+    };
+    reveal();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [activeSurfaceIndex, surfaces.length]);
+  useEffect(() => {
+    const strip = tabsRef.current;
+    if (!strip) return;
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || strip.scrollWidth <= strip.clientWidth) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      const scale = event.deltaMode === 1 ? 28 : event.deltaMode === 2 ? strip.clientWidth : 1;
+      strip.scrollLeft += delta * scale;
+      event.preventDefault();
+    };
+    strip.addEventListener('wheel', wheel, { passive: false });
+    return () => strip.removeEventListener('wheel', wheel);
+  }, []);
   const newCaretRef = useRef<HTMLButtonElement>(null);
   const layoutCaretRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);

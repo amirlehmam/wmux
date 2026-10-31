@@ -1,5 +1,7 @@
 /** Phone console strings — Simplified Chinese. Keys mirror en.ts exactly (parity test). */
 export const zh: Readonly<Record<string, string>> = {
+  'attach.hideControls': '隐藏所有控件',
+  'attach.showControls': '显示控件',
   'common.cancel': '取消',
   'common.back': '返回',
   'common.reload': '重新加载',

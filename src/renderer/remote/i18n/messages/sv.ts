@@ -1,5 +1,7 @@
 /** Phone console strings — Swedish. Keys mirror en.ts exactly (parity test). */
 export const sv: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'Dölj alla kontroller',
+  'attach.showControls': 'Visa kontroller',
   'common.cancel': 'Avbryt',
   'common.back': 'Tillbaka',
   'common.reload': 'Ladda om',

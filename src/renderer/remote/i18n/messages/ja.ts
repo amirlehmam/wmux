@@ -1,5 +1,7 @@
 /** Phone console strings — Japanese. Keys mirror en.ts exactly (parity test). */
 export const ja: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'すべての操作ボタンを隠す',
+  'attach.showControls': '操作ボタンを表示',
   'common.cancel': 'キャンセル',
   'common.back': '戻る',
   'common.reload': '再読み込み',

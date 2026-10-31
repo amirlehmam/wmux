@@ -72,7 +72,7 @@ describe('the plugin file itself', () => {
     // pluginNeedsUpdate() compares this; an install stuck on v4 keeps #191.
     // v5 → v6 is #271: every v5 install is the file OpenCode v2 rejects.
     // v7 → v8 is #304: without the bump no installed copy gains the prompt hook.
-    expect(src).toMatch(/wmux-plugin-version:\s*8/);
+    expect(src).toMatch(/wmux-plugin-version:\s*9/);
   });
 
   it('exports WmuxPlugin and the default definition, NOTHING else (#191, #271)', async () => {

@@ -124,6 +124,15 @@ html.wmux-transparent .split-divider--horizontal {
   background: rgba(0, 0, 0, 0.62);
 }
 .surface-tab-bar { transition: opacity 0.2s ease; }
+.workspace-drop-edge { position: absolute; z-index: 50; background: color-mix(in srgb, var(--ui-accent) 18%, transparent); }
+.workspace-drop-edge:hover { background: color-mix(in srgb, var(--ui-accent) 45%, transparent); }
+.workspace-drop-edge span { position: absolute; white-space: nowrap; font-size: 10px; pointer-events: none; color: var(--ui-text); }
+.workspace-drop-edge--left { left: 0; top: 20px; bottom: 20px; width: 18px; }
+.workspace-drop-edge--right { right: 0; top: 20px; bottom: 20px; width: 18px; }
+.workspace-drop-edge--up { left: 0; right: 0; top: 0; height: 18px; }
+.workspace-drop-edge--down { left: 0; right: 0; bottom: 0; height: 18px; }
+.workspace-drop-edge--up span, .workspace-drop-edge--down span { left: 50%; transform: translateX(-50%); }
+.workspace-drop-edge--left span, .workspace-drop-edge--right span { top: 50%; writing-mode: vertical-rl; }
 .wmux-focus-mode .pane-wrapper:not(.pane-wrapper--focused) .surface-tab-bar {
   opacity: 0.4;
 }
@@ -143,11 +152,13 @@ html.wmux-transparent .split-divider--horizontal {
   display: flex;
   align-items: center;
   flex: 1;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
-.surface-tab-bar__tabs::-webkit-scrollbar { display: none; }
+.surface-tab-bar__tabs::-webkit-scrollbar { height: 4px; }
+.surface-tab-bar__tabs::-webkit-scrollbar-thumb { background: var(--ui-text-muted); border-radius: 2px; }
 .surface-tab {
   display: flex;
   align-items: center;

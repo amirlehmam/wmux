@@ -1,5 +1,7 @@
 /** Phone console strings — Turkish. Keys mirror en.ts exactly (parity test). */
 export const tr: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'Tüm kontrolleri gizle',
+  'attach.showControls': 'Kontrolleri göster',
   'common.cancel': 'İptal',
   'common.back': 'Geri',
   'common.reload': 'Yeniden yükle',

@@ -1,5 +1,7 @@
 /** Phone console strings — Dutch. Keys mirror en.ts exactly (parity test). */
 export const nl: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'Alle bediening verbergen',
+  'attach.showControls': 'Bediening tonen',
   'common.cancel': 'Annuleren',
   'common.back': 'Terug',
   'common.reload': 'Opnieuw laden',

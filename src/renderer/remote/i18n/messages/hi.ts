@@ -1,5 +1,7 @@
 /** Phone console strings — Hindi. Keys mirror en.ts exactly (parity test). */
 export const hi: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'सभी नियंत्रण छिपाएँ',
+  'attach.showControls': 'नियंत्रण दिखाएँ',
   'common.cancel': 'रद्द करें',
   'common.back': 'वापस',
   'common.reload': 'फिर से लोड करें',

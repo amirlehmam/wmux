@@ -1,5 +1,7 @@
 /** Phone console strings — Korean. Keys mirror en.ts exactly (parity test). */
 export const ko: Readonly<Record<string, string>> = {
+  'attach.hideControls': '모든 컨트롤 숨기기',
+  'attach.showControls': '컨트롤 표시',
   'common.cancel': '취소',
   'common.back': '뒤로',
   'common.reload': '새로고침',

@@ -5,6 +5,8 @@
  * "Eingabetaste" everywhere.
  */
 export const de: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'Alle Bedienelemente ausblenden',
+  'attach.showControls': 'Bedienelemente anzeigen',
   'common.cancel': 'Abbrechen',
   'common.back': 'Zurück',
   'common.reload': 'Neu laden',

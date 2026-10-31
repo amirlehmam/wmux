@@ -1,5 +1,7 @@
 /** Phone console strings — Portuguese. Keys mirror en.ts exactly (parity test). */
 export const pt: Readonly<Record<string, string>> = {
+  'attach.hideControls': 'Ocultar todos os controles',
+  'attach.showControls': 'Mostrar controles',
   'common.cancel': 'Cancelar',
   'common.back': 'Voltar',
   'common.reload': 'Recarregar',
