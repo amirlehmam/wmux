@@ -1050,6 +1050,23 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     return readGuestHistory(guest);
   });
 
+  // The browser toolbar button is also a focus button. Electron's
+  // openDevTools() is a no-op when the detached window already exists, so
+  // clicking it again used to leave DevTools behind wmux (#413).
+  ipcMain.handle(IPC_CHANNELS.BROWSER_FOCUS_DEVTOOLS, (event, webContentsId: unknown) => {
+    if (typeof webContentsId !== 'number') return false;
+    const guest = webContents.fromId(webContentsId);
+    if (!guest || guest.isDestroyed() || guest.getType() !== 'webview' || guest.hostWebContents !== event.sender) return false;
+    try {
+      if (!guest.isDevToolsOpened()) guest.openDevTools({ mode: 'detach' });
+      const tools = guest.devToolsWebContents;
+      if (tools && !tools.isDestroyed()) tools.focus();
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   /** Where the agent actually is — see the channel's note in types.ts. */
   ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_CURRENT_URL, (_event, surfaceId: string) =>
     agentBrowserCurrentUrl(surfaceId as SurfaceId, agentBrowserDeps));

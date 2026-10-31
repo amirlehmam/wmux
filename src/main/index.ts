@@ -86,6 +86,7 @@ import { grantFilePath, clearFileGrants } from './file-grants';
 import { directoryFromArgv } from './shell-context-menu';
 import { reportExplorerCwd } from './explorer-roots';
 import { ensurePowerShellShim } from './powershell-shim';
+import { nextZoomFactor } from './zoom-factor';
 import { loadSettings } from './settings-store';
 import { translateKeyName } from './pty-keys';
 import { initRemoteConsole, getRemoteConsole, handleRemoteConsoleV2 } from './remote-console';
@@ -1056,6 +1057,19 @@ if (!gotInstanceLock) {
 function hardenWebContents(): void {
   app.on('web-contents-created', (_event, contents) => {
     const type = contents.getType();
+
+    // Chromium normally reserves Ctrl+wheel for page zoom, but Electron's
+    // embedded views do not consistently expose that gesture. Handle it at the
+    // webContents boundary so terminals, browser panes and the rest of the UI
+    // all zoom together (#411).
+    contents.on('before-input-event', (event, input) => {
+      if (input.type !== 'mouseWheel' || !input.modifiers?.includes('control')) return;
+      const deltaY = Number((input as unknown as Electron.MouseWheelInputEvent).deltaY);
+      if (!Number.isFinite(deltaY) || deltaY === 0) return;
+      event.preventDefault();
+      const next = nextZoomFactor(contents.getZoomFactor(), deltaY);
+      contents.setZoomFactor(next);
+    });
 
     // Enforce safe webview preferences regardless of attributes set in the DOM,
     // plus Chrome's autoplay rule (#287). The event fires on the HOST — the

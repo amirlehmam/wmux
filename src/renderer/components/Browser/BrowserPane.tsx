@@ -436,7 +436,11 @@ export default function BrowserPane({
   }, []);
   const reload = useCallback(() => webviewRef.current?.reload(), []);
   const stop = useCallback(() => webviewRef.current?.stop(), []);
-  const openDevTools = useCallback(() => webviewRef.current?.openDevTools(), []);
+  const openDevTools = useCallback(() => {
+    if (engineRef.current === 'agent') return;
+    const wcId = webviewRef.current?.getWebContentsId?.();
+    if (typeof wcId === 'number') window.wmux?.browser?.focusDevTools?.(wcId);
+  }, []);
 
   useEffect(() => {
     const wv = webviewRef.current;

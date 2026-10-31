@@ -163,6 +163,8 @@ contextBridge.exposeInMainWorld('wmux', {
     /** The webview's back/forward stack, to persist it (#315). Null for a guest this window does not host. */
     getHistory: (webContentsId: number): Promise<BrowserHistory | null> =>
       ipcRenderer.invoke(IPC_CHANNELS.BROWSER_GET_HISTORY, webContentsId),
+    focusDevTools: (webContentsId: number): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.BROWSER_FOCUS_DEVTOOLS, webContentsId),
   },
   agent: {
     list: (workspaceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_LIST, workspaceId),

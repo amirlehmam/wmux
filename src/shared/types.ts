@@ -828,6 +828,7 @@ export const IPC_CHANNELS = {
   // CDP (browser.* pipe methods map to these internal IPC channels)
   CDP_ATTACH: 'cdp:attach',
   CDP_DETACH: 'cdp:detach',
+  BROWSER_FOCUS_DEVTOOLS: 'browser:focus-devtools',
   CDP_NAVIGATE: 'cdp:navigate',
   CDP_SNAPSHOT: 'cdp:snapshot',
   CDP_CLICK: 'cdp:click',

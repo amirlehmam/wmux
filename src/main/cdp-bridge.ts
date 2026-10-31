@@ -385,7 +385,16 @@ export class CDPBridge {
 
   async reload(wcId?: number): Promise<void> {
     const target = this.resolveTarget(wcId);
-    await this.sendCommand(target, 'Page.reload');
+    // Reload the guest directly. Page.reload through the attached debugger can
+    // tear down the guest's DevTools target while Electron is rebuilding it;
+    // that leaves the host renderer and its terminals looking freshly mounted
+    // and loses the existing DevTools window (#412).
+    const wc = this.liveWebContents(target);
+    // Keep the protocol fallback for embedders that provide only a debugger
+    // target (and for older Electron versions); normal webviews use the native
+    // reload path above to keep the host renderer stable.
+    if (wc) wc.reload();
+    else await this.sendCommand(target, 'Page.reload');
   }
 
   async snapshot(wcId?: number): Promise<CDPSnapshot> {
