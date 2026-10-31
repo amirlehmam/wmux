@@ -931,7 +931,8 @@ export interface PromptPrefs {
  * touched the panel at all — which is to say, almost nobody who cares. Starting
  * the counter at 0 costs nothing and means the first real default change is a
  * bump plus an entry in PROMPT_PROMOTIONS instead of a migration written under
- * pressure.
+ * pressure. Adding a NEW field needs neither: `{ ...DEFAULTS, ...stored }` fills
+ * it in. Only changing an existing default needs the rev.
  *
  * 0 — 2.4.0, as shipped. No promotion has ever run.
  */
