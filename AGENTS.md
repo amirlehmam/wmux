@@ -78,17 +78,8 @@ One line per module: what it is for, plus any rule that code in other files must
 | `ipc-handlers.ts` | All IPC channel handlers |
 | `claude-context.ts` | Writes and removes the Claude Code integration: wmux skill + CLAUDE.md stub, hooks, the chrome-devtools MCP entry, and the deprecated orchestrator's cleanup |
 | `agent-integration.ts` | Consent gate for every write outside `%APPDATA%\wmux` (#132); the agent `*-context.ts` writers are never called from startup directly, only through here |
-| `kiro-context.ts` | Kiro CLI support (#148): writes wmux's own global steering file `~/.kiro/steering/wmux.md`; no hooks, since Kiro's are per-project |
-| `grok-context.ts` | Grok Build support: a hooks file mirroring the Claude hooks byte for byte, and a rules file only when Grok won't read CLAUDE.md; runs after `ensureClaudeContext` |
-| `opencode-context.ts` | Installs the OpenCode plugin and AGENTS.md block; `wmux.js` must export only `WmuxPlugin` + the default, and any plugin change needs a version-marker bump |
-| `pi-context.ts` | Pi instructions and status reporting share `~/.pi/agent/extensions/wmux/index.js`, with independent consent. Only wmux sessions receive compact rules; `reference.md` beside it holds the on-demand command guide. Settings changes need Pi `/reload` or restart |
+| `*-context.ts`, `*-resume.ts`, `codex-launcher.ts` | One agent's integration and its session restore (Kiro, Grok, OpenCode, omp, pi, agy, Qwen, Claude, Codex). Before changing one, load the `wmux-agent-integration` skill (`.agents/skills/wmux-agent-integration/SKILL.md`) |
 | `claude-observer.ts` | Monitors Claude Code activity for sidebar display |
-| `claude-resume.ts` | `claude --resume` on restore (#186): stamps session ids into session.json; ids validated at `reportAgentSession` and in the renderer, never recorded on `SessionEnd` |
-| `codex-launcher.ts` / `codex-resume.ts` | Codex restore (#261): a PATH shim + app-server relay capture the thread id. Off = no shim, no `where codex.exe`; PowerShell gets only the `.ps1`; relay loads lazily |
-| `opencode-resume.ts` | OpenCode restore (#290) as `opencode -s <id>`; strict `ses_<base62>` / `ses_loop_<base62>` ids from wmux's plugin (no subagent sessions; remote/shared servers are captured by the TUI half when installed); release refused while wmux quits |
-| `agy-resume.ts` / `agy-context.ts` | Antigravity CLI restore as `agy --conversation <id>`, via wmux's own agy plugin; released when the shell returns to its prompt (refused for an out-of-sequence prompt or while wmux quits) |
-| `qwen-context.ts` / `qwen-resume.ts` | Qwen Code at Claude parity: wmux block, hooks and browser MCP in `$QWEN_HOME`, restore as `qwen --resume <id>`; hook commands unquoted where possible (through a stub in `$QWEN_HOME`) and tagged `--provider qwen` |
-| `pi-resume.ts` | pi restore (#382) as `pi --session <file>`; `isValidPiSessionFile` guards report, prune and renderer; `PiSeqGate` stops a late report outliving a quit |
 | `agent-state.ts` | Declared agent run state (#128): blocked/working/idle, run refcount, `seq` dedupe, metadata TTL, plus the answer back-channel (answering never clears `blocked`) and resumable session handles (a PTY exit keeps them) |
 | `agent-state-rpc.ts` | `pane.report_agent` & friends, routed off the main V2 switch |
 | `awake-manager.ts` | Keep Windows awake (#363): one `powerSaveBlocker`, modes smart/always/off, owned and persisted by main; renderers read it via `awake.getState`, never a copy |
