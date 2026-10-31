@@ -91,7 +91,12 @@ describe('full-width workspace titles', () => {
   it('keeps the top line one height whatever it holds', () => {
     // A fixed height, so a badge arriving or the close button showing on hover
     // never changes the row's height; the dot pushes the rest to the right.
-    expect(CSS).toMatch(/\.workspace-row__top-line \{[^}]*\sheight: calc\(12px \* var\(--sidebar-text-scale, 1\)\);/);
+    // That height is the taller of the fixed 16px close button and the badge,
+    // which scales with the text: a shorter line let the badge hang onto the
+    // title's ascenders.
+    expect(CSS).toMatch(/\.workspace-row__close \{[^}]*\sheight: 16px;/);
+    expect(CSS).toMatch(/\.unread-badge \{[^}]*\sheight: calc\(16px \* var\(--sidebar-text-scale, 1\)\);/);
+    expect(CSS).toMatch(/\.workspace-row__top-line \{[^}]*\sheight: max\(16px, calc\(16px \* var\(--sidebar-text-scale, 1\)\)\);/);
     expect(CSS).toMatch(/\.workspace-row__top-line > \.workspace-row__state-dot \{\s*margin-right: auto;/);
   });
 

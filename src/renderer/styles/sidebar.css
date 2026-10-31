@@ -247,13 +247,15 @@
 /* Settings → Sidebar → "Give workspace titles the full row width": the state
    dot, the odometer, the unread badge and the close button get a line above
    the title. The height is fixed, so a badge arriving or the close button
-   appearing on hover never changes the row's height; the 16px badge and button
-   overhang it into the row's padding and the title's leading. */
+   appearing on hover never changes the row's height, and it is the taller of
+   the 16px close button and the badge, which scales with the text. A shorter
+   line let both hang onto the title's ascenders: a title set at line-height
+   1.2-1.3 has no leading to absorb an overhang. */
 .workspace-row__top-line {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: calc(12px * var(--sidebar-text-scale, 1));
+  height: max(16px, calc(16px * var(--sidebar-text-scale, 1)));
   margin-bottom: 1px;
 }
 
