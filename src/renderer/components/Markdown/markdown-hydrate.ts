@@ -6,7 +6,9 @@
 //
 // Cost: KaTeX (~270 KB + fonts) and mermaid (well over 1 MB) are loaded by
 // dynamic import() only when a document HAS math or a mermaid block. A plain
-// document pays one querySelectorAll per placeholder kind and nothing else.
+// document pays one querySelectorAll per placeholder kind and nothing else, and
+// neither library is in the desktop entry chunk or the phone closure. KaTeX is
+// pinned to the 0.18 line mermaid depends on, so the build carries one copy.
 
 export type UiThemeName = 'dark' | 'light';
 

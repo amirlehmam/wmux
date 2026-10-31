@@ -11,9 +11,10 @@
 //
 // Three things about the editing path are load-bearing:
 //
-//   • The editor is a plain <textarea>, not CodeMirror or Monaco. The renderer
-//     bundle is already ~1.8 MB and an editor dependency roughly doubles it, to
-//     serve "edit a thing or two in a file". If syntax-highlighted editing is
+//   • The editor is a plain <textarea>, not CodeMirror or Monaco. The desktop
+//     renderer already loads ~2 MB of JS (index-*.js plus the chunk it shares
+//     with the phone UI) and an editor dependency roughly doubles it, to serve
+//     "edit a thing or two in a file". If syntax-highlighted editing is
 //     ever wanted, that is the moment to pay for it — not before.
 //
 //   • A textarea normalizes its value to LF. The CRLF a file arrived with is

@@ -30,6 +30,12 @@
  * no DOM, no Electron and no touchscreen — the machine that reproduces this bug
  * is not the one CI runs on.
  *
+ * The other half of the fix is `touch-action: none` on
+ * `.terminal-pane__container` (terminal.css). Verified against a real xterm 6.0.0
+ * in real Chromium via a browser harness (the #230 technique), because a
+ * capture-phase listener receiving an event dispatched on its OWN element is the
+ * load-bearing assumption and no unit test proves it.
+ *
  * The state machine mirrors the prompt anchor's armed/engaged distinction for
  * the same reason it exists there: the interesting states are the ones BEFORE
  * the feature acts.

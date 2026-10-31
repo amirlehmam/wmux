@@ -17,7 +17,9 @@ import '../../styles/prompt-marks.css';
  * opposite things from the layout. An overlay floats over the pane it describes
  * and takes rows from it, which is fine for a glance and wrong for a panel; a
  * surface lives in the split tree, so it splits and resizes like anything else
- * and competes with nothing.
+ * and competes with nothing. The #82 rule that keeps the overlays absolutely
+ * positioned does not apply here: this owns its whole box instead of floating
+ * over somebody else's.
  *
  * They are two VIEWS over one prompt log, not two implementations. Everything
  * below reads the same `prompts` map and jumps through the same marks.

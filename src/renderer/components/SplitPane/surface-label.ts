@@ -36,6 +36,10 @@ function diffLabel(surface: SurfaceRef, t: (key: TranslationKey, fallback?: stri
 }
 
 /**
+ * The one tab-caption chain. For a terminal: customTitle → agent spawn label →
+ * OSC window title → defaultTitle → cwd → shell. `customTitle` is reserved for
+ * names a human chose; `defaultTitle` is a template's name.
+ *
  * @param oscTitle The OSC 0/2 window title the pane's program last set (issue
  *   #221), already normalised by `normalizeOscTitle`, or undefined when the
  *   feature is off or nothing has set one. Ranked BELOW both names a human

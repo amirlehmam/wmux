@@ -47,7 +47,7 @@ export interface PromptEntry {
    * resolved a marker for it — null while unresolved, and null again for an
    * entry whose marker was invalidated (see prompt-marks.ts: a marker's line
    * is lost when it scrolls out of the scrollback, and markers do not survive
-   * the serialize/replay a split-tree restructure performs).
+   * the serialize/replay of a terminal that really is rebuilt).
    *
    * A view MUST treat null as "cannot jump there", never as line 0.
    */

@@ -72,6 +72,10 @@ export interface MergedAgentSignals {
  * So each roster count joins the existing signal it is evidence for, and the
  * priority chain below is left exactly as it was. `unknown` contributes to no
  * count and therefore changes nothing — absence of a claim is not a claim.
+ *
+ * workspace-status.test.ts pins that as a PARITY: a silent agent renders exactly
+ * as no agent does. Anything a silent agent changes, it changed by overriding a
+ * finer signal it knows nothing about.
  */
 export function mergedAgentSignals(s: StatusTextInputs): MergedAgentSignals {
   const counts = s.agentCounts;

@@ -24,6 +24,11 @@
 // The split is pure (`compositionSegments`) so the part that decides what is
 // shown is testable without a DOM or an IME; `installCompositionClauses` is the
 // thin impure half.
+//
+// Verified against real xterm in Electron's Chromium with CDP
+// `Input.imeSetComposition`, which only lands after a real
+// `Input.dispatchMouseEvent` click on the webview: a DOM `focus()` plus focus
+// emulation is not widget focus.
 
 /** What the composition view shows: text around an optional caret or range. */
 export interface CompositionSegments {

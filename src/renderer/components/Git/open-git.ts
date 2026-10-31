@@ -7,6 +7,9 @@
  * worktree must not jump when the user clicks into another agent's pane.
  * Any folder inside the repository works as the pin; main asks git for the
  * top level and the worktree list from there.
+ *
+ * Opened by Ctrl+Alt+G (`openGitPanel`), the tab bar `+` menu, the explorer
+ * header's ⑂ button, or `wmux new-surface --type git`.
  */
 import type { PaneId, SplitNode, SurfaceId, WorkspaceId, WorkspaceInfo } from '../../../shared/types';
 import { findLeaf, getAllPaneIds, patchLeafPrimarySurface, splitNode } from '../../store/split-utils';
@@ -102,7 +105,7 @@ export function toggleGitView(
 
 export const FOCUS_SURFACE_EVENT = 'wmux:focus-surface';
 
-/** Ask App to focus a surface (workspace, pane and tab). */
+/** Ask App to focus a surface (workspace, pane and tab): the focused pane is App state. */
 export function requestFocusSurface(workspaceId: WorkspaceId, surfaceId: SurfaceId): void {
   document.dispatchEvent(new CustomEvent(FOCUS_SURFACE_EVENT, { detail: { workspaceId, surfaceId } }));
 }

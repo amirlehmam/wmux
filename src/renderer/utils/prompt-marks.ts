@@ -20,12 +20,13 @@ import type { IDecoration, IMarker, Terminal } from '@xterm/xterm';
  *   • A decoration is owned by its marker, so disposing the marker disposes the
  *     highlight with it. There is no separate highlight lifetime to get wrong.
  *
- * The one thing markers do NOT survive is the serialize/replay a split-tree
- * restructure performs (`snapshotSurfaceBuffer` → `terminal.write(snapshot)`,
- * issue #49): the replacement terminal has the same TEXT but none of the marker
- * objects. That is handled by forgetting the surface's marks on unmount and
- * letting every entry fall back to `line: null` — the outline still lists the
- * prompts, it just cannot jump to the ones from before the restructure. Faking
+ * The one thing markers do NOT survive is the serialize/replay of a terminal
+ * that really is rebuilt, which since #346 a split-tree restructure no longer
+ * does (`snapshotSurfaceBuffer` → `terminal.write(snapshot)`, issue #49): the
+ * replacement terminal has the same TEXT but none of the marker objects. That
+ * is handled by forgetting the surface's marks on unmount and letting every
+ * entry fall back to `line: null` — the outline still lists the prompts, it just
+ * cannot jump to the ones from before the rebuild. Faking
  * a line there would scroll the user somewhere arbitrary, which is worse than
  * an honestly disabled jump.
  */
