@@ -5,7 +5,7 @@ import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { surfaceAgentState } from '../../store/agent-rollup';
-import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret } from './icons';
+import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret, IconSurface, IconDuplicate } from './icons';
 import type { SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import { parseSurfaceDragData } from './surface-drag-preview';
 import { getSurfaceLabel } from './surface-label';
@@ -47,18 +47,8 @@ interface SurfaceTabBarProps {
   isFocused?: boolean;
 }
 
-function surfaceIcon(type: string, isAgent: boolean): string {
-  if (isAgent) return '>_';
-  switch (type) {
-    case 'terminal': return '>';
-    case 'browser': return '◎';
-    case 'markdown': return '¶';
-    case 'diff': return '±';
-    case 'code': return '{}';
-    case 'prompts': return '❯';
-    case 'git': return '⑂';
-    default: return '○';
-  }
+function surfaceIcon(type: string, isAgent: boolean): React.ReactNode {
+  return <IconSurface type={type} isAgent={isAgent} />;
 }
 
 export default function SurfaceTabBar({
@@ -471,13 +461,14 @@ export default function SurfaceTabBar({
               {surfaces.length > 1 && !isRenaming && (
                 <button
                   className="surface-tab__close"
+                  aria-label={t('surfaceTab.close', 'Close')}
                   onClick={(e) => {
                     e.stopPropagation();
                     onClose(surface.id);
                   }}
                   tabIndex={-1}
                 >
-                  ×
+                  <IconClose size={12} />
                 </button>
               )}
               {progress && (
@@ -567,7 +558,7 @@ export default function SurfaceTabBar({
               {onDuplicate && (
                 <>
                   <button role="menuitem" onClick={pickDuplicate}>
-                    <span className="surface-tab-menu__icon">⧉</span> {t('surfaceTab.duplicateTab', 'Duplicate tab')}
+                    <span className="surface-tab-menu__icon"><IconDuplicate /></span> {t('surfaceTab.duplicateTab', 'Duplicate tab')}
                   </button>
                   <div className="surface-tab-menu__sep" role="separator" />
                 </>

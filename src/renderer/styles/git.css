@@ -8,7 +8,7 @@
   height: 100%;
   background: var(--ui-bg-1);
   color: var(--ui-text-primary);
-  font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  font-family: var(--ui-font);
   font-size: 12px;
   overflow: hidden;
   container-type: inline-size;
@@ -19,6 +19,11 @@
 .git-pane__body { display: flex; flex: 1; min-width: 0; min-height: 0; }
 
 .git-muted { color: var(--ui-text-muted); }
+
+.git-hash,
+.git-diff > .diff-hunk {
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
 
 .git-empty {
   display: flex;

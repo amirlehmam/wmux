@@ -7,11 +7,30 @@
 html, body, #root {
   height: 100%;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--ui-font);
   background: var(--ui-bg-1);
   color: var(--ui-text-primary);
   user-select: none;
   -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+button:focus-visible, [role='tab']:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.workspace-stage > [data-workspace-id] {
+  padding: var(--ui-workspace-inset);
+}
+
+/* Paint only the new perimeter, never a second translucent layer under PTYs. */
+html.wmux-transparent .workspace-stage > [data-workspace-id] {
+  padding: 0;
+  border: var(--ui-workspace-inset) solid var(--wmux-pane-gutter, var(--ui-bg-2));
 }
 
 /* Window transparency. A Win11 backdrop material only shows through where
@@ -53,7 +72,6 @@ html.wmux-transparent #root {
   margin: 8px;
   padding: 10px 12px;
   border: 1px solid var(--ui-border-strong);
-  border-left: 3px solid #b3261e;
   border-radius: 6px;
   background: var(--ui-bg-1);
   color: var(--ui-text-primary);

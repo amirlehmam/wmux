@@ -1,0 +1,917 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-31T04:03:42.293050+00:00",
+  "title": "Design System: wmux Desktop",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Accent",
+        "canonical": "#0091ff",
+        "tonalRamp": [
+          "oklch(15% 0.0576 251.47)",
+          "oklch(26% 0.0998 251.47)",
+          "oklch(38% 0.1459 251.47)",
+          "oklch(49% 0.1881 251.47)",
+          "oklch(61% 0.1920 251.47)",
+          "oklch(72% 0.1792 251.47)",
+          "oklch(84% 0.1024 251.47)",
+          "oklch(95% 0.0320 251.47)"
+        ]
+      },
+      "accent-light": {
+        "role": "primary",
+        "displayName": "Accent Light",
+        "canonical": "#0067c0",
+        "tonalRamp": [
+          "oklch(15% 0.0482 253.32)",
+          "oklch(26% 0.0835 253.32)",
+          "oklch(38% 0.1220 253.32)",
+          "oklch(49% 0.1573 253.32)",
+          "oklch(61% 0.1605 253.32)",
+          "oklch(72% 0.1498 253.32)",
+          "oklch(84% 0.0856 253.32)",
+          "oklch(95% 0.0268 253.32)"
+        ]
+      },
+      "accent-contrast": {
+        "role": "primary",
+        "displayName": "Accent Contrast",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "bg-0": {
+        "role": "neutral",
+        "displayName": "Bg 0",
+        "canonical": "#14171e",
+        "tonalRamp": [
+          "oklch(15% 0.0044 266.85)",
+          "oklch(26% 0.0077 266.85)",
+          "oklch(38% 0.0112 266.85)",
+          "oklch(49% 0.0145 266.85)",
+          "oklch(61% 0.0147 266.85)",
+          "oklch(72% 0.0138 266.85)",
+          "oklch(84% 0.0079 266.85)",
+          "oklch(95% 0.0025 266.85)"
+        ]
+      },
+      "bg-1": {
+        "role": "neutral",
+        "displayName": "Bg 1",
+        "canonical": "#191d26",
+        "tonalRamp": [
+          "oklch(15% 0.0055 266.17)",
+          "oklch(26% 0.0096 266.17)",
+          "oklch(38% 0.0141 266.17)",
+          "oklch(49% 0.0181 266.17)",
+          "oklch(61% 0.0185 266.17)",
+          "oklch(72% 0.0173 266.17)",
+          "oklch(84% 0.0099 266.17)",
+          "oklch(95% 0.0031 266.17)"
+        ]
+      },
+      "bg-2": {
+        "role": "neutral",
+        "displayName": "Bg 2",
+        "canonical": "#202530",
+        "tonalRamp": [
+          "oklch(15% 0.0066 265.77)",
+          "oklch(26% 0.0114 265.77)",
+          "oklch(38% 0.0166 265.77)",
+          "oklch(49% 0.0215 265.77)",
+          "oklch(61% 0.0219 265.77)",
+          "oklch(72% 0.0204 265.77)",
+          "oklch(84% 0.0117 265.77)",
+          "oklch(95% 0.0037 265.77)"
+        ]
+      },
+      "bg-3": {
+        "role": "neutral",
+        "displayName": "Bg 3",
+        "canonical": "#272e3a",
+        "tonalRamp": [
+          "oklch(15% 0.0072 261.16)",
+          "oklch(26% 0.0125 261.16)",
+          "oklch(38% 0.0182 261.16)",
+          "oklch(49% 0.0235 261.16)",
+          "oklch(61% 0.0240 261.16)",
+          "oklch(72% 0.0224 261.16)",
+          "oklch(84% 0.0128 261.16)",
+          "oklch(95% 0.0040 261.16)"
+        ]
+      },
+      "bg-4": {
+        "role": "neutral",
+        "displayName": "Bg 4",
+        "canonical": "#303947",
+        "tonalRamp": [
+          "oklch(15% 0.0083 259.14)",
+          "oklch(26% 0.0143 259.14)",
+          "oklch(38% 0.0209 259.14)",
+          "oklch(49% 0.0270 259.14)",
+          "oklch(61% 0.0275 259.14)",
+          "oklch(72% 0.0257 259.14)",
+          "oklch(84% 0.0147 259.14)",
+          "oklch(95% 0.0046 259.14)"
+        ]
+      },
+      "bg-5": {
+        "role": "neutral",
+        "displayName": "Bg 5",
+        "canonical": "#3a4555",
+        "tonalRamp": [
+          "oklch(15% 0.0093 257.68)",
+          "oklch(26% 0.0161 257.68)",
+          "oklch(38% 0.0235 257.68)",
+          "oklch(49% 0.0303 257.68)",
+          "oklch(61% 0.0309 257.68)",
+          "oklch(72% 0.0288 257.68)",
+          "oklch(84% 0.0165 257.68)",
+          "oklch(95% 0.0052 257.68)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Border",
+        "canonical": "#343e4e",
+        "tonalRamp": [
+          "oklch(15% 0.0093 259.72)",
+          "oklch(26% 0.0160 259.72)",
+          "oklch(38% 0.0235 259.72)",
+          "oklch(49% 0.0302 259.72)",
+          "oklch(61% 0.0309 259.72)",
+          "oklch(72% 0.0288 259.72)",
+          "oklch(84% 0.0165 259.72)",
+          "oklch(95% 0.0051 259.72)"
+        ]
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Border Strong",
+        "canonical": "#56647a",
+        "tonalRamp": [
+          "oklch(15% 0.0118 259.36)",
+          "oklch(26% 0.0204 259.36)",
+          "oklch(38% 0.0298 259.36)",
+          "oklch(49% 0.0385 259.36)",
+          "oklch(61% 0.0393 259.36)",
+          "oklch(72% 0.0366 259.36)",
+          "oklch(84% 0.0209 259.36)",
+          "oklch(95% 0.0065 259.36)"
+        ]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Text Primary",
+        "canonical": "#e8edf5",
+        "tonalRamp": [
+          "oklch(15% 0.0036 259.82)",
+          "oklch(26% 0.0063 259.82)",
+          "oklch(38% 0.0092 259.82)",
+          "oklch(49% 0.0118 259.82)",
+          "oklch(61% 0.0120 259.82)",
+          "oklch(72% 0.0112 259.82)",
+          "oklch(84% 0.0064 259.82)",
+          "oklch(95% 0.0020 259.82)"
+        ]
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Text Secondary",
+        "canonical": "#bac5d5",
+        "tonalRamp": [
+          "oklch(15% 0.0077 257.65)",
+          "oklch(26% 0.0133 257.65)",
+          "oklch(38% 0.0194 257.65)",
+          "oklch(49% 0.0250 257.65)",
+          "oklch(61% 0.0255 257.65)",
+          "oklch(72% 0.0238 257.65)",
+          "oklch(84% 0.0136 257.65)",
+          "oklch(95% 0.0043 257.65)"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Text Muted",
+        "canonical": "#96a3b7",
+        "tonalRamp": [
+          "oklch(15% 0.0098 258.94)",
+          "oklch(26% 0.0170 258.94)",
+          "oklch(38% 0.0249 258.94)",
+          "oklch(49% 0.0321 258.94)",
+          "oklch(61% 0.0327 258.94)",
+          "oklch(72% 0.0306 258.94)",
+          "oklch(84% 0.0175 258.94)",
+          "oklch(95% 0.0055 258.94)"
+        ]
+      },
+      "bg-0-light": {
+        "role": "neutral",
+        "displayName": "Bg 0 Light",
+        "canonical": "#e8edf4",
+        "tonalRamp": [
+          "oklch(15% 0.0033 256.70)",
+          "oklch(26% 0.0056 256.70)",
+          "oklch(38% 0.0083 256.70)",
+          "oklch(49% 0.0106 256.70)",
+          "oklch(61% 0.0109 256.70)",
+          "oklch(72% 0.0101 256.70)",
+          "oklch(84% 0.0058 256.70)",
+          "oklch(95% 0.0018 256.70)"
+        ]
+      },
+      "bg-1-light": {
+        "role": "neutral",
+        "displayName": "Bg 1 Light",
+        "canonical": "#f2f5f9",
+        "tonalRamp": [
+          "oklch(15% 0.0019 255.47)",
+          "oklch(26% 0.0032 255.47)",
+          "oklch(38% 0.0047 255.47)",
+          "oklch(49% 0.0061 255.47)",
+          "oklch(61% 0.0062 255.47)",
+          "oklch(72% 0.0058 255.47)",
+          "oklch(84% 0.0033 255.47)",
+          "oklch(95% 0.0010 255.47)"
+        ]
+      },
+      "bg-2-light": {
+        "role": "neutral",
+        "displayName": "Bg 2 Light",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "bg-3-light": {
+        "role": "neutral",
+        "displayName": "Bg 3 Light",
+        "canonical": "#e8eef6",
+        "tonalRamp": [
+          "oklch(15% 0.0038 255.51)",
+          "oklch(26% 0.0065 255.51)",
+          "oklch(38% 0.0095 255.51)",
+          "oklch(49% 0.0123 255.51)",
+          "oklch(61% 0.0126 255.51)",
+          "oklch(72% 0.0117 255.51)",
+          "oklch(84% 0.0067 255.51)",
+          "oklch(95% 0.0021 255.51)"
+        ]
+      },
+      "bg-4-light": {
+        "role": "neutral",
+        "displayName": "Bg 4 Light",
+        "canonical": "#dce5f0",
+        "tonalRamp": [
+          "oklch(15% 0.0054 253.34)",
+          "oklch(26% 0.0093 253.34)",
+          "oklch(38% 0.0136 253.34)",
+          "oklch(49% 0.0175 253.34)",
+          "oklch(61% 0.0178 253.34)",
+          "oklch(72% 0.0167 253.34)",
+          "oklch(84% 0.0095 253.34)",
+          "oklch(95% 0.0030 253.34)"
+        ]
+      },
+      "bg-5-light": {
+        "role": "neutral",
+        "displayName": "Bg 5 Light",
+        "canonical": "#ced9e8",
+        "tonalRamp": [
+          "oklch(15% 0.0072 256.11)",
+          "oklch(26% 0.0124 256.11)",
+          "oklch(38% 0.0181 256.11)",
+          "oklch(49% 0.0234 256.11)",
+          "oklch(61% 0.0239 256.11)",
+          "oklch(72% 0.0223 256.11)",
+          "oklch(84% 0.0127 256.11)",
+          "oklch(95% 0.0040 256.11)"
+        ]
+      },
+      "border-light": {
+        "role": "neutral",
+        "displayName": "Border Light",
+        "canonical": "#c8d2e0",
+        "tonalRamp": [
+          "oklch(15% 0.0067 256.74)",
+          "oklch(26% 0.0116 256.74)",
+          "oklch(38% 0.0169 256.74)",
+          "oklch(49% 0.0218 256.74)",
+          "oklch(61% 0.0223 256.74)",
+          "oklch(72% 0.0208 256.74)",
+          "oklch(84% 0.0119 256.74)",
+          "oklch(95% 0.0037 256.74)"
+        ]
+      },
+      "border-strong-light": {
+        "role": "neutral",
+        "displayName": "Border Strong Light",
+        "canonical": "#93a3b9",
+        "tonalRamp": [
+          "oklch(15% 0.0111 256.37)",
+          "oklch(26% 0.0192 256.37)",
+          "oklch(38% 0.0281 256.37)",
+          "oklch(49% 0.0362 256.37)",
+          "oklch(61% 0.0370 256.37)",
+          "oklch(72% 0.0345 256.37)",
+          "oklch(84% 0.0197 256.37)",
+          "oklch(95% 0.0062 256.37)"
+        ]
+      },
+      "text-primary-light": {
+        "role": "neutral",
+        "displayName": "Text Primary Light",
+        "canonical": "#202b3b",
+        "tonalRamp": [
+          "oklch(15% 0.0100 257.67)",
+          "oklch(26% 0.0173 257.67)",
+          "oklch(38% 0.0253 257.67)",
+          "oklch(49% 0.0326 257.67)",
+          "oklch(61% 0.0333 257.67)",
+          "oklch(72% 0.0311 257.67)",
+          "oklch(84% 0.0178 257.67)",
+          "oklch(95% 0.0055 257.67)"
+        ]
+      },
+      "text-secondary-light": {
+        "role": "neutral",
+        "displayName": "Text Secondary Light",
+        "canonical": "#46556b",
+        "tonalRamp": [
+          "oklch(15% 0.0123 257.86)",
+          "oklch(26% 0.0213 257.86)",
+          "oklch(38% 0.0311 257.86)",
+          "oklch(49% 0.0401 257.86)",
+          "oklch(61% 0.0410 257.86)",
+          "oklch(72% 0.0382 257.86)",
+          "oklch(84% 0.0218 257.86)",
+          "oklch(95% 0.0068 257.86)"
+        ]
+      },
+      "text-muted-light": {
+        "role": "neutral",
+        "displayName": "Text Muted Light",
+        "canonical": "#5f6e83",
+        "tonalRamp": [
+          "oklch(15% 0.0113 256.82)",
+          "oklch(26% 0.0196 256.82)",
+          "oklch(38% 0.0287 256.82)",
+          "oklch(49% 0.0370 256.82)",
+          "oklch(61% 0.0378 256.82)",
+          "oklch(72% 0.0352 256.82)",
+          "oklch(84% 0.0201 256.82)",
+          "oklch(95% 0.0063 256.82)"
+        ]
+      },
+      "agent-blocked": {
+        "role": "secondary",
+        "displayName": "Agent Blocked",
+        "canonical": "#b388ff",
+        "tonalRamp": [
+          "oklch(15% 0.0514 298.68)",
+          "oklch(26% 0.0891 298.68)",
+          "oklch(38% 0.1303 298.68)",
+          "oklch(49% 0.1680 298.68)",
+          "oklch(61% 0.1714 298.68)",
+          "oklch(72% 0.1600 298.68)",
+          "oklch(84% 0.0914 298.68)",
+          "oklch(95% 0.0286 298.68)"
+        ]
+      },
+      "agent-blocked-light": {
+        "role": "secondary",
+        "displayName": "Agent Blocked Light",
+        "canonical": "#6a3ab8",
+        "tonalRamp": [
+          "oklch(15% 0.0563 295.97)",
+          "oklch(26% 0.0975 295.97)",
+          "oklch(38% 0.1426 295.97)",
+          "oklch(49% 0.1838 295.97)",
+          "oklch(61% 0.1876 295.97)",
+          "oklch(72% 0.1751 295.97)",
+          "oklch(84% 0.1000 295.97)",
+          "oklch(95% 0.0313 295.97)"
+        ]
+      },
+      "agent-question": {
+        "role": "secondary",
+        "displayName": "Agent Question",
+        "canonical": "#4fb3d9",
+        "tonalRamp": [
+          "oklch(15% 0.0322 226.27)",
+          "oklch(26% 0.0559 226.27)",
+          "oklch(38% 0.0816 226.27)",
+          "oklch(49% 0.1053 226.27)",
+          "oklch(61% 0.1074 226.27)",
+          "oklch(72% 0.1002 226.27)",
+          "oklch(84% 0.0573 226.27)",
+          "oklch(95% 0.0179 226.27)"
+        ]
+      },
+      "agent-question-light": {
+        "role": "secondary",
+        "displayName": "Agent Question Light",
+        "canonical": "#006b87",
+        "tonalRamp": [
+          "oklch(15% 0.0276 224.00)",
+          "oklch(26% 0.0479 224.00)",
+          "oklch(38% 0.0700 224.00)",
+          "oklch(49% 0.0903 224.00)",
+          "oklch(61% 0.0921 224.00)",
+          "oklch(72% 0.0860 224.00)",
+          "oklch(84% 0.0491 224.00)",
+          "oklch(95% 0.0154 224.00)"
+        ]
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Danger",
+        "canonical": "#b3261e",
+        "tonalRamp": [
+          "oklch(15% 0.0535 28.70)",
+          "oklch(26% 0.0927 28.70)",
+          "oklch(38% 0.1355 28.70)",
+          "oklch(49% 0.1748 28.70)",
+          "oklch(61% 0.1783 28.70)",
+          "oklch(72% 0.1664 28.70)",
+          "oklch(84% 0.0951 28.70)",
+          "oklch(95% 0.0297 28.70)"
+        ]
+      },
+      "trace-bus": {
+        "role": "secondary",
+        "displayName": "Trace Bus",
+        "canonical": "#7a4f27",
+        "tonalRamp": [
+          "oklch(15% 0.0240 61.64)",
+          "oklch(26% 0.0415 61.64)",
+          "oklch(38% 0.0607 61.64)",
+          "oklch(49% 0.0783 61.64)",
+          "oklch(61% 0.0799 61.64)",
+          "oklch(72% 0.0745 61.64)",
+          "oklch(84% 0.0426 61.64)",
+          "oklch(95% 0.0133 61.64)"
+        ]
+      },
+      "trace-bus-dim": {
+        "role": "secondary",
+        "displayName": "Trace Bus Dim",
+        "canonical": "#56381c",
+        "tonalRamp": [
+          "oklch(15% 0.0179 62.22)",
+          "oklch(26% 0.0310 62.22)",
+          "oklch(38% 0.0453 62.22)",
+          "oklch(49% 0.0585 62.22)",
+          "oklch(61% 0.0597 62.22)",
+          "oklch(72% 0.0557 62.22)",
+          "oklch(84% 0.0318 62.22)",
+          "oklch(95% 0.0099 62.22)"
+        ]
+      },
+      "trace-current": {
+        "role": "secondary",
+        "displayName": "Trace Current",
+        "canonical": "#ffc078",
+        "tonalRamp": [
+          "oklch(15% 0.0345 68.95)",
+          "oklch(26% 0.0598 68.95)",
+          "oklch(38% 0.0873 68.95)",
+          "oklch(49% 0.1126 68.95)",
+          "oklch(61% 0.1149 68.95)",
+          "oklch(72% 0.1072 68.95)",
+          "oklch(84% 0.0613 68.95)",
+          "oklch(95% 0.0192 68.95)"
+        ]
+      },
+      "trace-current-hot": {
+        "role": "secondary",
+        "displayName": "Trace Current Hot",
+        "canonical": "#fff0d6",
+        "tonalRamp": [
+          "oklch(15% 0.0113 81.52)",
+          "oklch(26% 0.0196 81.52)",
+          "oklch(38% 0.0287 81.52)",
+          "oklch(49% 0.0370 81.52)",
+          "oklch(61% 0.0378 81.52)",
+          "oklch(72% 0.0352 81.52)",
+          "oklch(84% 0.0201 81.52)",
+          "oklch(95% 0.0063 81.52)"
+        ]
+      },
+      "trace-ingest": {
+        "role": "secondary",
+        "displayName": "Trace Ingest",
+        "canonical": "#37c3d6",
+        "tonalRamp": [
+          "oklch(15% 0.0351 208.51)",
+          "oklch(26% 0.0609 208.51)",
+          "oklch(38% 0.0890 208.51)",
+          "oklch(49% 0.1148 208.51)",
+          "oklch(61% 0.1171 208.51)",
+          "oklch(72% 0.1093 208.51)",
+          "oklch(84% 0.0625 208.51)",
+          "oklch(95% 0.0195 208.51)"
+        ]
+      },
+      "trace-mutate": {
+        "role": "secondary",
+        "displayName": "Trace Mutate",
+        "canonical": "#db6bd0",
+        "tonalRamp": [
+          "oklch(15% 0.0554 331.18)",
+          "oklch(26% 0.0960 331.18)",
+          "oklch(38% 0.1404 331.18)",
+          "oklch(49% 0.1810 331.18)",
+          "oklch(61% 0.1847 331.18)",
+          "oklch(72% 0.1724 331.18)",
+          "oklch(84% 0.0985 331.18)",
+          "oklch(95% 0.0308 331.18)"
+        ]
+      },
+      "trace-exec": {
+        "role": "secondary",
+        "displayName": "Trace Exec",
+        "canonical": "#a6d93b",
+        "tonalRamp": [
+          "oklch(15% 0.0562 126.12)",
+          "oklch(26% 0.0975 126.12)",
+          "oklch(38% 0.1424 126.12)",
+          "oklch(49% 0.1837 126.12)",
+          "oklch(61% 0.1874 126.12)",
+          "oklch(72% 0.1749 126.12)",
+          "oklch(84% 0.1000 126.12)",
+          "oklch(95% 0.0312 126.12)"
+        ]
+      },
+      "trace-delegate": {
+        "role": "secondary",
+        "displayName": "Trace Delegate",
+        "canonical": "#7a9bff",
+        "tonalRamp": [
+          "oklch(15% 0.0453 268.58)",
+          "oklch(26% 0.0785 268.58)",
+          "oklch(38% 0.1148 268.58)",
+          "oklch(49% 0.1480 268.58)",
+          "oklch(61% 0.1510 268.58)",
+          "oklch(72% 0.1409 268.58)",
+          "oklch(84% 0.0805 268.58)",
+          "oklch(95% 0.0252 268.58)"
+        ]
+      },
+      "trace-blocked": {
+        "role": "secondary",
+        "displayName": "Trace Blocked",
+        "canonical": "#ff5c5c",
+        "tonalRamp": [
+          "oklch(15% 0.0596 23.91)",
+          "oklch(26% 0.1033 23.91)",
+          "oklch(38% 0.1510 23.91)",
+          "oklch(49% 0.1947 23.91)",
+          "oklch(61% 0.1987 23.91)",
+          "oklch(72% 0.1854 23.91)",
+          "oklch(84% 0.1060 23.91)",
+          "oklch(95% 0.0331 23.91)"
+        ]
+      },
+      "trace-bus-light": {
+        "role": "secondary",
+        "displayName": "Trace Bus Light",
+        "canonical": "#a86a32",
+        "tonalRamp": [
+          "oklch(15% 0.0320 60.14)",
+          "oklch(26% 0.0554 60.14)",
+          "oklch(38% 0.0810 60.14)",
+          "oklch(49% 0.1044 60.14)",
+          "oklch(61% 0.1065 60.14)",
+          "oklch(72% 0.0994 60.14)",
+          "oklch(84% 0.0568 60.14)",
+          "oklch(95% 0.0178 60.14)"
+        ]
+      },
+      "trace-bus-dim-light": {
+        "role": "secondary",
+        "displayName": "Trace Bus Dim Light",
+        "canonical": "#cbb59d",
+        "tonalRamp": [
+          "oklch(15% 0.0125 69.60)",
+          "oklch(26% 0.0216 69.60)",
+          "oklch(38% 0.0316 69.60)",
+          "oklch(49% 0.0407 69.60)",
+          "oklch(61% 0.0416 69.60)",
+          "oklch(72% 0.0388 69.60)",
+          "oklch(84% 0.0222 69.60)",
+          "oklch(95% 0.0069 69.60)"
+        ]
+      },
+      "trace-current-light": {
+        "role": "secondary",
+        "displayName": "Trace Current Light",
+        "canonical": "#c2560d",
+        "tonalRamp": [
+          "oklch(15% 0.0470 46.78)",
+          "oklch(26% 0.0814 46.78)",
+          "oklch(38% 0.1190 46.78)",
+          "oklch(49% 0.1534 46.78)",
+          "oklch(61% 0.1565 46.78)",
+          "oklch(72% 0.1461 46.78)",
+          "oklch(84% 0.0835 46.78)",
+          "oklch(95% 0.0261 46.78)"
+        ]
+      },
+      "trace-current-hot-light": {
+        "role": "secondary",
+        "displayName": "Trace Current Hot Light",
+        "canonical": "#8a3c06",
+        "tonalRamp": [
+          "oklch(15% 0.0363 47.45)",
+          "oklch(26% 0.0630 47.45)",
+          "oklch(38% 0.0920 47.45)",
+          "oklch(49% 0.1187 47.45)",
+          "oklch(61% 0.1211 47.45)",
+          "oklch(72% 0.1130 47.45)",
+          "oklch(84% 0.0646 47.45)",
+          "oklch(95% 0.0202 47.45)"
+        ]
+      },
+      "trace-ingest-light": {
+        "role": "secondary",
+        "displayName": "Trace Ingest Light",
+        "canonical": "#0e7f8f",
+        "tonalRamp": [
+          "oklch(15% 0.0277 210.58)",
+          "oklch(26% 0.0479 210.58)",
+          "oklch(38% 0.0701 210.58)",
+          "oklch(49% 0.0904 210.58)",
+          "oklch(61% 0.0922 210.58)",
+          "oklch(72% 0.0861 210.58)",
+          "oklch(84% 0.0492 210.58)",
+          "oklch(95% 0.0154 210.58)"
+        ]
+      },
+      "trace-mutate-light": {
+        "role": "secondary",
+        "displayName": "Trace Mutate Light",
+        "canonical": "#a4308f",
+        "tonalRamp": [
+          "oklch(15% 0.0550 336.11)",
+          "oklch(26% 0.0954 336.11)",
+          "oklch(38% 0.1395 336.11)",
+          "oklch(49% 0.1798 336.11)",
+          "oklch(61% 0.1835 336.11)",
+          "oklch(72% 0.1713 336.11)",
+          "oklch(84% 0.0979 336.11)",
+          "oklch(95% 0.0306 336.11)"
+        ]
+      },
+      "trace-exec-light": {
+        "role": "secondary",
+        "displayName": "Trace Exec Light",
+        "canonical": "#4f7c14",
+        "tonalRamp": [
+          "oklch(15% 0.0412 131.21)",
+          "oklch(26% 0.0714 131.21)",
+          "oklch(38% 0.1043 131.21)",
+          "oklch(49% 0.1346 131.21)",
+          "oklch(61% 0.1373 131.21)",
+          "oklch(72% 0.1281 131.21)",
+          "oklch(84% 0.0732 131.21)",
+          "oklch(95% 0.0229 131.21)"
+        ]
+      },
+      "trace-delegate-light": {
+        "role": "secondary",
+        "displayName": "Trace Delegate Light",
+        "canonical": "#3355c9",
+        "tonalRamp": [
+          "oklch(15% 0.0554 266.91)",
+          "oklch(26% 0.0959 266.91)",
+          "oklch(38% 0.1402 266.91)",
+          "oklch(49% 0.1808 266.91)",
+          "oklch(61% 0.1845 266.91)",
+          "oklch(72% 0.1722 266.91)",
+          "oklch(84% 0.0984 266.91)",
+          "oklch(95% 0.0308 266.91)"
+        ]
+      },
+      "trace-blocked-light": {
+        "role": "secondary",
+        "displayName": "Trace Blocked Light",
+        "canonical": "#c62828",
+        "tonalRamp": [
+          "oklch(15% 0.0581 26.72)",
+          "oklch(26% 0.1007 26.72)",
+          "oklch(38% 0.1472 26.72)",
+          "oklch(49% 0.1899 26.72)",
+          "oklch(61% 0.1937 26.72)",
+          "oklch(72% 0.1808 26.72)",
+          "oklch(84% 0.1033 26.72)",
+          "oklch(95% 0.0323 26.72)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Interface title",
+        "purpose": "Settings heading; no display role."
+      },
+      "workspace-title": {
+        "displayName": "Workspace title",
+        "purpose": "Scalable sidebar project names."
+      },
+      "body": {
+        "displayName": "Body and tabs",
+        "purpose": "Dense interface controls and working-surface labels."
+      },
+      "label": {
+        "displayName": "Supporting label",
+        "purpose": "Status and supporting interface information."
+      },
+      "context": {
+        "displayName": "Technical context",
+        "purpose": "Branches and paths; terminal typography stays independent."
+      }
+    },
+    "shadows": [
+      {
+        "name": "menu",
+        "value": "0 8px 24px rgba(0,0,0,0.6)",
+        "purpose": "Surface action dropdowns."
+      },
+      {
+        "name": "confirmation",
+        "value": "0 8px 32px rgba(0,0,0,0.5)",
+        "purpose": "Confirmation dialog."
+      },
+      {
+        "name": "settings",
+        "value": "0 24px 64px rgba(0,0,0,0.7)",
+        "purpose": "Settings window."
+      },
+      {
+        "name": "workspace-selection",
+        "value": "inset 0 0 0 1px color-mix(in srgb, var(--row-accent) 24%, var(--ui-border))",
+        "purpose": "Selection hairline; no drop shadow."
+      }
+    ],
+    "motion": [
+      {
+        "name": "pane-frame",
+        "value": "border-color 0.15s ease",
+        "purpose": "Focused frame state change."
+      },
+      {
+        "name": "tab-hover",
+        "value": "background 0.1s ease, color 0.1s ease",
+        "purpose": "Inset tab hover states."
+      },
+      {
+        "name": "trace-via",
+        "value": "620ms ease-out 1 both",
+        "purpose": "Event-triggered tool-call ping."
+      },
+      {
+        "name": "trace-held",
+        "value": "1.4s ease-in-out infinite",
+        "purpose": "Blocked TRACE rail."
+      },
+      {
+        "name": "reduced-motion-duration",
+        "value": "0.01ms",
+        "purpose": "Global transition/animation reduction with one iteration; TRACE keeps static alternatives."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "pane-controls-container-max",
+        "value": "300px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary confirmation",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact tinted confirmation action.",
+      "html": "<button class=\"ds-primary\">Create workspace</button>",
+      "css": ".ds-primary{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);padding:5px 14px;border:1px solid var(--ui-accent,#0091ff);border-radius:5px;background:color-mix(in srgb,var(--ui-accent,#0091ff) 20%,transparent);color:var(--ui-text-primary,#e8edf5);font-size:12px;cursor:pointer}.ds-primary:hover{background:color-mix(in srgb,var(--ui-accent,#0091ff) 35%,transparent)}.ds-primary:focus-visible{outline:1px solid var(--ui-accent,#0091ff);outline-offset:1px}"
+    },
+    {
+      "name": "Secondary action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Settings secondary action with a quiet overlay fill.",
+      "html": "<button class=\"ds-secondary\">Browse</button>",
+      "css": ".ds-secondary{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;border:1px solid rgba(var(--ui-overlay-rgb,255,255,255),.1);background:rgba(var(--ui-overlay-rgb,255,255,255),.08);color:rgba(var(--ui-overlay-rgb,255,255,255),.75);cursor:pointer;transition:background .1s}.ds-secondary:hover{background:rgba(var(--ui-overlay-rgb,255,255,255),.14);color:var(--ui-text-primary,#e8edf5)}.ds-secondary:focus-visible{outline:2px solid var(--ui-accent,#0091ff);outline-offset:-2px;}.ds-secondary:disabled{opacity:.65;cursor:default}"
+    },
+    {
+      "name": "Settings field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Raised compact text field with accent focus.",
+      "html": "<input class=\"ds-input\" aria-label=\"Workspace name\" value=\"wmux\"/>",
+      "css": ".ds-input{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);background:var(--ui-bg-4,#303947);border:1px solid rgba(var(--ui-overlay-rgb,255,255,255),.12);border-radius:6px;color:var(--ui-text-primary,#e8edf5);font-size:12.5px;padding:5px 10px;outline:none;min-width:200px;transition:border-color .15s}.ds-input:focus,.ds-input:focus-visible{border-color:var(--ui-accent,#0091ff)}"
+    },
+    {
+      "name": "Active workspace",
+      "kind": "nav",
+      "refersTo": "workspace-row",
+      "description": "Selection retains readable task status and branch context.",
+      "html": "<button class=\"ds-workspace\"><span class=\"ds-name\">wmux</span><span class=\"ds-status\">Needs you</span><span class=\"ds-context\">master \u00b7 ~/wmux</span></button>",
+      "css": ".ds-workspace{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);display:flex;flex-direction:column;position:relative;min-width:210px;text-align:left;padding:8px 10px 8px 14px;border:0;border-radius:8px;cursor:pointer;background:color-mix(in srgb,var(--ui-accent,#0091ff) 8%,var(--ui-bg-2,#202530));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ui-accent,#0091ff) 24%,var(--ui-border,#343e4e));transition:background-color .12s ease,box-shadow .12s ease}.ds-workspace:before{content:\"\";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:2px;height:16px;border-radius:2px;background:var(--ui-accent,#0091ff)}.ds-name{font-size:12.5px;font-weight:600;line-height:1.3;color:var(--ui-text-primary,#e8edf5);margin-bottom:2px}.ds-status{font-size:11px;line-height:1.3;font-weight:600;color:var(--ui-agent-blocked,#b388ff);margin-top:2px}.ds-context{font-family:\"Cascadia Mono\",Consolas,monospace;font-size:10.5px;line-height:1.4;color:var(--ui-text-secondary,#bac5d5);margin-top:1px}.ds-workspace:hover{background:rgba(var(--ui-overlay-rgb,255,255,255),.04)}.ds-workspace:focus-visible{outline:2px solid var(--ui-accent,#0091ff);outline-offset:-2px;}"
+    },
+    {
+      "name": "Selected surface tab",
+      "kind": "nav",
+      "refersTo": "surface-tab",
+      "description": "Inset active tab using the focused frame accent.",
+      "html": "<button class=\"ds-tab\" role=\"tab\" aria-selected=\"true\"><svg aria-hidden=\"true\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m5 6 6 6-6 6M14 18h4\"/></svg><span>PowerShell</span></button>",
+      "css": ".ds-tab{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);display:flex;align-items:center;height:24px;padding:0 8px;gap:6px;border:1px solid color-mix(in srgb,var(--ui-accent,#0091ff) 38%,var(--ui-border,#343e4e));border-radius:5px;background:color-mix(in srgb,var(--ui-accent,#0091ff) 14%,var(--ui-bg-3,#272e3a));color:var(--ui-text-primary,#e8edf5);font-size:12px;white-space:nowrap;cursor:pointer;transition:background .1s ease,color .1s ease}.ds-tab svg{color:var(--ui-text-muted,#96a3b7);flex-shrink:0}.ds-tab:hover{background:color-mix(in srgb,var(--ui-accent,#0091ff) 14%,var(--ui-bg-3,#272e3a))}.ds-tab:focus-visible{outline:2px solid var(--ui-accent,#0091ff);outline-offset:-2px;}"
+    },
+    {
+      "name": "Pane frame",
+      "kind": "card",
+      "refersTo": "pane",
+      "description": "Working surface with a flat frame and fixed pane header.",
+      "html": "<section class=\"ds-pane\" aria-label=\"Focused pane\"><header class=\"ds-pane-head\">PowerShell</header><div class=\"ds-pane-body\">Terminal colors are independently configured.</div></section>",
+      "css": ".ds-pane{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);width:330px;border:1px solid color-mix(in srgb,var(--ui-accent,#0091ff) 55%,var(--ui-border,#343e4e));border-radius:var(--ui-pane-radius,8px);color:var(--ui-text-primary,#e8edf5);transition:border-color .15s ease}.ds-pane-head{height:32px;display:flex;align-items:center;padding:0 8px;border-radius:7px 7px 0 0;border-bottom:1px solid rgba(var(--ui-overlay-rgb,255,255,255),.06);background:var(--ui-bg-2,#202530);font-size:12px}.ds-pane-body{padding:12px;color:var(--ui-text-muted,#96a3b7);font-size:11px}"
+    },
+    {
+      "name": "Surface action menu",
+      "kind": "custom",
+      "refersTo": "surface-menu",
+      "description": "Portalled menu with compact SVG-led actions.",
+      "html": "<div class=\"ds-menu\"><button><svg aria-hidden=\"true\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m5 6 6 6-6 6M14 18h4\"/></svg>New terminal</button><button><svg aria-hidden=\"true\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"4\" width=\"7\" height=\"16\" rx=\"1.5\"/><rect x=\"14\" y=\"4\" width=\"7\" height=\"16\" rx=\"1.5\"/></svg>Split right</button></div>",
+      "css": ".ds-menu{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);min-width:180px;padding:5px;background:var(--ui-bg-1,#191d26);border:1px solid rgba(var(--ui-overlay-rgb,255,255,255),.14);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.6);display:flex;flex-direction:column}.ds-menu button{font-family:var(--ui-font,'Segoe UI',system-ui,sans-serif);display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:0;background:transparent;color:var(--ui-text-secondary,#bac5d5);font-size:13px;text-align:left;border-radius:5px;cursor:pointer}.ds-menu button:hover{background:rgba(var(--ui-accent-rgb,0,145,255),.18);color:var(--ui-text-primary,#e8edf5)}.ds-menu button:focus-visible{outline:2px solid var(--ui-accent,#0091ff);outline-offset:-2px;}.ds-menu svg{color:var(--ui-text-muted,#96a3b7)}.ds-menu button:hover svg{color:var(--ui-text-primary,#e8edf5)}"
+    },
+    {
+      "name": "Worktree badge",
+      "kind": "chip",
+      "refersTo": "worktree-badge",
+      "description": "Noninteractive annotation beside a workspace name.",
+      "html": "<span class=\"ds-badge\">WT</span>",
+      "css": ".ds-badge{display:inline-flex;align-items:center;justify-content:center;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:9.5px;font-weight:700;line-height:1;padding:1px 4px;border-radius:3px;user-select:none;color:var(--ui-accent,#0091ff);background:color-mix(in srgb,var(--ui-accent,#0091ff) 15%,transparent);border:1px solid color-mix(in srgb,var(--ui-accent,#0091ff) 40%,transparent)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Modular Swiss technical publishing",
+    "overview": "A restrained slate shell holds dense, distinct working surfaces. Small inset tabs and soft rectangular frames separate concurrent tasks while keeping terminal content dominant. Familiar controls and stable labels support long working sessions.\n\nThe shared shell uses system sans labels, monochrome SVG controls, and precise selection marks. Cool white surfaces reuse the geometry in light mode. Classic and TRACE are existing sidebar presentations within this desktop system; terminal fonts, colors, backgrounds, and opacity remain independently configured.",
+    "keyCharacteristics": [
+      "Dense working surfaces with visible perimeter and split gutters.",
+      "Matching accent treatment on the focused pane and its selected tab.",
+      "Semantic agent attention remains distinct from navigation selection.",
+      "Independent terminal themes; shared desktop chrome tokens."
+    ],
+    "rules": [
+      {
+        "name": "The State Before Decoration Rule",
+        "body": "Selection must preserve readable agent state. The default workspace selection uses an accent rail, a slight tint, and an inset hairline; the user-selected solid-fill presentation remains supported.",
+        "section": "colors"
+      },
+      {
+        "name": "The Working Surface Rule",
+        "body": "Separate panes with the existing workspace inset and split gutters. Preserve dense headers and terminal area instead of adding dashboard padding.",
+        "section": "layout"
+      },
+      {
+        "name": "The Perimeter Paint Rule",
+        "body": "In transparent windows, paint the workspace perimeter and dividers without adding a second translucent background beneath terminals. Keep the titlebar and sidebar opaque.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Signal Motion Rule",
+        "body": "TRACE motion follows actual activity. Idle rows do not animate; reduced motion retains static state information.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do use shared UI variables for shell backgrounds, text, borders, and theme-aware accent colors.",
+      "Do join the focused pane frame and selected tab through the existing accent mixes.",
+      "Do preserve terminal color schemes, geometry measurement, keep-alive rendering, and user density preferences.",
+      "Do use inline SVG for new chrome controls and preserve visible keyboard focus.",
+      "Do retain classic and TRACE state meanings and reduced-motion equivalents."
+    ],
+    "donts": [
+      "Don't paint another translucent layer beneath terminals when adding workspace spacing.",
+      "Don't use navigation selection to erase default agent state colors.",
+      "Don't turn pane frames into floating cards with permanent drop shadows.",
+      "Don't inherit legacy glyph icons, fixed light-mode status colors, or small metadata sizes as a new display style."
+    ]
+  }
+}

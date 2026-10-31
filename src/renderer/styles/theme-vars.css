@@ -4,9 +4,8 @@
  * palette — NOT the terminal pane itself, which keeps its own independently
  * configurable color scheme (see TerminalPrefs).
  *
- * Dark values below are the exact colors wmux shipped with pre-0.15 (no
- * regression for existing users, who default to uiTheme: 'dark'). Light
- * values are a new equivalent palette, applied by giving <html> a
+ * Slate neutrals separate the workspace shell from its working surfaces.
+ * The light palette uses the same elevation roles, applied by giving <html> a
  * `data-ui-theme="light"` attribute (see hooks/useUiTheme.ts).
  *
  * `--ui-overlay-rgb` backs every `rgba(var(--ui-overlay-rgb), <alpha>)` use
@@ -16,6 +15,7 @@
  */
 
 :root {
+  color-scheme: dark;
   --ui-overlay-rgb: 255, 255, 255;
 
   /* Accent (issue #116 follow-up). Until now #0091ff was hardcoded in 53 places
@@ -45,22 +45,26 @@
   --ui-agent-question: #4fb3d9;
 
   /* Background elevation scale, darkest recess -> most elevated control. */
-  --ui-bg-0: #111111;
-  --ui-bg-1: #1a1a1a;
-  --ui-bg-2: #1e1e1e;
-  --ui-bg-3: #252525;
-  --ui-bg-4: #2a2a2a;
-  --ui-bg-5: #333333;
+  --ui-bg-0: #14171e;
+  --ui-bg-1: #191d26;
+  --ui-bg-2: #202530;
+  --ui-bg-3: #272e3a;
+  --ui-bg-4: #303947;
+  --ui-bg-5: #3a4555;
 
-  --ui-border: #3a3a3a;
-  --ui-border-strong: #555555;
+  --ui-border: #343e4e;
+  --ui-border-strong: #56647a;
 
-  --ui-text-primary: #e0e0e0;
-  --ui-text-secondary: #bbbbbb;
-  --ui-text-muted: #888888;
+  --ui-text-primary: #e8edf5;
+  --ui-text-secondary: #bac5d5;
+  --ui-text-muted: #96a3b7;
+  --ui-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --ui-pane-radius: 8px;
+  --ui-workspace-inset: 6px;
 }
 
 :root[data-ui-theme='light'] {
+  color-scheme: light;
   --ui-overlay-rgb: 0, 0, 0;
 
   /* Darkened for the light palette: #0091ff on #ffffff is 2.6:1, below the AA
@@ -81,17 +85,17 @@
      on --ui-bg-2 and 4.8:1 on --ui-bg-0, and still reads as the same cyan. */
   --ui-agent-question: #006b87;
 
-  --ui-bg-0: #e4e4e4;
-  --ui-bg-1: #f5f5f5;
+  --ui-bg-0: #e8edf4;
+  --ui-bg-1: #f2f5f9;
   --ui-bg-2: #ffffff;
-  --ui-bg-3: #ececec;
-  --ui-bg-4: #e2e2e2;
-  --ui-bg-5: #d8d8d8;
+  --ui-bg-3: #e8eef6;
+  --ui-bg-4: #dce5f0;
+  --ui-bg-5: #ced9e8;
 
-  --ui-border: #d5d5d5;
-  --ui-border-strong: #b0b0b0;
+  --ui-border: #c8d2e0;
+  --ui-border-strong: #93a3b9;
 
-  --ui-text-primary: #1c1c1c;
-  --ui-text-secondary: #4a4a4a;
-  --ui-text-muted: #767676;
+  --ui-text-primary: #202b3b;
+  --ui-text-secondary: #46556b;
+  --ui-text-muted: #5f6e83;
 }

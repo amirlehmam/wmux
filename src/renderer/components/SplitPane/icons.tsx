@@ -65,3 +65,38 @@ export function IconCaret({ className, size = 9 }: IconProps) {
     </svg>
   );
 }
+
+/** Surface types share the toolbar's stroke vocabulary in tabs and menus. */
+export function IconSurface({ type, isAgent = false, size = 14 }: IconProps & { type: string; isAgent?: boolean }) {
+  let drawing: React.ReactNode;
+  switch (type) {
+    case 'terminal':
+      drawing = <><path d="m5 6 6 6-6 6" /><path d={isAgent ? 'M13 18h6' : 'M14 18h4'} /></>;
+      break;
+    case 'browser':
+      drawing = <><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" /></>;
+      break;
+    case 'markdown':
+      drawing = <><path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8M8 16h6" /></>;
+      break;
+    case 'diff':
+      drawing = <><path d="M4 7h7M7.5 3.5v7M14 17h7M12 3v18" /></>;
+      break;
+    case 'code':
+      drawing = <><path d="m7 6-5 6 5 6m10-12 5 6-5 6M14 3l-4 18" /></>;
+      break;
+    case 'prompts':
+      drawing = <><path d="m3 5 4 4-4 4M11 5h10M11 9h7M3 19h18M3 15h18" /></>;
+      break;
+    case 'git':
+      drawing = <><circle cx="6" cy="5" r="2" /><circle cx="18" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><path d="M6 7v10M18 7v2a5 5 0 0 1-5 5H6" /></>;
+      break;
+    default:
+      drawing = <rect x="4" y="4" width="16" height="16" rx="3" />;
+  }
+  return <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" strokeWidth={1.7} {...base}>{drawing}</svg>;
+}
+
+export function IconDuplicate({ size = 14 }: IconProps) {
+  return <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" strokeWidth={1.7} {...base}><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg>;
+}

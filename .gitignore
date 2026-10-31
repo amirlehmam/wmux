@@ -12,3 +12,8 @@ release/
 # Local Claude Code settings
 .claude/settings.local.json
 build-icons.log
+
+# Local design captures and preview tooling
+.impeccable/review/
+.impeccable/questions/
+.impeccable/workspace-direction.md

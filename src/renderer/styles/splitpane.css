@@ -1,7 +1,7 @@
 /* The surface tab bar's height. Shared, because a divider runs the full height
    of the panes it separates and has to know where their opaque chrome ends. */
 :root {
-  --wmux-tab-bar-h: 28px;
+  --wmux-tab-bar-h: 32px;
 }
 
 .split-container {
@@ -16,7 +16,7 @@
 .split-divider { flex-shrink: 0; background: transparent; position: relative; z-index: 10; }
 .split-divider--horizontal { width: 6px; cursor: col-resize; }
 .split-divider--vertical { height: 6px; cursor: row-resize; }
-.split-divider__line { position: absolute; background: rgba(var(--ui-overlay-rgb), 0.06); transition: background 0.15s ease, transform 0.15s ease; will-change: transform, background; }
+.split-divider__line { position: absolute; background: transparent; transition: background 0.15s ease, transform 0.15s ease; }
 .split-divider:hover .split-divider__line { background: rgba(var(--ui-accent-rgb), 0.4); }
 .split-divider--horizontal .split-divider__line { width: 2px; height: 100%; left: 50%; transform: translateX(-50%) scaleX(0.5); }
 .split-divider--vertical .split-divider__line { height: 2px; width: 100%; top: 50%; transform: translateY(-50%) scaleY(0.5); }
@@ -36,15 +36,17 @@
 .split-divider__drag-overlay--vertical { cursor: row-resize; }
 .pane-wrapper {
   position: relative;
+  container-type: inline-size;
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
-  border: 1px solid transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-pane-radius);
   transition: border-color 0.15s ease;
 }
 .pane-wrapper--focused {
-  border-color: rgba(var(--ui-accent-rgb), 0.3);
+  border-color: color-mix(in srgb, var(--ui-accent) 55%, var(--ui-border));
 }
 /* Over a translucent window the gutters between panes must render at the same
    opacity the panes do, or a split shows as bright seams through the terminal.
@@ -97,8 +99,10 @@ html.wmux-transparent .split-divider--horizontal {
 }
 .pane-wrapper__content {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
+  border-radius: 0 0 calc(var(--ui-pane-radius) - 1px) calc(var(--ui-pane-radius) - 1px);
 }
 .pane-wrapper__surface-layer {
   position: absolute;
@@ -144,6 +148,9 @@ html.wmux-transparent .split-divider--horizontal {
   height: var(--wmux-tab-bar-h);
   min-height: var(--wmux-tab-bar-h);
   background: var(--ui-bg-2);
+  border-bottom: 1px solid rgba(var(--ui-overlay-rgb), 0.06);
+  border-radius: calc(var(--ui-pane-radius) - 1px) calc(var(--ui-pane-radius) - 1px) 0 0;
+  padding: 0 3px;
   overflow: visible;
   flex-shrink: 0;
   z-index: 6;
@@ -155,23 +162,28 @@ html.wmux-transparent .split-divider--horizontal {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: auto;
+  gap: 2px;
 }
 .surface-tab-bar__tabs::-webkit-scrollbar { height: 4px; }
 .surface-tab-bar__tabs::-webkit-scrollbar-thumb { background: var(--ui-text-muted); border-radius: 2px; }
+.surface-tab-bar__tabs::-webkit-scrollbar-track { background: transparent; }
+.surface-tab-bar__tabs::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 .surface-tab {
   display: flex;
   align-items: center;
-  height: 28px;
+  height: 24px;
   padding: 0 8px;
-  gap: 4px;
+  gap: 6px;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  background: var(--ui-bg-4);
+  max-width: 100%;
+  background: transparent;
   color: var(--ui-text-muted);
   font-size: 12px;
-  border-right: 1px solid var(--ui-bg-0);
+  border: 1px solid transparent;
+  border-radius: 5px;
   user-select: none;
   transition: background 0.1s ease, color 0.1s ease;
   position: relative; /* anchor for the OSC 9;4 progress strip */
@@ -199,9 +211,14 @@ html.wmux-transparent .split-divider--horizontal {
   from { background-position-x: 0; }
   to { background-position-x: 16px; }
 }
-.surface-tab:hover { background: var(--ui-bg-5); color: var(--ui-text-secondary); }
-.surface-tab--active { background: var(--ui-border); color: var(--ui-text-primary); }
-.surface-tab__label { pointer-events: none; }
+.surface-tab:hover { background: var(--ui-bg-3); color: var(--ui-text-primary); }
+.surface-tab--active { background: var(--ui-bg-4); color: var(--ui-text-primary); }
+.pane-wrapper--focused .surface-tab--active {
+  background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-bg-3));
+  border-color: color-mix(in srgb, var(--ui-accent) 38%, var(--ui-border));
+}
+.surface-tab__label { pointer-events: none; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.surface-tab__icon { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--ui-text-muted); }
 .surface-tab__label--ephemeral { font-style: italic; }
 .surface-tab__rename-input {
   background: rgba(var(--ui-overlay-rgb), 0.1);
@@ -219,7 +236,7 @@ html.wmux-transparent .split-divider--horizontal {
   color: rgba(var(--ui-overlay-rgb), 0.3);
 }
 .surface-tab__close {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 14px;
@@ -233,17 +250,19 @@ html.wmux-transparent .split-divider--horizontal {
   line-height: 1;
   border-radius: 2px;
   flex-shrink: 0;
+  opacity: 0;
 }
 .surface-tab:hover .surface-tab__close,
-.surface-tab--active .surface-tab__close { display: flex; }
+.surface-tab--active .surface-tab__close,
+.surface-tab:focus-within .surface-tab__close { opacity: 1; }
 .surface-tab__close:hover { background: rgba(var(--ui-overlay-rgb),0.15); color: var(--ui-text-primary); }
 /* ─── Control cluster (New / Layout / Close) — issue #34 ─────────────────── */
 .surface-tab-bar__cluster {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 3px;
   flex-shrink: 0;
-  padding: 0 8px;
+  padding: 0 2px 0 5px;
 }
 /* split-button: main icon + attached caret share one rounded hover pill */
 .surface-tab-bar__group {
@@ -261,7 +280,7 @@ html.wmux-transparent .split-divider--horizontal {
   flex-shrink: 0;
   border: none;
   background: transparent;
-  color: var(--ui-text-secondary);
+  color: var(--ui-text-muted);
   cursor: pointer;
   border-radius: 5px;
   transition: color 0.1s ease, background 0.1s ease;
@@ -272,6 +291,14 @@ html.wmux-transparent .split-divider--horizontal {
 .surface-tab-bar__ctl--new:hover { color: #5fb85f; background: rgba(95,184,95,0.12); }
 .surface-tab-bar__ctl--layout:hover { color: var(--ui-accent); background: rgba(var(--ui-accent-rgb), 0.12); }
 .surface-tab-bar__ctl--close:hover { color: #ff6b6b; background: rgba(255,100,100,0.14); }
+
+/* The layout menu retains both split actions when a pane cannot fit their
+   dedicated shortcut button. Keep New and Close reachable at narrow widths. */
+@container (max-width: 300px) {
+  .surface-tab-bar__cluster { gap: 0; padding-left: 2px; }
+  .surface-tab-bar__ctl--layout { display: none; }
+  .surface-tab { padding: 0 5px; gap: 4px; }
+}
 
 /* ─── Control-cluster dropdowns (portalled to document.body) ─────────────── */
 .surface-tab-menu {

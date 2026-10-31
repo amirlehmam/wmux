@@ -1807,7 +1807,7 @@ export default function App() {
 
         {/* Middle: terminals — ALL workspaces stay mounted, only active is visible */}
         {/* This keeps PTYs alive when switching sessions (Claude Code etc. keep running) */}
-        <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: TERMINAL_MIN_WIDTH }}>
+        <div className="workspace-stage" style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: TERMINAL_MIN_WIDTH }}>
           {customBgActive && (
             <div
               aria-hidden

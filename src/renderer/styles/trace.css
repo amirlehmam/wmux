@@ -84,7 +84,7 @@
 /* ─── Board ──────────────────────────────────────────────────────────────── */
 
 :root[data-ui-mode='trace'] .workspace-row {
-  border-radius: 3px; /* boards have corners, not pills */
+  border-radius: 8px;
   padding-left: 18px; /* room for the bus */
   font-variant-numeric: tabular-nums;
 }
@@ -92,10 +92,8 @@
 /* Selection = the board is seated. A hairline silkscreen outline, not a fill,
    so every status colour underneath survives (same principle as classic). */
 :root[data-ui-mode='trace'] .workspace-row--active {
-  background: color-mix(in srgb, var(--row-accent) 10%, var(--ui-bg-3));
-  box-shadow:
-    inset 0 0 0 1px var(--tr-silk),
-    inset 0 0 0 2px color-mix(in srgb, var(--row-accent) 18%, transparent);
+  background: color-mix(in srgb, var(--row-accent) 8%, var(--ui-bg-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--row-accent) 24%, var(--ui-border));
 }
 
 /* The two preferences are orthogonal and both are user choices, so
@@ -117,6 +115,7 @@
 :root[data-ui-mode='trace'] .workspace-row__rail {
   left: 7px;
   width: 2px;
+  height: calc(100% - 10px);
   border-radius: 0;
   opacity: 1;
   background: var(--tr-bus-dim);
@@ -321,7 +320,7 @@
 }
 
 :root[data-ui-mode='trace'] .workspace-row__title {
-  font-size: calc(12px * var(--sidebar-text-scale, 1));
+  font-size: calc(12.5px * var(--sidebar-text-scale, 1));
   line-height: 1.2;
 }
 
@@ -329,7 +328,7 @@
    with a 2px lead, for text that is usually two words. In TRACE it becomes a
    caption under the title rather than a second paragraph. */
 :root[data-ui-mode='trace'] .workspace-row__status {
-  font-size: calc(10px * var(--sidebar-text-scale, 1));
+  font-size: calc(11px * var(--sidebar-text-scale, 1));
   line-height: 1.2;
   margin-top: 0;
 }
