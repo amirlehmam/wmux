@@ -103,3 +103,51 @@ describe('repo skills: one source for every agent (#368)', () => {
     expect(errors).toEqual(['description needs quoting: it contains ": " or " #"']);
   });
 });
+
+/**
+ * Codex's default `project_doc_max_bytes`. It reads AGENTS.md from the repo root
+ * down to the startup directory and stops at this budget, so a root file that
+ * grows pushes the nested file out first, with nothing reported. Measured in
+ * #368 (Codex 0.164.0): a 135 KB root left both nested files unread.
+ */
+const CODEX_PROJECT_DOC_MAX_BYTES = 32 * 1024;
+
+/** Nested guidance lives beside its code. Only `src/` is walked, since a checkout can hold other worktrees. */
+function nestedAgentsMd(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) out.push(...nestedAgentsMd(path.join(dir, entry.name)));
+    else if (entry.name === 'AGENTS.md') out.push(path.join(dir, entry.name));
+  }
+  return out;
+}
+
+/** The bytes Codex reads when it starts in this file's directory: the file plus each ancestor's. */
+function guidanceChainBytes(file: string): number {
+  let bytes = 0;
+  for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, 'AGENTS.md');
+    if (fs.existsSync(candidate)) bytes += Buffer.byteLength(read(candidate));
+    if (dir === ROOT) return bytes;
+  }
+}
+
+describe('AGENTS.md size (#368)', () => {
+  const guidance = [path.join(ROOT, 'AGENTS.md'), ...nestedAgentsMd(path.join(ROOT, 'src'))];
+
+  it('finds the root file and the nested ones, so the check below is not vacuous', () => {
+    expect(guidance.map((f) => path.relative(ROOT, f).replace(/\\/g, '/'))).toEqual(
+      expect.arrayContaining(['AGENTS.md', 'src/main/remote-console/AGENTS.md', 'src/renderer/remote/AGENTS.md']),
+    );
+  });
+
+  it.each(guidance.map((f) => [path.relative(ROOT, f), f]))(
+    'Codex reads all of the guidance for %s',
+    (_name, file) => {
+      expect(
+        guidanceChainBytes(file),
+        'over Codex\'s default budget: move notes into the module or a skill (see "This file" in AGENTS.md)',
+      ).toBeLessThanOrEqual(CODEX_PROJECT_DOC_MAX_BYTES);
+    },
+  );
+});
