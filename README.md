@@ -14,9 +14,9 @@
   <a href="https://github.com/amirlehmam/wmux/releases">Release notes</a>
 </p>
 
-![wmux with two terminal panes, a Markdown plan, and workspace activity in the sidebar](docs/assets/wmux-workspace.png)
+![wmux with three coding-agent conversations, a live browser preview, and the Git commit graph on the right](docs/assets/wmux-workspace.png)
 
-*Captured in wmux 2.51.0. The screenshots use a demo project with example terminal output and agent states.*
+*wmux 2.51.0 — three example conversations, a live browser and real Git history. Terminal output and agent states are staged for the demo. [View full size](docs/assets/wmux-workspace.png).*
 
 Run an agent, keep your tests beside it, and review the changes in the same window. The sidebar shows which workspaces are busy and which need an answer. When an agent stops for you, jump straight to its pane.
 
@@ -80,8 +80,6 @@ Activity comes from agent integrations and, for supported tools, screen detectio
 ### Review without leaving the terminal
 
 Open the file explorer with **Ctrl+Shift+X**, or the project Git view with **Ctrl+Alt+G**. Browse working changes, compare a branch against its base, and inspect the commit graph. The Git view stays on the repository you opened while you move between agent panes.
-
-![wmux showing a terminal beside the project Git view and a task-filter diff](docs/assets/wmux-git-review.png)
 
 The file viewer handles quick edits. Markdown panes render plans and documentation, including diagrams and math. Git worktree workspaces give parallel tasks separate checkouts when they need to change the same repository.
 
