@@ -273,24 +273,7 @@ When switching tabs, only CSS changes — the xterm instance stays alive, no PTY
 The `surfaceId` is passed to `pty.create()` so PTY ID = Surface ID (enables reliable re-attachment).
 
 ### Keep-Alive Terminals (issue #346)
-A split-tree change (split, close a sibling, zoom, drag a tab to another pane) remounts the
-panes it moves. It used to rebuild their xterm too, so every piece of emulator state had to
-be replayed by hand (#49 buffer, #164 mouse modes, #216/#256 ConPTY cursor row, #345 alt
-screen) and markers, cursor style and scroll region were simply lost. Now `TerminalHost`
-(mounted once in `App.tsx`) portals ONE `TerminalPane` per terminal surface into an element
-owned by `components/Terminal/terminal-keepalive.ts`, and a pane renders only a
-`KeptAliveTerminal` slot that the element is MOVED into. A slot-less terminal whose surface
-still exists (the other panes of a zoomed workspace) is parked off-screen at its last pixel
-size — a 0×0 fit would resize the PTY to 2 columns — with `visible:false`; it is disposed
-only when its surface leaves the store. Two consequences to remember: React events from
-inside a terminal bubble through the HOST, not the pane, so the leaf's click-to-focus is a
-native listener on the slot (`onActivate`); and a same-commit move changes no prop, so
-`attachGeneration` re-runs the show path (refit, repaint, refocus — removing the element
-blurred its textarea). The snapshot/replay machinery stays as the fallback for a terminal
-that genuinely is rebuilt on a live PTY (the root ErrorBoundary's retry; StrictMode and Fast
-Refresh in dev). It snapshots only a surface still in the store and replays only into a
-reused PTY: Load session keeps saved surface ids, so a closed pane's id can come back on a
-fresh shell (`RemountSnapshotCache` in `utils/remount-snapshot.ts`).
+A split-tree change remounts the panes it moves, but not their terminals. `TerminalHost` (mounted once in `App.tsx`) portals one `TerminalPane` per terminal surface into an element owned by `components/Terminal/terminal-keepalive.ts`, and a pane renders only a `KeptAliveTerminal` slot that the element moves into. Two consequences for code outside it: React events from inside a terminal bubble through the host, not the pane, so the leaf's click-to-focus is a native listener on the slot (`onActivate`); and a same-commit move changes no prop, so `attachGeneration` re-runs the show path. `utils/remount-snapshot.ts` remains only as the fallback for a terminal that really is rebuilt. The design notes are in those files.
 
 ### Split Tree
 Pane layouts use an immutable binary tree (`SplitNode`). Each leaf = one pane with N surfaces (tabs).
@@ -452,39 +435,9 @@ The pipe server in `index.ts` handles V2 JSON-RPC methods. Most delegate to the 
 
 ## wmux-orchestrator Plugin
 
-**DEPRECATED in 2.12.0 (issue #239). wmux no longer installs this, and removes it if a previous version did.**
+**Deprecated in 2.12.0 (#239). wmux no longer installs this Claude Code plugin, and removes it if a previous version did.** `removeOrchestratorPlugin` in `claude-context.ts` records why it never loaded.
 
-It never loaded: `ensurePluginRegistered()` wrote Claude Code's `installed_plugins.json` at the top level as an object, while that file is v2 (`{version:2, plugins:{"<plugin>@<marketplace>":[…]}}`) and its cache is `cache/<marketplace>/<plugin>/<version>`, not wmux's `cache/<plugin>/<version>`. Claude Code listed nothing, loaded no skill or command, and wrote `.orphaned_at` through the copied tree — while `enabledPlugins` said `true` and wmux logged an install. The supported repair is a local marketplace; it was not worth doing, because Claude Code now runs parallel agents natively.
-
-The source still ships in `resources/wmux-orchestrator/` — `scripts/launch-agent.js` is the shared agent-command registry that `omp-context`/`pi-context` tests read, and the plugin remains installable standalone from `github.com/amirlehmam/wmux-orchestrator`. Unaffected by the deprecation: the sidebar orchestration panel (`orchestration-watcher.ts` reads a run's `state.json` and does not care who wrote it), `wmux agent spawn`, and the OpenCode plugin, which installs correctly and is what the `orchestrator` consent feature still controls.
-
-**What it does:** Decomposes complex dev tasks into parallel Claude Code agents coordinated through dependency-aware waves with automated review. With wmux: each agent in its own visible terminal pane. Without wmux: falls back to native subagents.
-
-**Plugin structure:**
-```
-resources/wmux-orchestrator/
-  .claude-plugin/plugin.json    Manifest (name, version, author)
-  skills/orchestrate/SKILL.md   Core: codebase analysis, wave planning, agent spawning. Invoked as
-                                /wmux-orchestrator:orchestrate <task>; there is deliberately no command
-                                of the same name (a command and a skill sharing it loop into each other)
-  skills/reviewer/SKILL.md      Post-orchestration review and auto-fix
-  skills/wmux-detect/SKILL.md   Detects wmux availability for degraded mode
-  agents/wmux-worker.md         Worker template with file zone enforcement
-  hooks/hooks.json              PostToolUse, SubagentStop, Stop, SessionStart
-  scripts/json-tool.js          Node.js JSON helper (replaces jq)
-  scripts/orchestration-state.sh  State file management library
-  scripts/spawn-agents.sh       Creates panes (`layout agents`) + launches Claude Code agents
-  scripts/reap-wave.sh          Kills a wave's agents and closes their tabs; also run by the Stop hook,
-                                which reaps only a `complete` run whose recorded coordinator is the
-                                hook's OWN pane (it fires in every session, workers included). Never
-                                closes the caller's or the coordinator's surface; a failed close is
-                                left unstamped so it is retried. failed/aborted runs: cleanup.sh only
-  scripts/on-agent-stop.sh      Wave transition driver (core orchestration)
-  scripts/check-status.sh       Markdown dashboard generator
-  scripts/*.sh                  Other utilities (cleanup, collect-results, etc.)
-```
-
-**Key design:** Skills handle intelligence (prompts), hooks handle reactivity (events), scripts handle wmux operations (CLI). State shared via JSON file in TMPDIR. No daemon.
+The source still ships in `resources/wmux-orchestrator/`, with its layout in that README. `scripts/launch-agent.js` is the shared agent-command registry that the `omp-context` and `pi-context` tests read. The sidebar orchestration panel (`orchestration-watcher.ts`), `wmux agent spawn` and the OpenCode plugin, which the `orchestrator` consent feature still controls, aren't deprecated.
 
 ---
 
