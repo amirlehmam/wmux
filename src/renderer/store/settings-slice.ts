@@ -480,6 +480,9 @@ export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = {
 // ─── Workspace settings ───────────────────────────────────────────────────────
 
 export interface WorkspacePrefs {
+  /** Location of the shared explorer; docked tabs store their own root. */
+  explorerPosition: 'right' | 'sidebar';
+  explorerSidebarRatio: number;
   newWorkspacePlacement: 'afterCurrent' | 'top' | 'end';
   autoReorderOnNotification: boolean;
   defaultShell: string;
@@ -632,6 +635,8 @@ export interface WorkspacePrefs {
 }
 
 export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
+  explorerPosition: 'right',
+  explorerSidebarRatio: 0.45,
   newWorkspacePlacement: 'afterCurrent',
   autoReorderOnNotification: false,
   defaultShell: '',

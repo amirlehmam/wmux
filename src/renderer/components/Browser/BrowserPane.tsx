@@ -16,6 +16,7 @@ import {
 import '../../styles/browser.css';
 
 interface BrowserPaneProps {
+  onMoveToWorkspace?: () => void;
   initialUrl?: string;
   surfaceId: string;
   workspaceId?: string;
@@ -279,6 +280,7 @@ export function webviewHiding(s: {
 }
 
 export default function BrowserPane({
+  onMoveToWorkspace,
   // Blank, not the project's own GitHub repo (#232). A browser surface nobody
   // has given a URL has nowhere to be, and shipping the vendor's page as that
   // answer meant wmux opened its own repo on every launch — then persisted it
@@ -771,6 +773,7 @@ export default function BrowserPane({
         onReload={reload}
         onStop={stop}
         onDevTools={openDevTools}
+        onMoveToWorkspace={onMoveToWorkspace}
       />
       <div className="browser-pane__body">
         {/* @ts-ignore — webview is an Electron-specific HTML element */}

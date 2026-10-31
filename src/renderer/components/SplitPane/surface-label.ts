@@ -84,6 +84,8 @@ export function getSurfaceLabel(
     }
     case 'browser':
       return t('surfaceLabel.browser', 'Browser');
+    case 'explorer':
+      return t('explorer.title', 'Explorer');
     case 'markdown': {
       // `•` for an unsaved buffer (issue #116, F3) — the same convention every
       // editor uses, and the only signal on a tab the user isn't looking at.

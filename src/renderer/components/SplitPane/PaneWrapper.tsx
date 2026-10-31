@@ -4,6 +4,7 @@ import { workspaceFallbackCwd } from '../../../shared/paths';
 import { findLeaf, splitNode } from '../../store/split-utils';
 import KeptAliveTerminal from '../Terminal/KeptAliveTerminal';
 import BrowserPane from '../Browser/BrowserPane';
+import { ExplorerPanel } from '../Explorer/ExplorerPanel';
 import MarkdownPane from '../Markdown/MarkdownPane';
 import DiffPane from '../Diff/DiffPane';
 import { worktreeDiffBase } from '../Diff/diff-base';
@@ -384,6 +385,10 @@ export default function PaneWrapper({
             />
           )}
           {surface.type === 'code' && <CodePane surfaceId={surface.id} />}
+          {surface.type === 'explorer' && (
+            <ExplorerPanel docked workspaceId={workspaceId} rootSurfaceId={surface.explorerRootSurfaceId}
+              focusedPaneId={paneId} onClose={() => useStore.getState().requestCloseSurface(workspaceId, paneId, surface.id)} />
+          )}
           {surface.type === 'prompts' && <PromptsPane surfaceId={surface.id} />}
           {/* Pinned to its own folder (#362): it never follows focus. */}
           {surface.type === 'git' && (

@@ -49,6 +49,15 @@
   color: rgba(var(--ui-overlay-rgb),0.9);
 }
 
+.explorer-panel__placement {
+  width: 32px;
+  border: none;
+  background: var(--ui-bg-3);
+  color: var(--ui-fg);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .explorer-panel__body {
   flex: 1;
   overflow: auto;

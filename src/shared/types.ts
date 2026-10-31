@@ -20,7 +20,7 @@ export type SplitNode =
  * actually requires. Both drive the same per-surface prompt log, so neither is a
  * second implementation of anything.
  */
-export type SurfaceType = 'terminal' | 'browser' | 'markdown' | 'diff' | 'code' | 'prompts' | 'git';
+export type SurfaceType = 'terminal' | 'browser' | 'markdown' | 'diff' | 'code' | 'prompts' | 'git' | 'explorer';
 
 /**
  * Which engine backs a `browser` surface.
@@ -234,6 +234,8 @@ export interface SurfaceRef {
    * as-is), so the terminal this points at is the same one after a restart.
    */
   codeRootSurfaceId?: SurfaceId;
+  /** Terminal whose jailed directory this dockable explorer follows (#405). */
+  explorerRootSurfaceId?: SurfaceId;
   /**
    * The file's text. In-store only — STRIPPED by dropCodeContent before any
    * persistence, unlike markdownContent which is deliberately persisted.
@@ -490,6 +492,8 @@ export interface WorkspaceInfo {
   /** The side panel's back/forward stack (#315), kept beside browserUrl. */
   browserHistory?: BrowserHistory;
   browserWidth?: number;
+  /** The side browser was promoted to a tile; startup must not duplicate it. */
+  browserPanelDocked?: boolean;
   explorerOpen?: boolean;
   /**
    * The user closed the explorer while `explorerOpenByDefault` was on (#320).
@@ -643,6 +647,7 @@ export interface SavedSession {
     // Both written since 0.4x; declared here as of #145, which was caused by a
     // save path quietly dropping fields the type never mentioned.
     browserWidth?: number;
+    browserPanelDocked?: boolean;
     // Declared here for the same reason browserWidth is: #145 was a save path
     // quietly dropping fields the type never mentioned.
     explorerOpen?: boolean;
@@ -736,6 +741,7 @@ export const IPC_CHANNELS = {
   PANE_CLOSE: 'pane:close',
   PANE_FOCUS: 'pane:focus',
   PANE_ZOOM: 'pane:zoom',
+  WINDOW_ZOOM: 'window:zoom',
   PANE_LIST: 'pane:list',
   // Notification
   NOTIFICATION_FIRE: 'notification:fire',

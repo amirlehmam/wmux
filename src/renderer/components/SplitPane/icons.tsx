@@ -76,6 +76,9 @@ export function IconSurface({ type, isAgent = false, size = 14 }: IconProps & { 
     case 'browser':
       drawing = <><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" /></>;
       break;
+    case 'explorer':
+      drawing = <path d="M3 5h7l2 3h9v12H3z" />;
+      break;
     case 'markdown':
       drawing = <><path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8M8 16h6" /></>;
       break;

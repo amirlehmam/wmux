@@ -47,10 +47,13 @@ describe('browser history verbs', () => {
     expect(sent.some((s) => s.method === 'Page.navigateToHistoryEntry')).toBe(false);
   });
 
-  it('reload issues Page.reload', async () => {
+  it('reload uses the native guest without taking the debugger from DevTools', async () => {
     const { bridge, sent } = bridgeWithStub(HISTORY);
+    const reload = vi.fn();
+    (bridge as any).liveWebContents = () => ({ reload });
     await bridge.reload(1);
-    expect(sent.at(-1)).toEqual({ method: 'Page.reload', params: undefined });
+    expect(reload).toHaveBeenCalledOnce();
+    expect(sent).toEqual([]);
   });
 
   it('threads wcId through to resolveTarget for every history verb', async () => {
@@ -59,6 +62,7 @@ describe('browser history verbs', () => {
     (bridge as any).resolveTarget = (wcId?: number) => { seen.push(wcId); return { wcId: wcId ?? 0, refMap: new Map() }; };
     (bridge as any).sendCommand = async (_t: any, method: string) =>
       method === 'Page.getNavigationHistory' ? HISTORY : {};
+    (bridge as any).liveWebContents = () => ({ reload: vi.fn() });
 
     await bridge.goBack(42);
     await bridge.goForward(43);

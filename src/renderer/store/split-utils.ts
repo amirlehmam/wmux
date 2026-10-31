@@ -158,6 +158,11 @@ function applyMintedIds(template: SplitNode, idMap: Map<SurfaceId, SurfaceId>): 
           if (root) next.codeRootSurfaceId = root;
           else delete next.codeRootSurfaceId;
         }
+        if (next.explorerRootSurfaceId) {
+          const root = idMap.get(next.explorerRootSurfaceId);
+          if (root) next.explorerRootSurfaceId = root;
+          else delete next.explorerRootSurfaceId;
+        }
         return next;
       }),
       activeSurfaceIndex: template.activeSurfaceIndex,

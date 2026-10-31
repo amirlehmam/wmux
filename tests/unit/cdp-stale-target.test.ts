@@ -90,7 +90,17 @@ describe('a browser whose renderer dies (issue #155)', () => {
 
     expect(bridge.wcIdForSurface('surf-b')).toBe(2);
     expect(bridge.hasTarget(2)).toBe(true);
+    await expect(bridge.snapshot(1)).rejects.toThrow('browser_not_open');
     await expect(bridge.snapshot(2)).resolves.toBeDefined();
+  });
+
+  it('registers a pane without acquiring the debugger on every toolbar click', () => {
+    const bridge = new CDPBridge();
+    const wc = makeWc(1);
+    bridge.attach(1, 'surf-browser', 'ws-1');
+    bridge.attach(1, 'surf-browser', 'ws-1');
+    expect(wc.debugger.isAttached()).toBe(false);
+    expect(bridge.hasTarget(1)).toBe(true);
   });
 
   it('falls back to a live browser once the dead default is gone', async () => {

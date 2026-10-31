@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store';
-import { findLeaf } from '../../store/split-utils';
+import { findLeaf, findSurfaceOwner } from '../../store/split-utils';
 import { useT } from '../../i18n';
 import {
   EXPLORER_MAX_ENTRIES,
@@ -19,7 +19,7 @@ import { statFor } from './explorer-diff';
 import { openDiffView } from '../Diff/open-diff';
 import { openGitView } from '../Git/open-git';
 import '../../styles/explorer.css';
-import type { PaneId, SurfaceId } from '../../../shared/types';
+import type { PaneId, SurfaceId, WorkspaceId } from '../../../shared/types';
 
 const MAX_ROOTS = 8;
 
@@ -27,12 +27,19 @@ interface ExplorerPanelProps {
   onClose: () => void;
   /** Focused pane id, lifted from App.tsx local state — not store state. */
   focusedPaneId: PaneId | null;
+  workspaceId?: WorkspaceId;
+  rootSurfaceId?: SurfaceId;
+  docked?: boolean;
+  onMoveToWorkspace?: (root: SurfaceId) => void;
+  onMoveSide?: () => void;
+  inSidebar?: boolean;
 }
 
-export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): React.JSX.Element {
+export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurfaceId, docked,
+  onMoveToWorkspace, onMoveSide, inSidebar }: ExplorerPanelProps): React.JSX.Element {
   const t = useT();
-  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId);
-  const workspace = useStore((s) => s.workspaces.find((w) => w.id === s.activeWorkspaceId));
+  const activeWorkspaceId = useStore((s) => workspaceId ?? s.activeWorkspaceId);
+  const workspace = useStore((s) => s.workspaces.find((w) => w.id === (workspaceId ?? s.activeWorkspaceId)));
   const updateWorkspaceMetadata = useStore((s) => s.updateWorkspaceMetadata);
 
   // The root follows the FOCUSED PANE's TERMINAL, not the workspace and not
@@ -47,13 +54,19 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   const lastTerminalByPane = useRef<Map<PaneId, string>>(new Map());
 
   const focusedSurface = useMemo(() => {
+    if (docked) {
+      if (!workspace || !rootSurfaceId) return null;
+      const owner = findSurfaceOwner([workspace], rootSurfaceId);
+      return owner ? findLeaf(workspace.splitTree, owner.paneId)?.surfaces.find(
+        (s) => s.id === rootSurfaceId && s.type === 'terminal') ?? null : null;
+    }
     if (!workspace || !focusedPaneId) return null;
     const leaf = findLeaf(workspace.splitTree, focusedPaneId);
     if (!leaf) return null;
     return pickRootSurface(
       leaf.surfaces, leaf.activeSurfaceIndex, lastTerminalByPane.current.get(focusedPaneId) ?? null,
     );
-  }, [workspace, focusedPaneId]);
+  }, [workspace, focusedPaneId, rootSurfaceId, docked]);
 
   // A pane with no terminal at all (a markdown- or browser-only pane) has no
   // root to offer. Holding the last good one beats blanking the panel: the
@@ -73,7 +86,7 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
   // cross-workspace pointer into B's saved layout.
   const stickyRef = useRef<StickyRoot | null>(null);
   const liveRoot = focusedSurface?.currentCwd ?? focusedSurface?.cwd ?? '';
-  const sticky = usableSticky(stickyRef.current, activeWorkspaceId);
+  const sticky = docked ? null : usableSticky(stickyRef.current, activeWorkspaceId);
 
   useEffect(() => {
     if (focusedPaneId && focusedSurface) {
@@ -431,6 +444,17 @@ export function ExplorerPanel({ onClose, focusedPaneId }: ExplorerPanelProps): R
         <span className="explorer-panel__root" title={absRoot}>
           {rootLabel || t('explorer.title', 'Explorer')}
         </span>
+        {(onMoveToWorkspace || onMoveSide) && (
+          <select className="explorer-panel__placement" value="" aria-label={t('panel.move', 'Move panel')}
+            title={t('panel.move', 'Move panel')} onChange={(event) => {
+              if (event.target.value === 'workspace' && surfaceId) onMoveToWorkspace?.(surfaceId as SurfaceId);
+              if (event.target.value === 'side') onMoveSide?.();
+            }}>
+            <option value="" disabled>↗</option>
+            {onMoveToWorkspace && <option value="workspace" disabled={!surfaceId}>{t('panel.workspace', 'Move into workspace')}</option>}
+            {onMoveSide && <option value="side">{inSidebar ? t('panel.right', 'Move to right panel') : t('panel.sidebar', 'Move below workspaces')}</option>}
+          </select>
+        )}
         <button
           className="explorer-panel__action"
           title={t('explorer.refresh', 'Refresh')}

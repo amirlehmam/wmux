@@ -178,16 +178,20 @@ describe('handleVersionChange (issue #35)', () => {
             browserUrl: 'https://example.com/dashboard',
             browserHistory: { entries: [{ url: 'https://example.com/', title: 'Home' }, { url: 'https://example.com/dashboard', title: 'Dash' }], index: 1 },
             browserWidth: 640,
+            browserPanelDocked: true,
           },
         ],
       }],
     } as any);
 
+    const snapshot = mod.writeSessionSnapshot(mod.loadSession()!, 123)!;
+    expect(mod.loadNamedSession(snapshot)!.workspaces[0].browserPanelDocked).toBe(true);
     mod.handleVersionChange('1.1.1');
 
     const ws = mod.loadNamedSession('Auto-backup v1.1.0')!.workspaces[0];
     expect(ws.browserUrl).toBe('https://example.com/dashboard');
     expect(ws.browserWidth).toBe(640);
+    expect(ws.browserPanelDocked).toBe(true);
     expect(ws.pinned).toBe(true);
     // #315: Back/Forward survives the backup like the URL does.
     expect((ws as any).browserHistory?.index).toBe(1);

@@ -260,6 +260,7 @@ type SliceState = SurfaceSlice & WorkspaceSlice;
 // recent last. Module-level (not store state) — it's a transient undo buffer
 // nothing renders. Bounded so a long session can't grow it unboundedly.
 interface ClosedSurface {
+  explorerRootSurfaceId?: SurfaceId;
   type: SurfaceType;
   colorScheme?: string;
   customTitle?: string;
@@ -332,6 +333,7 @@ function pushClosedSurface(workspaceId: WorkspaceId, surface: SurfaceRef): void 
     codeFileName: surface.codeFileName,
     codeRelPath: surface.codeRelPath,
     codeRootSurfaceId: surface.codeRootSurfaceId,
+    explorerRootSurfaceId: surface.explorerRootSurfaceId,
     workspaceId,
   });
   if (closedSurfaceStack.length > MAX_CLOSED_SURFACES) closedSurfaceStack.shift();
@@ -404,12 +406,14 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     // Copy the tab's config, preferring its live directory so the new terminal
     // opens where the source currently is. Startup commands are intentionally
     // NOT replayed — duplicating an agent tab shouldn't relaunch the agent.
-    return get().addSurface(workspaceId, paneId, src.type, {
+    const id = get().addSurface(workspaceId, paneId, src.type, {
       shell: src.shell,
       cwd: src.currentCwd || src.cwd,
       colorScheme: src.colorScheme,
       url: src.url,
     });
+    if (id && src.explorerRootSurfaceId) get().updateSurface(workspaceId, paneId, id, { explorerRootSurfaceId: src.explorerRootSurfaceId });
+    return id;
   },
 
   pendingCloseSurface: null,
@@ -693,6 +697,12 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
         codeRelPath: restored.codeRelPath,
         ...(rootAlive ? { codeRootSurfaceId: restored.codeRootSurfaceId } : {}),
       });
+    }
+    if (reopenedId && restored.explorerRootSurfaceId && restored.workspaceId === workspaceId) {
+      const ws = get().workspaces.find((w) => w.id === workspaceId);
+      const alive = ws && getAllPaneIds(ws.splitTree).some((pid) =>
+        findLeaf(ws.splitTree, pid)?.surfaces.some((s) => s.id === restored.explorerRootSurfaceId && s.type === 'terminal'));
+      if (alive) updateSurface(workspaceId, paneId, reopenedId, { explorerRootSurfaceId: restored.explorerRootSurfaceId });
     }
     return reopenedId;
   },

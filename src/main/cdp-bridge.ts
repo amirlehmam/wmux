@@ -202,9 +202,10 @@ export class CDPBridge {
   attach(wcId: number, surfaceId?: string | null, workspaceId?: string | null): void {
     try {
       const wc = webContents.fromId(wcId);
-      if (wc && !wc.debugger.isAttached()) {
-        wc.debugger.attach('1.3');
-      }
+      if (!wc || wc.isDestroyed()) return;
+      // Register ownership only. Clicking the toolbar calls attach too, and
+      // acquiring the debugger here can displace an open DevTools session.
+      // Commands that need CDP acquire it lazily in getDebugger().
     } catch (err) {
       console.error('[cdp-bridge] Failed to attach:', err);
       return;
@@ -309,11 +310,11 @@ export class CDPBridge {
     return null;
   }
 
-  // Resolve which target a command runs against: the explicit wcId when it's a
-  // live target, otherwise the most-recently attached one.
+  // An explicit target must never fall through to a different pane when it
+  // dies between resolution and dispatch. Only untargeted commands use last.
   private resolveTarget(wcId?: number): CDPTarget {
     this.pruneDead();
-    const id = wcId !== undefined && this.targets.has(wcId) ? wcId : this.lastWcId;
+    const id = wcId ?? this.lastWcId;
     if (id === null) throw new Error('browser_not_open');
     const target = this.targets.get(id);
     if (!target) throw new Error('browser_not_open');
@@ -385,16 +386,12 @@ export class CDPBridge {
 
   async reload(wcId?: number): Promise<void> {
     const target = this.resolveTarget(wcId);
-    // Reload the guest directly. Page.reload through the attached debugger can
-    // tear down the guest's DevTools target while Electron is rebuilding it;
-    // that leaves the host renderer and its terminals looking freshly mounted
-    // and loses the existing DevTools window (#412).
+    // Native reload needs no debugger reattachment when DevTools owns the
+    // debugging session. It addresses only this guest, leaving the host alone.
     const wc = this.liveWebContents(target);
-    // Keep the protocol fallback for embedders that provide only a debugger
-    // target (and for older Electron versions); normal webviews use the native
-    // reload path above to keep the host renderer stable.
-    if (wc) wc.reload();
-    else await this.sendCommand(target, 'Page.reload');
+    if (!wc) { this.detach(target.wcId); throw new Error('browser_not_open'); }
+    target.refMap.clear();
+    wc.reload();
   }
 
   async snapshot(wcId?: number): Promise<CDPSnapshot> {

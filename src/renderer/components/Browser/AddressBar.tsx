@@ -20,6 +20,7 @@ interface AddressBarProps {
   onReload: () => void;
   onStop: () => void;
   onDevTools?: () => void;
+  onMoveToWorkspace?: () => void;
 }
 
 export default function AddressBar({
@@ -35,6 +36,7 @@ export default function AddressBar({
   onReload,
   onStop,
   onDevTools,
+  onMoveToWorkspace,
 }: AddressBarProps) {
   const t = useT();
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
@@ -91,6 +93,8 @@ export default function AddressBar({
 
   return (
     <div className="browser-address-bar">
+      {onMoveToWorkspace && <button className="browser-address-bar__btn" onClick={onMoveToWorkspace}
+        title={t('panel.workspace', 'Move into workspace')} aria-label={t('panel.workspace', 'Move into workspace')}>↗</button>}
       <button
         className="browser-address-bar__btn"
         disabled={!canGoBack}

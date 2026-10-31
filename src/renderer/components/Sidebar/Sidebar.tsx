@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import SplitDivider from '../SplitPane/SplitDivider';
 import { WorkspaceInfo, WorkspaceId, PaneId } from '../../../shared/types';
 import WorkspaceRow from './WorkspaceRow';
 import SidebarResizeHandle from './SidebarResizeHandle';
@@ -25,6 +26,7 @@ interface ContextMenuState {
 }
 
 interface SidebarProps {
+  dockedPanel?: React.ReactNode;
   workspaces: WorkspaceInfo[];
   activeWorkspaceId: WorkspaceId | null;
   sidebarWidth: number;
@@ -53,6 +55,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
+  dockedPanel,
   workspaces,
   activeWorkspaceId,
   sidebarWidth,
@@ -76,6 +79,8 @@ export default function Sidebar({
   onOpenAgentNavigator,
 }: SidebarProps) {
   const t = useT();
+  const rawPanelRatio = useStore((s) => s.workspacePrefs?.explorerSidebarRatio ?? 0.45);
+  const panelRatio = Number.isFinite(rawPanelRatio) ? Math.max(0.15, Math.min(0.75, rawPanelRatio)) : 0.45;
   const textScale = useStore((s) => sidebarTextScale(s.sidebarPrefs.textScale));
   const [draggedId, setDraggedId] = useState<WorkspaceId | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: WorkspaceId; edge: DropEdge } | null>(null);
@@ -398,6 +403,14 @@ export default function Sidebar({
       </div>
 
       <SidebarResizeHandle onWidthChange={handleResizeDelta} />
+      {dockedPanel && <>
+        <SplitDivider direction="vertical" onRatioChange={(delta) => {
+          useStore.getState().setWorkspacePrefs({ explorerSidebarRatio: Math.max(0.15, Math.min(0.75, panelRatio - delta)) });
+        }} />
+        <div style={{ height: `${panelRatio * 100}%`, flexShrink: 0, minHeight: 0, overflow: 'hidden' }}>
+          {dockedPanel}
+        </div>
+      </>}
 
       {contextMenu && (
         <WorkspaceContextMenu

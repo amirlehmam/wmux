@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { startGpuProbe } from './utils/gpu-watchdog';
+import { installWheelZoom } from './utils/wheel-zoom';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from './store';
 import type { NotificationSlice } from './store/notification-slice';
@@ -59,6 +60,7 @@ import type {
 } from './components/SplitPane/drag-preview-types';
 import { buildSurfaceDragPreview } from './components/SplitPane/surface-drag-preview';
 import WorkspaceDropZones from './components/SplitPane/WorkspaceDropZones';
+import { dockPanelInWorkspace } from './components/SplitPane/panel-docking';
 import { forgetClosedTerminal, surfaceTerminalRegistry, terminalHistoryCheckpoints } from './hooks/useTerminal';
 import { subscribeTerminalHistoryState } from './utils/terminal-history-state';
 import { onTerminalHistoryFailure, reportTerminalHistoryFailure, terminalHistoryWarningText } from './utils/terminal-history-feedback';
@@ -541,6 +543,7 @@ export function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: 
 }
 
 export default function App() {
+  useEffect(() => installWheelZoom(document, (deltaY) => window.wmux?.system?.zoom?.(deltaY)), []);
   // Field-scoped store subscription. A bare `useStore()` subscribes App to the
   // WHOLE store, so every set() anywhere — one pane's OSC 9;4 progress, an
   // agent verdict, a settings write — re-rendered App and with it the sidebar
@@ -702,6 +705,8 @@ export default function App() {
   const [isResizingBrowser, setIsResizingBrowser] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [explorerWidth, setExplorerWidth] = useState(260);
+  const explorerPosition = useStore((s) => s.workspacePrefs.explorerPosition);
+  const explorerInSidebar = explorerPosition === 'sidebar' && sidebarVisible;
   const [isResizingExplorer, setIsResizingExplorer] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
@@ -1244,6 +1249,7 @@ export default function App() {
             browserUrl: ws.browserUrl,
             browserHistory: ws.browserHistory,
             browserWidth: ws.browserWidth,
+            browserPanelDocked: ws.browserPanelDocked,
             explorerOpen: ws.explorerOpen,
             explorerDismissed: ws.explorerDismissed,
             explorerWidth: ws.explorerWidth,
@@ -1275,6 +1281,13 @@ export default function App() {
 
   // Auto-focus first pane whenever the active workspace changes or gains its first pane
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
+  const sideBrowserVisible = browserOpen && !activeWorkspace?.browserPanelDocked;
+  const toggleSideBrowser = () => {
+    if (activeWorkspace?.browserPanelDocked) {
+      updateWorkspaceMetadata(activeWorkspace.id, { browserPanelDocked: false });
+      setBrowserOpen(true);
+    } else setBrowserOpen((open) => !open);
+  };
   // The titlebar Git button's lit state: derived from the tree, so a Git tab
   // closed with its own × turns the button off as well.
   const gitViewOpen = !!activeWorkspace && gitSurfacesIn(activeWorkspace).length > 0;
@@ -1296,7 +1309,7 @@ export default function App() {
   const displayBrowserWidth = isResizingBrowser ? browserWidth : clampPanelWidth(rawBrowserWidth, {
     reserved: panelReservedWidth({
       sidebarWidth: sidebarVisible ? sidebarWidth : 0,
-      otherPanelOpen: explorerOpen,
+      otherPanelOpen: explorerOpen && !explorerInSidebar,
       otherPanelWidth: rawExplorerWidth,
     }),
     min: BROWSER_MIN_WIDTH,
@@ -1305,7 +1318,7 @@ export default function App() {
   const displayExplorerWidth = isResizingExplorer ? explorerWidth : clampPanelWidth(rawExplorerWidth, {
     reserved: panelReservedWidth({
       sidebarWidth: sidebarVisible ? sidebarWidth : 0,
-      otherPanelOpen: browserOpen,
+      otherPanelOpen: sideBrowserVisible,
       otherPanelWidth: rawBrowserWidth,
     }),
     min: EXPLORER_MIN_WIDTH,
@@ -1433,6 +1446,7 @@ export default function App() {
         browserUrl: ws.browserUrl || '',
         browserHistory: ws.browserHistory,
         browserWidth: ws.browserWidth,
+        browserPanelDocked: ws.browserPanelDocked,
         explorerOpen: ws.explorerOpen,
         explorerDismissed: ws.explorerDismissed,
         explorerWidth: ws.explorerWidth,
@@ -1711,10 +1725,44 @@ export default function App() {
     if (!paneIds.includes(zoomedPaneId)) setZoomedPaneId(null);
   }, [zoomedPaneId, activeWorkspace]);
 
-  useKeyboardShortcuts(focusedPaneId, setSettingsOpenFromShortcut, () => setBrowserOpen(o => !o), handleToggleNotifPanel, setFocusedPaneId, handleToggleZoom, () => handleToggleExplorer());
+  useKeyboardShortcuts(focusedPaneId, setSettingsOpenFromShortcut, toggleSideBrowser, handleToggleNotifPanel, setFocusedPaneId, handleToggleZoom, () => handleToggleExplorer());
 
   // Derive a title for the titlebar: active workspace title or blank
   const titlebarText = (activeWorkspace && workspaceNames.get(activeWorkspace.id)) ?? '';
+
+  const dockExplorer = (root: SurfaceId) => {
+    const st = useStore.getState();
+    const ws = st.workspaces.find((w) => w.id === st.activeWorkspaceId);
+    if (!ws) return;
+    const paneId = `pane-${uuid()}` as PaneId;
+    const surface: SurfaceRef = { id: `surf-${uuid()}`, type: 'explorer', explorerRootSurfaceId: root };
+    st.updateWorkspaceMetadata(ws.id, {
+      splitTree: dockPanelInWorkspace(ws.splitTree, surface, paneId),
+      explorerOpen: false, explorerDismissed: true,
+    });
+    setExplorerOpen(false);
+    setZoomedPaneId(null);
+    setFocusedPaneId(paneId);
+  };
+  const moveExplorerSide = () => {
+    useStore.getState().setWorkspacePrefs({ explorerPosition: explorerInSidebar ? 'right' : 'sidebar' });
+    if (!explorerInSidebar && !sidebarVisible) toggleSidebar();
+  };
+  const explorerPanel = <ExplorerPanel onClose={() => handleToggleExplorer(false)} focusedPaneId={focusedPaneId}
+    onMoveToWorkspace={dockExplorer} onMoveSide={moveExplorerSide} inSidebar={explorerInSidebar} />;
+  const dockBrowser = (workspaceId: WorkspaceId) => {
+    const st = useStore.getState();
+    const ws = st.workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return;
+    const paneId = `pane-${uuid()}` as PaneId;
+    const surface: SurfaceRef = { id: `surf-${uuid()}`, type: 'browser',
+      url: rememberedPanelUrl(ws.browserUrl) || st.browserPrefs.defaultUrl || undefined,
+      browserHistory: ws.browserHistory };
+    st.updateWorkspaceMetadata(ws.id, { splitTree: dockPanelInWorkspace(ws.splitTree, surface, paneId), browserPanelDocked: true });
+    setBrowserOpen(false);
+    setZoomedPaneId(null);
+    setFocusedPaneId(paneId);
+  };
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -1750,6 +1798,7 @@ export default function App() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {sidebarVisible ? (
           <Sidebar
+            dockedPanel={explorerOpen && explorerInSidebar ? explorerPanel : undefined}
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
             sidebarWidth={sidebarWidth}
@@ -1871,7 +1920,7 @@ export default function App() {
         {/* Right: file explorer panel — before the browser so the order is
             terminals │ explorer │ browser. The explorer sits adjacent to the
             terminals because that is what it acts on. */}
-        {explorerOpen && (
+        {explorerOpen && !explorerInSidebar && (
           <>
             <div
               className="explorer-resize-handle"
@@ -1891,7 +1940,7 @@ export default function App() {
                   // Shared with the render clamp above via panel-layout.ts.
                   const reserved = panelReservedWidth({
                     sidebarWidth: sidebarVisible ? sidebarWidth : 0,
-                    otherPanelOpen: browserOpen,
+                    otherPanelOpen: sideBrowserVisible,
                     otherPanelWidth: activeWorkspace?.browserWidth ?? browserWidth,
                   });
                   finalWidth = clampPanelWidth(startWidth + delta, {
@@ -1917,13 +1966,13 @@ export default function App() {
               {isResizingExplorer && (
                 <div style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'col-resize', background: 'transparent' }} />
               )}
-              <ExplorerPanel onClose={() => handleToggleExplorer(false)} focusedPaneId={focusedPaneId} />
+              {explorerPanel}
             </div>
           </>
         )}
 
         {/* Right: browser panel */}
-        {browserOpen && (
+        {sideBrowserVisible && (
           <>
             <div
               className="browser-resize-handle"
@@ -1947,7 +1996,7 @@ export default function App() {
                   // explorer panel + its handle (if open).
                   const reserved = panelReservedWidth({
                     sidebarWidth: sidebarVisible ? sidebarWidth : 0,
-                    otherPanelOpen: explorerOpen,
+                    otherPanelOpen: explorerOpen && !explorerInSidebar,
                     otherPanelWidth: activeWorkspace?.explorerWidth ?? explorerWidth,
                   });
                   finalWidth = clampPanelWidth(startWidth + delta, {
@@ -2010,6 +2059,7 @@ export default function App() {
                   }}
                 >
                   <BrowserPane
+                    onMoveToWorkspace={() => dockBrowser(ws.id)}
                     surfaceId={`browser-${ws.id}`}
                     visible={ws.id === activeWorkspaceId}
                     // `|| undefined`, not `??` (issue #212). A workspace that has

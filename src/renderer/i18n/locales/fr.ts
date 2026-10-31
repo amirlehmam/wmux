@@ -5,6 +5,10 @@
 import type { Translation } from './en';
 
 export const fr: Translation = {
+  'panel.move': 'Déplacer le panneau',
+  'panel.workspace': 'Déplacer dans l’espace de travail',
+  'panel.right': 'Déplacer à droite',
+  'panel.sidebar': 'Déplacer sous les espaces de travail',
   'settings.title': 'Paramètres',
   'settings.tab.general': 'Général',
   'settings.tab.sidebar': 'Barre latérale',

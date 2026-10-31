@@ -8,6 +8,10 @@
 // its translations is safe.
 
 export const en = {
+  'panel.move': 'Move panel',
+  'panel.workspace': 'Move into workspace',
+  'panel.right': 'Move to right panel',
+  'panel.sidebar': 'Move below workspaces',
   // Settings — window chrome
   'settings.title': 'Settings',
   'settings.tab.general': 'General',

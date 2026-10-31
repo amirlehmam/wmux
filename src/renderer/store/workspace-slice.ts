@@ -367,6 +367,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       browserUrl: config.browserUrl,
       browserHistory: config.browserHistory,
       browserWidth: config.browserWidth,
+      browserPanelDocked: config.browserPanelDocked,
       explorerOpen: config.explorerOpen,
       explorerDismissed: config.explorerDismissed,
       explorerWidth: config.explorerWidth,

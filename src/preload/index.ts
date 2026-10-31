@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld('wmux', {
     openExternal: (url: string) => ipcRenderer.send(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_VERSION),
     toggleDevTools: () => ipcRenderer.send('toggle-devtools'),
+    zoom: (deltaY: number) => ipcRenderer.send(IPC_CHANNELS.WINDOW_ZOOM, deltaY),
     pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_PICK_FOLDER),
     // Restart Explorer with its icon cache cleared (issues #137/#226). Main
     // puts up the confirm itself — the dialog names the cost (File Explorer
