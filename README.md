@@ -1,749 +1,206 @@
 <p align="center">
-  <img src="resources/icons/icon.png" alt="wmux" width="120" height="120" />
+  <img src="resources/icons/icon.png" alt="" width="80" height="80" />
 </p>
 
 <h1 align="center">wmux</h1>
-<p align="center">The original visibility layer for coding agents on Windows - never hunt for the one that's waiting on you</p>
+
+<p align="center">A Windows terminal for working with several coding agents at once.</p>
 
 <p align="center">
-  Built on Electron + xterm.js. Inspired by <a href="https://github.com/manaflow-ai/cmux">cmux</a>, with the agent-visibility model modelled on <a href="https://github.com/herdrdev/herdr">herdr</a>.
+  <a href="https://github.com/amirlehmam/wmux/releases/latest">Download for Windows</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#keyboard-shortcuts">Shortcuts</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="https://github.com/amirlehmam/wmux/releases">Release notes</a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/amirlehmam/wmux/releases/latest"><img src="docs/assets/windows-download.svg" alt="Download wmux for Windows" width="200" height="74" /></a>
-</p>
+![wmux with two terminal panes, a Markdown plan, and workspace activity in the sidebar](docs/assets/wmux-workspace.png)
 
-<p align="center">
-  <a href="https://github.com/amirlehmam/wmux"><img src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows" alt="Windows" /></a>
-  <a href="https://github.com/amirlehmam/wmux/releases"><img src="https://img.shields.io/github/v/release/amirlehmam/wmux?label=release&color=555" alt="Release" /></a>
-  <a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-555" alt="License" /></a>
-</p>
+*Captured in wmux 2.51.0. The screenshots use a demo project with example terminal output and agent states.*
 
-<p align="center">
-  <img src="https://wmux.org/assets/wmux-screen.png" alt="wmux — split terminal panes with the agent session sidebar" width="900" />
-</p>
+Run an agent, keep your tests beside it, and review the changes in the same window. The sidebar shows which workspaces are busy and which need an answer. When an agent stops for you, jump straight to its pane.
 
-## New in 2.15 - your agents, from your phone
-
-You start six agents and walk away from the desk. The only question that matters is **which one has stopped and is waiting on you** — and until now the answer was on a screen you had just left.
-
-wmux now serves a small web console for your phone. No app to install: it is a page wmux serves itself, so any phone with a browser works.
-
-- **A console sorted by who needs you** — *Needs you → Done → Working → Idle*. A blocked agent shows the choices it declared as buttons on its card: two taps to answer, no terminal needed.
-- **Attach** — the agent's live terminal, mirrored. Fit it to the screen, or switch to a readable size and pan. Your desktop pane is never resized.
-- **A composer that sends once** — and becomes **Insert** (text without Enter) while an agent is blocked, so a message can't accidentally answer a permission prompt.
-- **A key bar** — Esc, Tab, ⇧Tab, arrows, Enter, ^C, y/n. Anything that would interrupt an agent or answer a prompt takes a second tap.
-
-It is **off by default**: Settings → **Remote** → turn it on → **Pair a device** → scan the QR code. The console listens on this computer only (`127.0.0.1:9790`); to reach it from a phone, put it behind Tailscale or an SSH tunnel — Settings has both recipes ready to copy:
-
-```bash
-tailscale serve --bg --https=443 http://127.0.0.1:9790   # then paste the https://…ts.net URL into Public URL
-ssh -L 9790:127.0.0.1:9790 <host>                        # or a plain SSH tunnel
-```
-
-Typing into a terminal is running code, so it was built that way round:
-
-- **Every phone gets its own credential**, paired by a one-time QR code that expires in two minutes. Settings lists every device and live connection, each revocable.
-- **It can list agents, mirror a terminal, type, and press a choice the agent itself declared.** It cannot spawn, kill or close anything, and it never touches wmux's pipe token.
-- **An answer is tied to the prompt it was shown for.** A stale or replayed tap is refused rather than landing on the agent's *next* question.
-- **A plain-HTTP local-network bind exists, behind a warning** — devices paired that way are view-only unless you explicitly allow control.
-
-Not in it yet: push notifications with the page closed, an installable PWA, attachments, starting or stopping agents from the phone.
-
-## New in 2.7 - the folder your agent is working in, beside the terminal it's working in
-
-`Ctrl+Shift+X` docks a file tree on the **right of the window**, rooted at the focused pane's live working directory. Not the workspace's, and not the active tab's — the pane's *terminal* cwd, so a pane showing a markdown or browser tab still belongs to the folder its shell is in.
-
-After an agent has been running for ten minutes, three questions follow in order. 2.6 and 2.7 answer all three without leaving wmux:
-
-**1. What's in here?** The tree lists the folder, lazily, with full keyboard navigation (`↑↓` to move, `←→` to collapse/expand, `Enter` to open, `Esc` back to the terminal). Single-click opens a file into a *preview* tab that the next single-click reuses in place, so browsing ten files doesn't leave ten tabs behind — start editing and it promotes to a real tab. Panel width and expansion state persist per root.
-
-**2. What changed?** Every row carries a `+55/-22` column, rolled up so a collapsed `src/` shows the sum of everything beneath it — **including folders you never expanded**, because a rollup that could only count loaded rows would quietly report the part of the tree you happened to have open. In a git repo the numbers mean everything uncommitted; outside one, everything since the session started. The panel header says which — a column of numbers that silently means one or the other can't be acted on. Files an agent touched get a dot, read from the hook stream wmux already receives, so its edits are distinguishable from yours at a glance.
-
-**3. Can I just fix that line myself?** Anything that isn't markdown opens in a `code` surface with a line-numbered gutter, beside the terminal it came from. Hit **Edit**, change the line, `Ctrl+S`.
-
-Three things that are deliberately **not** clever about this:
-
-- **The tree is a jail, not a file browser.** The renderer sends a pane id and a *relative* path, never an absolute one — main derives the root itself, so a folder above the pane's cwd isn't reachable even by a renderer that asks for it. Symlinks and junctions are resolved on every path segment, not just the last one.
-- **A save can only land on a file you opened in a pane, in this window, in this session** — and it carries the timestamp the buffer was read at. If an agent rewrote the file while you were typing, the save is **refused** rather than quietly picking a winner. CRLF line endings and UTF-16/BOM encodings survive the round trip instead of being normalised into a whole-file rewrite in your next commit.
-- **With no hooks configured there are simply no agent dots**, and every number still works. Same rule the prompt log follows: degrade to honest silence, never to a guess.
-
-## New in 2.0 - wmux sees every agent, not just Claude Code
-
-Until now wmux could only tell you what an agent was doing if that agent **told it**. That meant Claude Code (hooks), OpenCode (plugin) and Kiro. Codex, Gemini, Aider, Amp, Cursor and Copilot ran in panes wmux could display and could not read.
-
-2.0 closes that with three layers, each of which only fills the gap the one above left:
-
-**1. One roster for every agent in the window.** wmux already knew which panes were blocked — it just never said so above a single sidebar row. Now a banner over the workspace list answers *"who needs me?"* across every workspace at once, ranked by who has been waiting longest.
-
-**2. `Ctrl+Shift+A` — the agent navigator.** Every agent in the window in one list, blocked first. Filter with `a`/`b`/`w`/`i`/`u`, `↑↓` to move, `enter` to jump straight to the pane — it selects the workspace *and* raises the tab, so an agent buried in a background tab is one keystroke away. **`Ctrl+Shift+B`** goes straight to whoever has waited longest, and cycles on repeat.
-
-**3. wmux now identifies and reads agents that report nothing.** It works out which agent a pane is running from the command line you typed or the shell wmux launched, then matches the agent's own on-screen UI against bundled rules to tell *blocked* from *working*. All of it local — nothing is sent anywhere.
-
-Three things that are deliberately **not** clever about this:
-
-- **A detected state never overrides a reported one.** If an agent tells wmux it is working, that wins over anything the screen looks like. wmux's "needs you" never expires and answering it doesn't clear it, so a rule re-reading a repainted frame would leave you clicking a button that does nothing. The one thing the screen may add is detail: an agent that reports *idle* while its last message is still asking you something reads as *question for you*.
-- **When wmux can't parse a screen it says so.** No rule matched means the pane reads *silent*, never *idle* — because "idle" is a claim, and nobody made it. A new prompt shape wmux hasn't learned yet shows as "we don't know", which is the honest answer and the one that doesn't hide a pane needing you.
-- **You can see exactly why.** `wmux detect explain` names the rule that fired and the line that matched. `wmux detect explain --file screen.txt` replays a captured screen offline, so you can debug or author a rule without the agent even installed.
-
-Screen detection is on by default, never reads a pane whose agent reports *working* or *blocked* (an *idle* one is read, for that question), and is one click off in **Settings → Workspace**. Rules live in `%APPDATA%\wmux\agent-detection` if you want to add or fix one; an override replaces the bundled rules for its agent, question included, so it turns question detection off for that agent.
-
-> Bundled rules currently cover **Claude Code** (blocked / question / working / idle), plus **Codex** and **OpenCode** (identity and idle). Anything else is identified but reads as *silent* until someone contributes rules — `wmux detect explain --file` is how you write them, and PRs are very welcome.
-
-**omp status hooks:** With agent integration consent and **Status hooks** enabled, wmux installs `~/.omp/agent/extensions/wmux.js`, honouring `PI_CODING_AGENT_DIR` and `PI_CONFIG_DIR` inherited by wmux. Restart omp after installation or updates. The extension declares idle/working from the main session and its owned background jobs, so an ended response does not hide a still-running subagent. Tool approvals, plan reviews and the native `ask` tool declare a human wait. Child sessions never clear the parent pane's state. This does not depend on screen detection or terminal progress. With `--no-extensions`, a named omp profile, or directory overrides set only inside a shell, explicitly load the extension using `omp --trusted-extension <absolute-path-to-wmux.js>`. Disabling **Status hooks** removes wmux's extension, not a user-owned file with the same name.
-
-Rebound descendant sessions are aggregated too, including agents without an async-job entry. A zero-length main-session job snapshot alone is not proof of idle; active child sessions and their pending jobs still count. Descendants retain their root attribution if an intermediate session closes.
-
-Individual descendants are also published through `report-subagent`: the workspace sidebar lists each agent ID/name and its definition, counts active agents, and marks each entry done independently. The window-wide “working” banner counts active parent surfaces, not the number of child agents; use the workspace's agent count for that.
-
-The orchestration title counts only agents still running, not the retained completion history: five started agents with two completed display “3 agents”. Completed rows remain available until the existing linger policy hides them. This title calculation is part of wmux's renderer; updating or restarting only the omp extension does not update it.
-
-
-## Features
-
-<table>
-<tr>
-<td width="40%" valign="middle">
-<h3>Passive Claude Code integration</h3>
-wmux observes Claude Code without changing how it works. Auto-configured hooks in <code>~/.claude/settings.json</code> report agent and tool activity to the sidebar. A CDP proxy on <code>localhost:9222</code> lets Claude Code's native <code>chrome-devtools-mcp</code> plugin control the wmux browser panel directly. Zero setup — everything is auto-injected on startup.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-sidebar.png" alt="Sidebar showing active Claude Code sessions" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Live browser visibility</h3>
-When Claude Code browses the web, every action appears in the wmux browser panel in real-time. Navigate, click, type, take screenshots — Claude Code uses its own tools, wmux just shows what's happening. CDP proxy on <code>localhost:9222</code> bridges the connection transparently. Terminal and markdown links open in the panel too.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-browser.png" alt="Built-in browser panel showing live web activity" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Activity indicators</h3>
-Sidebar dots show what each agent session is doing at a glance. <b>Violet pulsing</b> = needs you. <b>Orange pulsing</b> = working. <b>Green</b> = done. <b>Red</b> = interrupted (Ctrl+C). A <b>hollow</b> dot means wmux read that state off the screen rather than being told it — the colour says what, the fill says how sure. Blocked and working also mark the <b>tab</b>, so an agent waiting in a background tab is visible without opening it. Git branch, dirty state, working directory, open ports, and PR status update in real-time from shell integration hooks.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-sidebar.png" alt="Sidebar with live activity indicators" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Agent roster &amp; navigator</h3>
-A banner above the workspace list answers <i>"who needs me?"</i> across every workspace at once, with the longest wait first — click it to jump straight there. <code>Ctrl+Shift+A</code> opens the full navigator: every agent in the window, blocked first, filterable by state with a single keystroke. <code>Ctrl+Shift+B</code> cycles through whoever is waiting. Both are bound by default, because a shortcut you have to discover in Settings is one you won't have when you need it.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-sidebar.png" alt="Agent roster banner above the workspace list" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Reads agents that report nothing</h3>
-Codex, Gemini, Aider, Amp, Cursor and Copilot don't tell any multiplexer what they're doing. wmux works out which agent a pane runs — from the command you typed, the shell it launched, or the process tree — then matches the agent's own UI against bundled rules to tell blocked from working. Entirely local. It never overrides what an agent actually reports, and when it can't parse a screen it says <i>silent</i> rather than guessing <i>idle</i>. <code>wmux detect explain</code> shows which rule fired.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-terminals.png" alt="Several agents running in split panes" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Notification center</h3>
-Panes get a blue ring and tabs light up when agents finish or need attention. Supports OSC 9/99/777, <code>wmux notify</code> CLI, and idle detection. Click the bell icon to see all pending notifications — jump to any with one click. Windows toast notifications and taskbar flash on alerts.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-notification.png" alt="Notification panel listing agent completions" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Shell tab labels</h3>
-Terminal tabs display a shell-specific label — <b>PowerShell</b>, <b>bash</b>, <b>zsh</b>, or <b>cmd</b> — detected automatically from the spawned process. No configuration needed. Makes it easy to identify each pane at a glance when running multiple agents in different shells.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-shell-labels.png" alt="Tab strip with shell-specific labels" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Custom themes &amp; per-pane colors</h3>
-450+ bundled Ghostty themes plus 17 curated wmux themes. Set a default color scheme in <code>~/.wmux/config.toml</code>, override per pane with <code>wmux split --color-scheme NAME</code>, or define custom named schemes directly in settings. Drag-imported from Windows Terminal or Ghostty configs.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-themes.png" alt="Settings panel showing color scheme selection" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>wmux-orchestrator plugin <sub>(deprecated)</sub></h3>
-A Claude Code plugin that decomposes complex tasks into parallel agents coordinated through dependency-aware waves, each in its own visible terminal pane. <b>wmux no longer installs it</b> — Claude Code orchestrates parallel agents natively now, and does it better. It lives on as a standalone plugin you can install yourself; wmux's sidebar still shows the run it reports.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-terminals.png" alt="Multiple agents running in split terminal panes" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Vertical + horizontal splits</h3>
-Split any pane right or down. Resize dividers by dragging. Zoom a pane to full screen with <code>Ctrl+Shift+Enter</code>. Each pane supports multiple tabs — all rendered simultaneously with <code>visibility: hidden</code> so PTY sessions stay alive when switching. Workspace state is persisted across restarts.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-terminals.png" alt="Horizontal and vertical pane splits" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>File explorer</h3>
-<code>Ctrl+Shift+X</code> docks a file tree on the right of the window, rooted at the focused pane's live working directory — the pane's terminal cwd, so a pane showing a markdown tab still belongs to the folder its shell is in. Single-click opens a file into a preview tab that the next click reuses in place; editing promotes it to a real tab. Markdown opens in the markdown surface. Full keyboard navigation, and panel width and expansion state persist per root.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-explorer.png" alt="File explorer panel beside a markdown preview" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>See what changed, per file and per folder</h3>
-The tree carries a <code>+55/-22</code> column, rolled up so a collapsed <code>src/</code> shows the sum of everything beneath it — including folders you never expanded. In a git repo the numbers are everything uncommitted; outside one, everything since the session started. The panel says which. Files an agent touched get a dot, read from Claude Code's hook stream, so you can tell its edits from your own at a glance.</td>
-<td width="60%">
-<img src="./docs/assets/wmux-explorer.png" alt="File tree with per-file change counts" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Code view you can actually edit</h3>
-Anything that isn't markdown opens in a <code>code</code> surface with a line-numbered gutter, alongside the terminal it came from. Hit <b>Edit</b>, change a line, <code>Ctrl+S</code>. Saves are jailed to the pane's folder and only ever land on a file you opened in a pane — and they carry the timestamp the buffer was read at, so if an agent rewrote the file while you were typing the save is <em>refused</em> rather than quietly picking a winner. CRLF endings and UTF-16/BOM encodings survive the round trip.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-code.png" alt="Code surface with a line-numbered gutter, open beside its terminal" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Saved sessions</h3>
-Save your entire workspace layout (splits, working directories, browser URL, shell type) and restore it with one click. Click the save icon in the sidebar footer to name a session, the folder icon to load. On startup, wmux auto-loads your last session — no more manual <code>cd</code> and re-splitting every time.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-sidebar.png" alt="Sidebar with session save and load controls" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>Clipboard image paste</h3>
-Copy a screenshot (Win+Shift+S, Print Screen, Snipping Tool) and press <code>Ctrl+V</code> in a wmux terminal. The image is saved to a temp file and the path is injected into the terminal — or uploaded with SCP first when the pane is connected directly over SSH.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-full.png" alt="Image paste workflow via clipboard" width="100%" />
-</td>
-</tr>
-<tr>
-<td width="40%" valign="middle">
-<h3>First-launch tutorial</h3>
-Interactive 7-step onboarding walks you through workspaces, splits, tabs, the browser panel, and notifications. Designed to get a new user productive in under 2 minutes. Reopen anytime from the <code>?</code> button in the title bar.
-</td>
-<td width="60%">
-<img src="./docs/assets/wmux-tutorial.png" alt="First-launch tutorial overlay" width="100%" />
-</td>
-</tr>
-</table>
-
-- **Release update badge** — A badge in the title bar notifies you when a new GitHub release is available. Click to download and install in place (works for zip extracts and NSIS installs). Settings → Help has the same action next to the version number.
-- **Clickable links** — URLs in terminal output and markdown panes open directly in the wmux browser panel. Prefer your own browser? **Settings → Browser → Open links in the system browser** flips the default, and Ctrl+click always does the opposite of whichever way it is set. CLI tools that honour `$BROWSER` (Codex today, OpenCode once its `$BROWSER` support ships) go through the same rule in WSL panes.
-- **Scriptable** — Named pipe server (`\\.\pipe\wmux`) with a JSON-RPC API. Create workspaces, split panes, send keystrokes, read terminal content, control the browser via CDP, and spawn sub-agent terminals programmatically.
-- **Windows native** — ConPTY for proper terminal emulation, Windows toast notifications, taskbar flash on alerts, native title bar overlay.
-- **Windows Terminal + Ghostty compatible** — Import your themes, fonts, and colors from Windows Terminal `settings.json` or `~/.config/ghostty/config`. Ships with 450+ bundled Ghostty themes.
-- **GPU-accelerated** — xterm.js with WebGL rendering for smooth terminal output at any speed.
+wmux runs your existing command-line tools: Claude Code, Codex, OpenCode, or an ordinary shell. Bring the tools and accounts you already use.
 
 ## Install
 
-### Download (recommended)
+Download the latest **Windows x64** release:
 
-Download [wmux-0.7.10-win-x64.zip](https://github.com/amirlehmam/wmux/releases/latest) from GitHub Releases, extract anywhere, and run `wmux.exe`. No installer, no code signing, no admin required.
-
-> **Note:** After extracting, right-click the zip before extracting and select **Unblock** if Windows SmartScreen warns about the executable.
-
-### Scoop
-
-This repository is also a [Scoop](https://scoop.sh) bucket:
+| Format | How to use it |
+| --- | --- |
+| [Installer](https://github.com/amirlehmam/wmux/releases/latest) | Download `wmux-<version>-setup.exe` and run it. |
+| [Portable ZIP](https://github.com/amirlehmam/wmux/releases/latest) | Download `wmux-<version>-win-x64.zip`, extract it, and run `wmux.exe`. |
+| [Scoop](https://scoop.sh) | Run the commands below. |
 
 ```powershell
 scoop bucket add wmux https://github.com/amirlehmam/wmux
 scoop install wmux/wmux
 ```
 
-Update with `scoop update wmux`. A Scoop install does not update itself in place: the update badge tells you to use Scoop instead, so Scoop always knows which version is installed. Settings and sessions live in `%APPDATA%\wmux` and survive updates.
+Installer and ZIP installs can update through **Settings → Help → Check for updates**. For Scoop, use `scoop update wmux`. Settings and saved sessions live in `%APPDATA%\wmux`, including when you use the ZIP.
 
-### Updates & security
+The 2.51.0 release is unsigned, so Windows may show a SmartScreen warning. Download from this repository's releases.
 
-wmux checks GitHub Releases for updates. Clicking the titlebar badge or the
-**Check for updates** button in Settings → Help downloads and installs in
-place — including portable zip extracts (the recommended install). Unattended
-NSIS downloads are held in a quarantine window (3 days by default) before
-installing, and installs always require an explicit confirmation click —
-nothing is applied silently.
+<details>
+<summary>Update controls</summary>
 
-Release artifacts are **not yet Authenticode-signed** (SignPath OSS approval is
-pending; the CI signing pipeline is wired and activates automatically once the
-signing secrets are configured). Until signing lands, security-sensitive or
-air-gapped environments can control the updater with environment variables:
+Set `WMUX_DISABLE_UPDATER=1` to disable the updater. For unattended installer downloads, `WMUX_MIN_RELEASE_AGE_DAYS` sets the minimum release age (3 days by default). A manual update check bypasses that delay. Installing an update still requires confirmation.
 
-| Variable | Effect |
-|----------|--------|
-| `WMUX_DISABLE_UPDATER=1` | Disable the auto-updater entirely (update manually from GitHub Releases) |
-| `WMUX_MIN_RELEASE_AGE_DAYS=N` | Change the quarantine window (default 3 days) |
+</details>
 
-### From source
+## Start with one project
 
-```bash
+1. Open wmux and choose your shell. PowerShell, Command Prompt, Git Bash and WSL are supported.
+2. Open your project folder with **Ctrl+O**, then launch your usual agent command.
+3. Split right with **Ctrl+D** or down with **Ctrl+Shift+D**. Run tests, a development server, or a second agent beside the first.
+4. Use **Ctrl+Shift+A** to see the agent navigator, or **Ctrl+Shift+B** to jump to an agent waiting for you.
+
+On first launch, choose which integrations to enable. You can change them later in **Settings → General**. wmux asks before installing agent hooks or modifying configuration outside its own directory.
+
+## Keep the work together
+
+### Terminals and workspaces
+
+Split panes horizontally or vertically, drag tabs between panes, and zoom a pane when you need more room. Group related terminals in a workspace; save a layout when you want to reuse the arrangement.
+
+Each pane can have its own shell, working directory and terminal colors. The app has dark and light appearances, bundled terminal themes, and an importer for Windows Terminal and Ghostty settings.
+
+For a repeatable project setup, commit a [`wmux.workspace.json`](docs/workspace-manifest.md). It can open the panes, folders, commands and browser tabs your project needs:
+
+```powershell
+wmux workspace open
+```
+
+### See who needs an answer
+
+The sidebar brings together agent activity, working directories, Git branches and listening ports. The agent navigator puts blocked agents first. Notifications can bring you back when work finishes or needs input.
+
+Activity comes from agent integrations and, for supported tools, screen detection. What wmux can report depends on the agent and how it is running; a detected agent does not always expose a reliable working or waiting state.
+
+### Review without leaving the terminal
+
+Open the file explorer with **Ctrl+Shift+X**, or the project Git view with **Ctrl+Alt+G**. Browse working changes, compare a branch against its base, and inspect the commit graph. The Git view stays on the repository you opened while you move between agent panes.
+
+![wmux showing a terminal beside the project Git view and a task-filter diff](docs/assets/wmux-git-review.png)
+
+The file viewer handles quick edits. Markdown panes render plans and documentation, including diagrams and math. Git worktree workspaces give parallel tasks separate checkouts when they need to change the same repository.
+
+### Keep a browser beside the code
+
+Open a local development server or documentation in the browser panel with **Ctrl+Shift+I**. The CLI can navigate it, inspect the page, click elements and take screenshots, so you can watch browser work as it happens.
+
+Links can open in wmux or your system browser; choose the default in **Settings → Browser**.
+
+### Check in from your phone
+
+The optional Remote Console shows agent activity and mirrors terminal panes in a phone browser. You can send text, use the key bar, or answer choices an agent has reported.
+
+Enable it in **Settings → Remote**, configure access through Tailscale or an SSH tunnel, then pair your device. It is off by default and listens on loopback by default. The settings page includes connection instructions and device revocation.
+
+### Pick up where you left off
+
+wmux restores workspace layouts, tabs and working directories. Shells start again; running processes do not survive a restart.
+
+Agent conversation restore has separate opt-in switches in **Settings → Workspace**. See the compatibility notes for [Codex](docs/codex-session-restore.md) and [omp](docs/omp-session-restore.md).
+
+Saving terminal output across restarts is also opt-in, under **Settings → Terminal → Scrollback**. Saved output is local, unencrypted text and can contain anything printed in the terminal. Named sessions do not archive that output.
+
+## Keyboard shortcuts
+
+| Action | Default shortcut |
+| --- | --- |
+| Open a project folder | **Ctrl+O** |
+| New workspace | **Ctrl+N** |
+| New tab | **Ctrl+T** |
+| Split right / down | **Ctrl+D** / **Ctrl+Shift+D** |
+| Move focus between panes | **Ctrl+Alt+Arrow** |
+| Zoom the current pane | **Ctrl+Shift+Enter** |
+| Agent navigator | **Ctrl+Shift+A** |
+| Jump to a waiting agent | **Ctrl+Shift+B** |
+| File explorer | **Ctrl+Shift+X** |
+| Project Git view | **Ctrl+Alt+G** |
+| Browser panel | **Ctrl+Shift+I** |
+| Markdown pane | **Ctrl+Shift+M** |
+| Command palette | **Ctrl+Shift+P** |
+| Settings | **Ctrl+,** |
+| Shortcut reference | **Ctrl+F1** |
+
+Rebind shortcuts in **Settings → Keyboard**. The workspace and tab number-row shortcuts can be changed or disabled there too.
+
+## CLI
+
+`wmux` is available inside the terminals it opens. It talks to the running app over a named pipe.
+
+```powershell
+wmux ping
+wmux new-workspace --title "Frontend" --panes 2 --layout columns
+wmux list-workspaces
+wmux tree
+
+# Inspect agent activity and terminal output
+wmux agent-state
+wmux read-screen --lines 50
+
+# Open a plan or a local preview
+wmux markdown docs/plan.md
+wmux browser open http://localhost:3000
+wmux browser snapshot
+
+# Notify yourself when a script finishes
+wmux notify "Tests finished"
+
+# Open an SSH workspace
+wmux ssh user@host --title "Remote"
+```
+
+Run `wmux help` for the command list, or `wmux <command> --help` for usage. Commands that target a terminal accept a surface ID where documented, so scripts can address a specific tab.
+
+For containers and remote setups, see the [devcontainer guide](docs/DEVCONTAINER.md). Paste and drop can upload files in direct SSH panes; [configuration and limitations](docs/config.md#remote-file-upload) cover when that applies.
+
+## Documentation
+
+| Guide | What it covers |
+| --- | --- |
+| [Configuration](docs/config.md) | `~/.wmux/config.toml`, themes, key remaps and file uploads |
+| [Workspace manifests](docs/workspace-manifest.md) | Project layouts, startup commands and dependencies |
+| [WSL file explorer](docs/wsl-explorer.md) | Directory reporting and files across Windows and WSL |
+| [Devcontainers](docs/DEVCONTAINER.md) | Connecting container shells to the desktop app |
+| [OpenCode integration](docs/opencode-plugin.md) | Plugin behavior, compatibility and troubleshooting |
+| [Codex session restore](docs/codex-session-restore.md) | Resuming the right conversation in each tab |
+| [omp session restore](docs/omp-session-restore.md) | Transcript tracking and restore behavior |
+| [Crash reports](docs/crash-reports.md) | Collecting a useful report without sending a memory dump |
+
+Looking for a recent change? See the [release notes](https://github.com/amirlehmam/wmux/releases).
+
+## Build and contribute
+
+wmux uses Electron, React, TypeScript, Zustand, xterm.js and node-pty/ConPTY.
+
+On Windows, with Git and a current Node.js LTS installed:
+
+```powershell
 git clone https://github.com/amirlehmam/wmux.git
 cd wmux
-npm install
+npm ci
 npm run build:main
 npm run dev
 ```
 
-## Why wmux?
+Use a short checkout path without spaces, such as `C:\dev\wmux`, to avoid native build and packaging issues.
 
-I run a lot of Claude Code sessions in parallel. On macOS there is [cmux](https://github.com/manaflow-ai/cmux), and it is exactly what I needed — vertical tabs with live metadata, notification rings when agents need attention, a scriptable browser, and a socket API for automation. But I work on Windows, and nothing like it existed.
-
-Windows Terminal has tabs but no notification system. You have to manually check each tab to see if an agent finished or is waiting for input. tmux works in WSL but loses all Windows integration. Electron terminals exist but none focus on the AI agent workflow.
-
-So I built wmux — a visibility layer for AI coding agents. It doesn't replace Claude Code or change how it works. It passively observes and shows you what's happening. A CDP proxy on `localhost:9222` lets Claude Code's native browser tools control the wmux browser panel — you watch every page load, click, and form fill in real-time. Auto-configured hooks in `settings.json` report tool usage and agent activity to the sidebar. When a command finishes or is interrupted, the sidebar dot changes color and you get a notification.
-
-The sidebar shows exactly what each agent is doing — the git branch it is on, the PR it opened, the ports it is listening on, and whether it needs your attention. Shell integration scripts inject themselves into PowerShell, CMD, and Bash sessions and report CWD changes, git branch switches, shell state, and PR status back to the sidebar via a named pipe in real time.
-
-Since 2.0 that no longer depends on the agent cooperating. wmux identifies which agent a pane is running and, for the ones that report nothing of their own, reads their on-screen UI to tell blocked from working — so Codex and Aider sit in the same roster as Claude Code. The ranking is the point: with ten workspaces open, the question is never "what is agent #7 doing", it is "which one of these has stopped and is waiting on me", and that answer is one banner and one keystroke away.
-
-On first launch wmux asks before it touches anything outside its own directory, and what it then writes is listed feature by feature in Settings → General: a marked block in `~/.claude/CLAUDE.md`, hooks in `~/.claude/settings.json`, a `chrome-devtools` MCP entry pointed at its own browser panel, and a CDP proxy on `localhost:9222`. No API keys needed — everything runs through the user's existing Claude Code session. Every one of those has an uninstall, and turning a feature off runs it.
-
-Everything is automatable through the `wmux` CLI or the named pipe directly. The protocol matches cmux, so tools built for one work with the other.
-
-## wmux-orchestrator (deprecated in 2.12.0)
-
-**wmux no longer installs a Claude Code plugin.** Since 2.12.0 it removes the one
-it used to install, and takes its entry out of `~/.claude/plugins/installed_plugins.json`
-on the way.
-
-Two reasons. It never worked: wmux hand-wrote Claude Code's internal plugin
-registry in a shape that file does not use, so Claude Code never listed the
-plugin, never loaded its skills or commands, and marked the copied files
-orphaned — while wmux logged a successful install (issue #239, reported in
-full detail by [@mkh63d](https://github.com/mkh63d)). And it is no longer worth
-repairing: Claude Code now runs parallel agents natively, which is a better
-answer than a shell-script wave planner driving panes from the outside.
-
-What is unaffected:
-
-- **The sidebar orchestration panel.** It reads a run's `state.json` and does
-  not care who wrote it, so an orchestrator you install yourself still lights
-  it up.
-- **`wmux agent spawn` / `spawn-batch`.** Putting an agent in a visible pane
-  was never the plugin's job — it is a CLI verb, and it stays.
-- **The OpenCode plugin**, which is a different file in a different place and
-  installs correctly. It is still what the Settings → General *Orchestrator
-  plugin* toggle controls.
-
-The plugin itself remains available standalone, installable the supported way:
-[plugin.wmux.org](https://plugin.wmux.org) · [github.com/amirlehmam/wmux-orchestrator](https://github.com/amirlehmam/wmux-orchestrator)
-
-## Shell Integration
-
-wmux automatically injects integration scripts into your shells:
-
-- **PowerShell** — Overrides the `prompt` function. Reports CWD, git branch, dirty state, and shell state (working/done/interrupted) via `NamedPipeClientStream`. Preexec hook via PSReadLine detects when commands start. Background job polls `gh pr view` every 45 seconds.
-- **CMD** — Embeds OSC 9 escape sequences in the `PROMPT` variable for CWD reporting.
-- **Bash/Zsh (WSL)** — `PROMPT_COMMAND` / `precmd` + `preexec` hooks. Detects interrupts via exit code 130. Communicates via temp file bridge.
-
-Environment variables available in all shells:
-
-| Variable | Description |
-|----------|-------------|
-| `WMUX` | Always `1` inside wmux |
-| `WMUX_CLI` | Path to the wmux CLI script |
-| `WMUX_NODE` | A JS runtime that can run `WMUX_CLI` — resolved by wmux, since `node` is not always on PATH |
-| `WMUX_NODE_ELECTRON` | `1` when `WMUX_NODE` is wmux's own binary and needs `ELECTRON_RUN_AS_NODE=1` |
-| `WMUX_SURFACE_ID` | Current surface (tab) ID |
-| `WMUX_PIPE` | Named pipe path (`\\.\pipe\wmux`) |
-
-## Keyboard Shortcuts
-
-All shortcuts are rebindable via Settings (`Ctrl+,`).
-
-The two number-row families — "jump to workspace N" and "jump to surface N" —
-are one dropdown each under **Settings → Keyboard → Number-row shortcuts**,
-rather than eighteen separate rows. Pick the modifiers each answers to
-(`Ctrl`, `Alt`, `Ctrl+Alt`, `Ctrl+Shift`, `Alt+Shift`) or switch either off so
-the digits reach the terminal untouched. Assigning one family a combo the other
-holds swaps them, so trading `Ctrl+1–9` and `Ctrl+Alt+1–9` is a single click.
-
-### Workspaces
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+N | New workspace |
-| Ctrl+1–8 | Jump to workspace 1–8 |
-| Ctrl+9 | Jump to last workspace |
-| Ctrl+PageDown | Next workspace |
-| Ctrl+PageUp | Previous workspace |
-| Ctrl+Shift+W | Close workspace |
-| Ctrl+Shift+F2 | Rename workspace |
-| Ctrl+B | Toggle sidebar |
-
-### Surfaces (tabs)
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+T | New surface |
-| Ctrl+Tab | Next surface |
-| Ctrl+Shift+Tab | Previous surface |
-| Ctrl+Alt+1–8 | Jump to surface 1–8 |
-| Ctrl+Alt+9 | Jump to last surface |
-| Ctrl+W | Close surface |
-
-### Split Panes
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+D | Split right |
-| Ctrl+Shift+D | Split down |
-| Ctrl+Alt+Arrow | Focus pane directionally |
-| Ctrl+Shift+Enter | Toggle pane zoom |
-| Ctrl+Shift+H | Flash focused panel |
-
-### File Explorer
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Shift+X | Toggle the file explorer panel |
-| Up / Down | Move through the tree |
-| Left / Right | Collapse / expand a folder |
-| Enter | Open the selected file, or expand/collapse a folder |
-| Home / End | Jump to the first / last row |
-| Esc | Return focus to the terminal |
-
-### Code view
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+S | Save the file |
-| Tab | Insert a tab (does not leave the editor) |
-| Esc | Discard the edit and go back to reading |
-
-### Browser
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Shift+I | Toggle browser panel |
-| Ctrl+Alt+I | Toggle Developer Tools |
-| Ctrl+Alt+C | Show JavaScript Console |
-
-### Agents
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Shift+A | Agent navigator — every agent, blocked first |
-| Ctrl+Shift+B | Jump to the agent waiting longest (cycles on repeat) |
-
-Inside the navigator: `↑`/`↓` move, `enter` jumps, `esc` closes, and `a` / `b` /
-`w` / `i` / `u` filter to all / blocked / working / idle / silent.
-
-### Notifications
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Alt+N | Toggle notification panel |
-| Ctrl+Shift+U | Jump to latest unread |
-
-### Find
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+F | Find |
-| Enter / Shift+Enter | Find next / previous |
-| Escape | Close find bar |
-
-### Terminal
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Shift+C | Copy |
-| Ctrl+Shift+V | Paste |
-| Ctrl+V | Paste (text or screenshot image path) |
-| Ctrl+C | Copy (with selection) / interrupt (without) |
-| Ctrl+= / Ctrl+- | Increase / decrease font size |
-| Ctrl+0 | Reset font size |
-
-### Window
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+Shift+N | New window |
-| Ctrl+, | Settings |
-| Ctrl+Shift+P | Command palette |
-
-## CLI
-
-The `wmux` CLI communicates with the running app over the named pipe.
-
-```bash
-wmux ping                          # Check if wmux is running
-wmux notify "Build complete"       # Send a notification
-wmux new-workspace --title "API"   # Create a workspace
-wmux list-workspaces               # List all workspaces
-wmux current-workspace             # The workspace THIS pane is in (alias: whoami)
-wmux ssh user@host                 # Remote terminal (OpenSSH) in a new workspace
-wmux ssh -p 2222 user@host --title "prod"  # Extra args are passed through to ssh
-wmux new-window                    # Second wmux window (e.g. for another monitor)
-wmux split --right                 # Split focused pane
-wmux send "npm test"               # Send text to terminal
-wmux send-key Enter --ctrl         # Send keystroke
-wmux read-screen --lines 50        # Read terminal content
-
-# Agents — who is running what, and who is waiting on you
-wmux agent-state                   # every pane's state, the blocked list, and
-                                   # every agent wmux identified but that reports nothing
-wmux agent-state --surface <id>    # just this pane
-wmux report-agent --blocked "Run the migration?" \
-  --choices '[{"id":"y","label":"Yes","key":"1"}]'   # your own agent, parked on a human
-wmux answer-agent --surface <id> --choice y          # answer another pane from yours
-
-# Screen detection — why does a pane read the way it does?
-wmux detect explain                          # the rule that decided this pane, and the line it matched
-wmux detect explain --file screen.txt --agent codex   # replay a capture offline, no agent needed
-wmux detect reload                           # re-read %APPDATA%\wmux\agent-detection
-
-# Browser (CDP-powered)
-wmux open https://example.com     # Open in the panel, per Settings → Browser → Links
-wmux browser open http://localhost:3000
-wmux browser snapshot              # Accessibility tree with eN refs
-wmux browser click e5             # Click element by ref
-wmux browser type e3 "hello"      # Type into input by ref
-wmux browser fill e3 "value"      # Set input value directly
-wmux browser screenshot            # Base64 PNG screenshot
-wmux browser eval "document.title" # Run JavaScript
-
-# Remote Console — the phone web console (enable and pair it in Settings → Remote)
-wmux remote status                 # running? bound where? how many devices paired / connected
-wmux remote status --json
-
-# Remote wmux management (SSH tunnel)
-# On the remote machine — expose its wmux pipe on localhost TCP and get its token:
-wmux bridge                        # 127.0.0.1:9787 ↔ \\.\pipe\wmux (pure relay, token still required)
-wmux token                         # print the auth token, copy it
-
-# On your machine — tunnel the port, then drive the remote wmux with any command:
-# ssh -L 9787:127.0.0.1:9787 user@host
-wmux --remote 127.0.0.1:9787 --token <TOKEN> list-workspaces
-wmux --remote 127.0.0.1:9787 --token <TOKEN> new-workspace --title "api"
-# Or set once: WMUX_REMOTE=127.0.0.1:9787 and WMUX_REMOTE_TOKEN=<TOKEN>
-
-# From a devcontainer — same transport, no SSH tunnel. Run the bridge in WSL2
-# (--wsl binds 0.0.0.0 there, reachable from the container, not from the LAN):
-wmux bridge --wsl                  # relays to \\.\pipe\wmux via npiperelay.exe
-# Then in the container: WMUX_REMOTE=host.docker.internal:9787 + WMUX_REMOTE_TOKEN
-# Full setup: docs/DEVCONTAINER.md
-
-# Agents
-wmux agent spawn --cmd "claude --resume abc" --label "Research"
-wmux agent spawn-batch --json '[{"cmd":"claude","label":"Agent 1"},{"cmd":"claude","label":"Agent 2"}]'
-wmux agent list                    # List all agents
-wmux agent status <agent-id>       # Check agent status
-wmux agent kill <agent-id>         # Kill an agent
-
-wmux tree                          # Workspace / pane / surface hierarchy
+```powershell
+npm test
+npm run typecheck
+npm run lint
+npm run build:renderer
 ```
 
-### Files in direct SSH panes
+The main process lives in `src/main`, the UI in `src/renderer`, and the CLI in `src/cli`. [AGENTS.md](AGENTS.md) describes the module boundaries and development conventions. Release builds run in GitHub Actions when a version tag is pushed.
 
-When a pane was opened with `wmux ssh`, or its PowerShell/Bash integration sees
-you run a direct `ssh` command, wmux keeps local file insertion useful on the
-remote host:
+[Open an issue](https://github.com/amirlehmam/wmux/issues) for a bug or feature request, or start a [discussion](https://github.com/amirlehmam/wmux/discussions). For bugs, include the wmux version, shell, reproduction steps and what you expected. For crashes, start with `wmux crash-report`; do not attach a memory dump, which can contain credentials.
 
-- `Ctrl+V` and `Ctrl+Shift+V` upload a clipboard screenshot or copied local
-  file, then insert its remote path. Text paste is unchanged.
-- Dropping one or more files uploads them in order. Hold Shift while dropping
-  to bypass upload for that drop.
-- Uploads use Windows OpenSSH `scp` with `BatchMode=yes`, so authentication must
-  already work non-interactively through a key or `ssh-agent`; wmux never opens
-  a password or passphrase prompt in the background.
-- Files are given unique names inside a private batch directory such as
-  `/tmp/wmux-drop-<batch-id>/<file-id>.png`. They remain on the remote host
-  after a successful upload for the receiving program to use.
+## Credits and license
 
-This applies to a **direct SSH connection from Windows**. A second `ssh` started
-inside the remote shell is a nested connection that wmux cannot observe through
-the Windows process tree. wmux may still see the outer connection, so disable
-upload (or hold Shift for a drop) rather than relying on automatic upload while
-you are on the inner host.
+wmux is an independent Windows implementation inspired by [cmux](https://github.com/manaflow-ai/cmux). It does not reuse cmux's source code. The agent visibility model was also influenced by [herdr](https://github.com/herdrdev/herdr).
 
-Paste and drop uploads default to on. Configure them independently in
-[`~/.wmux/config.toml`](docs/config.md#remote-file-upload).
-
-## Socket API
-
-Connect to `\\.\pipe\wmux` for programmatic control. Two protocols supported:
-
-**V1** (text, used by shell integration):
-```
-report_pwd <surface_id> <path>
-report_git_branch <surface_id> <branch> [dirty]
-report_shell_state <surface_id> idle|running|interrupted
-report_startup_command <surface_id> <command>   # how to restore this surface; must be cwd-independent
-notify <surface_id> <text>
-ping
-```
-
-`wmux raw-v1 "<line>"` sends any of these through the CLI's transport, which is
-what lets a shell with no reachable pipe — inside a devcontainer — still report.
-See [docs/DEVCONTAINER.md](docs/DEVCONTAINER.md).
-
-**V2** (JSON-RPC, used by CLI and automation):
-```json
-{"method": "workspace.create", "params": {"title": "Agent 1"}}
-{"method": "workspace.list", "params": {}}
-{"method": "surface.send_text", "params": {"id": "surf-...", "text": "npm test\n"}}
-{"method": "surface.read_text", "params": {"id": "surf-...", "lines": 50}}
-
-// Browser control (CDP-powered)
-{"method": "browser.navigate", "params": {"url": "http://localhost:3000"}}
-{"method": "browser.snapshot", "params": {}}
-{"method": "browser.click", "params": {"ref": "e5"}}
-{"method": "browser.screenshot", "params": {"fullPage": true}}
-{"method": "browser.eval", "params": {"js": "document.title"}}
-
-// Agent spawning
-{"method": "agent.spawn", "params": {"cmd": "claude --resume abc", "label": "Research"}}
-{"method": "agent.spawn_batch", "params": {"agents": [...], "strategy": "distribute"}}
-{"method": "agent.list", "params": {}}
-{"method": "agent.kill", "params": {"agentId": "agent-..."}}
-
-{"method": "system.tree", "params": {}}
-```
-
-## Session Restore
-
-On relaunch, wmux restores:
-
-- Window position and size
-- Workspace layout (titles, colors, pin state)
-- Split pane structure (directions and ratios)
-- Working directory per terminal
-- Default shell per terminal
-- Browser panel URLs
-- Active workspace and pane selection
-
-wmux does **not** restore live process state — a running tmux or vim is gone after a restart, and shells are respawned fresh in the saved working directories.
-
-**Terminal output is opt-in:** enable **Settings → Terminal → Scrollback → Save terminal output across restarts** to keep output from the latest automatic session, within your scrollback line limit. Named sessions do not archive output. Saved output is local, unencrypted plaintext and may contain secrets. Turning saving off deletes saved output without clearing live terminals; secure erasure is not guaranteed, and re-enabling may save their visible output again.
-
-Agent conversation restore is opt-in. Turn on **Settings → Workspace → Resume Claude Code sessions on restore** and each terminal that was running Claude when the session was saved comes back with `claude --resume <id>` in the directory it was in. This resumes the *conversation*, not the process: wmux records which session each pane was on and asks Claude to pick it back up. A pane is skipped when Claude no longer has that conversation on disk, and a Claude you exited cleanly is not resumed. Off by default, because every such pane starts an agent the moment the window opens.
-
-**Codex has its own switch:** **Settings -> Workspace -> Resume Codex sessions on restore**. Enable it, then launch `codex` in a new wmux terminal. wmux records each tab's exact conversation ID and runs `codex resume <id>` in its saved directory. Tabs sharing a folder keep their own conversations; restore never uses `--last`. No Codex hooks or manual hook approval are needed. This opt-in integration supports the native Windows Codex CLI in PowerShell and Command Prompt; both restore switches default to off. [Compatibility and verification](docs/codex-session-restore.md).
-**omp has its own switch:** **Settings -> Workspace -> Resume omp sessions on restore**. Enable it, then run `omp` in a wmux terminal. wmux's omp extension records each tab's verified `.jsonl` transcript path on disk and restores with `omp --resume <path>` in the saved directory. Multiple tabs in the same directory keep their own exact conversation without crossing or re-rooting prompts. An orderly exit (e.g. `/quit`) forgets the handle; a crash or closing wmux retains it. Deleted transcripts are safely skipped rather than secretly creating an empty session. Restore commands are quoted safely for PowerShell (verbatim single quotes), cmd (double quotes), and POSIX shells. [Documentation and verification](docs/omp-session-restore.md).
-**pi has its own switch:** **Settings -> Workspace -> Resume pi sessions on restore**. Enable it, then run `pi` in a wmux terminal. wmux's pi extension records each tab's exact session file once pi has written it (after the first reply) and restores with `pi --session <path>` in the saved directory. Quitting pi forgets the handle; switching with `/new`, `/resume` or `/fork` records the new session; a crash or closing wmux keeps it. A session file that is gone or empty is skipped rather than opened as a new empty session.
-
-## Config
-
-### Remote file upload
-
-Control SCP upload for direct SSH panes in `~/.wmux/config.toml`:
-
-```toml
-[remote]
-upload-on-paste = true
-upload-on-drop  = true
-```
-
-Both settings default to `true` and apply after `wmux reload-config`. See
-[Remote file upload](docs/config.md#remote-file-upload) for behavior and
-limitations.
-
-### Terminal themes
-
-Set a global default color scheme in `~/.wmux/config.toml`:
-
-```toml
-[terminal]
-color_scheme = "Dracula"
-```
-
-Override per pane at split time or on the fly:
-
-```bash
-wmux split --color-scheme "Tokyo Night"
-wmux set-color-scheme "Solarized Dark"
-```
-
-Define custom named schemes in Settings > Terminal > Custom Schemes.
-
-### Key remaps
-
-Change what a key sends to the program running in a terminal — add a `[keys]`
-section to `~/.wmux/config.toml`:
-
-```toml
-[keys]
-"ctrl+k"       = "<C-k><Delete>"   # kill to end of line, then pull the next line up
-"ctrl+alt+r"   = "clear<CR>"       # text outside <> is typed literally
-"ctrl+shift+q" = ""                # empty value swallows the key
-```
-
-Remaps apply inside terminal panes and take priority over wmux's own shortcuts
-there. `wmux reload-config` applies edits without a restart. Full token list in
-[docs/config.md](docs/config.md#key-remaps).
-
-### Import from existing terminal configs
-
-wmux reads configuration from:
-
-1. **Windows Terminal** — `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_...\LocalState\settings.json`
-2. **Ghostty** — `~/.config/ghostty/config`
-
-Import either via Settings > Terminal > Import. Extracts font family, font size, color scheme, and palette. Default theme is Dracula. 450+ Ghostty themes bundled.
-
-## Architecture
-
-Two-process Electron model. Main process manages PTY spawning (node-pty/ConPTY), named pipe server, CDP browser bridge, port scanning, git/PR polling, notifications, Claude Code context injection, session persistence, and multi-window lifecycle. Renderer process runs React/Zustand with xterm.js (WebGL), recursive split pane layout, and the sidebar.
-
-```
-src/
-  main/               # Electron main process
-  renderer/           # React app (sidebar, splits, terminals, browser)
-  preload/            # contextBridge API
-  cli/                # wmux CLI tool
-  shared/             # Types shared between main and renderer
-  shell-integration/  # PowerShell, CMD, WSL scripts
-
-resources/
-  wmux-orchestrator/  # Claude Code plugin, deprecated — no longer installed (#239)
-  themes/             # Ghostty + wmux theme files
-  sounds/             # Notification sounds
-```
-
-## Based on cmux
-
-wmux is an independent, from-scratch Windows reimplementation inspired by [cmux](https://github.com/manaflow-ai/cmux), the macOS terminal for multitasking. It shares cmux's design philosophy and is wire-compatible with its socket protocol — tools built for cmux's API work with wmux — but it does not reuse cmux's source code.
-
-## Contributing
-
-- [GitHub Issues](https://github.com/amirlehmam/wmux/issues) — bug reports and feature requests
-- [GitHub Discussions](https://github.com/amirlehmam/wmux/discussions) — questions and ideas
-
-### Reporting a crash
-
-Run `wmux crash-report` and paste the output. **Do not send a crash dump** — a
-Windows minidump carries your process environment block in cleartext, and wmux's
-users are exactly the people who keep credentials there. See
-[docs/crash-reports.md](docs/crash-reports.md).
-
-### Reporting an OpenCode sidebar problem
-
-Set `WMUX_PLUGIN_DEBUG=1`, reproduce, and attach the log it writes to your temp
-directory. See [docs/opencode-plugin.md](docs/opencode-plugin.md).
-
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/amirlehmam-wmux-badge.png)](https://mseep.ai/app/amirlehmam-wmux)
-
-
-## License
-
-wmux is open source under the [MIT License](LICENSE). It is an independent reimplementation inspired by cmux and does not incorporate cmux's source code.
+Licensed under [MIT](LICENSE).
