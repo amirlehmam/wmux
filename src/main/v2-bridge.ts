@@ -150,8 +150,10 @@ export function prepareWorkspaceCreateParams(
 const MAX_LAYOUT_AGENT_CELLS = 16;
 
 /**
- * -32602 message for `layout.agents` params, or null when they are usable.
- * Main answers this itself so a bad count never reaches a renderer. The ratio
+ * -32602 message for `layout.agents` params (#255), or null when they are usable.
+ * `layout.agents` splits only the anchor's pane, where `layout.grid` rebuilds the
+ * whole workspace. Main answers this itself so a bad count never reaches a
+ * renderer, which would have to guess at `count: null`. The ratio
  * is only checked for being a finite number: clamping to [0.2, 0.8] belongs to
  * `buildAgentLayout`, so an out-of-range ratio is not an error.
  */
