@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld('wmux', {
     // changed the app icon — the renderer turns it into a bell notification.
     takeIconChangeNotice: (): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_TAKE_ICON_CHANGE_NOTICE),
+    // The "Open in wmux" Explorer verb (HKCU).
     getContextMenu: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_CONTEXT_MENU) as Promise<boolean>,
     setContextMenu: (enabled: boolean, label?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_SET_CONTEXT_MENU, enabled, label) as Promise<{
@@ -191,8 +192,8 @@ contextBridge.exposeInMainWorld('wmux', {
     },
   },
   clipboard: {
-    // No pasteImage/readFiles: reading the clipboard for a paste is main's
-    // job now (remote.resolvePaste), because only main can act on what it
+    // No pasteImage/readFiles since 1.12.0: reading the clipboard for a paste
+    // is main's job now (remote.resolvePaste), because only main can act on what it
     // finds. These remain for copy and older renderer call sites.
     writeText: (text: string) => ipcRenderer.invoke('clipboard:write-text', text),
     readText: () => ipcRenderer.invoke('clipboard:read-text') as Promise<string>,
@@ -250,6 +251,8 @@ contextBridge.exposeInMainWorld('wmux', {
   // Release notes, in the app (issue #211). Deliberately its own namespace
   // rather than a member of `update`: this answers "what changed", including in
   // versions already installed, and works fine when there is no update at all.
+  // Takes only a refresh flag: no repo, URL or token, so a compromised renderer
+  // cannot point it somewhere else.
   changelog: {
     get: (opts?: { refresh?: boolean }) => ipcRenderer.invoke(IPC_CHANNELS.CHANGELOG_GET, opts),
   },
@@ -425,6 +428,8 @@ contextBridge.exposeInMainWorld('wmux', {
     // `markdown.readFile` below takes an absolute path and mints nothing.
     readMarkdown: (surfaceId: string, relPath: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_READ_MARKDOWN, surfaceId, relPath),
+    // An exception to the rule above: it takes the path as PRINTED, and
+    // main jails it (see terminal-file-link.ts).
     resolveTerminalLink: (surfaceId: string, text: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESOLVE_FILE_LINK, surfaceId, text),
     // A pane's own OSC 7 cwd report (#378), forwarded RAW: main decides what
@@ -528,7 +533,9 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SET_BACKDROP, enabled, material),
     supportsBackdrop: (): Promise<{ transparency: boolean; materials: boolean }> =>
       ipcRenderer.invoke(IPC_CHANNELS.WINDOW_SUPPORTS_BACKDROP),
-    // For the renderer-drawn caption buttons a frameless window needs.
+    // For the renderer-drawn caption buttons a frameless window needs. Clear
+    // mode is frameless, and entering or leaving it takes a new window, which
+    // is what the restart banner's relaunch is for.
     closeSelf: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE_SELF),
     isFrameless: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_FRAMELESS),
     relaunch: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_RELAUNCH),

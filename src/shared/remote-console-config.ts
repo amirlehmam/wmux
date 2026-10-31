@@ -269,6 +269,7 @@ export interface RemoteDesktopNotice {
 
 // ── Preload bridge (`window.wmux.remoteConsole`) ────────────────────────
 
+/** Every invoke answers `{ error: 'unavailable' }` when the runtime did not load, never a throw. */
 export type RemoteBridgeError = { error: string };
 
 export interface RemoteConsoleBridge {
@@ -281,7 +282,9 @@ export interface RemoteConsoleBridge {
   rename(id: string, name: string): Promise<void | RemoteBridgeError>;
   /** Hide the refused-origin card until another origin is refused. */
   dismissRejectedOrigin(): Promise<void | RemoteBridgeError>;
+  /** Returns an unsubscribe, as does `onRendererRequest`. */
   onState(cb: (status: RemoteConsoleStatus) => void): () => void;
   onRendererRequest(cb: (req: RemoteRendererRequest) => void): () => void;
+  /** Answers a snapshot or modes request from `onRendererRequest`. */
   replyRenderer(reqId: string, result: RemoteSnapshotResult | RemoteModesResult): void;
 }

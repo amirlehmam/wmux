@@ -13,7 +13,9 @@ import * as marks from './prompt-marks';
  * Two sources feed it and neither knows about the other:
  *
  *   • `recordAgentPrompt` — Claude Code's UserPromptSubmit hook, arriving via
- *     App.tsx. Carries the text verbatim.
+ *     App.tsx. Carries the text verbatim. The OpenCode plugin's v2 prompt-admission
+ *     hook (#304) and its TUI half's `session.inbox.enqueued` (remote and shared
+ *     servers, #310) reach the same App.tsx handler through `wmux hook --prompt`.
  *   • `handlePromptMark` — OSC 133 from wmux's shell integration, arriving via
  *     the xterm parser in useTerminal. Carries a boundary; the text is read back
  *     out of the buffer.
@@ -430,6 +432,9 @@ function commitShellPrompt(terminal: Terminal, surfaceId: string): void {
  * owns, which is exactly when a band's row is most likely to stop carrying its
  * prompt — re-applying re-runs that check on every entry at once instead of
  * waiting for each row to be scrolled back into view.
+ *
+ * The marker itself needs none of this: xterm 6 reflows it with its content
+ * (verified: narrowing 80→40 moved `marker.line` 20→40, still on the same text).
  */
 export function refreshHighlights(terminal: Terminal, surfaceId: string): void {
   const prefs = promptPrefs();
