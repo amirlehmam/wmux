@@ -541,7 +541,7 @@ export const zhTW: Translation = {
   'settings.workspacePanel.sessionSnapshotHint': '保留最近三個彼此不同的版面，以「Auto-save …」項目列在「載入工作階段」底下——不小心關掉、或被 agent 關掉的窗格可以找回來。只有真的有變動的版面才會占用一格，所以閒置的電腦會保有原本的紀錄。',
   'settings.workspacePanel.restoreCodexSessions': '還原時繼續 Codex 工作階段',
   'settings.workspacePanel.restoreOpencodeSessions': '還原時繼續 OpenCode 工作階段',
-  'settings.workspacePanel.restoreOpencodeSessionsHint': '以 `opencode -s` 在每個還原分頁原本的目錄中重新開啟它的 OpenCode 工作階段。需要 wmux 的 OpenCode 外掛（已啟用代理整合）。正常結束的 OpenCode 不會重新開啟。若工作階段已被刪除，OpenCode 會改為建立新的工作階段。OpenCode 2 只有以 --standalone 啟動時才會記錄：它共用的背景伺服器無法分辨分頁。',
+  'settings.workspacePanel.restoreOpencodeSessionsHint': '以 `opencode -s` 在每個還原分頁原本的目錄中重新開啟它的 OpenCode 工作階段。需要 wmux 的 OpenCode 整合（伺服器外掛，或為 OpenCode 2 以 `wmux opencode-tui` 安裝的 TUI 外掛）。正常結束的 OpenCode 不會重新開啟。若工作階段已被刪除，OpenCode 會改為建立新的工作階段。OpenCode 2 在遠端或共用伺服器上由 TUI 外掛記錄；wmux 更新後請在該環境重新執行 `wmux opencode-tui`。',
   'settings.workspacePanel.restoreAgySessions': '還原時繼續 Antigravity CLI 對話',
   'settings.workspacePanel.restoreAgySessionsHint': '以 `agy --conversation` 在每個還原分頁原本的目錄中重新開啟它的 agy 對話。需要 wmux 的 agy 外掛（已啟用狀態掛鉤）與 Node.js。對話會在開始時記錄，或在繼續後的第一則訊息時記錄。結束 agy 回到 shell 提示字元後，不會重新開啟。',
   'settings.workspacePanel.restoreOmpSessions': '還原時繼續 omp 工作階段',

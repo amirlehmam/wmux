@@ -186,17 +186,26 @@ against real `opencode-ai` 1.18.35 and `@opencode/cli` 2.0.24:
   born with a parent (`info.parentID` on v1, `data.parentID` on v2's flat
   `session.created`) is never reported. `parentID` on `message.updated` is a
   *message* id and is ignored.
-- Ids must match `ses_<base62>`; anything else is dropped here and again in
-  main and in the renderer, since the id ends up on a command line.
-- Quitting OpenCode releases the handle (`wmux release-agent --provider
-  opencode --session <id>`), so a restore gives back the shell. Main refuses
-  that release while wmux itself is quitting. OpenCode 2's `run` neither exits
-  nor disposes its plugins cleanly, so there the handle may survive a quit.
-- **OpenCode 2's shared background server reports nothing.** By default v2 runs
-  one `opencode serve --service` for every TUI, plugins live in it, and its
-  `WMUX_SURFACE_ID` names only the pane that started it — reporting from there
-  would resume pane B's conversation in pane A. Start OpenCode 2 with
-  `--standalone` for the handle to be captured.
+- A deleted session is forgotten: `session.deleted` releases the handle, so the
+  next restore never types a dead id into `opencode -s`.
+- Ids must match `ses_<base62>` or a loop session's `ses_loop_<base62>`;
+  anything else is dropped here and again in main and in the renderer, since
+  the id ends up on a command line.
+- A real OpenCode exit releases the handle (`wmux release-agent --provider
+  opencode --session <id>`), so a restore gives back the shell. A plugin reload
+  after `wmux opencode-tui` does not: the pane is still running, and releasing
+  there made every open pane lose its restore handle when the plugin was
+  updated. Main refuses the release while wmux itself is quitting. OpenCode 2's
+  `run` neither exits nor disposes its plugins cleanly, so there the handle may
+  survive a quit.
+- **OpenCode 2's shared background server cannot attribute a pane.** By default
+  v2 runs one `opencode serve --service` for every TUI, plugins live in it, and
+  its `WMUX_SURFACE_ID` names only the pane that started it — reporting from
+  there would resume pane B's conversation in pane A. The CLI-side TUI half
+  (`wmux opencode-tui`) runs in the TUI process instead, so it captures the
+  viewed session for remote and shared servers; `--standalone` is no longer
+  required when that half is installed. Re-run the installer after a wmux
+  update so the installed marker matches.
 
 ---
 

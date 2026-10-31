@@ -11,11 +11,15 @@ import * as path from 'path';
  * testing lives here and the entry file is only the reactive glue.
  */
 const calls: Array<{ file: string; argv: string[]; opts: any }> = [];
+const syncCalls: Array<{ file: string; argv: string[]; opts: any }> = [];
 
 vi.mock('node:child_process', () => ({
   execFile: (file: string, argv: string[], opts: any, cb: any) => {
     calls.push({ file, argv, opts });
     if (typeof cb === 'function') cb(null, '', '');
+  },
+  execFileSync: (file: string, argv: string[], opts: any) => {
+    syncCalls.push({ file, argv, opts });
   },
 }));
 
@@ -26,6 +30,7 @@ const SURFACE = 'surf-1';
 
 beforeEach(() => {
   calls.length = 0;
+  syncCalls.length = 0;
 });
 
 describe('planSessionReport (#310)', () => {
@@ -33,6 +38,12 @@ describe('planSessionReport (#310)', () => {
     const { planSessionReport } = await load();
     expect(planSessionReport({ type: 'session', sessionID: 'ses_abc12345' }, (id: string) => id))
       .toBe('ses_abc12345');
+  });
+
+  it('accepts the loop session ids OpenCode 2 uses', async () => {
+    const { planSessionReport } = await load();
+    const id = 'ses_loop_964e1bb45a26f32c336b';
+    expect(planSessionReport({ type: 'session', sessionID: id }, (value: string) => value)).toBe(id);
   });
 
   it('resolves a viewed subagent to its root — a child is not a resumable handle', async () => {
@@ -87,6 +98,17 @@ describe('createSessionReporter (#310)', () => {
     expect(sent.map((argv: string[]) => argv[1])).toEqual(['ses_abc12345', 'ses_def67890']);
   });
 
+  it('tells the caller whether it actually sent a report, and whether it holds one', async () => {
+    const { reporter } = await reporterFor();
+    expect(reporter.hasSession()).toBe(false);
+    expect(reporter.observe(route('ses_abc12345'), rootOf)).toBe(true);
+    expect(reporter.hasSession()).toBe(true);
+    expect(reporter.observe(route('ses_abc12345'), rootOf)).toBe(false);
+    reporter.dispose();
+    expect(reporter.hasSession()).toBe(false);
+    expect(reporter.observe(route('ses_def67890'), rootOf)).toBe(false);
+  });
+
   it('releases the last session on dispose, exactly once', async () => {
     const { reporter, sent } = await reporterFor();
     reporter.observe(route('ses_abc12345'), rootOf);
@@ -110,6 +132,145 @@ describe('createSessionReporter (#310)', () => {
     reporter.dispose();
     reporter.observe(route('ses_abc12345'), rootOf);
     expect(sent).toEqual([]);
+  });
+
+  it('releases synchronously on process exit, not through the async sender', async () => {
+    const { createSessionReporter } = await load();
+    const sent: string[][] = [];
+    const synced: string[][] = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (argv: string[]) => sent.push(argv),
+      callWmuxSync: (argv: string[]) => synced.push(argv),
+    });
+    reporter.observe(route('ses_abc12345'), rootOf);
+
+    expect(reporter.releaseOnExit()).toBe(true);
+    expect(synced).toEqual([[
+      'release-agent', '--provider', 'opencode', '--session', 'ses_abc12345', '--surface', SURFACE,
+    ]]);
+    expect(sent).toHaveLength(1); // only the report: no async release
+
+    expect(reporter.releaseOnExit()).toBe(false);
+    expect(synced).toHaveLength(1);
+  });
+
+  it('releases nothing on exit when no session was viewed', async () => {
+    const { createSessionReporter } = await load();
+    const synced: string[][] = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: () => {},
+      callWmuxSync: (argv: string[]) => synced.push(argv),
+    });
+    expect(reporter.releaseOnExit()).toBe(false);
+    expect(synced).toEqual([]);
+  });
+
+  it('forgets only the deleted session it holds, and releases it', async () => {
+    const { createSessionReporter } = await load();
+    const sent: string[][] = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (argv: string[]) => sent.push(argv),
+      callWmuxSync: () => {},
+    });
+    reporter.observe(route('ses_abc12345'), rootOf);
+
+    expect(reporter.forget('ses_other999')).toBe(false);
+    expect(reporter.hasSession()).toBe(true);
+    expect(reporter.forget('ses_abc12345')).toBe(true);
+    expect(reporter.hasSession()).toBe(false);
+
+    expect(sent).toEqual([
+      ['report-session', 'ses_abc12345', '--provider', 'opencode', '--surface', SURFACE],
+      ['release-agent', '--provider', 'opencode', '--session', 'ses_abc12345', '--surface', SURFACE],
+    ]);
+    expect(reporter.forget('ses_abc12345')).toBe(false);
+  });
+});
+
+describe('startup session seeder (#310 follow-up)', () => {
+  const seederFor = async (overrides: {
+    reportCurrent?: () => boolean;
+    delays?: number[];
+    log?: (label: string, data?: unknown) => void;
+  } = {}) => {
+    const { createSessionSeeder } = await load();
+    const scheduled: Array<{ fn: () => void; ms: number }> = [];
+    const cancelled: unknown[] = [];
+    let calls = 0;
+    const seeder = createSessionSeeder({
+      reportCurrent: overrides.reportCurrent ?? (() => { calls++; return false; }),
+      delays: overrides.delays ?? [250, 1000],
+      schedule: (fn: () => void, ms: number) => {
+        const timer = { fn, ms };
+        scheduled.push(timer);
+        return timer;
+      },
+      cancel: (timer: unknown) => { cancelled.push(timer); },
+      log: overrides.log,
+    });
+    return { seeder, scheduled, cancelled, calls: () => calls };
+  };
+
+  it('reads immediately and stops as soon as a report succeeds', async () => {
+    let reports = 0;
+    const { seeder, scheduled } = await seederFor({
+      reportCurrent: () => ++reports === 2,
+    });
+    seeder.start();
+    expect(reports).toBe(1);
+    expect(scheduled.map((s) => s.ms)).toEqual([250]);
+
+    scheduled.shift()!.fn();
+    expect(reports).toBe(2);
+    expect(scheduled).toEqual([]);
+  });
+
+  it('keeps retrying on the declared schedule, then gives up', async () => {
+    const { seeder, scheduled } = await seederFor({ delays: [250, 1000] });
+    seeder.start();
+    expect(scheduled.map((s) => s.ms)).toEqual([250]);
+
+    scheduled.shift()!.fn();
+    expect(scheduled.map((s) => s.ms)).toEqual([1000]);
+
+    scheduled.shift()!.fn();
+    expect(scheduled).toEqual([]);
+  });
+
+  it('stops the pending timer and a late timer cannot report', async () => {
+    const { seeder, scheduled, cancelled, calls } = await seederFor();
+    seeder.start();
+    expect(calls()).toBe(1);
+    const pending = scheduled[0];
+
+    seeder.stop();
+    expect(cancelled).toEqual([pending]);
+
+    pending.fn(); // the timer raced the stop
+    expect(calls()).toBe(1);
+    seeder.stop(); // idempotent
+    expect(cancelled).toHaveLength(1);
+  });
+
+  it('never lets a throwing route read escape into the TUI', async () => {
+    let reads = 0;
+    const { seeder, scheduled } = await seederFor({
+      reportCurrent: () => {
+        reads++;
+        if (reads === 1) throw new Error('router not ready');
+        return true;
+      },
+    });
+
+    expect(() => seeder.start()).not.toThrow();
+    expect(scheduled.map((s) => s.ms)).toEqual([250]);
+
+    scheduled.shift()!.fn();
+    expect(reads).toBe(2);
+    expect(scheduled).toEqual([]);
   });
 });
 
@@ -205,6 +366,33 @@ describe('prompt capture (#310 phase 2)', () => {
     const reporter = createPromptReporter({ callWmux: (argv: string[]) => sent.push(argv) });
     reporter.observe(enqueued({ item: { type: 'user', payload: { text: 'x'.repeat(5000) }, delivery: 'steer' } }), true);
     expect(sent[0][4].length).toBe(4000);
+  });
+});
+
+describe('routeFromTabs (#310 follow-up)', () => {
+  it('keeps the router session when there is one', async () => {
+    const { routeFromTabs } = await load();
+    const route = { type: 'session', sessionID: 'ses_abc12345' };
+    expect(routeFromTabs(route, [{ sessionID: 'ses_other999' }])).toBe(route);
+  });
+
+  it('uses the only open tab when the router answers home', async () => {
+    const { routeFromTabs } = await load();
+    expect(routeFromTabs({ type: 'home' }, [{ sessionID: 'ses_abc12345' }]))
+      .toEqual({ type: 'session', sessionID: 'ses_abc12345' });
+    expect(routeFromTabs(null, [{ sessionID: 'ses_abc12345' }]))
+      .toEqual({ type: 'session', sessionID: 'ses_abc12345' });
+  });
+
+  it('does not guess between several tabs', async () => {
+    const { routeFromTabs } = await load();
+    const home = { type: 'home' };
+    expect(routeFromTabs(home, [
+      { sessionID: 'ses_a1234567' },
+      { sessionID: 'ses_b1234567' },
+    ])).toBe(home);
+    expect(routeFromTabs(null, [])).toBeNull();
+    expect(routeFromTabs(null, undefined)).toBeNull();
   });
 });
 
@@ -323,6 +511,9 @@ describe('blocked state (#310 phase 3a)', () => {
     expect(eventSessionID('permission.asked', asked())).toBe('ses_abc12345');
     expect(eventSessionID('form.created', { form: { sessionID: 'ses_abc12345' } })).toBe('ses_abc12345');
     expect(eventSessionID('session.execution.started', { sessionID: 'ses_abc12345' })).toBe('ses_abc12345');
+    expect(eventSessionID('session.deleted', { sessionID: 'ses_abc12345' })).toBe('ses_abc12345');
+    expect(eventSessionID('session.deleted', { info: { id: 'ses_def67890' } })).toBe('ses_def67890');
+    expect(eventSessionID('session.deleted', {})).toBeNull();
     expect(eventSessionID('form.created', {})).toBeNull();
     expect(eventSessionID('permission.asked', null)).toBeNull();
   });
@@ -497,5 +688,26 @@ describe('callWmux (#310)', () => {
     const { callWmux } = await load();
     callWmux(runtimeNode, ['x'], () => {}, {}, 'linux');
     expect(calls[0]).toMatchObject({ file: 'wmux', argv: ['x'] });
+  });
+
+  it('runs the exit release synchronously and bounded', async () => {
+    const { callWmuxSync } = await load();
+    callWmuxSync(
+      runtimeNode,
+      ['release-agent', '--session', 'ses_abc12345'],
+      () => {},
+      { WMUX_CLI: 'wmux.js' },
+    );
+    expect(syncCalls).toHaveLength(1);
+    expect(syncCalls[0].file).toBe(':node:');
+    expect(syncCalls[0].argv).toEqual(['wmux.js', 'release-agent', '--session', 'ses_abc12345']);
+    expect(syncCalls[0].opts.timeout).toBeGreaterThan(0);
+    expect(syncCalls[0].opts.stdio).toBe('ignore');
+  });
+
+  it('skips the synchronous path on Windows without WMUX_CLI', async () => {
+    const { callWmuxSync } = await load();
+    expect(callWmuxSync(runtimeNode, ['x'], () => {}, {}, 'win32')).toBe(false);
+    expect(syncCalls).toEqual([]);
   });
 });

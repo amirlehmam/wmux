@@ -165,7 +165,7 @@ function askReason(event) {
 }
 
 /** Mirrors OPENCODE_SESSION_ID_RE in wmux's src/main/opencode-resume.ts. */
-const SESSION_ID_RE = /^ses_[A-Za-z0-9]{8,120}$/;
+const SESSION_ID_RE = /^ses_[A-Za-z0-9_]{8,120}$/;
 
 /**
  * What an event says about sessions (#290): the session it concerns, and — for

@@ -157,7 +157,7 @@ function withOpencodeResume(base: string[] | undefined, surfaceId: string, opts:
   if (!id || opts.claudeSessionId || opts.codexSessionId || opts.ompSessionId || !opts.opencodeEnabled) return base;
   // Mirrors OPENCODE_SESSION_ID_RE in src/main/opencode-resume.ts — re-checked
   // because session.json is a file the user can edit.
-  if (!/^ses_[A-Za-z0-9]{8,120}$/.test(id)) return base;
+  if (!/^ses_[A-Za-z0-9_]{8,120}$/.test(id)) return base;
   return applyResume(base, surfaceId, 'opencode', id);
 }
 

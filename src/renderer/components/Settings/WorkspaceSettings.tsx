@@ -311,7 +311,7 @@ export default function WorkspaceSettings() {
         />
       </div>
       <p className="settings-hint">
-        {t('settings.workspacePanel.restoreOpencodeSessionsHint', "Reopens each restored tab's OpenCode session with `opencode -s`, in the directory it was in. Needs the wmux OpenCode plugin (Agent integration on). An OpenCode you quit normally is not reopened. If a session was deleted since, OpenCode starts a new one instead. OpenCode 2 is captured only when started with --standalone: its shared background server cannot tell tabs apart.")}
+        {t('settings.workspacePanel.restoreOpencodeSessionsHint', "Reopens each restored tab's OpenCode session with `opencode -s`, in the directory it was in. Needs the wmux OpenCode integration (the server plugin, or the TUI plugin installed with `wmux opencode-tui` for OpenCode 2). An OpenCode you quit normally is not reopened. If a session was deleted since, OpenCode starts a new one instead. OpenCode 2 on a remote or shared server is captured by the TUI plugin; re-run `wmux opencode-tui` in that environment after a wmux update.")}
       </p>
 
       <div className="settings-row">

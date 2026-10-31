@@ -882,7 +882,7 @@ export const cs: Translation = {
   'settings.workspacePanel.restoreCodexSessions': 'Pokračovat v relacích Codex při obnovení',
   'settings.workspacePanel.restoreOpencodeSessions': 'Pokračovat v relacích OpenCode při obnovení',
   'settings.workspacePanel.restoreOpencodeSessionsHint':
-    'Znovu otevře relaci OpenCode každé obnovené karty pomocí „opencode -s“ v původním adresáři. Vyžaduje plugin wmux pro OpenCode (zapnutou integraci agentů). Běžně ukončené relace OpenCode se neotevřou. Pokud byla relace mezitím smazána, OpenCode místo ní zahájí novou. Relace OpenCode 2 lze zachytit pouze při spuštění s --standalone: jeho sdílený server na pozadí nedokáže rozlišit jednotlivé karty.',
+    'Znovu otevře relaci OpenCode každé obnovené karty pomocí „opencode -s“ v původním adresáři. Vyžaduje integraci OpenCode ve wmux (serverový plugin, nebo TUI plugin nainstalovaný pomocí `wmux opencode-tui` pro OpenCode 2). Běžně ukončené relace OpenCode se neotevřou. Pokud byla relace mezitím smazána, OpenCode místo ní zahájí novou. OpenCode 2 na vzdáleném nebo sdíleném serveru zachytává TUI plugin; po aktualizaci wmux spusťte v daném prostředí znovu `wmux opencode-tui`.',
   'settings.workspacePanel.restoreQwenSessions': 'Pokračovat v relacích Qwen Code při obnovení',
   'settings.workspacePanel.restoreQwenSessionsHint':
     'Znovu spustí Qwen Code v každé obnovené kartě, kde běžel, pomocí „qwen --resume“ v původním adresáři. Vyžaduje hooky wmux pro Qwen (zapnuté stavové hooky) a Qwen Code 0.14 nebo novější. Karty, jejichž relace už Qwen nemá, se přeskočí. Řádně ukončené relace Qwen se neobnovují.',

@@ -11,6 +11,7 @@ import type { SurfaceId, SplitNode } from '../../src/shared/types';
 // Issue #290 — `opencode -s <id>` on restore, beside Claude (#186) and Codex (#261).
 const OC = 'ses_ebee54158ffe0s9gKyn9y27AJz';
 const OC2 = 'ses_ebee49dd7ffeliSGc2ATav2wlN';
+const LOOP = 'ses_loop_964e1bb45a26f32c336b';
 const CLAUDE = '11111111-2222-3333-4444-555555555555';
 const SA = 'surf-11111111' as SurfaceId;
 const SB = 'surf-22222222' as SurfaceId;
@@ -36,6 +37,14 @@ describe('OpenCode per-tab restore (#290)', () => {
     resetAgentState();
     expect(restore(saved.surfaces[0])).toEqual([`opencode -s ${OC}`]);
     expect(restore(saved.surfaces[1])).toEqual([`opencode -s ${OC2}`]);
+  });
+
+  it('round-trips a loop session — a real, resumable id with an underscore', () => {
+    expect(isValidOpencodeSessionId(LOOP)).toBe(true);
+    rpc('pane.report_agent_session', { surfaceId: SA, sessionId: LOOP, provider: 'opencode' });
+    const saved = JSON.parse(JSON.stringify(stampAgentSessionIds(leaf([terminal(SA)]))));
+    resetAgentState();
+    expect(restore(saved.surfaces[0])).toEqual([`opencode -s ${LOOP}`]);
   });
 
   it('never stamps an OpenCode id as a Claude session, though Claude\'s validator would accept it', () => {
