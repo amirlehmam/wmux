@@ -15,6 +15,27 @@ import type { SessionData } from './session-persistence';
 
 export type SessionWindowState = SessionData['windows'][number];
 
+/** Only terminal members of a saved layout can carry automatic restore authority. */
+export function terminalSurfaceIds(state: SessionWindowState): Set<string> {
+  const ids = new Set<string>();
+  const visit = (node: any): void => {
+    if (node?.type === 'leaf' && Array.isArray(node.surfaces)) {
+      for (const surface of node.surfaces) {
+        if (surface?.type === 'terminal' && typeof surface.id === 'string') ids.add(surface.id);
+      }
+    } else if (node?.type === 'branch' && Array.isArray(node.children)) {
+      node.children.forEach(visit);
+    }
+  };
+  for (const workspace of state.workspaces ?? []) visit(workspace.splitTree);
+  return ids;
+}
+
+/** Reserved history fields never belong to layouts or named-session archives. */
+export function withoutTerminalHistory<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value, (key, entry) => key === 'terminalHistory' ? undefined : entry)) as T;
+}
+
 /**
  * Cap on windows restored from a session file. Restoring is unbounded work
  * (each window spawns PTYs), so a corrupted or hand-edited file should not be
@@ -83,6 +104,10 @@ export class SessionWindowRegistry {
   /** Every window's state, in creation order — the array written to disk. */
   toArray(): SessionWindowState[] {
     return [...this.slots.values()];
+  }
+
+  entries(): IterableIterator<[string, SessionWindowState]> {
+    return this.slots.entries();
   }
 
   get size(): number {

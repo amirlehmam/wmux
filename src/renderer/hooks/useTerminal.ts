@@ -43,7 +43,10 @@ import { forgetSurfaceShellState, treeSurfaceIds, workspaceShellState } from '..
 import { forgetProgressTurn, noteSurfaceProgress } from '../utils/progress-turn';
 import { windowsPtyCompat } from '../utils/windows-pty';
 import { ReplayHold } from '../utils/replay-hold';
-import { RemountSnapshotCache, serializeRemountSnapshot } from '../utils/remount-snapshot';
+import { connectTerminalWithHistory, forgetPendingTerminalHistoryCreation, type RetainedTerminalEvents } from '../utils/terminal-history';
+import { TerminalHistoryCheckpoints } from '../utils/terminal-history-checkpoints';
+import { reportTerminalHistoryFailure } from '../utils/terminal-history-feedback';
+import { RemountSnapshotCache, serializeRemountSnapshot, type RemountSnapshot } from '../utils/remount-snapshot';
 import { anchorViewportLikeConpty, captureCursorLine, captureViewportTop, restoreCursorLine } from '../utils/conpty-anchor';
 import { createTouchPanTracker } from '../utils/touch-pan';
 import { createFlingVelocityTracker, startFling, stepFling, type Fling } from '../utils/touch-fling';
@@ -458,6 +461,14 @@ export function showPaneNotice(surfaceId: string, text: string): void {
  */
 export const surfaceSerializerRegistry = new Map<string, SerializeAddon>();
 
+export const terminalHistoryCheckpoints = new TerminalHistoryCheckpoints({
+  terminals: () => surfaceTerminalRegistry,
+  serializer: (surface) => surfaceSerializerRegistry.get(surface),
+  bridge: () => window.wmux?.terminalHistory,
+  lines: () => useStore.getState().terminalPrefs.scrollbackLines,
+  report: reportTerminalHistoryFailure,
+});
+
 /**
  * surfaceId → count of PTY chunks written into that terminal.
  *
@@ -573,6 +584,8 @@ export function forgetSurfaceTitle(surfaceId: string): void {
   surfaceTitle.delete(surfaceId);
 }
 
+const terminalCloseCancellations = new Map<string, () => void>();
+
 /**
  * Drop every module map entry a CLOSED terminal surface left behind (#385).
  *
@@ -584,6 +597,10 @@ export function forgetSurfaceTitle(surfaceId: string): void {
  * never ran, and every one of these kept an entry per surface ever opened.
  */
 export function forgetClosedTerminal(surfaceId: string): void {
+  terminalCloseCancellations.get(surfaceId)?.();
+  terminalCloseCancellations.delete(surfaceId);
+  terminalHistoryCheckpoints.close(surfaceId);
+  forgetPendingTerminalHistoryCreation(surfaceId);
   forgetSurfaceTitle(surfaceId);
   surfaceMouseModes.delete(surfaceId);
   wheelLineAccum.delete(surfaceId);
@@ -1018,7 +1035,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // alone already agree under windowsPty. See utils/conpty-anchor.ts.
         const term = xtermRef.current;
         const next = fitAddonRef.current.proposeDimensions();
-        const reflows = !!term && !!next && next.cols !== term.cols;
+        // Before attach there is no ConPTY viewport to match; history keeps
+        // ordinary xterm reflow rather than orphaning its wrapped rows.
+        const reflows = !!ptyIdRef.current && !!term && !!next && next.cols !== term.cols;
         const top = reflows ? captureViewportTop(term) : undefined;
         // After captureViewportTop: a tail it orphans is where ConPTY's copy of
         // the cursor's line starts (#273, see captureCursorLine).
@@ -1101,6 +1120,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // "Cannot read properties of undefined (reading 'dimensions')" from deep in
     // Viewport.syncScrollArea. Every async callback checks this flag first.
     let disposed = false;
+    let liveAttached = false;
+    const preparation = new AbortController();
+    const cancelClosed = () => { liveAttached = false; preparation.abort(); };
+    if (surfaceId) terminalCloseCancellations.set(surfaceId, cancelClosed);
+    const isCurrent = () => !disposed && !preparation.signal.aborted && xtermRef.current === terminal
+      && (!surfaceId || (surfaceTerminalRegistry.get(surfaceId) === terminal
+        && useStore.getState().workspaces.some((ws) => treeHasSurface(ws.splitTree, surfaceId))));
 
     // Create and load addons
     const fitAddon = new FitAddon();
@@ -1174,6 +1200,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       surfaceSerializerRegistry.set(surfaceId, serializeAddon);
     }
 
+    const stopHistoryObservation = terminalHistoryCheckpoints.observe(terminal, () => isCurrent() && liveAttached);
+
     const titleDisposable = recordTitleChanges(terminal, surfaceId);
     const screenEventsDisposable = trackScreenEventsFor(surfaceId, terminal);
 
@@ -1185,10 +1213,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // put its prompt on the alternate buffer (see utils/remount-snapshot.ts).
     // A TUI that was on the alternate screen comes back on it, and redraws
     // there via the post-remount SIGWINCH.
-    const restoreSurfaceState = (ptyReused: boolean) => {
+    const restoreSurfaceState = (ptyReused: boolean, completed?: RemountSnapshot) => {
       // StrictMode's discarded first mount answers its lookup too, and must not
       // take the snapshot its replacement is waiting for.
-      if (disposed || !surfaceId) return;
+      if (!isCurrent() || !surfaceId) return;
+      // A create response can outlive its renderer mount. Only the confirmed
+      // fresh handoff reaches here; unconfirmed disk state never enters the cache.
+      if (completed) surfaceBufferCache.retire(surfaceId, () => completed);
       const snapshot = surfaceBufferCache.take(surfaceId, ptyReused);
       if (snapshot) {
         // Replay at the size the snapshot was taken at, undoing the fit()
@@ -1209,7 +1240,6 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // entering it; Reset terminal state already knows who is on it (#357).
         beginSnapshotReplay(surfaceId);
         terminal.write(snapshot.text, () => {
-          endSnapshotReplay(surfaceId);
           // Parsed at last. Release, and grow to the pane's real size — applied
           // to xterm and the PTY together, which is the single in-step growth
           // `windowsPty` makes correct on both sides. Not only when a sync was
@@ -1217,7 +1247,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
           // which time the pane has usually been fitted already, and the resize
           // above undid that.
           replayHold.release();
-          if (disposed) return;
+          if (!isCurrent()) return;
+          endSnapshotReplay(surfaceId);
           fit();
           const dims = fitAddonRef.current?.proposeDimensions();
           if (dims && ptyIdRef.current && (dims.cols !== snapshot.cols || dims.rows !== snapshot.rows)) {
@@ -1679,7 +1710,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Initial fit
     requestAnimationFrame(() => {
-      fit();
+      if (isCurrent()) fit();
     });
 
     // Attach custom key handler for Ctrl+C and Ctrl+V (image paste)
@@ -1749,18 +1780,14 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Connect to PTY — either attach to existing (agent-spawned) or create new
 
-    // Pending resize dims captured by ResizeObserver before PTY is attached.
-    // When ResizeObserver fires before the IPC for pty.create/has resolves,
-    // ptyIdRef.current is null and the resize would be silently dropped. We
-    // stash the last observed dims and flush them in attachToPty instead.
-    let pendingResizeDims: { cols: number; rows: number } | null = null;
-
-    const attachToPty = (id: string) => {
+    const attachToPty = (id: string, retained?: RetainedTerminalEvents) => {
+      if (!isCurrent()) return;
+      liveAttached = true;
       ptyIdRef.current = id;
 
       // Wire PTY data → xterm
-      const unsubData = window.wmux.pty.onData(id, (data: string) => {
-        if (disposed) return;
+      const onData = (data: string) => {
+        if (disposed || xtermRef.current !== terminal) return;
         // Fold every DEC private mouse mode change in this chunk into the
         // surface's state, so the wheel handler can tell tmux from a plain
         // shell after a remount AND a remount can restore the ENCODING too.
@@ -1784,11 +1811,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // correction itself is coalesced into one animation frame, so a PTY
         // writing at full speed costs at most 60 corrections a second.
         notePromptOutput(id, resolveSurfaceTerminal);
-      });
+      };
 
       // Wire PTY exit → inform user; also auto-heal a stuck "Running" badge
       // (see clearStuckRunningState).
-      const unsubExit = window.wmux.pty.onExit(id, (_code: number) => {
+      const onExit = (_code: number) => {
+        if (!isCurrent()) return;
         // Undo whatever the dead application left set BEFORE announcing the
         // exit, so the announcement itself lands on the normal buffer in
         // default colours rather than inside the corpse of an alt screen
@@ -1828,18 +1856,19 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         // needs to see. The prompt LOG survives (the outline is still worth
         // reading over a finished session); only the anchor is released.
         releaseAnchor(id, terminal);
-      });
+      };
 
-      cleanupFnsRef.current.push(unsubData, unsubExit);
-
-      // Flush any resize that arrived before this PTY was ready
-      if (pendingResizeDims && !replayHold.isHolding) {
-        window.wmux.pty.resize(id, pendingResizeDims.cols, pendingResizeDims.rows);
-        pendingResizeDims = null;
+      if (retained) {
+        cleanupFnsRef.current.push(retained.attach(onData, onExit, (callback) => {
+          terminal.write('', () => { if (isCurrent()) callback(); });
+        }));
       } else {
-        // Initial resize, retried until the renderer has laid out (see helper).
-        scheduleInitialResize(id, fit, fitAddon, ptyIdRef, replayHold);
+        cleanupFnsRef.current.push(window.wmux.pty.onData(id, onData), window.wmux.pty.onExit(id, onExit));
       }
+
+      // Measure again after preparation; an observer's earlier dimensions may
+      // predate history replay or a resize while its drawing was held.
+      if (!retained?.exited) scheduleInitialResize(id, fit, fitAddon, ptyIdRef, replayHold);
 
       // Deferred visual safety-net (see scheduleDeferredRepaint).
       const deferredResizeId = scheduleDeferredRepaint(terminal);
@@ -1876,76 +1905,63 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // `%VAR%` are expanded in the main process by resolveSpawnCwd.
     const effectiveCwd = withPreference(cwd, useStore.getState().workspacePrefs.defaultCwd);
 
-    // Spawn the PTY at the already-measured terminal size. Otherwise it starts at
-    // the 80x24 default and our follow-up resize triggers a window-size-change in
-    // the shell, which makes PSReadLine/oh-my-posh redraw the prompt — the doubled
-    // prompt users saw. A hidden/unmeasured tab yields no dims and falls back to
-    // the default, then resizes correctly when first shown (that redraw isn't
-    // visible). proposeDimensions needs the element laid out, which it is after
-    // terminal.open() above.
-    const { cols: initialCols, rows: initialRows } = proposeInitialDims(fitAddon);
-
-    // If surfaceId is given AND a PTY already exists for it (agent spawn or re-mount), attach to it
-    if (surfaceId && window.wmux.pty.has) {
-      window.wmux.pty.has(surfaceId).then((exists: boolean) => {
-        // Torn down while has() was in flight (#385): attaching now would add
-        // PTY listeners after the cleanup that removes them already ran, and
-        // they would hold this disposed terminal for the life of the window.
-        if (disposed) return;
-        if (exists) {
-          restoreSurfaceState(true);
-          attachToPty(surfaceId!);
-        } else {
-          // No existing PTY — create a new one, passing surfaceId so PTY ID = Surface ID
-          const spawnCommands = withClaudeResume({
-            base: startupCommandsRef.current,
-            surfaceId,
-            claudeSessionId: claudeSessionIdRef.current,
-            enabled: useStore.getState().workspacePrefs.restoreClaudeSessions,
-            codexSessionId: codexSessionIdRef.current,
-            codexEnabled: useStore.getState().workspacePrefs.restoreCodexSessions,
-            opencodeSessionId: opencodeSessionIdRef.current,
-            opencodeEnabled: useStore.getState().workspacePrefs.restoreOpencodeSessions,
-            agySessionId: agySessionIdRef.current,
-            agyEnabled: useStore.getState().workspacePrefs.restoreAgySessions,
-            qwenSessionId: qwenSessionIdRef.current,
-            qwenEnabled: useStore.getState().workspacePrefs.restoreQwenSessions,
-            ompSessionId: ompSessionIdRef.current,
-            ompEnabled: useStore.getState().workspacePrefs.restoreOmpSessions,
-            piSessionFile: piSessionFileRef.current,
-            piEnabled: useStore.getState().workspacePrefs.restorePiSessions,
-            shell: effectiveShell,
-          });
-          window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd, env: envRef.current ?? {}, surfaceId, startupCommands: spawnCommands, cols: initialCols, rows: initialRows })
-            .then((created: { id: string; shell: string; reused: boolean; shellFallbackFrom?: string }) => {
-              // PTY persists (keep-alive); a remount re-attaches via pty.has.
-              if (disposed) return;
-              setResolvedShellForSurface(surfaceId, created.shell);
-              // `reused`: StrictMode's second mount loses the has() race and
-              // lands here on the PTY its first mount just created.
-              restoreSurfaceState(created.reused);
-              noteShellFallback(created);
-              attachToPty(created.id);
-            })
-            .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
-        }
-      });
-    } else {
-      // No surfaceId hint — always create new PTY
-      window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd, env: envRef.current ?? {}, startupCommands: startupCommandsRef.current, cols: initialCols, rows: initialRows })
-        .then((created: { id: string; shell: string; reused: boolean; shellFallbackFrom?: string }) => {
-          if (disposed) return;
+    void connectTerminalWithHistory({
+      terminal, surfaceId, bridge: window.wmux?.terminalHistory, hold: replayHold,
+      signal: preparation.signal, isCurrent, events: window.wmux.pty,
+      has: surfaceId && window.wmux.pty.has ? () => window.wmux.pty.has(surfaceId) : undefined,
+      fit,
+      create: (inheritCursor) => {
+        // Cursor inheritance needs the geometry replay actually finished at,
+        // including hidden panes where dimensions cannot currently be measured.
+        const { cols, rows } = inheritCursor ? terminal : proposeInitialDims(fitAddon);
+        const spawnCommands = surfaceId && window.wmux.pty.has ? withClaudeResume({
+          base: startupCommandsRef.current,
+          surfaceId,
+          claudeSessionId: claudeSessionIdRef.current,
+          enabled: useStore.getState().workspacePrefs.restoreClaudeSessions,
+          codexSessionId: codexSessionIdRef.current,
+          codexEnabled: useStore.getState().workspacePrefs.restoreCodexSessions,
+          opencodeSessionId: opencodeSessionIdRef.current,
+          opencodeEnabled: useStore.getState().workspacePrefs.restoreOpencodeSessions,
+          agySessionId: agySessionIdRef.current,
+          agyEnabled: useStore.getState().workspacePrefs.restoreAgySessions,
+          qwenSessionId: qwenSessionIdRef.current,
+          qwenEnabled: useStore.getState().workspacePrefs.restoreQwenSessions,
+          ompSessionId: ompSessionIdRef.current,
+          ompEnabled: useStore.getState().workspacePrefs.restoreOmpSessions,
+          piSessionFile: piSessionFileRef.current,
+          piEnabled: useStore.getState().workspacePrefs.restorePiSessions,
+          shell: effectiveShell,
+        }) : startupCommandsRef.current;
+        return window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd,
+          env: envRef.current ?? {}, surfaceId, startupCommands: spawnCommands, cols, rows,
+          conptyInheritCursor: inheritCursor }) as
+          Promise<{ id: string; shell: string; reused: boolean; shellFallbackFrom?: string }>;
+      },
+      captureCompleted: () => ({ text: serializeRemountSnapshot(serializeAddon), cols: terminal.cols, rows: terminal.rows }),
+      restoreLive: restoreSurfaceState,
+      attach: (id, created, retained) => {
+        if (created) {
           setResolvedShellForSurface(surfaceId, created.shell);
-          restoreSurfaceState(created.reused);
           noteShellFallback(created);
-          attachToPty(created.id);
-        })
-        .catch((err: unknown) => terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`));
-    }
+        }
+        attachToPty(id, retained);
+      },
+      abandoned: (created) => {
+        // An in-flight create cannot be recalled. Kill only a genuinely new,
+        // now-closed surface, never a PTY a replacement mount may have adopted.
+        const open = surfaceId && useStore.getState().workspaces.some((ws) => treeHasSurface(ws.splitTree, surfaceId));
+        const replacement = surfaceId && surfaceTerminalRegistry.get(surfaceId);
+        if (!created.reused && !open && (!replacement || replacement === terminal)) window.wmux.pty.kill(created.id);
+      },
+      report: reportTerminalHistoryFailure,
+    }).catch((err: unknown) => {
+      if (isCurrent()) terminal.writeln(`\r\n\x1b[31m[failed to create PTY: ${err}]\x1b[0m`);
+    });
 
     // Wire xterm input → PTY
     const dataDisposable = terminal.onData((data: string) => {
-      if (!ptyIdRef.current) return;
+      if (!isCurrent() || !liveAttached || replayHold.isHolding || !ptyIdRef.current) return;
       // Broadcast-input mode (issue #64, tmux synchronize-panes): fan keystrokes
       // out to every terminal pane in the workspace that owns this surface. Only
       // the focused terminal's onData fires, so this is the single source pane.
@@ -1968,14 +1984,12 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       resizeRaf = requestAnimationFrame(() => {
         resizeRaf = null;
+        if (!isCurrent()) return;
         fit();
         const dims = replayHoldRef.current.isHolding ? null : fitAddon.proposeDimensions();
         if (dims) {
           if (ptyIdRef.current) {
             window.wmux.pty.resize(ptyIdRef.current, dims.cols, dims.rows);
-          } else {
-            // PTY not attached yet — stash so attachToPty can flush it
-            pendingResizeDims = { cols: dims.cols, rows: dims.rows };
           }
         }
         // Mark rows dirty after layout change for plain shells. fit() updates
@@ -1999,6 +2013,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // teardown (late pty.create().then, buffered write, queued rAF) bails out
       // before touching the soon-to-be-disposed terminal.
       disposed = true;
+      preparation.abort();
+      if (surfaceId && terminalCloseCancellations.get(surfaceId) === cancelClosed) terminalCloseCancellations.delete(surfaceId);
       resizeObserver.disconnect();
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       dataDisposable.dispose();
@@ -2030,7 +2046,8 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
       // Snapshot the buffer before disposal so a remount can replay it
       // (see snapshotSurfaceBuffer).
-      snapshotSurfaceBuffer(surfaceId, serializeAddon, terminal);
+      if (liveAttached) snapshotSurfaceBuffer(surfaceId, serializeAddon, terminal);
+      stopHistoryObservation();
 
       // Drop the read-screen registry entry — but only if it still points at
       // THIS terminal (StrictMode re-setup may already have registered the
@@ -2122,7 +2139,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       const detail = (e as CustomEvent).detail;
       if (detail?.surfaceId !== surfaceId) return;
       const term = xtermRef.current;
-      if (!term) return;
+      if (!term || !ptyIdRef.current || replayHoldRef.current.isHolding) return;
       if (!surfaceId) {
         resetTerminalModes(term, { keepAlternateScreen: true });
         return;
@@ -2215,7 +2232,11 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     term.options.fontSize = prefs.fontSize || term.options.fontSize;
     term.options.cursorStyle = prefs.cursorStyle || term.options.cursorStyle;
     term.options.cursorBlink = prefs.cursorBlink ?? term.options.cursorBlink;
-    term.options.scrollback = prefs.scrollbackLines || term.options.scrollback;
+    const scrollback = prefs.scrollbackLines || term.options.scrollback;
+    if (term.options.scrollback !== scrollback) {
+      term.options.scrollback = scrollback;
+      terminalHistoryCheckpoints.lineLimitChanged(term);
+    }
     // A font change alters the cell size, so the same viewport now fits a
     // different col/row count. Refit and tell the PTY (SIGWINCH) or apps
     // anchored to the bottom row (prompts, TUIs) end up past the viewport

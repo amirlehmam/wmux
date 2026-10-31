@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
-import { registerIpcHandlers, agentManager, ptyManager, setupAgentPtyForwarding, reapOrphanedPtys, sshDetector, agentIdentity, replayRemoteBindings } from './ipc-handlers';
+import { registerIpcHandlers, agentManager, ptyManager, reapOrphanedPtys, sshDetector, agentIdentity, replayRemoteBindings, terminalHistory } from './ipc-handlers';
+import { prepareAgentSpawn } from './agent-spawn-window';
 import { sequenceFrom, splitSequencedReport } from './ssh-detect';
 import { handleDetectionV2 } from './detection-rpc';
 import { isPtyCrashGuardInstalled } from './pty-manager';
@@ -43,7 +44,6 @@ import { resolveUserDataDir } from './chromium-profile';
 import { WORKSPACE_MANIFEST_METHODS, handleWorkspaceManifestV2, pickAndOpenManifest, type ManifestHostDeps } from './workspace-manifest-v2';
 import {
   loadSession,
-  saveSession,
   handleVersionChange,
   savedVersion,
   SessionData,
@@ -52,7 +52,8 @@ import {
   shouldSnapshot,
   writeSessionSnapshot,
 } from './session-persistence';
-import { SessionFlushWaiters } from './session-flush';
+import { randomUUID } from 'crypto';
+import { SessionFlushWaiters, SESSION_FLUSH_TIMEOUT_MS } from './session-flush';
 import { hardenWebviewPreferences } from './webview-prefs';
 import { applyHistoryRestore, claimHistoryRestore, forgetHistoryRestore, parkHistoryRestore } from './browser-history-restore';
 import { stampAgentSessionIds } from './agent-session-persistence';
@@ -430,15 +431,14 @@ function spawnAgentBatch(
   agentParams: any[],
   assignments: string[],
   workspaceId: any,
-  win: BrowserWindow | undefined,
+  spawnAgent: typeof agentManager.spawn,
 ): any[] {
   const results: any[] = [];
   agentParams.forEach((p, i) => {
     try {
       const agentCmd = p.cmd || p.prompt; // accept both 'cmd' and 'prompt'
       if (!agentCmd) { results.push({ error: `Agent ${i}: missing required field 'cmd'` }); return; }
-      const result = agentManager.spawn({ ...p, cmd: agentCmd, paneId: assignments[i] as any, workspaceId });
-      if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
+      const result = spawnAgent({ ...p, cmd: agentCmd, paneId: assignments[i] as any, workspaceId });
       BrowserWindow.getAllWindows().forEach((w) => {
         if (!w.isDestroyed()) {
           w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, {
@@ -461,9 +461,7 @@ const windowManager = new WindowManager();
 // everything for the next launch.
 windowManager.onWindowClosed = (id, webContentsId) => {
   clearFileGrants(webContentsId);
-  if (isQuitting || windowManager.getCount() === 0) return;
-  sessionWindows.forget(id);
-  saveSession({ version: 1, windows: sessionWindows.toArray() });
+  terminalHistory.closeWindow(id, webContentsId, isQuitting, windowManager.getCount());
 };
 
 // Agent exit → renderer. Without this broadcast, sidebar agent lines would
@@ -555,8 +553,10 @@ let quitFlushDone = false;
 /** Ask one window for its state and resolve once it is on disk (or timed out). */
 function flushSessionFrom(win: BrowserWindow): Promise<boolean> {
   if (win.isDestroyed()) return Promise.resolve(false);
-  const saved = sessionFlush.wait(win.webContents.id);
-  win.webContents.send('session:request');
+  const token = randomUUID();
+  const deadline = Date.now() + SESSION_FLUSH_TIMEOUT_MS;
+  const saved = sessionFlush.wait(win.webContents.id, token);
+  win.webContents.send(IPC_CHANNELS.SESSION_REQUEST, { token, deadline });
   return saved;
 }
 
@@ -618,7 +618,7 @@ function scheduleAutoSave(): void {
     autoSaveTimer = null;
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) {
-        win.webContents.send('session:request');
+        win.webContents.send(IPC_CHANNELS.SESSION_REQUEST);
       }
     });
   }, AUTO_SAVE_INTERVAL_MS);
@@ -1494,7 +1494,7 @@ process.on('uncaughtExceptionMonitor', (err: unknown) => {
   });
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // A losing second instance is already quitting; don't run startup side effects.
   if (!gotInstanceLock) return;
 
@@ -1523,7 +1523,7 @@ app.whenReady().then(() => {
   // the last responder from overwriting every other window's workspaces —
   // before this, a second window silently cost you the first one's tabs and
   // browser pages on the next 30s tick (issue #118).
-  ipcMain.on('session:save', (event, data: SessionData) => {
+  ipcMain.on(IPC_CHANNELS.SESSION_SAVE, (event, data: SessionData, token?: string) => {
     const state = data?.windows?.[0];
     if (!state) return;
     // Before anything downstream copies this tree (issue #186).
@@ -1537,25 +1537,23 @@ app.whenReady().then(() => {
     }
 
     const windowId = windowManager.idForWebContents(event.sender);
-    if (windowId) {
-      sessionWindows.update(windowId, state);
-      // Forget windows the user closed — but never while quitting, when every
-      // window is being torn down and pruning would erase what we're saving.
-      if (!isQuitting) {
-        sessionWindows.retainOnly(windowManager.getAllWindows().map((w) => w.id));
-      }
-      const merged: SessionData = { version: 1, windows: sessionWindows.toArray() };
-      saveSession(merged);
-      maybeSnapshotSession(merged);
-    } else {
-      // Unattributable sender (a window created outside WindowManager). Better
-      // to persist its state alone than to drop the save entirely.
-      const lone: SessionData = { version: 1, windows: [state] };
-      saveSession(lone);
-      maybeSnapshotSession(lone);
+    if (!windowId || !win || win.isDestroyed() || win.webContents !== event.sender) return;
+    // Never prune during shutdown, when the slots being destroyed are exactly
+    // the ones the next launch must restore.
+    if (!isQuitting) {
+      sessionWindows.retainOnly(windowManager.getAllWindows().map((w) => w.id));
     }
-    sessionFlush.notifySaved(event.sender.id);
+    const saved = terminalHistory.saveWindow(event.sender.id, state);
+    if (saved) maybeSnapshotSession({ version: 1, windows: sessionWindows.toArray() });
+    sessionFlush.notifySaved(event.sender.id, token, saved);
     if (!isQuitting) scheduleAutoSave();
+  });
+
+  ipcMain.on(IPC_CHANNELS.SESSION_HISTORY_DONE, (event, token: unknown, success: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed() || win.webContents !== event.sender
+      || !windowManager.idForWebContents(event.sender) || typeof success !== 'boolean') return;
+    sessionFlush.notifyHistory(event.sender.id, token, success);
   });
 
   registerIpcHandlers(windowManager, cdpProxy);
@@ -1567,7 +1565,7 @@ app.whenReady().then(() => {
       sessionSavePending = undefined;
       if (isQuitting) return;
       for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) win.webContents.send('session:request');
+        if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.SESSION_REQUEST);
       }
     }, 100);
   });
@@ -1623,7 +1621,10 @@ app.whenReady().then(() => {
 
   // Clear stale session data on version change (clean start for upgrades/fresh installs)
   const previousVersion = savedVersion();
-  handleVersionChange(app.getVersion());
+  handleVersionChange(app.getVersion(), {
+    pending: () => terminalHistory.hasUpgrade(loadSession()),
+    prepare: (backup, session) => terminalHistory.prepareUpgrade(backup, session),
+  });
   // Did this update change the app icon? If so the taskbar may still draw the
   // old one (issues #137/#226) — the renderer asks for this once and turns it
   // into a bell notification pointing at Settings → General.
@@ -1642,6 +1643,7 @@ app.whenReady().then(() => {
   // up empty instead of cloning one, which would duplicate its surface ids —
   // and PTY id is surface id, so the clone would attach to live PTYs (#143).
   const savedSession = loadSession();
+  await terminalHistory.cleanupStartup(savedSession);
   const savedWindows = (savedSession?.windows ?? []).slice(0, MAX_RESTORED_WINDOWS);
   pruneRestoredClaudeSessions(savedWindows);
   pruneRestoredQwenSessions(savedWindows);
@@ -1655,6 +1657,12 @@ app.whenReady().then(() => {
       const id = windowManager.createWindow(saved.bounds, saved.maximized);
       sessionWindows.prime(id, saved);
       sessionWindows.markStartup(id);
+      const win = windowManager.getWindow(id);
+      if (win) {
+        const owner = win.webContents.id;
+        terminalHistory.seedWindow(owner);
+        win.webContents.once('destroyed', () => terminalHistory.revokeOwner(owner));
+      }
     }
   }
 
@@ -2313,13 +2321,11 @@ app.whenReady().then(() => {
             // claimed it, the workspace because it is either that pane's owner
             // or a renderer's own active id. That is a stronger guarantee than
             // the old code had, which passed `params.paneId` through as `any`.
-            const result = agentManager.spawn({
+            const spawnAgent = await prepareAgentSpawn(workspaceId, [paneId]);
+            const result = spawnAgent({
               cmd, label: params.label, cwd: params.cwd, env: params.env,
               paneId: paneId as PaneId, workspaceId: workspaceId as WorkspaceId,
             });
-
-            const win = BrowserWindow.getAllWindows()[0];
-            if (win && !win.isDestroyed()) setupAgentPtyForwarding(result.surfaceId, win);
 
             BrowserWindow.getAllWindows().forEach(w => {
               if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.AGENT_UPDATE, { type: 'spawned', ...result, paneId, workspaceId, label: params.label, replaceTab: !!params.replaceTab });
@@ -2350,8 +2356,8 @@ app.whenReady().then(() => {
             }
 
             const assignments = resolveAgentAssignments(strategy, agentParams.length, paneLoads);
-            const win = BrowserWindow.getAllWindows()[0];
-            respond({ agents: spawnAgentBatch(agentParams, assignments, workspaceId, win) });
+            const spawnAgent = await prepareAgentSpawn(workspaceId, assignments);
+            respond({ agents: spawnAgentBatch(agentParams, assignments, workspaceId, spawnAgent) });
           } catch (err: any) { respondError(-32000, err.message); }
         })();
         break;

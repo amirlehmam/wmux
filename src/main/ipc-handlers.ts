@@ -43,6 +43,9 @@ import { parseOsc7Cwd } from '../shared/osc7';
 import * as os from 'os';
 import { sessionWindows, toRestorePayload, restoreAnswerFor } from './session-windows';
 import { loadSettings, saveSetting } from './settings-store';
+import { TerminalHistoryStore, TERMINAL_HISTORY_SETTINGS_KEY } from './terminal-history';
+import { TerminalHistoryIntegration } from './terminal-history-integration';
+import { TerminalHistoryHandoff } from './terminal-history-handoff';
 import { notificationEffects } from './notification-effects';
 import { stampAgentSessionIds } from './agent-session-persistence';
 import { readConsent, updateConsent } from './agent-integration';
@@ -97,6 +100,28 @@ const agentManager = new AgentManager(ptyManager);
 const insertionQueue = new SurfaceInsertionQueue();
 const surfaceOwners = new Map<SurfaceId, number>();
 const observedWebContents = new Set<number>();
+
+let historyWindowManager: WindowManager | undefined;
+
+// One process-wide store; the desktop manager becomes available at IPC setup.
+export const terminalHistory = new TerminalHistoryIntegration({
+  handoff: new TerminalHistoryHandoff(),
+  store: new TerminalHistoryStore({ settings: { load: loadSettings, save: saveSetting } }),
+  ownerWindow: (owner) => {
+    if (!historyWindowManager) return null;
+    const wc = webContents.fromId(owner);
+    if (!wc || wc.isDestroyed()) return null;
+    const id = historyWindowManager.idForWebContents(wc);
+    const win = id ? historyWindowManager.getWindow(id) : null;
+    return win && !win.isDestroyed() && win.webContents === wc ? id : null;
+  },
+  broadcast: (state) => {
+    for (const { id } of historyWindowManager?.getAllWindows() ?? []) {
+      const win = historyWindowManager!.getWindow(id);
+      if (win && !win.isDestroyed()) win.webContents.send(IPC_CHANNELS.TERMINAL_HISTORY_STATE, state);
+    }
+  },
+});
 
 const CUSTOM_NOTIFICATION_SOUND_EXTENSIONS = ['aac', 'flac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wav', 'webm'] as const;
 const MAX_CUSTOM_NOTIFICATION_SOUND_BYTES = 10 * 1024 * 1024;
@@ -170,10 +195,12 @@ export function replayRemoteBindings(): void {
 
 function ownSurface(surfaceId: SurfaceId, webContents: Electron.WebContents): void {
   surfaceOwners.set(surfaceId, webContents.id);
+  terminalHistory.associate(webContents.id, surfaceId);
   if (observedWebContents.has(webContents.id)) return;
   observedWebContents.add(webContents.id);
   webContents.once('destroyed', () => {
     observedWebContents.delete(webContents.id);
+    terminalHistory.revokeOwner(webContents.id);
     for (const [ownedSurfaceId, ownerId] of surfaceOwners) {
       if (ownerId !== webContents.id) continue;
       surfaceOwners.delete(ownedSurfaceId);
@@ -580,6 +607,8 @@ const agentBrowserDeps: AgentBrowserDeps = {
 };
 
 export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstance?: CDPProxy): void {
+  historyWindowManager = windowManager;
+  terminalHistory.registerIpc(ipcMain);
   // Toggle DevTools for the renderer window
   ipcMain.on('toggle-devtools', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -593,6 +622,9 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.handle(IPC_CHANNELS.PTY_CREATE, async (_event, options) => {
+    const desktopId = windowManager.idForWebContents(_event.sender);
+    const desktop = desktopId ? windowManager.getWindow(desktopId) : null;
+    if (!desktop || desktop.isDestroyed() || desktop.webContents !== _event.sender) throw new Error('Unauthorized terminal owner');
     try {
       const resolvedOptions = {
         ...options,
@@ -714,6 +746,10 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   });
 
   ipcMain.on(IPC_CHANNELS.PTY_KILL, (_event, id: SurfaceId) => {
+    const closedHistory = terminalHistory.closeSurface(_event.sender.id, id);
+    const owner = surfaceOwners.get(id);
+    // An exited terminal's history grants no authority over another window's replacement child.
+    if (owner !== undefined ? owner !== _event.sender.id : !closedHistory) return;
     ptyManager.kill(id);
     forgetSurface(id);
   });
@@ -1153,8 +1189,10 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     saveNamedSession(session);
     return { ok: true };
   });
-  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_NAMED, (_event, name: string) => {
-    return loadNamedSession(name);
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_NAMED, (event, name: string) => {
+    const session = loadNamedSession(name);
+    if (session) terminalHistory.selectNamed(event.sender.id, session);
+    return session;
   });
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST_NAMED, () => {
     return listNamedSessions();
@@ -1186,7 +1224,8 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.on('settings:get-all-sync', (event) => {
     event.returnValue = loadSettings();
   });
-  ipcMain.on('settings:set', (_event, key: string, value: unknown) => {
+  ipcMain.on(IPC_CHANNELS.SETTINGS_SET, (_event, key: string, value: unknown) => {
+    if (key === TERMINAL_HISTORY_SETTINGS_KEY) return;
     saveSetting(key, value);
   });
 

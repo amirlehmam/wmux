@@ -327,25 +327,69 @@ describe('saveSession never leaves the session file missing', () => {
     expect(mod.loadSession()!.windows[0].workspaces[0].title).toBe('second');
   });
 
-  it('still saves when the target is locked, falling back to unlink + rename', () => {
-    // A sharing violation from antivirus or a sync client holding session.json
-    // open. Not saving at all is worse than a brief window, so the old two-step
-    // survives here — and only here.
-    mod.saveSession(sessionOf('first'));
-    const real = fs.renameSync;
-    let firstAttempt = true;
-    vi.spyOn(fs, 'renameSync').mockImplementation(((from: any, to: any) => {
-      if (firstAttempt) {
-        firstAttempt = false;
-        const err: any = new Error('EPERM: operation not permitted, rename');
-        err.code = 'EPERM';
-        throw err;
-      }
-      return real(from, to);
-    }) as typeof fs.renameSync);
+  it('reports a failed replacement without unlinking the last layout or its history references', () => {
+    const previous = sessionOf('first');
+    previous.windows[0].workspaces[0].splitTree = {
+      ...leaf, surfaces: [{ id: 'surf-old', type: 'terminal' }],
+    };
+    previous.windows[0].terminalHistory = {
+      'surf-old': { recordId: 'hist-11111111-1111-4111-8111-111111111111', generation: 2 },
+    };
+    expect(mod.saveSession(previous)).toBe(true);
+    const original = fs.readFileSync(mod.getSessionPath(), 'utf8');
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw Object.assign(new Error('locked'), { code: 'EPERM' });
+    });
+    const unlink = vi.spyOn(fs, 'unlinkSync');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    mod.saveSession(sessionOf('second'));
-    expect(mod.loadSession()!.windows[0].workspaces[0].title).toBe('second');
+    expect(mod.saveSession(sessionOf('second'))).toBe(false);
+    expect(rename).toHaveBeenCalledTimes(1);
+    expect(unlink).not.toHaveBeenCalledWith(mod.getSessionPath());
+    expect(fs.readFileSync(mod.getSessionPath(), 'utf8')).toBe(original);
+    expect(mod.loadSession()).toEqual(previous);
+  });
+
+  it('keeps history out of named saves, generic named loads, snapshots and version backups', () => {
+    const data = sessionOf('layout');
+    const refs = { recordId: 'hist-11111111-1111-4111-8111-111111111111', generation: 0 };
+    data.windows[0].workspaces[0].splitTree = {
+      ...leaf, surfaces: [{ id: 'surf-a', type: 'terminal', terminalHistory: { bytes: 'sensitive-output' } }],
+      terminalHistory: { refs, bytes: 'sensitive-output' },
+    };
+    data.windows[0].terminalHistory = { 'surf-a': { ...refs, bytes: 'sensitive-output' } };
+    const named = {
+      name: 'manual', savedAt: 1, workspaces: data.windows[0].workspaces,
+      terminalHistory: { refs, bytes: 'sensitive-output' },
+    };
+    mod.saveNamedSession(named as any);
+    const namedFile = path.join(path.dirname(mod.getSessionPath()), 'saved', 'manual.json');
+    expect(fs.readFileSync(namedFile, 'utf8')).not.toMatch(/terminalHistory|sensitive-output|hist-/);
+    fs.writeFileSync(namedFile, JSON.stringify(named));
+    expect(JSON.stringify(mod.loadNamedSession('manual'))).not.toMatch(/terminalHistory|sensitive-output|hist-/);
+
+    const snapshot = mod.writeSessionSnapshot(data, 123)!;
+    expect(JSON.stringify(mod.loadNamedSession(snapshot))).not.toMatch(/terminalHistory|sensitive-output|hist-/);
+    mod.handleVersionChange('1.0');
+    expect(mod.saveSession(data)).toBe(true);
+    expect(fs.readFileSync(mod.getSessionPath(), 'utf8')).not.toContain('sensitive-output');
+    mod.handleVersionChange('1.1');
+    expect(JSON.stringify(mod.loadNamedSession('Auto-backup v1.0'))).not.toMatch(/terminalHistory|sensitive-output|hist-/);
+  });
+
+  it('ignores history-only changes in layout fingerprints and filters automatic references to terminals', () => {
+    const data = sessionOf('layout');
+    data.windows[0].workspaces[0].splitTree = { ...leaf, surfaces: [
+      { id: 'surf-a', type: 'terminal' }, { id: 'surf-browser', type: 'browser' },
+    ] };
+    const before = mod.layoutFingerprint(data);
+    const ref = { recordId: 'hist-11111111-1111-4111-8111-111111111111', generation: 1 };
+    data.windows[0].terminalHistory = { 'surf-a': ref, 'surf-browser': ref, 'surf-absent': ref };
+    data.windows[0].workspaces[0].splitTree.terminalHistory = { bytes: 'sensitive-output' };
+    expect(mod.layoutFingerprint(data)).toBe(before);
+    expect(mod.saveSession(data)).toBe(true);
+    expect(mod.loadSession()!.windows[0].terminalHistory).toEqual({ 'surf-a': ref });
+    expect(JSON.stringify(mod.loadSession())).not.toContain('sensitive-output');
   });
 
   it('leaves the previous session readable when the write fails outright', () => {
@@ -357,7 +401,7 @@ describe('saveSession never leaves the session file missing', () => {
     }) as typeof fs.writeFileSync);
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    expect(() => mod.saveSession(sessionOf('doomed'))).not.toThrow();
+    expect(mod.saveSession(sessionOf('doomed'))).toBe(false);
     vi.restoreAllMocks();
     // The point: a failed save costs the user the newest state, not all of it.
     expect(mod.loadSession()!.windows[0].workspaces[0].title).toBe('good');

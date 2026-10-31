@@ -689,6 +689,12 @@ export interface InsertionResult {
   failure?: { destination: string; detail: string };
 }
 
+/** Only final saves carry a token and the single main-owned shutdown deadline. */
+export interface SessionSaveRequest {
+  token: string;
+  deadline: number;
+}
+
 // IPC channel names
 export const IPC_CHANNELS = {
   // PTY
@@ -699,6 +705,12 @@ export const IPC_CHANNELS = {
   PTY_HAS: 'pty:has',
   PTY_DATA: 'pty:data',
   PTY_EXIT: 'pty:exit',
+  TERMINAL_HISTORY_STATE: 'terminal-history:state',
+  TERMINAL_HISTORY_GET_STATE: 'terminal-history:get-state',
+  TERMINAL_HISTORY_SET_ENABLED: 'terminal-history:set-enabled',
+  TERMINAL_HISTORY_BINDING: 'terminal-history:binding',
+  TERMINAL_HISTORY_READ: 'terminal-history:read',
+  TERMINAL_HISTORY_CHECKPOINT: 'terminal-history:checkpoint',
   // Remote file upload (ssh panes) — main resolves the whole paste/drop
   REMOTE_RESOLVE_PASTE: 'remote:resolve-paste',
   REMOTE_RESOLVE_DROP: 'remote:resolve-drop',
@@ -863,9 +875,13 @@ export const IPC_CHANNELS = {
   CLAUDE_ACTIVITY: 'claude:activity',
   // Declared agent run state (pane.report_agent → main → renderer, issue #128)
   AGENT_STATE: 'agent:state',
-  // Named sessions
+  // Automatic and named sessions
+  SESSION_REQUEST: 'session:request',
+  SESSION_SAVE: 'session:save',
+  SESSION_HISTORY_DONE: 'session:history-done',
   SESSION_SAVE_NAMED: 'session:save-named',
   SESSION_LOAD_NAMED: 'session:load-named',
+  SESSION_LOAD_STARTUP_FALLBACK: 'session:load-startup-fallback',
   SESSION_LIST_NAMED: 'session:list-named',
   /** Pick a wmux.workspace.json and open it (#284). Main does all of it. */
   WORKSPACE_FILE_OPEN: 'workspace-file:open',

@@ -5,7 +5,7 @@ import { useStore } from './store';
 import type { NotificationSlice } from './store/notification-slice';
 import { fireNotification } from './utils/notifications';
 import { getStoredWorkspaceLabel, useWorkspaceLabels } from './components/SplitPane/use-osc-title';
-import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode } from '../shared/types';
+import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode, type SessionSaveRequest } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
 import { classifyClaudeNotification } from '../shared/claude-notification';
 import SplitContainer from './components/SplitPane/SplitContainer';
@@ -58,7 +58,9 @@ import type {
   SurfaceDragPreviewTarget,
 } from './components/SplitPane/drag-preview-types';
 import { buildSurfaceDragPreview } from './components/SplitPane/surface-drag-preview';
-import { forgetClosedTerminal, surfaceTerminalRegistry } from './hooks/useTerminal';
+import { forgetClosedTerminal, surfaceTerminalRegistry, terminalHistoryCheckpoints } from './hooks/useTerminal';
+import { subscribeTerminalHistoryState } from './utils/terminal-history-state';
+import { onTerminalHistoryFailure, reportTerminalHistoryFailure, terminalHistoryWarningText } from './utils/terminal-history-feedback';
 import { forgetSurface as forgetPromptLog, hookEventSurface, recordAgentPrompt } from './utils/prompt-log';
 import { forgetAlternateScreen, RESET_TERMINAL_LEAVE_ALT_ACTION } from './utils/alt-screen-owner';
 import { SURFACE_CLOSED_EVENT } from './store/pty-teardown';
@@ -224,7 +226,7 @@ async function restoreNamedSession(t: T, setWidth: SetWidth): Promise<boolean> {
     const sessions = await window.wmux?.session?.list();
     const name = sessions?.[0]?.name;
     if (!name) return false;
-    const session = await window.wmux?.session?.load(name);
+    const session = await window.wmux?.session?.loadStartupFallback(name);
     if (!session) return false;
     useStore.getState().replaceAllWorkspaces(session.workspaces, undefined, t);
     if (session.sidebarWidth) setWidth(session.sidebarWidth);
@@ -934,6 +936,25 @@ export default function App() {
     return () => { stop(); unsub?.(); };
   }, []);
 
+  useEffect(() => {
+    if (workspaces.length === 0) return;
+    const offWarnings = onTerminalHistoryFailure((category) => {
+      const st = useStore.getState();
+      const ws = st.workspaces.find((w) => w.id === st.activeWorkspaceId) ?? st.workspaces[0];
+      if (!ws) return;
+      addNotification({
+        surfaceId: '' as SurfaceId,
+        workspaceId: ws.id,
+        title: t('terminalHistory.title', 'Terminal output history'),
+        text: terminalHistoryWarningText(category, t),
+      });
+    });
+    const offState = subscribeTerminalHistoryState(window.wmux?.terminalHistory,
+      (state) => reportTerminalHistoryFailure(state.error),
+      () => reportTerminalHistoryFailure('state'));
+    return () => { offState(); offWarnings(); };
+  }, [workspaces.length > 0]);
+
   // Listen for agent spawn events from main process
   useEffect(() => {
     if (!window.wmux?.agent?.onUpdate) return;
@@ -1194,7 +1215,8 @@ export default function App() {
   // Respond to main process auto-save requests (30s timer + on quit)
   useEffect(() => {
     if (!window.wmux?.session?.onAutoSaveRequest) return;
-    const pushNow = () => {
+    const stopHistory = terminalHistoryCheckpoints.start();
+    const pushLayout = (token?: string) => {
       const state = useStore.getState();
       const data = {
         version: 1,
@@ -1230,14 +1252,22 @@ export default function App() {
           })),
         }],
       };
-      window.wmux.session.pushAutoSave(data);
+      window.wmux.session.pushAutoSave(data, token);
     };
-    const unsub = window.wmux.session.onAutoSaveRequest(pushNow);
+    const onRequest = (request?: SessionSaveRequest) => {
+      pushLayout(request?.token);
+      void terminalHistoryCheckpoints.request(request?.deadline).then((success) => {
+        if (request) window.wmux.session.historyDone(request.token, success);
+      });
+    };
+    const pushNow = () => pushLayout();
+    const unsub = window.wmux.session.onAutoSaveRequest(onRequest);
     // An edit the user made on purpose — a startup command (#285) — is written
     // now rather than on the next 30 s tick, so not even a crash can lose it.
     window.addEventListener(SESSION_SAVE_NOW_EVENT, pushNow);
     return () => {
       unsub();
+      stopHistory();
       window.removeEventListener(SESSION_SAVE_NOW_EVENT, pushNow);
     };
   }, []);
