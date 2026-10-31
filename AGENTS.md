@@ -163,4 +163,4 @@ Task procedures live in repo skills, loaded only when a task matches. `.agents/s
 - **CSS**: `src/renderer/styles/`, class prefix per component (`.pane-wrapper__*`, `.surface-tab__*`)
 - **Immutable trees**: Split tree mutations always produce new objects via `patchLeaf()`
 - **French comms**: User communicates in French, code/docs in English
-- **This file**: a module's design notes and post-mortems go in its own comments or the PR description, not here. Add text only for a rule that crosses modules. A test caps this file at 16 KiB and 200 lines; when it fails, move text out rather than raising the limit
+- **This file**: a module's design notes and post-mortems go in its own comments or the PR description, not here. Add text only for a rule that crosses modules
