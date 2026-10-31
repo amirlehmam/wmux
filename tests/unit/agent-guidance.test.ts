@@ -111,6 +111,8 @@ describe('repo skills: one source for every agent (#368)', () => {
  * #368 (Codex 0.164.0): a 135 KB root left both nested files unread.
  */
 const CODEX_PROJECT_DOC_MAX_BYTES = 32 * 1024;
+const ROOT_MAX_BYTES = 16 * 1024;
+const ROOT_MAX_LINES = 200;
 
 /** Nested guidance lives beside its code. Only `src/` is walked, since a checkout can hold other worktrees. */
 function nestedAgentsMd(dir: string): string[] {
@@ -139,6 +141,13 @@ describe('AGENTS.md size (#368)', () => {
     expect(guidance.map((f) => path.relative(ROOT, f).replace(/\\/g, '/'))).toEqual(
       expect.arrayContaining(['AGENTS.md', 'src/main/remote-console/AGENTS.md', 'src/renderer/remote/AGENTS.md']),
     );
+  });
+
+  it('keeps the root file to what every task needs', () => {
+    const text = read(path.join(ROOT, 'AGENTS.md'));
+    const hint = 'over the limit: move notes into the module or a skill (see "This file" in AGENTS.md)';
+    expect(Buffer.byteLength(text), hint).toBeLessThanOrEqual(ROOT_MAX_BYTES);
+    expect(text.split('\n').length, hint).toBeLessThanOrEqual(ROOT_MAX_LINES);
   });
 
   it.each(guidance.map((f) => [path.relative(ROOT, f), f]))(
