@@ -75,6 +75,7 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   togglePromptOutline: 'Prompt outline',
   togglePinnedPrompt: 'Pin / unpin prompt',
   followOutput: 'Follow output',
+  refreshSurface: 'Refresh focused surface',
 };
 
 /** Translated label for an action, falling back to the English `ACTION_LABELS` map. */
@@ -123,6 +124,7 @@ export const CATEGORY: Partial<Record<ShortcutAction, string>> = {
   toggleSidebar: 'View', showNotifications: 'View', flashFocused: 'View', openBrowser: 'View',
   browserDevTools: 'View', browserConsole: 'View', openSettings: 'View', commandPalette: 'View',
   toggleShortcutCheatSheet: 'View',
+  refreshSurface: 'View',
 };
 
 export const CATEGORY_ORDER = ['Workspaces', 'Tabs', 'Panes', 'Terminal', 'View', 'Other'];

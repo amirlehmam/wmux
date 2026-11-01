@@ -203,7 +203,8 @@ export type ShortcutAction =
   // ─── issue #207: the prompt log and its four consumers ────────────────────
   | 'togglePromptOutline'
   | 'togglePinnedPrompt'
-  | 'followOutput';
+  | 'followOutput'
+  | 'refreshSurface';
 
 // ─── Default shortcuts ────────────────────────────────────────────────────────
 
@@ -322,6 +323,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   togglePromptOutline:    { key: 'l', ctrl: true, shift: true },
   togglePinnedPrompt:     { key: 'k', ctrl: true, shift: true },
   followOutput:           { key: 'End', ctrl: true, shift: true },
+  refreshSurface:         { key: 'F5' },
 };
 
 // ─── Shortcut default promotions (#249) ──────────────────────────────────────

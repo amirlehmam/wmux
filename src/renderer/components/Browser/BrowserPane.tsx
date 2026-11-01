@@ -437,6 +437,14 @@ export default function BrowserPane({
     webviewRef.current?.goForward();
   }, []);
   const reload = useCallback(() => webviewRef.current?.reload(), []);
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      const id = (event as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
+      if (id === surfaceId) reload();
+    };
+    document.addEventListener('wmux:refresh-surface', onRefresh);
+    return () => document.removeEventListener('wmux:refresh-surface', onRefresh);
+  }, [reload, surfaceId]);
   const stop = useCallback(() => webviewRef.current?.stop(), []);
   const openDevTools = useCallback(() => {
     if (engineRef.current === 'agent') return;

@@ -217,6 +217,15 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
     setLoadingIfChanged(false);
   }, [runPass, setLoadingIfChanged]);
 
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      const id = (event as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
+      if (id === surfaceId) void handleRefresh();
+    };
+    document.addEventListener('wmux:refresh-surface', onRefresh);
+    return () => document.removeEventListener('wmux:refresh-surface', onRefresh);
+  }, [handleRefresh, surfaceId]);
+
   // Status badge color
   const statusColor = (status: string) => {
     if (status === 'added') return '#4ec94e';

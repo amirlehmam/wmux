@@ -401,6 +401,14 @@ export function useKeyboardShortcuts(
       ),
       togglePinnedPrompt: () => togglePinnedPromptFor(focusedTerminalSurfaceId()),
       followOutput: () => followOutputFor(focusedTerminalSurfaceId()),
+      refreshSurface: () => {
+        if (!activeWorkspaceId || !focusedPaneId) return;
+        const state = useStore.getState();
+        const ws = state.workspaces.find((w) => w.id === activeWorkspaceId);
+        const leaf = ws && findLeaf(ws.splitTree, focusedPaneId);
+        const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+        if (surface) fire('wmux:refresh-surface', { surfaceId: surface.id });
+      },
       fontSizeIncrease: () => adjustFontSize((s) => Math.min(32, s + 1)),
       fontSizeDecrease: () => adjustFontSize((s) => Math.max(8, s - 1)),
       fontSizeReset: () => useStore.getState().setTerminalPrefs({ fontSize: 13 }),

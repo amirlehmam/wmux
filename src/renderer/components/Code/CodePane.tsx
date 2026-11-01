@@ -84,6 +84,7 @@ export function CodePane({ surfaceId }: { surfaceId: SurfaceId }): React.JSX.Ele
   const content = surface?.codeContent;
   const [error, setError] = useState<ExplorerErrorCode | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   // ─── Editing state ─────────────────────────────────────────────────────────
   // `draft === null` IS the read-only mode. Not a boolean beside the text: two
@@ -114,7 +115,7 @@ export function CodePane({ surfaceId }: { surfaceId: SurfaceId }): React.JSX.Ele
     // A tab that had failed (binary, too large, deleted) then went on showing
     // that failure over the next file's perfectly good content, because the
     // render checks `error` before it checks `content`.
-    if (content !== undefined) { setError(null); return; }
+    if (content !== undefined && refreshToken === 0) { setError(null); return; }
     if (!relPath || !rootSurfaceId) { setError('invalid_path'); return; }
     if (!rootCwd) return;                   // root not reported yet — see above
     let cancelled = false;
@@ -143,6 +144,7 @@ export function CodePane({ surfaceId }: { surfaceId: SurfaceId }): React.JSX.Ele
         // that produced the buffer, so a save compares against the state of the
         // file the user was actually looking at.
         mtimeRef.current = res.mtimeMs;
+        setRefreshToken(0);
         updateSurfaceContent(res.content);
       },
       () => { if (!cancelled) { setLoading(false); setError('read_failed'); } },
@@ -157,7 +159,16 @@ export function CodePane({ surfaceId }: { surfaceId: SurfaceId }): React.JSX.Ele
       if (!owner) return;
       updateSurface(owner.workspaceId, owner.paneId, surfaceId, { codeContent: text });
     }
-  }, [surfaceId, rootSurfaceId, rootCwd, relPath, filePath, content, updateSurface]);
+  }, [surfaceId, rootSurfaceId, rootCwd, relPath, filePath, content, updateSurface, refreshToken]);
+
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      const id = (event as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
+      if (id === surfaceId) setRefreshToken((n) => n + 1);
+    };
+    document.addEventListener('wmux:refresh-surface', onRefresh);
+    return () => document.removeEventListener('wmux:refresh-surface', onRefresh);
+  }, [surfaceId]);
 
   // Write the buffer and the dirty flag into the store together.
   //

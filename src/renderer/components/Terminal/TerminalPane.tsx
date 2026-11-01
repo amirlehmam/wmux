@@ -108,6 +108,16 @@ export default function TerminalPane({
     return () => document.removeEventListener('wmux:focus-terminal', onFocusTerminal);
   }, [xtermRef]);
 
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      const id = (event as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
+      if (id !== surfaceId || !activeRef.current) return;
+      try { xtermRef.current?.refresh(0, (xtermRef.current?.rows ?? 1) - 1); } catch { /* disposed */ }
+    };
+    document.addEventListener('wmux:refresh-surface', onRefresh);
+    return () => document.removeEventListener('wmux:refresh-surface', onRefresh);
+  }, [surfaceId, xtermRef]);
+
   const handleSearch = useCallback((query: string) => {
     setLastQuery(query);
     if (!searchAddonRef.current) return;

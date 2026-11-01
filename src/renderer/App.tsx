@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { startGpuProbe } from './utils/gpu-watchdog';
-import { installWheelZoom } from './utils/wheel-zoom';
+import { installWheelZoom, nextPaneZoom } from './utils/wheel-zoom';
 import { useShallow } from 'zustand/react/shallow';
 import { useStore } from './store';
 import type { NotificationSlice } from './store/notification-slice';
@@ -543,7 +543,13 @@ export function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: 
 }
 
 export default function App() {
-  useEffect(() => installWheelZoom(document, (deltaY) => window.wmux?.system?.zoom?.(deltaY)), []);
+  const [paneZooms, setPaneZooms] = useState<Record<string, number>>({});
+  const adjustPaneZoom = useCallback((paneId: PaneId, deltaY: number) => {
+    setPaneZooms((previous) => ({
+      ...previous,
+      [paneId]: nextPaneZoom(previous[paneId] ?? 1, deltaY),
+    }));
+  }, []);
   // Field-scoped store subscription. A bare `useStore()` subscribes App to the
   // WHOLE store, so every set() anywhere — one pane's OSC 9;4 progress, an
   // agent verdict, a settings write — re-rendered App and with it the sidebar
@@ -599,6 +605,11 @@ export default function App() {
   const t = useT();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
+  useEffect(() => installWheelZoom(
+    document,
+    (deltaY) => { if (focusedPaneId) adjustPaneZoom(focusedPaneId, deltaY); },
+    (deltaY) => window.wmux?.system?.zoom?.(deltaY),
+  ), [adjustPaneZoom, focusedPaneId]);
   const [zoomedPaneId, setZoomedPaneId] = useState<PaneId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Which tab Settings opens on. Only "Manage layouts…" sets one; every other
@@ -1890,6 +1901,7 @@ export default function App() {
                 focusedPaneId={ws.id === activeWorkspaceId ? focusedPaneId : null}
                 onRatioChange={ws.id === activeWorkspaceId ? handleRatioChange : undefined}
                 onPaneFocus={handlePaneFocus}
+                paneZooms={paneZooms}
                 surfaceDrag={ws.id === activeWorkspaceId ? surfaceDrag : null}
                 onSurfaceDragStart={handleSurfaceDragStart}
                 onSurfaceDragEnd={handleSurfaceDragEnd}

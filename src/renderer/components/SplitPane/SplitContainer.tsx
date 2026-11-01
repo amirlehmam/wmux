@@ -28,6 +28,7 @@ interface SplitContainerProps {
   onSurfaceDragPreviewTarget: (targetPaneId: PaneId, target: SurfaceDragPreviewTarget) => void;
   onClearSurfaceDragPreview: () => void;
   onSurfaceDragCommit: (options?: SurfaceDragCommitOptions) => void;
+  paneZooms?: Readonly<Record<string, number>>;
 }
 
 export default function SplitContainer({
@@ -42,6 +43,7 @@ export default function SplitContainer({
   onSurfaceDragPreviewTarget,
   onClearSurfaceDragPreview,
   onSurfaceDragCommit,
+  paneZooms = {},
 }: SplitContainerProps) {
   if (node.type === 'leaf') {
     return (
@@ -64,6 +66,7 @@ export default function SplitContainer({
           onSurfaceDragCommit={onSurfaceDragCommit}
           onActivate={() => onPaneFocus(node.paneId)}
           onFocusPane={onPaneFocus}
+          paneZoom={paneZooms[node.paneId] ?? 1}
         />
       </div>
     );
@@ -104,6 +107,7 @@ export default function SplitContainer({
           onSurfaceDragPreviewTarget={onSurfaceDragPreviewTarget}
           onClearSurfaceDragPreview={onClearSurfaceDragPreview}
           onSurfaceDragCommit={onSurfaceDragCommit}
+          paneZooms={paneZooms}
         />
       </div>
 
@@ -126,6 +130,7 @@ export default function SplitContainer({
           onSurfaceDragPreviewTarget={onSurfaceDragPreviewTarget}
           onClearSurfaceDragPreview={onClearSurfaceDragPreview}
           onSurfaceDragCommit={onSurfaceDragCommit}
+          paneZooms={paneZooms}
         />
       </div>
     </div>

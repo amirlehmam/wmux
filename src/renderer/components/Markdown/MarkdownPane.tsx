@@ -565,6 +565,15 @@ export default function MarkdownPane({
     });
   }, [onFileLoaded, t]);
 
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      const id = (event as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
+      if (id === surfaceId && filePath) void loadFromDisk(filePath);
+    };
+    document.addEventListener('wmux:refresh-surface', onRefresh);
+    return () => document.removeEventListener('wmux:refresh-surface', onRefresh);
+  }, [filePath, loadFromDisk, surfaceId]);
+
   // Both shell actions are rejected by the main process when the path falls
   // outside the extension whitelist, so surface that rather than dropping it.
   const revealFile = useCallback(async (path: string) => {

@@ -33,6 +33,7 @@ export const GLOBAL_IN_EDITOR: ReadonlySet<ShortcutAction> = new Set<ShortcutAct
   // user editing a code or markdown tab is standing when they reach for it.
   'nextSurface',
   'prevSurface',
+  'refreshSurface',
 ]);
 
 /** The subset of an event target this guard needs; keeps the tests DOM-free. */

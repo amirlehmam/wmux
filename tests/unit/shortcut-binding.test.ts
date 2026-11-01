@@ -194,7 +194,7 @@ describe('claimsKeyEvent', () => {
   });
 
   it('still ignores function keys that are NOT bound', () => {
-    expect(claims(key('F5'))).toBe(false);
+    expect(claims(key('F5'))).toBe(true);
     expect(claims(key('F7'))).toBe(false);
   });
 

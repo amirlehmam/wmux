@@ -110,6 +110,14 @@ export default function GitPane({ surfaceId, cwd, surface, onPatch }: Readonly<P
   // a plain poll tick must not re-run `git log` over the whole history.
   const [manual, setManual] = useState(0);
   const refresh = useCallback(() => { bump(); setManual((n) => n + 1); }, [bump]);
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      const id = (event as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
+      if (id === surfaceId) refresh();
+    };
+    document.addEventListener('wmux:refresh-surface', onRefresh);
+    return () => document.removeEventListener('wmux:refresh-surface', onRefresh);
+  }, [refresh, surfaceId]);
   const repoQuery = useGitQuery<GitRepoInfo>(cwd ? { op: 'repo', cwd } : null, tick);
   const repo = repoQuery.data;
   const mode: GitMode = surface.gitMode ?? 'working';
