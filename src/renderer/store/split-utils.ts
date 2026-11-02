@@ -174,6 +174,15 @@ function applyMintedIds(template: SplitNode, idMap: Map<SurfaceId, SurfaceId>): 
   };
 }
 
+/**
+ * Keep launch arguments (such as a WSL distribution), including those inherited
+ * at spawn time. Non-terminal tabs leave the workspace/default fallback alone.
+ */
+export function activeTerminalShell(leaf: (SplitNode & { type: 'leaf' }) | undefined): string | undefined {
+  const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+  return surface?.type === 'terminal' ? surface.launchShell || surface.shell || surface.resolvedShell : undefined;
+}
+
 // ─── splitNode ───────────────────────────────────────────────────────────────
 
 export function splitNode(
@@ -186,6 +195,8 @@ export function splitNode(
   if (tree.type === 'leaf') {
     if (tree.paneId !== targetPaneId) return tree;
     const newLeaf = createLeaf(newPaneId, surfaceType);
+    const shell = surfaceType === 'terminal' ? activeTerminalShell(tree) : undefined;
+    if (shell) newLeaf.surfaces[0].shell = shell;
     return {
       type: 'branch',
       direction,

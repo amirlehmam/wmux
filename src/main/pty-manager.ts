@@ -615,9 +615,10 @@ interface PtyEntry {
   // reason — a cause of the doubled prompt on startup.
   cols: number;
   rows: number;
-  // Resolved shell + whether startup commands were baked in — returned verbatim
-  // when create() is called again for the same surfaceId (idempotent reuse).
+  // Keep the resolved executable and launch spec with the live PTY, so a
+  // reattachment cannot replace its arguments with changed renderer preferences.
   shell: string;
+  launchShell: string;
   startupConsumed: boolean;
 }
 
@@ -644,6 +645,8 @@ export interface CreateOptions {
 export interface CreateResult {
   id: SurfaceId;
   shell: string;
+  /** User launch spec with its arguments, or the substituted shell on fallback. */
+  launchShell: string;
   /** True when startup commands were given: PtyManager owns their delivery. */
   startupCommandsConsumed: boolean;
   reused: boolean;
@@ -704,7 +707,7 @@ export class PtyManager {
   private reuseLive(surfaceId: SurfaceId | undefined): CreateResult | null {
     const existing = surfaceId ? this.ptys.get(surfaceId) : undefined;
     if (!surfaceId || !existing?.alive) return null;
-    return { id: surfaceId, shell: existing.shell, startupCommandsConsumed: existing.startupConsumed, reused: true };
+    return { id: surfaceId, shell: existing.shell, launchShell: existing.launchShell, startupCommandsConsumed: existing.startupConsumed, reused: true };
   }
 
   create(options: CreateOptions): CreateResult {
@@ -734,6 +737,9 @@ export class PtyManager {
     // (what we will actually spawn), which is what shellExtraArgs depends on.
     const requested = resolveExistingShellPath(spec.command);
     const shell = resolveShellForCwd(requested ?? resolveShell(spec.command), options.cwd);
+    // Keep arguments only for the requested executable, not a fallback or the
+    // WSL shell substituted for a POSIX directory. Reuse returns this snapshot.
+    const launchShell = requested === shell ? options.shell : shell;
     const shellExtraArgs = extraArgsForSpec(spec, requested);
     const shellType = getShellType(shell);
     const integrationDir = getShellIntegrationPath();
@@ -877,6 +883,7 @@ export class PtyManager {
       cols: spawnOptions.cols ?? 80,
       rows: spawnOptions.rows ?? 24,
       shell,
+      launchShell,
       startupConsumed: startupCommandsConsumed,
     };
 
@@ -915,7 +922,7 @@ export class PtyManager {
     // any output can arrive — node-pty delivers data asynchronously.
     if (startupCommands.length > 0 && !bakeIntoInit) this.typeStartupCommands(id, entry, startupCommands);
     const fellBack = spec.command !== '' && requested === undefined;
-    return { id, shell, startupCommandsConsumed, reused: false, ...(fellBack ? { shellFallbackFrom: spec.command } : {}) };
+    return { id, shell, launchShell, startupCommandsConsumed, reused: false, ...(fellBack ? { shellFallbackFrom: spec.command } : {}) };
   }
 
   /**

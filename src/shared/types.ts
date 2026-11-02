@@ -88,10 +88,16 @@ export interface SurfaceRef {
   shell?: string;
   /**
    * The executable `shell` actually resolved to, reported back by the PTY.
-   * Display only — the tab caption uses it so a pane started with no spec at
-   * all can still say "PowerShell" rather than "Terminal".
+   * Used for the tab caption and as a last-resort shell for a new terminal.
+   * Never replaces `shell`, whose launch arguments must survive restore.
    */
   resolvedShell?: string;
+  /**
+   * Effective launch spec captured when the PTY starts, including an inherited
+   * workspace/default spec's arguments. New terminals inherit it rather than
+   * re-reading preferences that may have changed since this terminal started.
+   */
+  launchShell?: string;
   /** Per-surface color scheme override (bundled theme name or user-defined scheme name). */
   colorScheme?: string;
   /** Per-surface working directory override (quick-launch profiles — issue #32). */

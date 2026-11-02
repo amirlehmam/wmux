@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { PaneId } from '../../src/shared/types';
 import { useKeyboardShortcuts } from '../../src/renderer/hooks/useKeyboardShortcuts';
 import { useStore } from '../../src/renderer/store';
-import { createLeaf, getAllPaneIds } from '../../src/renderer/store/split-utils';
+import { createLeaf, findLeaf, getAllPaneIds } from '../../src/renderer/store/split-utils';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -46,6 +46,39 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+
+describe.each([
+  { action: 'split right', key: 'd', shiftKey: false },
+  { action: 'split down', key: 'd', shiftKey: true },
+  { action: 'new tab', key: 't', shiftKey: false },
+])('$action shell inheritance', ({ key, shiftKey }) => {
+  it('inherits the active terminal launch spec', () => {
+    const leaf = createLeaf();
+    leaf.surfaces[0].shell = 'cmd.exe';
+    leaf.surfaces.push({
+      id: 'surf-active' as any,
+      type: 'terminal',
+      launchShell: 'wsl.exe -d Ubuntu',
+      resolvedShell: 'C:\\Windows\\System32\\wsl.exe',
+    });
+    leaf.activeSurfaceIndex = 1;
+    useStore.getState().createWorkspace({ title: 'ws', shell: 'powershell.exe', splitTree: leaf });
+    mount(leaf.paneId);
+
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key, ctrlKey: true, shiftKey, bubbles: true, cancelable: true,
+      }));
+    });
+
+    const tree = useStore.getState().workspaces[0].splitTree;
+    const targetPane = key === 't' ? leaf.paneId : focused[0];
+    const target = findLeaf(tree, targetPane)!;
+    const created = target.surfaces[target.activeSurfaceIndex];
+    expect(created.id).not.toBe('surf-active');
+    expect(created.shell).toBe('wsl.exe -d Ubuntu');
+  });
 });
 
 describe('split focus (PR #383)', () => {

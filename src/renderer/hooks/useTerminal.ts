@@ -193,15 +193,17 @@ function snapshotSurfaceBuffer(
  * `…\ssh.exe`, persisted that way, and a restored ssh workspace then started
  * an ssh with no destination, printed usage and exited. The label only ever
  * needed a name to show, so it gets its own field and the spec stays intact.
+ * Main also returns the original effective launch spec on reattachment, so
+ * inheritance preserves arguments even if workspace/default preferences changed.
  */
-function setResolvedShellForSurface(surfaceId: string | undefined, resolvedShell: string): void {
+function setResolvedShellForSurface(surfaceId: string | undefined, resolvedShell: string, launchShell: string): void {
   if (!surfaceId || !resolvedShell) return;
   const state = useStore.getState();
   const workspace = state.workspaces.find((ws) => treeHasSurface(ws.splitTree, surfaceId));
   if (!workspace) return;
   const location = findSurfaceLocation(workspace.splitTree, surfaceId);
   if (!location) return;
-  state.updateSurface(workspace.id, location.paneId as any, surfaceId as any, { resolvedShell });
+  state.updateSurface(workspace.id, location.paneId as any, surfaceId as any, { resolvedShell, launchShell });
 }
 
 /**
@@ -1936,13 +1938,13 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
         return window.wmux.pty.create({ shell: effectiveShell, cwd: effectiveCwd,
           env: envRef.current ?? {}, surfaceId, startupCommands: spawnCommands, cols, rows,
           conptyInheritCursor: inheritCursor }) as
-          Promise<{ id: string; shell: string; reused: boolean; shellFallbackFrom?: string }>;
+          Promise<{ id: string; shell: string; launchShell: string; reused: boolean; shellFallbackFrom?: string }>;
       },
       captureCompleted: () => ({ text: serializeRemountSnapshot(serializeAddon), cols: terminal.cols, rows: terminal.rows }),
       restoreLive: restoreSurfaceState,
       attach: (id, created, retained) => {
         if (created) {
-          setResolvedShellForSurface(surfaceId, created.shell);
+          setResolvedShellForSurface(surfaceId, created.shell, created.launchShell);
           noteShellFallback(created);
         }
         attachToPty(id, retained);
