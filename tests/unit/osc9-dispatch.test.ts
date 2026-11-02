@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Terminal } from '@xterm/xterm';
 import { ProgressAddon } from '@xterm/addon-progress';
-import { isConEmuSubcommand } from '../../src/renderer/hooks/osc9';
+import { isConEmuSubcommand, osc9CwdToOsc7 } from '../../src/renderer/hooks/osc9';
+import { parseOsc7Cwd } from '../../src/shared/osc7';
 
 describe('isConEmuSubcommand', () => {
   it('treats a leading numeric field as a ConEmu subcommand', () => {
@@ -23,11 +24,31 @@ describe('isConEmuSubcommand', () => {
   });
 });
 
+describe('OSC 9 cwd adaptation', () => {
+  it('preserves literal percent escapes, semicolons and Unicode directory names', () => {
+    const cwd = 'C:\\My Repo\\%20; café 日本語';
+    expect(parseOsc7Cwd(osc9CwdToOsc7(`9;${cwd}`)!, 'MY-PC')).toBe(cwd);
+    expect(parseOsc7Cwd(osc9CwdToOsc7('9;C:\\')!, 'MY-PC')).toBe('C:\\');
+  });
+
+  it('leaves unsafe paths subject to the main-process allow-list', () => {
+    for (const path of ['\\\\attacker\\share', '\\\\?\\C:\\secret', 'C:\\a\\..\\b', 'C:\\a\nb', 'C:\\a:stream', 'relative']) {
+      expect(parseOsc7Cwd(osc9CwdToOsc7(`9;${path}`)!, 'MY-PC')).toBeNull();
+    }
+  });
+
+  it('ignores other subcommands, empty paths and malformed Unicode', () => {
+    for (const data of ['4;1;50', 'Build finished', '9;', '9;C:\\\uD800']) {
+      expect(osc9CwdToOsc7(data)).toBeNull();
+    }
+  });
+});
+
 // Mirrors the OSC 9 wiring in useTerminal.ts: ProgressAddon is loaded FIRST,
 // the notification handler is registered AFTER it. xterm runs OSC handlers
 // newest-first and stops at the first returning true, so the notification
-// handler always sees the sequence before the addon does — it must DECLINE
-// ConEmu subcommands (return false) rather than swallow them (return true),
+// handler always sees the sequence before the addon does — after handling cwd,
+// it must DECLINE other ConEmu subcommands rather than swallow them,
 // or OSC 9;4 progress never reaches the addon (regression guard for #127).
 function makeTerminal() {
   const term = new Terminal({ allowProposedApi: true });
@@ -38,23 +59,31 @@ function makeTerminal() {
   progress.onChange(p => progressSeen.push({ state: p.state, value: p.value }));
 
   const notified: string[] = [];
+  const cwdReports: string[] = [];
   term.parser.registerOscHandler(9, data => {
+    const cwdReport = osc9CwdToOsc7(data);
+    if (cwdReport !== null) {
+      cwdReports.push(cwdReport);
+      return true;
+    }
     if (isConEmuSubcommand(data)) return false;
     notified.push(data);
     return true;
   });
 
-  return { term, progressSeen, notified };
+  return { term, progressSeen, notified, cwdReports };
 }
 
 const write = (t: Terminal, s: string) => new Promise<void>(resolve => t.write(s, resolve));
 
 describe('OSC 9 dispatch order', () => {
-  it('a cwd report fires no notification (issue #127 prompt-redraw spam)', async () => {
-    const { term, notified } = makeTerminal();
-    // What wmux-cmd-integration.cmd emits on every single prompt redraw.
-    await write(term, '\x1b]9;9;C:\\Users\\me\\project\x07');
-    await write(term, '\x1b]9;9;C:\\Users\\me\\project\x07');
+  it('routes CMD prompt cwd changes without firing notifications', async () => {
+    const { term, notified, cwdReports } = makeTerminal();
+    await write(term, '\x1b]133;A\x1b\\\x1b]9;9;C:\\Users\\me\\project\x1b\\C:\\Users\\me\\project>\x1b]133;B\x1b\\');
+    await write(term, '\x1b]9;9;D:\\other project\x07');
+    expect(cwdReports.map(data => parseOsc7Cwd(data, 'MY-PC'))).toEqual([
+      'C:\\Users\\me\\project', 'D:\\other project',
+    ]);
     expect(notified).toEqual([]);
   });
 

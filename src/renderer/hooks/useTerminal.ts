@@ -59,7 +59,7 @@ import { handleShiftEnter, isLetterKey, isShiftEnter } from './terminal-keys';
 import { applyKeyRemap } from '../key-remaps';
 import { claimsKeyEvent } from '../utils/shortcut-binding';
 import { installXtermCompositionClauses } from '../utils/ime-composition';
-import { isConEmuSubcommand } from './osc9';
+import { isConEmuSubcommand, osc9CwdToOsc7 } from './osc9';
 import { applyOsc7Cwd } from '../utils/osc7-cwd';
 import { forgetSurface as forgetPromptLog, handlePromptMark, refreshHighlights } from '../utils/prompt-log';
 import {
@@ -1598,7 +1598,16 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // prompt snippet emit this on EVERY prompt redraw) and "4;<state>;<n>"
       // (progress). Only bare text is an iTerm2 notification (#127).
       //
-      // Return FALSE, not true: xterm runs OSC handlers newest-first and stops
+      // Reuse OSC 7's main-process validation and explorer/store updates. The
+      // path is literal, not URL-encoded; the adapter preserves '%' in names.
+      const cwdReport = osc9CwdToOsc7(data);
+      if (cwdReport !== null) {
+        const surfaceId = ptyIdRef.current as SurfaceId | null;
+        if (surfaceId) void applyOsc7Cwd(surfaceId, cwdReport);
+        return true;
+      }
+
+      // For other numeric subcommands return FALSE: xterm runs newest-first and stops
       // at the first one returning true. ProgressAddon also registers on OSC 9
       // but is loaded earlier (above), so this handler always sees the sequence
       // first — swallowing it with `true` starved the addon and the OSC 9;4
