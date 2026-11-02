@@ -1,277 +1,224 @@
 import { describe, it, expect } from 'vitest';
-import { claudeSessionsForWorkspace } from '../../src/renderer/store/claude-session-view';
-import { SplitNode, PaneId } from '../../src/shared/types';
-
-const leaf = (paneId: string, surfaces: Array<{ id: string; currentCwd?: string; customTitle?: string }>): SplitNode => ({
-  type: 'leaf',
-  paneId: paneId as PaneId,
-  surfaces: surfaces.map(s => ({ id: s.id, type: 'terminal', currentCwd: s.currentCwd, customTitle: s.customTitle } as any)),
-  activeSurfaceIndex: 0,
-} as SplitNode);
-
-const split = (a: SplitNode, b: SplitNode): SplitNode => ({
-  type: 'branch', direction: 'horizontal', ratio: 0.5, children: [a, b],
-});
+import { claudeSessionsForWorkspace, type HookActivityEntry } from '../../src/renderer/store/claude-session-view';
+import { rollupAgents, type AgentIdentitySnapshot, type DeclaredAgentSnapshot, type DetectionSnapshot } from '../../src/renderer/store/agent-rollup';
+import type { SplitNode, PaneId, WorkspaceInfo } from '../../src/shared/types';
 
 const NOW = 1_000_000;
-const hook = (lastTool: string, lastSeen: number) => ({ lastTool, toolCount: 1, lastSeen });
-const obs = (over: Partial<{ lastTool: string | null; lastUpdate: number; isDone: boolean; activeSkill: string | null }> = {}) => ({
+const leaf = (paneId: string, surfaces: Array<{ id: string; currentCwd?: string; customTitle?: string; defaultTitle?: string }>): SplitNode => ({
+  type: 'leaf', paneId: paneId as PaneId, activeSurfaceIndex: 0,
+  surfaces: surfaces.map(s => ({ ...s, type: 'terminal' })),
+} as SplitNode);
+const tree = leaf('pane-1', [{ id: 'surf-a', currentCwd: '/home/u/alpha' }, { id: 'surf-b', currentCwd: '/home/u/beta' }]);
+const hook = (lastTool: string, lastSeen = NOW) => ({ lastTool, toolCount: 1, lastSeen });
+const obs = (over = {}) => ({
   agents: [], activeSkill: null, lastTool: null, lastUpdate: NOW, isDone: false, ...over,
 });
 
-describe('screen-detected sessions in sidebar detail rows', () => {
-  const tree = leaf('pane-1', [{ id: 'surf-a' }, { id: 'surf-b' }]);
-  it('shows a working Codex turn even when the restore handle declares unknown', () => {
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
-      { 'surf-a': { state: 'unknown' } },
-      { 'surf-a': { agent: 'codex', state: 'working' }, 'surf-b': { agent: 'codex', state: 'idle' } });
-    expect(out.working).toBe(1);
-    expect(out.sessions.map(s => [s.surfaceId, s.working, s.tool])).toEqual([
-      ['surf-a', true, null], ['surf-b', false, null],
-    ]);
-  });
-  it('keeps explicit declarations ahead of detection', () => {
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
-      { 'surf-a': { state: 'idle' }, 'surf-b': { state: 'blocked', blockedReason: 'Permission' } },
-      { 'surf-a': { agent: 'codex', state: 'working' }, 'surf-b': { agent: 'codex', state: 'working' } });
-    expect(out.working).toBe(0);
-    expect(out.blocked).toBe(1);
-    expect(out.sessions[1].blockedReason).toBe('Permission');
-  });
-  it('shows detected blocking without exposing old declared choices', () => {
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
-      { 'surf-a': { state: 'unknown', choices: [{ id: 'old', label: 'Old' }], answeredAt: NOW } },
-      { 'surf-a': { agent: 'codex', state: 'blocked' } });
-    expect(out.blocked).toBe(1);
-    expect(out.sessions[0]).toMatchObject({ blocked: true, choices: [], answerPending: false });
-  });
-  // PR #326 review (GitHub Codex): the workspace header said "Question for
-  // you" while the sub-row of the very session asking read "Idle".
-  it('carries a current question to the session row that asked it', () => {
-    const SESSION = '11111111-1111-1111-1111-111111111111';
-    const idle = { state: 'idle' as const, idleSince: NOW - 10_000, sessionId: SESSION };
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW,
-      { 'surf-a': idle, 'surf-b': { state: 'idle' } },
-      { 'surf-a': { agent: 'claude', state: 'question', observedAt: NOW - 5_000, sessionId: SESSION } });
-    expect(out.sessions.map((s) => [s.surfaceId, s.question, s.working, s.blocked])).toEqual([
-      ['surf-a', true, false, false], ['surf-b', false, false, false],
-    ]);
-    expect(out.blocked).toBe(0);
-  });
-  it('uses fresh hook activity when detection has no state', () => {
-    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Read', NOW) }, NOW, {},
-      { 'surf-a': { agent: 'claude', state: 'unknown' } });
-    expect(out.sessions[0]).toMatchObject({ working: true, tool: 'Read' });
-  });
-  it('does not let an old fresh tool label contradict detected idle', () => {
-    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Read', NOW) }, NOW, {},
-      { 'surf-a': { agent: 'codex', state: 'idle' } });
-    expect(out.sessions[0]).toMatchObject({ working: false, tool: null });
-  });
-});
+function view({
+  splitTree = tree, states = {}, hooks = {}, activity = {}, detections = {}, identities = {},
+}: {
+  splitTree?: SplitNode;
+  states?: Record<string, DeclaredAgentSnapshot>;
+  hooks?: Record<string, HookActivityEntry>;
+  activity?: Parameters<typeof claudeSessionsForWorkspace>[1];
+  detections?: Record<string, DetectionSnapshot>;
+  identities?: Record<string, AgentIdentitySnapshot>;
+} = {}) {
+  const workspace = { id: 'ws-1', title: 'Test', splitTree } as WorkspaceInfo;
+  const rollup = rollupAgents([workspace], states, NOW, identities, detections);
+  return claudeSessionsForWorkspace(splitTree, activity, hooks, NOW, rollup.roster, states);
+}
 
-describe('claudeSessionsForWorkspace', () => {
-  it('returns no sessions when neither hooks nor observer saw Claude', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW);
-    expect(out).toEqual({ sessions: [], working: 0, blocked: 0, oldestBlockedSince: null });
+describe('sidebar sessions share roster membership and state', () => {
+  it('does not list a plain shell or a cleared declaration', () => {
+    expect(view()).toEqual({ sessions: [], working: 0, blocked: 0, oldestBlockedSince: null });
+    expect(view({ states: { 'surf-a': { state: 'unknown', sessionId: null } } }).sessions).toEqual([]);
   });
 
-  it('a fresh hook event makes the surface a working session with its tool', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a', currentCwd: 'C:\\dev\\myproj' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Edit', NOW - 1000) }, NOW);
-    expect(out.working).toBe(1);
-    expect(out.sessions).toHaveLength(1);
-    expect(out.sessions[0]).toMatchObject({
-      surfaceId: 'surf-a', paneId: 'pane-1', label: 'myproj', working: true, tool: 'Edit',
+  it.each([NOW, NOW - 60_000])('does not let retained history recreate a released pi session (activity at %s)', lastSeen => {
+    const history = {
+      hooks: { 'surf-a': hook('Edit', lastSeen), 'surf-b': hook('Bash', lastSeen) },
+      activity: { 'surf-a': obs({ lastTool: 'Edit', lastUpdate: lastSeen }) },
+    };
+    const live = view({ ...history, states: {
+      'surf-a': { state: 'idle', sessionId: '/sessions/a.jsonl', sessionProvider: 'pi' },
+      'surf-b': { state: 'idle', sessionId: '/sessions/b.jsonl', sessionProvider: 'pi' },
+    } });
+    expect(live.sessions).toHaveLength(2);
+    const released = view({ ...history, states: {
+      'surf-a': { state: 'unknown', sessionId: null },
+      'surf-b': { state: 'unknown', sessionId: null },
+    } });
+    expect(released.sessions).toEqual([]);
+  });
+
+  it('does not establish presence from hook or observer activity alone', () => {
+    expect(view({
+      hooks: { 'surf-a': hook('Edit'), 'ws-1': hook('Bash'), 'surf-foreign': hook('Read') },
+      activity: { 'surf-b': obs({ lastTool: 'Grep' }) },
+    }).sessions).toEqual([]);
+  });
+
+  it('preserves genuinely identified and session-only unknown agents without inferring idle or working', () => {
+    const out = view({
+      states: { 'surf-b': { state: 'unknown', sessionId: 'conversation', sessionProvider: 'codex' } },
+      identities: { 'surf-a': { kind: 'claude', source: 'command' } },
+      hooks: { 'surf-a': hook('Bash') },
     });
+    expect(out.sessions.map(s => [s.surfaceId, s.state, s.working, s.tool])).toEqual([
+      ['surf-a', 'unknown', false, null], ['surf-b', 'unknown', false, null],
+    ]);
   });
 
-  it('a Stop-zeroed hook entry keeps the session listed but idle', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Bash', 0) }, NOW);
-    expect(out.working).toBe(0);
-    expect(out.sessions[0]).toMatchObject({ working: false, tool: null });
-  });
-
-  it('tracks two sessions independently — one working, one idle', () => {
-    const tree = split(
-      leaf('pane-1', [{ id: 'surf-a', currentCwd: '/home/u/alpha' }]),
-      leaf('pane-2', [{ id: 'surf-b', currentCwd: '/home/u/beta' }]),
-    );
-    const out = claudeSessionsForWorkspace(tree, {}, {
-      'surf-a': hook('Read', 0),          // stopped
-      'surf-b': hook('Bash', NOW - 500),  // active
-    }, NOW);
+  it('keeps detected states and explicit declarations in the same order as the roster', () => {
+    const out = view({
+      states: { 'surf-a': { state: 'idle' } },
+      detections: {
+        'surf-a': { agent: 'codex', state: 'working' },
+        'surf-b': { agent: 'codex', state: 'working' },
+      },
+    });
+    expect(out.sessions.map(s => [s.surfaceId, s.state])).toEqual([
+      ['surf-a', 'idle'], ['surf-b', 'working'],
+    ]);
     expect(out.working).toBe(1);
-    expect(out.sessions.map(s => [s.label, s.working])).toEqual([['alpha', false], ['beta', true]]);
   });
 
-  it('fresh observer activity with a tool counts as working and wins over hook tool', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree,
-      { 'surf-a': obs({ lastTool: 'Grep', lastUpdate: NOW - 100 }) },
-      { 'surf-a': hook('Bash', NOW - 100) },
-      NOW,
-    );
-    expect(out.sessions[0]).toMatchObject({ working: true, tool: 'Grep' });
+  it('tracks sessions independently across separate split panes in tree order', () => {
+    const out = view({
+      splitTree: {
+        type: 'branch', direction: 'horizontal', ratio: 0.5,
+        children: [
+          leaf('pane-1', [{ id: 'surf-a', currentCwd: '/home/u/alpha' }]),
+          leaf('pane-2', [{ id: 'surf-b', currentCwd: '/home/u/beta' }]),
+        ],
+      },
+      states: { 'surf-a': { state: 'idle' }, 'surf-b': { state: 'working' } },
+      hooks: { 'surf-a': hook('Read', 0), 'surf-b': hook('Bash') },
+    });
+    expect(out.working).toBe(1);
+    expect(out.sessions.map(s => [s.paneId, s.label, s.working, s.tool])).toEqual([
+      ['pane-1', 'alpha', false, null], ['pane-2', 'beta', true, 'Bash'],
+    ]);
   });
 
-  it('observer isDone means idle even when its lastUpdate is fresh', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree,
-      { 'surf-a': obs({ isDone: true, lastTool: null, lastUpdate: NOW }) },
-      {},
-      NOW,
-    );
+  it('enriches a working roster entry with fresh observer or hook tool labels', () => {
+    const out = view({
+      states: { 'surf-a': { state: 'working' }, 'surf-b': { state: 'working' } },
+      hooks: { 'surf-a': hook('Bash'), 'surf-b': hook('Read') },
+      activity: { 'surf-a': obs({ lastTool: 'Grep', activeSkill: 'debugging' }) },
+    });
+    expect(out.sessions.map(s => [s.tool, s.skill])).toEqual([
+      ['Grep', 'debugging'], ['Read', null],
+    ]);
+  });
+
+  it('expires tool labels without changing a declared working state', () => {
+    const out = view({
+      states: { 'surf-a': { state: 'working' }, 'surf-b': { state: 'working' } },
+      hooks: { 'surf-a': hook('Edit', NOW - 60_000) },
+      activity: {
+        'surf-a': obs({ lastTool: 'Edit', lastUpdate: NOW - 60_000 }),
+        'surf-b': obs({ lastTool: 'Bash', isDone: true }),
+      },
+    });
+    expect(out.working).toBe(2);
+    expect(out.sessions.map(s => s.tool)).toEqual([null, null]);
+  });
+
+  it('does not let fresh tool history override declared idle or blocked states', () => {
+    const out = view({
+      states: {
+        'surf-a': { state: 'idle' },
+        'surf-b': { state: 'blocked', blockedReason: 'Permission', blockedSince: NOW - 10_000 },
+      },
+      hooks: { 'surf-a': hook('Read'), 'surf-b': hook('Bash') },
+    });
     expect(out.working).toBe(0);
-    expect(out.sessions[0]).toMatchObject({ working: false });
+    expect(out.blocked).toBe(1);
+    expect(out.sessions.map(s => s.tool)).toEqual([null, null]);
+    expect(out.sessions[1].blockedReason).toBe('Permission');
+    expect(out.oldestBlockedSince).toBe(NOW - 10_000);
   });
 
-  it('stale signals (past the activity TTL) mean idle, not gone', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree,
-      { 'surf-a': obs({ lastTool: 'Edit', lastUpdate: NOW - 60_000 }) },
-      { 'surf-a': hook('Edit', NOW - 60_000) },
-      NOW,
-    );
-    expect(out.sessions).toHaveLength(1);
-    expect(out.sessions[0]).toMatchObject({ working: false, tool: null });
+  it('retains declared choices and the pending-answer state', () => {
+    const out = view({ states: {
+      'surf-a': { state: 'blocked', choices: [{ id: 'yes', label: 'Yes' }] },
+      'surf-b': { state: 'blocked', choices: [], answeredAt: NOW },
+    } });
+    expect(out.sessions[0].choices).toEqual([{ id: 'yes', label: 'Yes' }]);
+    expect(out.sessions[1].answerPending).toBe(true);
   });
 
-  it('ignores hook entries for surfaces outside this workspace and legacy ws-keyed entries', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, {
-      'surf-foreign': hook('Bash', NOW),
-      'ws-1234': hook('Bash', NOW),
-    }, NOW);
-    expect(out).toEqual({ sessions: [], working: 0, blocked: 0, oldestBlockedSince: null });
+  it('never offers old choices when only screen detection reports blocking', () => {
+    const out = view({
+      states: { 'surf-a': { state: 'unknown', choices: [{ id: 'old', label: 'Old' }], answeredAt: NOW } },
+      detections: { 'surf-a': { agent: 'codex', state: 'blocked' } },
+    });
+    expect(out.blocked).toBe(1);
+    expect(out.sessions[0]).toMatchObject({ choices: [], answerPending: false, blockedReason: null });
   });
 
-  it('prefers the user-set surface title over the cwd basename (rename bug)', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a', currentCwd: 'C:\\dev\\wmux', customTitle: 'captely' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Edit', NOW - 1000) }, NOW);
-    expect(out.sessions[0].label).toBe('captely');
+  it('carries current questions from the roster to the row that asked', () => {
+    const out = view({
+      states: { 'surf-a': { state: 'idle', idleSince: NOW - 10_000, sessionId: 'session-a' } },
+      detections: { 'surf-a': { agent: 'claude', state: 'question', observedAt: NOW - 5000, sessionId: 'session-a' } },
+    });
+    expect(out.sessions[0]).toMatchObject({ state: 'question', question: true, working: false, blocked: false });
   });
 
-  it('falls back to a generic label without a cwd and exposes the active skill', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree,
-      { 'surf-a': obs({ activeSkill: 'debugging', lastTool: 'Bash', lastUpdate: NOW }) },
-      {},
-      NOW,
-    );
+  it('preserves sidebar pane labels instead of replacing them with agent names', () => {
+    const out = view({
+      splitTree: leaf('pane-1', [
+        { id: 'surf-a', currentCwd: 'C:\\dev\\project', customTitle: 'Reviewer' },
+        { id: 'surf-b', currentCwd: '/home/u/project', defaultTitle: 'Profile' },
+      ]),
+      identities: { 'surf-a': { kind: 'pi', source: 'command' }, 'surf-b': { kind: 'pi', source: 'command' } },
+    });
+    expect(out.sessions.map(s => s.label)).toEqual(['Reviewer', 'Profile']);
+    expect(view({ states: { 'surf-a': { state: 'idle' } } }).sessions[0].label).toBe('alpha');
+  });
+
+  it('falls back to a generic label without a cwd or known agent kind', () => {
+    const out = view({
+      splitTree: leaf('pane-1', [{ id: 'surf-a' }]),
+      states: { 'surf-a': { state: 'working' } },
+      activity: { 'surf-a': obs({ activeSkill: 'debugging', lastTool: 'Bash' }) },
+    });
     expect(out.sessions[0]).toMatchObject({ label: 'Agent', skill: 'debugging' });
   });
-});
 
-// ─── Declared agent state (issue #128) ───────────────────────────────────────
-// The signal the freshness heuristic structurally cannot produce: an agent
-// parked on a human emits nothing while it waits, so inference alone decays it
-// to idle — hiding the one pane that needs the user.
-describe('declared agent state precedence', () => {
-  const declared = (state: string, blockedReason: string | null = null) => ({ state, blockedReason } as any);
-
-  it('a blocked session stays blocked long after every signal went quiet', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree, {}, { 'surf-a': hook('Bash', NOW - 60_000) }, NOW,
-      { 'surf-a': declared('blocked', 'permission: Bash') },
-    );
-    expect(out.blocked).toBe(1);
-    expect(out.sessions[0]).toMatchObject({ blocked: true, blockedReason: 'permission: Bash' });
-  });
-
-  it('without a declared state the same stale surface reads idle — the old bug', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Bash', NOW - 60_000) }, NOW);
-    expect(out.sessions[0]).toMatchObject({ working: false, blocked: false });
-    expect(out.blocked).toBe(0);
-  });
-
-  it('a declared state alone makes a surface a session', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, { 'surf-a': declared('working') });
-    expect(out.sessions).toHaveLength(1);
-    expect(out.working).toBe(1);
-  });
-
-  it('a declared idle overrides a fresh hook event', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree, {}, { 'surf-a': hook('Edit', NOW) }, NOW, { 'surf-a': declared('idle') },
-    );
-    expect(out.working).toBe(0);
-  });
-
-  it('unknown falls back to inference instead of pinning the pane idle', () => {
-    // What a released agent leaves behind: no claim, so the heuristic decides.
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree, {}, { 'surf-a': hook('Edit', NOW) }, NOW, { 'surf-a': declared('unknown') },
-    );
-    expect(out.working).toBe(1);
-  });
-
-  it('counts blocked panes across a split workspace', () => {
-    const tree = split(leaf('pane-1', [{ id: 'surf-a' }]), leaf('pane-2', [{ id: 'surf-b' }]));
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, {
-      'surf-a': declared('blocked', 'approve?'),
-      'surf-b': declared('working'),
+  it('preserves background shell details for idle agents', () => {
+    const out = view({
+      states: { 'surf-a': { state: 'idle' } },
+      activity: { 'surf-a': obs({ agents: [{ id: 'shell-tests', name: 'tests', toolUses: 0, tokens: '', done: false, kind: 'shell', touchedAt: NOW }] }) },
     });
-    expect(out).toMatchObject({ blocked: 1, working: 1 });
-    expect(out.sessions.map(s => s.blocked)).toEqual([true, false]);
+    expect(out.sessions[0]).toMatchObject({ state: 'idle', backgroundShells: 1 });
   });
 
-  it('a blocked session reports no tool label from a stale signal', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(
-      tree, {}, { 'surf-a': hook('Bash', NOW - 60_000) }, NOW, { 'surf-a': declared('blocked') },
-    );
-    expect(out.sessions[0].tool).toBeNull();
-  });
-});
-
-describe('oldestBlockedSince', () => {
-  const declaredBlocked = (blockedSince?: number | null) => ({
-    state: 'blocked' as const, blockedReason: null, choices: [], answeredAt: null, blockedSince,
-  });
-
-  it('is null when nothing is blocked', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, { 'surf-a': hook('Edit', NOW) }, NOW);
-    expect(out.oldestBlockedSince).toBeNull();
-  });
-
-  /**
-   * One row stands for N panes, so it reports the OLDEST open wait: a workspace
-   * stuck for ten minutes is not made less urgent by a second agent blocking now.
-   */
-  it('reports the earliest of several open blocks', () => {
-    const tree = split(leaf('pane-1', [{ id: 'surf-a' }]), leaf('pane-2', [{ id: 'surf-b' }]));
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, {
-      'surf-a': declaredBlocked(NOW - 1_000),
-      'surf-b': declaredBlocked(NOW - 600_000),
-    });
-    expect(out.blocked).toBe(2);
+  it('uses the oldest block across panes and falls back to now when unstamped', () => {
+    const out = view({ states: {
+      'surf-a': { state: 'blocked', blockedSince: NOW - 1000 },
+      'surf-b': { state: 'blocked', blockedSince: NOW - 600_000 },
+    } });
     expect(out.oldestBlockedSince).toBe(NOW - 600_000);
+    expect(view({ states: { 'surf-a': { state: 'blocked' } } }).oldestBlockedSince).toBe(NOW);
   });
 
-  it('still reports a block whose stamp never arrived', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, { 'surf-a': declaredBlocked(null) });
-    expect(out.oldestBlockedSince).toBe(NOW);
-  });
-
-  it('ignores the stamp of a session that is no longer blocked', () => {
-    const tree = leaf('pane-1', [{ id: 'surf-a' }]);
-    const out = claudeSessionsForWorkspace(tree, {}, {}, NOW, {
-      'surf-a': { state: 'working', blockedSince: NOW - 900_000 } as any,
-    });
+  it('ignores old block timestamps after a pane resumes working', () => {
+    const out = view({ states: {
+      'surf-a': { state: 'working', blockedSince: NOW - 900_000 },
+    } });
+    expect(out.blocked).toBe(0);
     expect(out.oldestBlockedSince).toBeNull();
+  });
+
+  it('preserves block timestamps without substituting update times or clamping future stamps', () => {
+    expect(view({ states: {
+      'surf-a': { state: 'blocked', blockedSince: null, updatedAt: NOW - 60_000 },
+    } }).oldestBlockedSince).toBe(NOW);
+    expect(view({ states: {
+      'surf-a': { state: 'blocked', blockedSince: NOW + 1000 },
+    } }).oldestBlockedSince).toBe(NOW + 1000);
   });
 });
