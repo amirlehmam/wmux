@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import '../../styles/splitpane.css';
 import { getSurfaceLabel } from './surface-label';
-import { useOscTitleLookup } from './use-osc-title';
+import { useBrowserTitleLookup, useOscTitleLookup } from './use-osc-title';
 
 interface SplitPreviewOverlayProps {
   tree: SplitNode;
@@ -21,8 +21,9 @@ export default function SplitPreviewOverlay({
   const t = useT();
   const agentMeta = useStore((state) => state.agentMeta);
   const oscTitleFor = useOscTitleLookup();
+  const browserTitleFor = useBrowserTitleLookup();
   const getPreviewSurfaceLabel = (surface: SurfaceRef) =>
-    getSurfaceLabel(surface, agentMeta.get(surface.id)?.label, workspaceShell, t, oscTitleFor(surface.id));
+    getSurfaceLabel(surface, agentMeta.get(surface.id)?.label, workspaceShell, t, oscTitleFor(surface.id), browserTitleFor(surface.id));
   const dropHereLabel = t('splitPreview.dropHere', 'Drop here');
 
   return (

@@ -54,6 +54,13 @@ describe('deriveWorkspaceTitle — labels', () => {
     }
   });
 
+  it('does not name a workspace after the page a browser tab opens on', () => {
+    // The stored title outlives the page, so a tab's live label is no seed for it.
+    expect(deriveWorkspaceTitle(leaf(s({ type: 'browser', url: 'https://github.com/' })), undefined, undefined)).toBe('');
+    expect(deriveWorkspaceTitle(leaf(named('api'), s({ type: 'browser', url: 'https://github.com/' })), undefined, undefined))
+      .toBe('api + Browser');
+  });
+
   it('labels a terminal by its own cwd before the workspace cwd', () => {
     expect(deriveWorkspaceTitle(leaf(s({ cwd: 'C:\\src\\api' })), 'C:\\src\\web', undefined)).toBe('api');
     expect(deriveWorkspaceTitle(leaf(s()), 'C:\\src\\web', undefined)).toBe('web');

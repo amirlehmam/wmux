@@ -1,5 +1,6 @@
 import type { SplitNode, SurfaceRef } from '../../../shared/types';
 import type { TranslationKey } from '../../i18n/core';
+import { normalizeOscTitle } from '../../store/osc-title-slice';
 
 /** Defaults to returning the fallback verbatim so callers (and existing tests) that omit `t` still see English. */
 const identityT = (_key: TranslationKey, fallback?: string): string => fallback ?? _key;
@@ -22,6 +23,39 @@ function cwdFolderName(cwd: string): string | null {
   const normalized = cwd.replace(/\\/g, '/').replace(/\/$/, '');
   const lastSegment = normalized.split('/').pop();
   return lastSegment || null;
+}
+
+/**
+ * What a browser tab reads while its page has no title: before the page has
+ * loaded (the whole of a restart, since titles are not persisted), on a page that
+ * never sets one, or in agent mode, where the page is in a Chrome outside wmux.
+ *
+ * The host keeps its port, which is what tells two dev servers apart, and stays
+ * in the ASCII form `URL` gives it, so a look-alike domain does not read as the
+ * real one. A local file has no host, so it goes by its name. Null for a URL with
+ * no place to name: `about:blank` is an empty tab, and `data:` is only content.
+ */
+export function browserUrlLabel(url: string | undefined): string | null {
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+    return parsed.host.replace(/^www\./, '');
+  }
+  if (parsed.protocol !== 'file:') return null;
+  let path = parsed.pathname;
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // A stray `%` is part of the name; show it as written.
+  }
+  // Decoding can produce the bidi overrides a page title is stripped of.
+  const name = cwdFolderName(path);
+  return name ? normalizeOscTitle(name) || null : null;
 }
 
 /**
@@ -52,6 +86,10 @@ function diffLabel(surface: SurfaceRef, t: (key: TranslationKey, fallback?: stri
  *   human-chosen rank: a profile named `opencode` kept reading `opencode` while
  *   opencode itself was announcing `OC | <session title>`. A template name is
  *   what the tab is called until its program says otherwise.
+ * @param pageTitle The title of the page a browser tab shows, from
+ *   `browser-title-slice.ts`. Below a profile's name, unlike a terminal's OSC
+ *   title: a browser profile names a site, and a site's pages change the title
+ *   on every click and on every unread count.
  */
 export function getSurfaceLabel(
   surface: SurfaceRef,
@@ -59,19 +97,19 @@ export function getSurfaceLabel(
   workspaceShell?: string,
   t: (key: TranslationKey, fallback?: string) => string = identityT,
   oscTitle?: string,
+  pageTitle?: string,
 ): string {
   if (surface.customTitle) return surface.customTitle;
   if (agentLabel) return agentLabel;
-  // Only a terminal has a program that can announce a title of its own, so
-  // anywhere else a profile's name keeps the rank it always had.
+  // Only a terminal's program outranks a profile's name, so anywhere else that
+  // name keeps the rank it always had.
   if (surface.type !== 'terminal' && surface.defaultTitle) return surface.defaultTitle;
 
   switch (surface.type) {
     case 'terminal': {
-      // Only inside the terminal case, not above the switch: a browser or
-      // markdown tab has no program that could have set a title, so one
-      // arriving for it means something is confused, and the static label is
-      // the answer that cannot be wrong.
+      // Only inside the terminal case, not above the switch: no other tab has a
+      // PTY whose program could have set one, so one arriving for it means
+      // something is confused, and the static label cannot be wrong.
       if (oscTitle) return oscTitle;
       if (surface.defaultTitle) return surface.defaultTitle;
       const folder = surface.currentCwd ? cwdFolderName(surface.currentCwd) : null;
@@ -83,7 +121,7 @@ export function getSurfaceLabel(
         || t('surfaceLabel.terminal', 'Terminal');
     }
     case 'browser':
-      return t('surfaceLabel.browser', 'Browser');
+      return pageTitle || browserUrlLabel(surface.url) || t('surfaceLabel.browser', 'Browser');
     case 'explorer':
       return t('explorer.title', 'Explorer');
     case 'markdown': {
@@ -181,6 +219,9 @@ function getInitialSurfaceLabel(
       return surface.codeFileName
         ? { label: surface.codeFileName, named: true }
         : { label: t('surfaceLabel.code', 'Code'), named: false };
+    // Only its type: the stored title would go on naming a page the tab has left.
+    case 'browser':
+      return { label: t('surfaceLabel.browser', 'Browser'), named: false };
     default:
       return { label: getSurfaceLabel(surface, undefined, undefined, t), named: false };
   }

@@ -166,8 +166,9 @@ describe('the dashboard never becomes the surface URL', () => {
       PANE_CODE.indexOf('const onNavigate = (e: any)'),
       PANE_CODE.indexOf("wv.addEventListener('did-navigate'"),
     );
-    // Both handlers that can reach onUrlChange bail out first.
-    expect([...handlers.matchAll(/if \(engineRef\.current === 'agent'\) return;/g)]).toHaveLength(2);
+    // Both handlers that can reach onUrlChange bail out first, and so does the
+    // one that would otherwise publish the dashboard's title.
+    expect([...handlers.matchAll(/if \(engineRef\.current === 'agent'\) return;/g)]).toHaveLength(3);
     for (const call of handlers.split('onUrlChange?.(').slice(1)) {
       expect(call.length).toBeGreaterThan(0);
     }

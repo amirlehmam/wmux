@@ -21,6 +21,12 @@ export function useOscTitleLookup(): (surfaceId: string) => string | undefined {
   return (surfaceId: string) => (enabled ? oscTitles[surfaceId]?.title : undefined);
 }
 
+/** The page title a browser tab's label reads, for the same two callers. */
+export function useBrowserTitleLookup(): (surfaceId: string) => string | undefined {
+  const browserTitles = useStore((state) => state.browserTitles);
+  return (surfaceId: string) => browserTitles[surfaceId]?.title;
+}
+
 type LabelledWorkspace = Pick<WorkspaceInfo, 'title' | 'titleIsDefault' | 'splitTree'>;
 /** The store fields a workspace's label is derived from. */
 type LabelState = Pick<WmuxStore, 'terminalPrefs' | 'oscTitles' | 'agentIdentities' | 'agentStates'>;

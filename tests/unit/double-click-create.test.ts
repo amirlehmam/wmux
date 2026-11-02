@@ -15,6 +15,7 @@ const store = create(() => ({
   agentIdentities: {},
   surfaceProgress: {},
   oscTitles: {},
+  browserTitles: {},
   terminalPrefs: { oscTitleTabs: false },
   sidebarPrefs: { activeTabIndicator: 'leftRail' },
   appearancePrefs: { uiMode: 'classic' },
@@ -141,6 +142,27 @@ describe('overflowing tabs (#403)', () => {
     vi.spyOn(strip.children[1], 'getBoundingClientRect').mockReturnValue({ left: 250, right: 350 } as DOMRect);
     renderTabs({ activeSurfaceIndex: 1 });
     expect(strip.scrollLeft).toBe(150);
+  });
+
+  it('reveals the active tab again when its label grows, as when a page title arrives', () => {
+    const observed: Element[] = [];
+    let onResize = () => {};
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { onResize = callback; }
+      observe(target: Element) { observed.push(target); }
+      disconnect() {}
+    });
+    try {
+      renderTabs();
+      const strip = element('.surface-tab-bar__tabs');
+      expect(observed).toContain(strip.children[0]);
+      vi.spyOn(strip, 'getBoundingClientRect').mockReturnValue({ left: 0, right: 200 } as DOMRect);
+      vi.spyOn(strip.children[0], 'getBoundingClientRect').mockReturnValue({ left: 0, right: 320 } as DOMRect);
+      act(() => onResize());
+      expect(strip.scrollLeft).toBe(120);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
