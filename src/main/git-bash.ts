@@ -125,3 +125,29 @@ export function isGitBashLauncher(resolved: string): boolean {
   const norm = resolved.replace(/\//g, '\\').toLowerCase();
   return norm.endsWith('\\bin\\bash.exe') && !norm.endsWith('\\usr\\bin\\bash.exe');
 }
+
+/**
+ * How a Git Bash pane loads wmux's bash integration (#427), or null to start
+ * the shell as it was asked for.
+ *
+ * Without it a Git Bash pane reported nothing — no cwd, so a `cd` was never
+ * saved and a restored pane opened wherever it first started. PowerShell and
+ * cmd get their script injected; bash has `--init-file`, which is what VS Code
+ * uses for Git Bash too. It replaces ~/.bashrc and is ignored by a login shell,
+ * so `--login` is dropped and `login` asks the script to read the login files
+ * itself (the prologue of wmux-bash-integration.sh). Only the two argument
+ * lists wmux itself would use: none, or GIT_BASH_LOGIN_ARGS. A user's own args
+ * (`--norc`, `-c ...`) mean a shell wmux does not get to rearrange.
+ */
+export function gitBashIntegrationArgs(
+  resolved: string,
+  extraArgs: readonly string[],
+  script: string,
+): { args: string[]; login: boolean } | null {
+  if (!isGitBashLauncher(resolved)) return null;
+  const login = extraArgs.length === GIT_BASH_LOGIN_ARGS.length
+    && extraArgs.every((arg, i) => arg === GIT_BASH_LOGIN_ARGS[i]);
+  if (extraArgs.length > 0 && !login) return null;
+  // Forward slashes: bash opens the path itself, and MSYS reads `C:/...` as is.
+  return { args: ['--init-file', script.replace(/\\/g, '/'), '-i'], login };
+}

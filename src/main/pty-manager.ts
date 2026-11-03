@@ -20,7 +20,7 @@ import { codexShimDirs } from './codex-launcher';
 import { loadSettings } from './settings-store';
 import { getNodeRuntime } from './node-runtime';
 import { system32, opensshPath } from './system32';
-import { bashAlias, gitBashCandidates, isWslBashLauncher, isGitBashLauncher, GIT_BASH_LOGIN_ARGS } from './git-bash';
+import { bashAlias, gitBashCandidates, isWslBashLauncher, isGitBashLauncher, gitBashIntegrationArgs, GIT_BASH_LOGIN_ARGS } from './git-bash';
 import { deliverStartupCommandsWhenReady } from './startup-commands';
 import { browserEnvFor, WSL_ENV_PASSTHROUGH } from './pane-browser-env';
 
@@ -535,6 +535,15 @@ export function buildShellArgs(
     // this WSL shell inherits them and its CLI can reach wmux over the bridge
     // (issue #19). Harmless when unset — WSLENV skips a variable with no value.
     env.WSLENV = env.WSLENV ? `${env.WSLENV}:${WSL_ENV_PASSTHROUGH}` : WSL_ENV_PASSTHROUGH;
+    // What the bash integration needs inside the distro (#428): the Windows JS
+    // runtime that can reach the pipe, under a name of its own (see
+    // WSL_ENV_PASSTHROUGH), and the script, so the line a user adds to
+    // ~/.bashrc does not depend on where wmux is installed. Nothing loads it
+    // for them: wsl.exe starts the distro's own login shell, and wmux could
+    // only hand that an rc file by replacing the shell or writing to the
+    // distro's home.
+    if (env.WMUX_NODE) env.WMUX_WSL_NODE = env.WMUX_NODE;
+    env.WMUX_BASH_SCRIPT = path.join(integrationDir, 'wmux-bash-integration.sh');
     // A restored WSL/POSIX cwd (issue #60) can't be a Win32 process cwd (error
     // 267). Open it INSIDE the distro via --cd instead; the Win32-side cwd is
     // sanitized to a valid Windows dir by the caller.
@@ -545,6 +554,26 @@ export function buildShellArgs(
     return ['--cd', wslCdArg(cwd)];
   }
   return [];
+}
+
+/**
+ * Git Bash's arguments when it loads wmux's integration (#427, see
+ * `gitBashIntegrationArgs`), or null to leave the shell alone. The script is
+ * checked first, like PowerShell's: bash given an --init-file it cannot read
+ * would skip the user's ~/.bashrc as well.
+ */
+export function gitBashArgs(
+  shell: string,
+  extraArgs: readonly string[],
+  integrationDir: string,
+  env: { [key: string]: string },
+): string[] | null {
+  const script = path.join(integrationDir, 'wmux-bash-integration.sh');
+  const plan = gitBashIntegrationArgs(shell, extraArgs, script);
+  if (!plan || !fs.existsSync(script)) return null;
+  env.WMUX_BASH_INIT = '1';
+  if (plan.login) env.WMUX_BASH_LOGIN = '1';
+  return plan.args;
 }
 
 function nonBlankCommands(commands: readonly unknown[] | undefined): string[] {
@@ -798,7 +827,8 @@ export class PtyManager {
     // shim is a POSIX script and native tools like `gh` cannot run it.
     Object.assign(env, browserEnvFor(shellType));
 
-    const args = [...buildShellArgs(shellType, env, integrationDir, options.cwd), ...shellExtraArgs];
+    const args = gitBashArgs(shell, shellExtraArgs, integrationDir, env)
+      ?? [...buildShellArgs(shellType, env, integrationDir, options.cwd), ...shellExtraArgs];
 
     // Quick-launch startup commands (issue #32). Run them as part of the shell's
     // own initialization — BEFORE the first interactive prompt — instead of

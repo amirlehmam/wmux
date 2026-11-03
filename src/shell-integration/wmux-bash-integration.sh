@@ -2,6 +2,29 @@
 # wmux Bash/Zsh Integration
 # Sourced via WMUX_INTEGRATION=1 detection
 
+# Git Bash panes load this file with `bash --init-file` (pty-manager.ts, #427),
+# and --init-file REPLACES the rc file bash would have read. So the user's own
+# startup files are read here, before anything else, the way that bash would
+# have read them: a login shell (what Settings' "Git Bash" starts) gets the
+# login files, because bash ignores --init-file for a login shell and wmux has to
+# drop --login to use it; anything else gets ~/.bashrc. WMUX_BASH_INIT is cleared
+# first, so a bash started from this pane, or a ~/.bashrc that sources this file
+# itself, never comes back through here.
+if [ -n "${WMUX_BASH_INIT-}" ] && [ -n "${BASH_VERSION-}" ]; then
+    _wmux_login="${WMUX_BASH_LOGIN-}"
+    unset WMUX_BASH_INIT WMUX_BASH_LOGIN
+    if [ -n "$_wmux_login" ]; then
+        [ -r /etc/profile ] && . /etc/profile
+        if [ -r ~/.bash_profile ]; then . ~/.bash_profile
+        elif [ -r ~/.bash_login ]; then . ~/.bash_login
+        elif [ -r ~/.profile ]; then . ~/.profile
+        fi
+    else
+        [ -r ~/.bashrc ] && . ~/.bashrc
+    fi
+    unset _wmux_login
+fi
+
 export WMUX=1
 
 # Sequence the two reports that define an ssh session's lifetime. The remote
@@ -16,14 +39,21 @@ _wmux_next_ssh_event_seq() {
 }
 
 # wmux CLI shortcut — Claude Code and users can just type: wmux browser open <url>
-wmux() { node "$WMUX_CLI" "$@"; }
-export -f wmux
+#
+# Only where the cli-bin shim is not on PATH already. The shim honours WMUX_NODE
+# (#187) and this bare `node` does not, so in a Git Bash pane, which loads this
+# file on its own since #427, the function would break `wmux` on a machine with
+# no node on PATH.
+if ! command -v wmux &>/dev/null; then
+    wmux() { node "$WMUX_CLI" "$@"; }
+    [ -n "${BASH_VERSION-}" ] && export -f wmux
+fi
 
 _wmux_report() {
     local msg="$1"
     # Devcontainer transport (issue #19): a shell inside a Linux container can
-    # reach neither the Windows named pipe nor the host's Temp dir, so the file
-    # drop below is a no-op there and the pane never reports anything. When
+    # reach neither the Windows named pipe nor a Windows runtime, so the native
+    # route below is a no-op there and the pane never reports anything. When
     # WMUX_REMOTE is set, relay the same V1 line through `wmux raw-v1` instead —
     # the `wmux` shim resolves to `node "$WMUX_CLI"`, which already speaks TCP to
     # a `wmux bridge` (issue #78). No protocol is duplicated here.
@@ -34,16 +64,75 @@ _wmux_report() {
         ( wmux raw-v1 "$msg" >/dev/null 2>&1 & )
         return
     fi
-    # Native: write to temp file for the main process to pick up
-    local tmpdir="/mnt/c/Users/${USER}/AppData/Local/Temp/wmux"
-    mkdir -p "$tmpdir" 2>/dev/null
-    echo "$msg" >> "$tmpdir/messages"
+    # Native: the same `raw-v1` line, through the Windows-side CLI resolved below.
+    [ -z "$_wmux_cli_script" ] && return
+    (
+        if [ -n "${WMUX_NODE_ELECTRON-}" ]; then
+            export ELECTRON_RUN_AS_NODE=1
+            # Interop hands a Windows process only what WSLENV names.
+            [ -n "${WSL_DISTRO_NAME-}" ] && export WSLENV="${WSLENV:+$WSLENV:}ELECTRON_RUN_AS_NODE"
+        fi
+        "$_wmux_cli_node" "$_wmux_cli_script" raw-v1 "$msg" >/dev/null 2>&1 &
+    )
 }
+
+# How a native report reaches the named pipe, resolved once per source. bash
+# cannot open the pipe itself: under Git Bash `> //./pipe/wmux` fails after
+# seconds (measured), and WSL has no Windows pipes at all. Until #427/#428 this
+# branch appended to a temp file that nothing in wmux has ever read, so Git Bash
+# and WSL panes reported no cwd, no branch and no shell state.
+#
+#   Git Bash: WMUX_NODE, the JS runtime wmux resolved for this pane (#187),
+#   runs WMUX_CLI, which is already a Windows path.
+#   WSL: the same runtime on the Windows side of interop, which is what reaches
+#   the pipe. WMUX_WSL_NODE is it translated to a /mnt path, a separate name so
+#   the cli-bin shim does not pick a Windows runtime up with a /mnt script path;
+#   the script goes back to its Windows spelling, which is all node.exe can
+#   open. WSLENV carries WMUX_PIPE and the token back out (pane-browser-env.ts).
+_wmux_windows=""
+_wmux_cli_node=""
+_wmux_cli_script=""
+case "${OSTYPE-}" in
+    msys*|cygwin*)
+        _wmux_windows=1
+        if [ -n "${WMUX_NODE-}" ] && [ -x "$WMUX_NODE" ]; then
+            _wmux_cli_node="$WMUX_NODE"
+        elif command -v node &>/dev/null; then
+            _wmux_cli_node=node
+        fi
+        [ -n "$_wmux_cli_node" ] && _wmux_cli_script="${WMUX_CLI-}"
+        ;;
+    *)
+        if [ -n "${WSL_DISTRO_NAME-}" ] && [ -n "${WMUX_CLI-}" ] \
+            && [ -n "${WMUX_WSL_NODE-}" ] && [ -x "$WMUX_WSL_NODE" ]; then
+            _wmux_cli_node="$WMUX_WSL_NODE"
+            _wmux_cli_script="$(wslpath -w "$WMUX_CLI" 2>/dev/null)"
+        fi
+        ;;
+esac
+
+# The cwd as wmux should store it. Git Bash's own spelling, /c/Users/me, looks
+# POSIX to wmux (isPosixPath), which takes it for a WSL path: a restored pane
+# was handed %USERPROFILE% instead (#427). So Git Bash reports what PowerShell
+# does, C:\Users\me, the directory a restored pane is spawned in. `pwd -W` is
+# MSYS's; Cygwin has only cygpath. Either costs a fork, so the answer is kept
+# until the directory changes. WSL keeps the POSIX path, which `wsl --cd` takes.
+_wmux_cwd_for=""
+_wmux_cwd_win=""
 
 _wmux_report_cwd() {
     local surface_id="${WMUX_SURFACE_ID}"
     [ -z "$surface_id" ] && return
-    _wmux_report "report_pwd $surface_id $(pwd)"
+    local cwd="$PWD"
+    if [ -n "$_wmux_windows" ]; then
+        if [ "$_wmux_cwd_for" != "$PWD" ]; then
+            _wmux_cwd_win="$(pwd -W 2>/dev/null || cygpath -w "$PWD" 2>/dev/null)"
+            _wmux_cwd_win="${_wmux_cwd_win//\//\\}"
+            _wmux_cwd_for="$PWD"
+        fi
+        cwd="$_wmux_cwd_win"
+    fi
+    [ -n "$cwd" ] && _wmux_report "report_pwd $surface_id $cwd"
 }
 
 # One git spawn per prompt, not two. `status --porcelain=v2 --branch` carries
@@ -84,8 +173,8 @@ _wmux_report_git() {
 # ---------------------------------------------------------------------------
 # OSC 133 — semantic prompt marks (issue #207)
 #
-# Everything above this point reports out of band, through the temp-file drop or
-# the bridge, and that is the right shape for facts wmux only has to learn
+# Everything above this point reports out of band, through the Windows-side CLI
+# or the bridge, and that is the right shape for facts wmux only has to learn
 # eventually. Prompt boundaries are not one of those. Their consumer is xterm's
 # parser, which has to know where the prompt ended at the exact byte offset in
 # the stream; a message that arrives a few milliseconds later can no longer say
@@ -225,10 +314,10 @@ _wmux_arm_prompt() {
 #
 # Folding is not tidiness. bash announces every TOP-LEVEL PROMPT_COMMAND
 # statement through the very same DEBUG trap it announces the user's command
-# through, and _wmux_preexec reports "running" — a forked mkdir under Git Bash
-# and WSL, plus a message on the pipe — before any of its guards can apply. So a
-# second top-level statement here is not free bookkeeping: it is one extra fork
-# and one extra pipe message on every prompt, in every pane, forever. Statements
+# through, and _wmux_preexec runs for it — a fork and a Windows process under
+# Git Bash and WSL whenever it reports. So a second top-level statement here is
+# not free bookkeeping: it is one more trip through that trap on every prompt,
+# in every pane, forever. Statements
 # INSIDE a function cost nothing, because bash does not propagate the DEBUG trap
 # into functions unless functrace is on. That is the same cost argument that
 # keeps _wmux_report_command down to ssh, and it is why the arming added for
@@ -283,9 +372,9 @@ _wmux_report_command() {
     local cmdline="$1"
     [ -z "$cmdline" ] && return 0
 
-    # Only ssh. Every report costs a forked mkdir (and a backgrounded node in
-    # the devcontainer branch) on the keypress path between Enter and the
-    # command starting, so reporting everything would tax every command in
+    # Only ssh. Every report costs a fork and a backgrounded node on the
+    # keypress path between Enter and the command starting, so reporting
+    # everything would tax every command in
     # every pane to learn something only ssh can tell us. Staleness is handled
     # by the prompt: _wmux_precmd fires report_shell_state, and that is what
     # clears the session on the far side.
@@ -309,14 +398,26 @@ _wmux_report_command() {
 }
 
 # Report "running" before a command executes (pre-execution hook)
+#
+# Once per prompt cycle, on the same arm as the C mark. The DEBUG trap fires for
+# every simple command, PROMPT_COMMAND's own included, so an unguarded report
+# went out for each `true` in `true; true` and, worse, for the PROMPT_COMMAND
+# statements that run AFTER _wmux_precmd's "idle": every prompt ended on
+# "running" (measured). That stayed invisible while native reports went to a
+# file nobody read; each one is now a Windows process, and a loop typed at the
+# prompt would start one per iteration. _wmux_report_command keeps seeing every
+# command, so `cd x && ssh host` is still caught.
 _wmux_preexec() {
     local surface_id="${WMUX_SURFACE_ID}"
-    [ -z "$surface_id" ] && return
-    # First, and before any reporting: readline has already echoed the newline,
-    # so the cursor is sitting exactly where the command's output will land.
-    _wmux_mark_output_start "$1"
-    _wmux_next_ssh_event_seq
-    _wmux_report "report_shell_state $surface_id seq=${_wmux_ssh_event_seq} running"
+    [ -z "$surface_id" ] && return 0
+    if [ -n "$_wmux_prompt_armed" ] && [ "${1#_wmux_precmd}" = "$1" ]; then
+        # First, and before any reporting: readline has already echoed the
+        # newline, so the cursor is sitting exactly where the command's output
+        # will land.
+        _wmux_mark_output_start "$1"
+        _wmux_next_ssh_event_seq
+        _wmux_report "report_shell_state $surface_id seq=${_wmux_ssh_event_seq} running"
+    fi
     _wmux_report_command "$1"
     return 0
 }
@@ -324,9 +425,9 @@ _wmux_preexec() {
 # Install hooks.
 #
 # Gated on whether the hooks are STILL INSTALLED, never on whether this file has
-# run before. wmux does not own the `source` line for bash — the user puts it in
-# their own .bashrc, and pty-manager.ts injects an integration script only for
-# powershell and cmd — so `source ~/.bashrc` re-runs this file in the same shell.
+# run before. wmux does not own the `source` line for every bash — in WSL the
+# user puts it in their own .bashrc, and pty-manager.ts injects this file only
+# into Git Bash — so `source ~/.bashrc` can re-run this file in the same shell.
 # Any rc that ASSIGNS PROMPT_COMMAND (a prompt theme, or a plain
 # `PROMPT_COMMAND='...'`) wipes the wrapper on the way past, and a "have I ever
 # run" latch would then refuse to put it back. The damage is not a missing mark:

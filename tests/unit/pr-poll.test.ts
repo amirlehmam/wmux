@@ -203,7 +203,8 @@ describe.skipIf(!host)('the integration script itself', () => {
  * no longer exists) so it's exercised with real files rather than mocked.
  */
 function resolvePaneCwd(cwdFile: string | null): string {
-  const script = [extractFunction('Resolve-WmuxPaneCwd'), '', `$r = Resolve-WmuxPaneCwd -CwdFile ${cwdFile ? `'${cwdFile.replace(/'/g, "''")}'` : "''"}`, 'if ($null -eq $r) { "<null>" } else { $r }', ''].join('\n');
+  const quoted = cwdFile ? "'" + cwdFile.replace(/'/g, "''") + "'" : "''";
+  const script = [extractFunction('Resolve-WmuxPaneCwd'), '', `$r = Resolve-WmuxPaneCwd -CwdFile ${quoted}`, 'if ($null -eq $r) { "<null>" } else { $r }', ''].join('\n');
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-resolve-')), 'probe.ps1');
   fs.writeFileSync(file, script, 'utf8');
   try {
@@ -610,9 +611,9 @@ describe('PR poller wiring', () => {
   });
 
   it('keeps the cwd hand-off in the temp directory the integrations already use', () => {
-    // wmux-bash-integration.sh writes under <temp>\wmux; sharing it keeps this
-    // from becoming a second scratch location, and makes the leftovers easy to
-    // find if the exit handler ever misses one.
+    // <temp>\wmux is wmux's scratch directory (remote-insert.ts uses it too);
+    // sharing it keeps this from becoming a second scratch location, and makes
+    // the leftovers easy to find if the exit handler ever misses one.
     expect(source).toMatch(/Join-Path \(\[System\.IO\.Path\]::GetTempPath\(\)\) "wmux"/);
     expect(source).toContain('PSEngineEvent]::Exiting');
   });

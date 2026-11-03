@@ -2,8 +2,10 @@
 
 The explorer panel shows the folder of the focused terminal. A PowerShell, cmd or
 Git Bash pane tells wmux where it is through wmux's shell integration. A WSL shell
-has no such integration, so out of the box the explorer stays on the Windows folder
-the pane started in, even after `wsl` and a few `cd`s.
+does not load that integration by itself (see "wmux's bash integration in WSL"
+below), so out of
+the box the explorer stays on the Windows folder the pane started in, even after
+`wsl` and a few `cd`s.
 
 Since 2.45.0 wmux reads **OSC 7**, the standard "this is my working directory"
 escape sequence, from every pane. Have your WSL shell print it at each prompt and
@@ -53,6 +55,25 @@ end
 needs no distro lookup. Open a new shell (or `source` the file) and `cd` somewhere.
 
 When you `exit` back to PowerShell, its own report takes over at the next prompt.
+
+## wmux's bash integration in WSL
+
+Git Bash panes load wmux's shell integration on their own. A WSL pane cannot: `wsl.exe`
+starts your distro's login shell, and wmux would have to replace that shell or edit
+your distro's home to load anything into it. One line in `~/.bashrc` (or `~/.zshrc`)
+inside the distro does it:
+
+```bash
+# wmux: shell integration (cwd for session restore, git branch, prompt marks)
+[ -n "$WMUX_BASH_SCRIPT" ] && . "$WMUX_BASH_SCRIPT"
+```
+
+wmux sets `WMUX_BASH_SCRIPT` in every WSL pane it opens, already translated to its
+`/mnt/...` path, so the line keeps working when wmux moves or updates. The
+integration reports through Windows `node.exe` (the runtime wmux found for its own
+CLI), so nothing has to be installed in the distro. With it, a `cd` in the pane is
+saved and a restored WSL pane starts there, which is also where `claude --resume`
+looks for its session.
 
 ## What wmux accepts
 

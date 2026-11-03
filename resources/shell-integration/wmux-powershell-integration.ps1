@@ -69,8 +69,8 @@ function Report-Cwd {
 # something the shell itself just told it. This is a shell-to-shell hand-off, so
 # it stays between the shells.
 #
-# The directory is the one wmux-bash-integration.sh already uses for its own
-# hand-off, rather than a second scratch location.
+# The directory is wmux's own scratch directory under the user's temp
+# (remote-insert.ts uses it too), rather than a second scratch location.
 $global:_wmux_cwd_file = if ($env:WMUX_SURFACE_ID) {
     $dir = Join-Path ([System.IO.Path]::GetTempPath()) "wmux"
     try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch {}
