@@ -1,5 +1,6 @@
 import type { Terminal } from '@xterm/xterm';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { patchWebglDefaultBackground } from './webgl-default-bg';
 
 export type RendererKind = 'dom' | 'webgl';
 
@@ -41,6 +42,7 @@ export function attachVisibleRenderer(terminal: Terminal): RendererHandle {
   try {
     webgl = new WebglAddon();
     terminal.loadAddon(webgl);
+    patchWebglDefaultBackground(webgl);
   } catch (err) {
     console.warn('[wmux] WebGL renderer unavailable, staying on DOM renderer:', err);
     return DOM_RENDERER_HANDLE;
