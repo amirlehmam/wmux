@@ -334,7 +334,8 @@ describe('PtyManager', { timeout: 60_000 }, () => {
       env: TEST_ENV,
     });
     expect(created.shellFallbackFrom).toBe('definitely-not-a-shell-252.exe');
-    expect(created.launchShell).toBe(created.shell);
+    // The substituted default is not a spec: a tab inheriting it gets the default too.
+    expect(created.launchShell).toBe('');
     const ok = manager.create({ shell: TEST_SHELL, cwd: process.env.USERPROFILE || 'C:\\', env: TEST_ENV });
     expect(ok.shellFallbackFrom).toBeUndefined();
   });

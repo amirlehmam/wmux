@@ -5,7 +5,7 @@ describe('activeTerminalShell', () => {
   it.each([
     { name: 'captured launch spec before current configuration', source: { type: 'terminal' as const, launchShell: 'wsl.exe -d Ubuntu', shell: 'cmd.exe', resolvedShell: 'C:\\Windows\\System32\\wsl.exe' }, expected: 'wsl.exe -d Ubuntu' },
     { name: 'explicit spec before resolved executable', source: { type: 'terminal' as const, shell: 'wsl.exe -d Ubuntu', resolvedShell: 'C:\\Windows\\System32\\wsl.exe' }, expected: 'wsl.exe -d Ubuntu' },
-    { name: 'resolved executable when no spec is recorded', source: { type: 'terminal' as const, resolvedShell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' }, expected: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' },
+    { name: 'default fallback, never the display-only resolved executable', source: { type: 'terminal' as const, resolvedShell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' }, expected: undefined },
     { name: 'default fallback without shell metadata', source: { type: 'terminal' as const }, expected: undefined },
     { name: 'default fallback for a non-terminal', source: { type: 'browser' as const, launchShell: 'cmd.exe' }, expected: undefined },
   ])('$name', ({ source, expected }) => {
@@ -56,17 +56,24 @@ describe('split-tree', () => {
     });
     leaf.activeSurfaceIndex = 1;
 
-    const result = splitNode(leaf, leaf.paneId, 'pane-2' as any, 'terminal', 'vertical');
+    const result = splitNode(leaf, leaf.paneId, 'pane-2' as any, 'terminal', 'vertical', activeTerminalShell(leaf));
     const created = findLeaf(result, 'pane-2' as any)!.surfaces[0];
     expect(created).toEqual({ id: expect.any(String), type: 'terminal', shell: 'wsl.exe -d Ubuntu' });
     expect(findLeaf(result, leaf.paneId)).toBe(leaf);
     expect(leaf.surfaces).toHaveLength(2);
   });
 
+  it('does not inherit a shell unless the caller passes one (CLI and agent splits)', () => {
+    const leaf = createLeaf('pane-1' as any);
+    leaf.surfaces[0].shell = 'ssh user@host';
+    const result = splitNode(leaf, leaf.paneId, 'pane-2' as any, 'terminal', 'vertical');
+    expect(findLeaf(result, 'pane-2' as any)!.surfaces[0].shell).toBeUndefined();
+  });
+
   it('does not copy a terminal shell into a browser split', () => {
     const leaf = createLeaf('pane-1' as any);
     leaf.surfaces[0].shell = 'wsl.exe';
-    const result = splitNode(leaf, leaf.paneId, 'pane-2' as any, 'browser', 'horizontal');
+    const result = splitNode(leaf, leaf.paneId, 'pane-2' as any, 'browser', 'horizontal', activeTerminalShell(leaf));
     expect(findLeaf(result, 'pane-2' as any)!.surfaces[0].shell).toBeUndefined();
   });
 

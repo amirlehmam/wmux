@@ -739,7 +739,9 @@ export class PtyManager {
     const shell = resolveShellForCwd(requested ?? resolveShell(spec.command), options.cwd);
     // Keep arguments only for the requested executable, not a fallback or the
     // WSL shell substituted for a POSIX directory. Reuse returns this snapshot.
-    const launchShell = requested === shell ? options.shell : shell;
+    // No spec at all stays empty: the resolved path is versioned for a Store
+    // PowerShell (#334), so inheriting it would pin tabs to a folder an update deletes.
+    const launchShell = requested === undefined ? '' : requested === shell ? options.shell : shell;
     const shellExtraArgs = extraArgsForSpec(spec, requested);
     const shellType = getShellType(shell);
     const integrationDir = getShellIntegrationPath();

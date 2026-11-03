@@ -547,7 +547,8 @@ export default function PaneWrapper({
     const ws = workspaces.find(w => w.id === activeWorkspaceId);
     if (ws) {
       const newPaneId = `pane-${crypto.randomUUID()}` as PaneId;
-      const newTree = splitNode(ws.splitTree, paneId, newPaneId, 'terminal', direction);
+      const newTree = splitNode(ws.splitTree, paneId, newPaneId, 'terminal', direction,
+        activeTerminalShell(findLeaf(ws.splitTree, paneId)));
       if (newTree === ws.splitTree) return; // pane not in the tree: no split, nothing to focus
       updateSplitTree(activeWorkspaceId, newTree);
       // Deferred, not called inline: the button's click goes on to bubble up to

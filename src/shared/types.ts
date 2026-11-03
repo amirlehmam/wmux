@@ -88,8 +88,8 @@ export interface SurfaceRef {
   shell?: string;
   /**
    * The executable `shell` actually resolved to, reported back by the PTY.
-   * Used for the tab caption and as a last-resort shell for a new terminal.
-   * Never replaces `shell`, whose launch arguments must survive restore.
+   * Display only — the tab caption uses it so a pane started with no spec at
+   * all can still say "PowerShell" rather than "Terminal".
    */
   resolvedShell?: string;
   /**
