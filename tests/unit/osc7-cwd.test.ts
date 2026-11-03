@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo } from '../../src/shared/types';
 import { applyOsc7Cwd } from '../../src/renderer/utils/osc7-cwd';
+import { osc9CwdToOsc7 } from '../../src/renderer/hooks/osc9';
+import { parseOsc7Cwd } from '../../src/shared/osc7';
 
 const { getState } = vi.hoisted(() => ({ getState: vi.fn() }));
 vi.mock('../../src/renderer/store', () => ({ useStore: { getState } }));
@@ -37,6 +39,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('OSC 7 cwd propagation', () => {
+  it('propagates an adapted CMD report through validation to workspace and surface cwd', async () => {
+    surface.shell = 'cmd.exe';
+    const cmdCwd = 'D:\\My Repo\\%20; café';
+    reportOsc7.mockImplementation(async (_id: string, data: string) => parseOsc7Cwd(data, 'MY-PC'));
+    await applyOsc7Cwd(surfaceId, osc9CwdToOsc7(`9;${cmdCwd}`)!);
+    expect(updateWorkspaceMetadata).toHaveBeenCalledWith(workspaceId, { cwd: cmdCwd });
+    expect(updateSurface).toHaveBeenCalledWith(workspaceId, paneId, surfaceId, { currentCwd: cmdCwd });
+
+    vi.clearAllMocks();
+    await applyOsc7Cwd(surfaceId, osc9CwdToOsc7('9;\\\\attacker\\share')!);
+    expect(updateWorkspaceMetadata).not.toHaveBeenCalled();
+    expect(updateSurface).not.toHaveBeenCalled();
+  });
+
   it('updates sidebar metadata, the WSL fallback and the terminal cwd', async () => {
     await applyOsc7Cwd(surfaceId, 'raw OSC 7');
     expect(reportOsc7).toHaveBeenCalledWith(surfaceId, 'raw OSC 7');
