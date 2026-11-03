@@ -1,6 +1,7 @@
 import type { Terminal } from '@xterm/xterm';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { patchWebglDefaultBackground } from './webgl-default-bg';
+import { disposeWebglAddon } from './webgl-release';
 
 export type RendererKind = 'dom' | 'webgl';
 
@@ -60,7 +61,7 @@ export function attachVisibleRenderer(terminal: Terminal): RendererHandle {
     kind: 'webgl',
     dispose: () => {
       release();
-      try { webgl.dispose(); } catch { /* already disposed with terminal */ }
+      disposeWebglAddon(webgl);
     },
   };
 
@@ -72,7 +73,7 @@ export function attachVisibleRenderer(terminal: Terminal): RendererHandle {
     // frozen.
     console.warn('[wmux] WebGL context lost, downgrading terminal to DOM renderer');
     release();
-    try { webgl.dispose(); } catch { /* no-op */ }
+    disposeWebglAddon(webgl);
     handle.kind = DOM_RENDERER_HANDLE.kind;
     handle.dispose = DOM_RENDERER_HANDLE.dispose;
     // Disposing the WebGL addon reactivates xterm's DOM renderer, but nothing
