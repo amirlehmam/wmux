@@ -90,6 +90,15 @@
   background-color: transparent !important;
 }
 
+/* On affected Windows systems, rounded overflow clipping on
+   .pane-wrapper__content makes transparent regions of the image addon's
+   desynchronized canvas appear black. This identity filter restores
+   transparency while preserving rounded clipping and leaving text unfiltered.
+   Revalidate after Electron or image-addon upgrades. */
+.terminal-pane__container .xterm-image-layer {
+  filter: opacity(1);
+}
+
 .terminal-pane__container .xterm-viewport {
   overflow-y: auto !important;
   /* xterm 6.0 paints the theme background on .xterm-scrollable-element and no
