@@ -166,7 +166,9 @@ describe.skipIf(!hasGitBash)('transport resolution', () => {
  */
 async function gitBashSession(login: boolean, commands: string[]): Promise<{ output: string; lines: string[] }> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-gitbash-home-'));
-  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-gitbash-cd-'));
+  // The long-name spelling: a CI runner's tmpdir is 8.3 (RUNNER~1), and the
+  // shell reports the directory under its long name.
+  const target = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-gitbash-cd-')));
   fs.writeFileSync(path.join(home, '.bashrc'), 'echo "RC=bashrc"\n');
   fs.writeFileSync(path.join(home, '.bash_profile'), 'echo "RC=profile"\n');
   const pipe = `\\\\.\\pipe\\wmux-gitbash-${process.pid}-${login ? 'l' : 'n'}`;
