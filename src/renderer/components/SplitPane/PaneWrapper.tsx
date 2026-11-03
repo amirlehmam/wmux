@@ -69,6 +69,7 @@ export default function PaneWrapper({
   const activeWorkspaceId = useStore((s) => s.activeWorkspaceId);
   const addSurface = useStore((s) => s.addSurface);
   const updateSurface = useStore((s) => s.updateSurface);
+  const setBrowserTitle = useStore((s) => s.setBrowserTitle);
   const requestCloseSurface = useStore((s) => s.requestCloseSurface);
   const duplicateSurface = useStore((s) => s.duplicateSurface);
   const closeOtherSurfaces = useStore((s) => s.closeOtherSurfaces);
@@ -327,6 +328,7 @@ export default function PaneWrapper({
                   updateSurface(workspaceId, paneId, surface.id, { url: u });
                 }
               }}
+              onTitleChange={(title) => setBrowserTitle(surface.id, title)}
               // Back/Forward across that same remount, and across a restart
               // (#315). Same guard as the URL: a stack whose page would not be
               // remembered is not remembered either.

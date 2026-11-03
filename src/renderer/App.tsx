@@ -1064,6 +1064,7 @@ export default function App() {
       // notices, a stale remount snapshot.
       forgetClosedTerminal(surfaceId);
       useStore.getState().clearOscTitle(surfaceId);
+      useStore.getState().clearBrowserTitle(surfaceId);
       // Reset terminal state's record of the alternate screen (#357).
       forgetAlternateScreen(surfaceId);
       // The PTY-exit path clears these too, but a closed pane's exit handler

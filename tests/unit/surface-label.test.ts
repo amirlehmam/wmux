@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SurfaceId, SurfaceRef } from '../../src/shared/types';
-import { getSurfaceLabel } from '../../src/renderer/components/SplitPane/surface-label';
+import { browserUrlLabel, getSurfaceLabel } from '../../src/renderer/components/SplitPane/surface-label';
 
 function surface(id: string, patch: Partial<SurfaceRef> = {}): SurfaceRef {
   return {
@@ -157,6 +157,74 @@ describe('window titles as tab labels (issue #221)', () => {
     expect(
       getSurfaceLabel(surface('surf-b', { type: 'browser' }), undefined, undefined, undefined, 'evil'),
     ).toBe('Browser');
+  });
+});
+
+describe('browser tabs are labelled by their page', () => {
+  const browser = (patch: Partial<SurfaceRef> = {}) => surface('surf-b', { type: 'browser', ...patch });
+  const label = (tab: SurfaceRef, agentLabel?: string, pageTitle?: string) =>
+    getSurfaceLabel(tab, agentLabel, undefined, undefined, undefined, pageTitle);
+
+  it('reads the page title first', () => {
+    expect(label(browser({ url: 'https://github.com/a/b' }), undefined, 'a/b: the repo')).toBe('a/b: the repo');
+  });
+
+  it('falls back to the URL until the page has a title, as it does after a restart', () => {
+    expect(label(browser({ url: 'https://github.com/a/b' }))).toBe('github.com');
+    expect(label(browser({ url: 'https://github.com/a/b' }), undefined, '')).toBe('github.com');
+  });
+
+  it('keeps the type name for a tab with no page', () => {
+    expect(label(browser())).toBe('Browser');
+    expect(label(browser({ url: 'about:blank' }))).toBe('Browser');
+  });
+
+  it('ranks every name somebody chose above the page', () => {
+    const tab = browser({ url: 'https://github.com/', customTitle: 'Mine', defaultTitle: 'Docs' });
+    expect(label(tab, 'reviewer', 'Page')).toBe('Mine');
+    expect(label(browser({ defaultTitle: 'Docs' }), 'reviewer', 'Page')).toBe('reviewer');
+    expect(label(browser({ defaultTitle: 'Docs' }), undefined, 'Page')).toBe('Docs');
+  });
+
+  it('gives a page title only to a browser tab', () => {
+    expect(label(surface('surf-1', { shell: 'pwsh.exe' }), undefined, 'Page')).toBe('PowerShell');
+    expect(label(surface('surf-m', { type: 'markdown' }), undefined, 'Page')).toBe('Markdown');
+  });
+});
+
+describe('browserUrlLabel', () => {
+  it('names a web page by its host, without the www', () => {
+    expect(browserUrlLabel('https://github.com/a/b?q=1#x')).toBe('github.com');
+    expect(browserUrlLabel('https://www.example.org/')).toBe('example.org');
+    expect(browserUrlLabel('http://WWW.Example.org/')).toBe('example.org');
+  });
+
+  it('keeps the port, which is what tells two dev servers apart', () => {
+    expect(browserUrlLabel('http://localhost:5173/')).toBe('localhost:5173');
+  });
+
+  it('keeps a look-alike host in its ASCII form', () => {
+    expect(browserUrlLabel('https://gіthub.com/')).toBe('xn--gthub-n2e.com');
+  });
+
+  it('names a local file by its file name', () => {
+    expect(browserUrlLabel('file:///C:/Users/me/report.html')).toBe('report.html');
+    expect(browserUrlLabel('file:///C:/Users/me/my%20report.html?x=1#y')).toBe('my report.html');
+    expect(browserUrlLabel('file:///C:/Users/me/')).toBe('me');
+  });
+
+  it('survives a file name that is not valid percent-encoding', () => {
+    expect(browserUrlLabel('file:///C:/100%zz.html')).toBe('100%zz.html');
+  });
+
+  it('strips bidi overrides from a decoded file name', () => {
+    expect(browserUrlLabel('file:///C:/a%E2%80%AEb.html')).toBe('ab.html');
+  });
+
+  it('has no label for anything without a place to name', () => {
+    for (const url of [undefined, '', 'about:blank', 'about:blank#wmux-history=x', 'data:text/html,x', 'not a url', 'file:///']) {
+      expect(browserUrlLabel(url)).toBeNull();
+    }
   });
 });
 

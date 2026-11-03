@@ -9,7 +9,7 @@ import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret, IconSurface, I
 import type { SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import { parseSurfaceDragData } from './surface-drag-preview';
 import { getSurfaceLabel } from './surface-label';
-import { useOscTitleLookup } from './use-osc-title';
+import { useBrowserTitleLookup, useOscTitleLookup } from './use-osc-title';
 import StartupCommandDialog from './StartupCommandDialog';
 
 interface SurfaceTabBarProps {
@@ -117,6 +117,9 @@ export default function SurfaceTabBar({
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(reveal);
     observer.observe(strip);
+    const active = strip.children[activeSurfaceIndex];
+    // A label can grow after the tab is revealed: a page title arrives late.
+    if (active) observer.observe(active);
     return () => observer.disconnect();
   }, [activeSurfaceIndex, surfaces.length]);
   useEffect(() => {
@@ -143,6 +146,7 @@ export default function SurfaceTabBar({
   // The OSC 0/2 title the pane's program set, when the tab has no name of its
   // own (issue #221). Gated on terminalPrefs.oscTitleTabs inside the hook.
   const oscTitleFor = useOscTitleLookup();
+  const browserTitleFor = useBrowserTitleLookup();
 
   // Declared and detected agent state, so a blocked BACKGROUND tab is visible.
   // Precedence is not re-derived here — surfaceAgentState owns it, so the tab
@@ -451,11 +455,11 @@ export default function SurfaceTabBar({
                   }}
                   onBlur={commitRename}
                   onClick={(e) => e.stopPropagation()}
-                  placeholder={getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t, oscTitleFor(surface.id))}
+                  placeholder={getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t, oscTitleFor(surface.id), browserTitleFor(surface.id))}
                 />
               ) : (
                 <span className={`surface-tab__label${surface.ephemeral ? ' surface-tab__label--ephemeral' : ''}`}>
-                  {getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t, oscTitleFor(surface.id))}
+                  {getSurfaceLabel(surface, agentMeta?.label, workspaceShell, t, oscTitleFor(surface.id), browserTitleFor(surface.id))}
                 </span>
               )}
               {surfaces.length > 1 && !isRenaming && (

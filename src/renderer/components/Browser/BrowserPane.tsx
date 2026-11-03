@@ -4,6 +4,7 @@ import { useT } from '../../i18n';
 import AgentBrowserSetup from './AgentBrowserSetup';
 import { popupBridgeSource } from './popup-bridge';
 import type { BrowserEngine } from '../../../shared/types';
+import { browserUrlLabel } from '../SplitPane/surface-label';
 import { BROWSER_BLANK_PAGE } from '../../utils/browser-start-page';
 import { useKeepRendering } from '../../utils/browser-keep-rendering';
 import {
@@ -21,6 +22,11 @@ interface BrowserPaneProps {
   surfaceId: string;
   workspaceId?: string;
   onUrlChange?: (url: string) => void;
+  /**
+   * What the tab should read from the page; '' when the page has no title.
+   * Only a tab passes this: the side panel has no tab to label.
+   */
+  onTitleChange?: (title: string) => void;
   /**
    * Which backend drives this surface. `web` is the Electron <webview> this
    * pane has always been; `agent` points the SAME webview at agent-browser's
@@ -141,6 +147,17 @@ export function disableTarget(
   const target = result?.url || fallback;
   if (!target || target === showing) return null;
   return target;
+}
+
+/**
+ * A webview's `getTitle()` without the title Chromium makes up for an untitled
+ * page, which is its URL without the scheme. The tab has its own, shorter answer
+ * for that page. Only `getTitle()` needs this: an untitled page fires no
+ * page-title-updated.
+ */
+export function explicitPageTitle(title: string, url: string): string {
+  const bare = (u: string) => u.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  return bare(title) === bare(url) ? '' : title;
 }
 
 /** Address-bar input → a URL, matching the web engine's own resolution. */
@@ -289,6 +306,7 @@ export default function BrowserPane({
   surfaceId,
   workspaceId,
   onUrlChange,
+  onTitleChange,
   engine = 'web',
   onEngineChange,
   initialHistory,
@@ -321,6 +339,8 @@ export default function BrowserPane({
   activateRef.current = onActivate;
   const onHistoryChangeRef = useRef(onHistoryChange);
   onHistoryChangeRef.current = onHistoryChange;
+  const onTitleChangeRef = useRef(onTitleChange);
+  onTitleChangeRef.current = onTitleChange;
   const lastHistoryRef = useRef<BrowserHistory | null>(null);
 
   // Agent mode. `agentUrl` is the page the REMOTE Chrome was last asked to
@@ -483,6 +503,18 @@ export default function BrowserPane({
       setCanGoForward(wv.canGoForward());
       refreshHistory();
     };
+    // The old page's title goes with its document. Measured on a real webview:
+    // did-navigate always comes before the new page's title event, and a page
+    // with no <title> fires none, so without this it would keep the old title.
+    // Not for an in-page navigation: the document stays, and so does its title.
+    const onNewDocument = (e: any) => {
+      onNavigate(e);
+      if (engineRef.current !== 'agent') onTitleChangeRef.current?.('');
+    };
+    const onTitle = (e: any) => {
+      if (engineRef.current === 'agent') return; // the dashboard's own title
+      onTitleChangeRef.current?.(e.title ?? '');
+    };
     const onStartLoad = () => setIsLoading(true);
     const onStopLoad = () => {
       setIsLoading(false);
@@ -497,23 +529,31 @@ export default function BrowserPane({
     // webview paints ERR_CONNECTION_REFUSED, which the user reads as a broken
     // browser. Catch it and say what actually happened instead.
     const onFailLoad = (e: any) => {
-      if (engineRef.current !== 'agent') return;
       if (e?.isMainFrame === false) return;
+      if (engineRef.current !== 'agent') {
+        // A failed load fires no did-navigate, and the bar now shows the URL that
+        // failed. -3 is ERR_ABORTED: the page was only interrupted, often by the
+        // next navigation, and is not gone.
+        if (e?.errorCode !== -3) onTitleChangeRef.current?.('');
+        return;
+      }
       const dash = dashboardUrlRef.current;
       if (!dash) return; // nothing of ours is loading; not our failure to explain
       const failed = String(e?.validatedURL ?? '');
       if (!failed || failed.startsWith(dash.split('?')[0])) setAgentStatus('no-dashboard');
     };
 
-    wv.addEventListener('did-navigate', onNavigate);
+    wv.addEventListener('did-navigate', onNewDocument);
     wv.addEventListener('did-navigate-in-page', onNavigate);
+    wv.addEventListener('page-title-updated', onTitle);
     wv.addEventListener('did-start-loading', onStartLoad);
     wv.addEventListener('did-stop-loading', onStopLoad);
     wv.addEventListener('did-fail-load', onFailLoad);
 
     return () => {
-      wv.removeEventListener('did-navigate', onNavigate);
+      wv.removeEventListener('did-navigate', onNewDocument);
       wv.removeEventListener('did-navigate-in-page', onNavigate);
+      wv.removeEventListener('page-title-updated', onTitle);
       wv.removeEventListener('did-start-loading', onStartLoad);
       wv.removeEventListener('did-stop-loading', onStopLoad);
       wv.removeEventListener('did-fail-load', onFailLoad);
@@ -667,6 +707,10 @@ export default function BrowserPane({
     if (target) {
       setCurrentUrl(target);
       webviewRef.current?.loadURL(target).catch(() => {});
+    } else {
+      // Still on the page, as after cancelling the setup card, so no navigation
+      // will report its title.
+      onTitleChangeRef.current?.(explicitPageTitle(webviewRef.current?.getTitle?.() ?? '', showing));
     }
   }, [surfaceId]);
 
@@ -677,6 +721,20 @@ export default function BrowserPane({
     if (decision.action === 'enable') void enterAgentMode(decision.url);
     else if (decision.action === 'disable') void leaveAgentMode();
   }, [engine, enterAgentMode, leaveAgentMode]);
+
+  // The tab's label in agent mode. The webview's title is the dashboard's, and
+  // `url` stops updating, so the URL last read from the session is the only true
+  // answer. Leaving agent mode clears it, and the page's own title takes over.
+  const wasAgentRef = useRef(false);
+  useEffect(() => {
+    if (engine !== 'agent') {
+      if (wasAgentRef.current) onTitleChangeRef.current?.('');
+      wasAgentRef.current = false;
+      return;
+    }
+    wasAgentRef.current = true;
+    onTitleChangeRef.current?.(browserUrlLabel(agentUrl) ?? '');
+  }, [engine, agentUrl]);
 
   // ── keeping the address bar honest ────────────────────────────────────────
   //
