@@ -105,10 +105,10 @@ wmux report-agent --unblocked
 
 ## Subagents and background tasks
 
-Claude Code's own subagents appear under your pane in the sidebar on their
-own. If you run work of your own in the background — a worker, a planner, a
-long task that outlives your turn — declare it, so the pane does not read idle
-while it runs. Same id to update (each call is a heartbeat), `--done` to finish:
+Subagents that wmux already tracks through your agent's integration appear
+under your pane in the sidebar on their own. If you run work of your own in
+the background — a worker, a planner, a long task that outlives your turn —
+declare it, so the pane does not read idle while it runs. Same id to update (each call is a heartbeat), `--done` to finish:
 
 ```bash
 wmux report-subagent planner-1 --name planner --detail "calling create_file"

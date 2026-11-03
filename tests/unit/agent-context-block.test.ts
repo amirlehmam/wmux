@@ -208,3 +208,15 @@ describe('stale MARKED duplicates of the block', () => {
     expect(out).toContain('tail');
   });
 });
+
+/**
+ * The same block is the reference every agent gets — pi's reference.md, the
+ * OpenCode, Qwen, Kiro and omp context files — not only Claude Code's skill.
+ * A sentence addressed to Claude Code reads as a wrong claim about the agent
+ * reading it (issue #430).
+ */
+describe('agent-neutral command reference (issue #430)', () => {
+  it('does not name Claude Code in the shared block', () => {
+    expect(BLOCK).not.toMatch(/Claude Code/);
+  });
+});
