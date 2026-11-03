@@ -92,6 +92,12 @@ export interface SurfaceRef {
    * all can still say "PowerShell" rather than "Terminal".
    */
   resolvedShell?: string;
+  /**
+   * Effective launch spec captured when the PTY starts, including an inherited
+   * workspace/default spec's arguments. New terminals inherit it rather than
+   * re-reading preferences that may have changed since this terminal started.
+   */
+  launchShell?: string;
   /** Per-surface color scheme override (bundled theme name or user-defined scheme name). */
   colorScheme?: string;
   /** Per-surface working directory override (quick-launch profiles — issue #32). */

@@ -2,6 +2,8 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as nodePty from 'node-pty';
+import { EventEmitter } from 'events';
 import { Terminal } from '@xterm/xterm';
 import { PtyManager, parseShellSpec, resolveSpawnCwd, resolveShell, resolveShellForCwd, resolveExistingShellPath, comparePackageVersion, appExecAliasTarget, shellEnv, shellProbe, resetShellPathCache, buildShellArgs } from '../../src/main/pty-manager';
 import { workspaceFallbackCwd } from '../../src/shared/paths';
@@ -75,6 +77,37 @@ describe('PtyManager', { timeout: 60_000 }, () => {
       env: TEST_ENV,
     });
     expect(id).toMatch(/^surf-/);
+  });
+
+  it('keeps the launch arguments when reattaching with different preferences', () => {
+    const manager = makeManager();
+    const created = manager.create({
+      shell: 'cmd.exe /q', cwd: process.env.USERPROFILE || 'C:\\', env: TEST_ENV,
+    });
+    expect(created.launchShell).toBe('cmd.exe /q');
+    const reused = manager.create({
+      surfaceId: created.id, shell: 'powershell.exe', cwd: process.env.USERPROFILE || 'C:\\', env: TEST_ENV,
+    });
+    expect(reused.reused).toBe(true);
+    expect(reused.launchShell).toBe('cmd.exe /q');
+  });
+
+  it('inherits the WSL shell chosen for a POSIX cwd', () => {
+    const fakePty = Object.assign(new EventEmitter(), {
+      pid: 0, onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(),
+    });
+    const spawn = vi.spyOn(nodePty, 'spawn').mockReturnValue(fakePty as unknown as nodePty.IPty);
+    const hasWsl = vi.spyOn(shellEnv, 'hasWsl').mockReturnValue(true);
+    try {
+      const manager = makeManager();
+      const created = manager.create({ shell: 'cmd.exe', cwd: '/home/user/project', env: TEST_ENV });
+      expect(created.shell).toBe('wsl.exe');
+      expect(created.launchShell).toBe('wsl.exe');
+      expect(spawn).toHaveBeenCalledWith('wsl.exe', expect.any(Array), expect.any(Object));
+    } finally {
+      spawn.mockRestore();
+      hasWsl.mockRestore();
+    }
   });
 
   it('lets a fresh ConPTY shell inherit the cursor below visible restored output', async () => {
@@ -301,6 +334,8 @@ describe('PtyManager', { timeout: 60_000 }, () => {
       env: TEST_ENV,
     });
     expect(created.shellFallbackFrom).toBe('definitely-not-a-shell-252.exe');
+    // The substituted default is not a spec: a tab inheriting it gets the default too.
+    expect(created.launchShell).toBe('');
     const ok = manager.create({ shell: TEST_SHELL, cwd: process.env.USERPROFILE || 'C:\\', env: TEST_ENV });
     expect(ok.shellFallbackFrom).toBeUndefined();
   });

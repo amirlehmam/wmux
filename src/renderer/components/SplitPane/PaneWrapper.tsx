@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { PaneId, SplitNode, SurfaceId, WorkspaceId, QuickLaunchProfile, ShellInfo, engineOf } from '../../../shared/types';
 import { workspaceFallbackCwd } from '../../../shared/paths';
-import { findLeaf, splitNode } from '../../store/split-utils';
+import { activeTerminalShell, findLeaf, splitNode } from '../../store/split-utils';
 import KeptAliveTerminal from '../Terminal/KeptAliveTerminal';
 import BrowserPane from '../Browser/BrowserPane';
 import { ExplorerPanel } from '../Explorer/ExplorerPanel';
@@ -409,7 +409,7 @@ export default function PaneWrapper({
 
   const handleNewSurface = () => {
     if (activeWorkspaceId) {
-      addSurface(activeWorkspaceId, paneId, 'terminal');
+      addSurface(activeWorkspaceId, paneId, 'terminal', { shell: activeTerminalShell(leaf) });
     }
   };
 
@@ -417,7 +417,10 @@ export default function PaneWrapper({
     if (activeWorkspaceId) {
       // A Git tab pins the folder it opens on (#362) — this pane's terminal.
       const gitRoot = type === 'git' && workspace ? gitRootFor(workspace, paneId) : undefined;
-      addSurface(activeWorkspaceId, paneId, type, gitRoot ? { cwd: gitRoot } : undefined);
+      const options = type === 'terminal'
+        ? { shell: activeTerminalShell(leaf) }
+        : gitRoot ? { cwd: gitRoot } : undefined;
+      addSurface(activeWorkspaceId, paneId, type, options);
     }
   };
 
@@ -546,7 +549,8 @@ export default function PaneWrapper({
     const ws = workspaces.find(w => w.id === activeWorkspaceId);
     if (ws) {
       const newPaneId = `pane-${crypto.randomUUID()}` as PaneId;
-      const newTree = splitNode(ws.splitTree, paneId, newPaneId, 'terminal', direction);
+      const newTree = splitNode(ws.splitTree, paneId, newPaneId, 'terminal', direction,
+        activeTerminalShell(findLeaf(ws.splitTree, paneId)));
       if (newTree === ws.splitTree) return; // pane not in the tree: no split, nothing to focus
       updateSplitTree(activeWorkspaceId, newTree);
       // Deferred, not called inline: the button's click goes on to bubble up to

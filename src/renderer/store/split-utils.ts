@@ -174,6 +174,15 @@ function applyMintedIds(template: SplitNode, idMap: Map<SurfaceId, SurfaceId>): 
   };
 }
 
+/**
+ * Keep launch arguments (such as a WSL distribution), including those inherited
+ * at spawn time. Non-terminal tabs leave the workspace/default fallback alone.
+ */
+export function activeTerminalShell(leaf: (SplitNode & { type: 'leaf' }) | undefined): string | undefined {
+  const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
+  return surface?.type === 'terminal' ? (surface.launchShell || surface.shell || undefined) : undefined;
+}
+
 // ─── splitNode ───────────────────────────────────────────────────────────────
 
 export function splitNode(
@@ -182,10 +191,14 @@ export function splitNode(
   newPaneId: PaneId,
   surfaceType: SurfaceType,
   direction: 'horizontal' | 'vertical',
+  // Only the UI split actions pass this: a CLI or agent split types its
+  // startup commands, which must never land in an inherited ssh or WSL shell.
+  shell?: string,
 ): SplitNode {
   if (tree.type === 'leaf') {
     if (tree.paneId !== targetPaneId) return tree;
     const newLeaf = createLeaf(newPaneId, surfaceType);
+    if (shell && surfaceType === 'terminal') newLeaf.surfaces[0].shell = shell;
     return {
       type: 'branch',
       direction,
@@ -196,8 +209,8 @@ export function splitNode(
 
   // Branch — recurse into children
   const [left, right] = tree.children;
-  const newLeft = splitNode(left, targetPaneId, newPaneId, surfaceType, direction);
-  const newRight = splitNode(right, targetPaneId, newPaneId, surfaceType, direction);
+  const newLeft = splitNode(left, targetPaneId, newPaneId, surfaceType, direction, shell);
+  const newRight = splitNode(right, targetPaneId, newPaneId, surfaceType, direction, shell);
 
   if (newLeft === left && newRight === right) return tree; // nothing changed
   return { ...tree, children: [newLeft, newRight] };
