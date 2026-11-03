@@ -71,3 +71,28 @@ export function isEditableTarget(target: EditableTargetLike | null | undefined):
 export const IGNORES_KEY_REPEAT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
   'resetTerminal',
 ]);
+
+/**
+ * Actions that answer a key pressed inside a browser pane's page.
+ *
+ * The page receives every key first and keeps it (see shared/guest-key.ts),
+ * so anything listed here fires alongside whatever the page does with it.
+ * That is why the set is limited to what a browser itself reserves from
+ * pages: opening, closing and cycling tabs and windows. No web app relies on
+ * Ctrl+W or Ctrl+Tab, while Ctrl+B is bold in every editor and Ctrl+F is the
+ * page's own search, so those stay with the page.
+ *
+ * Keyed by action, not by chord, so a rebind still works from a page.
+ */
+export const GLOBAL_IN_PAGE: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
+  'closeSurfaceOrPane',
+  'newSurface',
+  'reopenClosedSurface',
+  'nextSurface',
+  'prevSurface',
+  'newWorkspace',
+  'closeWorkspace',
+  'nextWorkspace',
+  'prevWorkspace',
+  'newWindow',
+]);

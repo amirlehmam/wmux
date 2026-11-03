@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { ShortcutBinding, ShortcutAction } from '../store/settings-slice';
 import { activeTerminalShell, splitNode, removeLeaf, getAllPaneIds, findLeaf, adjustPaneRatio } from '../store/split-utils';
@@ -6,7 +6,9 @@ import { rollupAgents } from '../store/agent-rollup';
 import { focusAgentTarget } from '../store/focus-agent';
 import { PaneId, SplitNode } from '../../shared/types';
 import { trimTrailingWhitespace } from '../utils/copy-text';
-import { GLOBAL_IN_EDITOR, IGNORES_KEY_REPEAT, isEditableTarget } from './shortcut-target';
+import { GLOBAL_IN_EDITOR, GLOBAL_IN_PAGE, IGNORES_KEY_REPEAT, isEditableTarget } from './shortcut-target';
+import { paneOfGuest } from '../utils/guest-pane';
+import type { GuestKey } from '../../shared/guest-key';
 import { matchIndexShortcut, resolveIndexTarget } from '../utils/index-shortcuts';
 import { isSafeToIntercept } from '../utils/shortcut-binding';
 import { followOutputFor, togglePinnedPromptFor, togglePromptOutlineFor } from '../store/prompt-actions';
@@ -33,7 +35,10 @@ const UNSHIFTED_BY_CODE: Readonly<Record<string, string>> = {
   Minus: '-', Equal: '=', Backslash: '\\',
 };
 
-export function matchesBinding(e: KeyboardEvent, binding: ShortcutBinding): boolean {
+export function matchesBinding(
+  e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'shiftKey' | 'altKey'>,
+  binding: ShortcutBinding,
+): boolean {
   if (!binding.key) return false;
   // Case-insensitive compare for single-letter keys: Shift uppercases e.key on Windows,
   // but bindings are stored lowercase. Without toLowerCase, Ctrl+Shift+letter combos
@@ -158,6 +163,7 @@ export function useKeyboardShortcuts(
     requestCloseSurface,
   } = useStore();
   const t = useT();
+  const pendingGuestKey = useRef<{ paneId: PaneId; key: GuestKey; at: number } | null>(null);
 
   useEffect(() => {
     // ── Shared action helpers (kept small so each stays well under Sonar's
@@ -507,9 +513,51 @@ export function useKeyboardShortcuts(
       }
     }
 
+    // A key pressed inside a browser pane's page never reaches the document:
+    // main forwards it instead (shared/guest-key.ts). The page has already
+    // had it, so only GLOBAL_IN_PAGE actions answer, which is what lets Ctrl+W
+    // close the browser tab without a web app's Ctrl+B also toggling the
+    // sidebar.
+    function handleGuestKey(webContentsId: number, key: GuestKey): void {
+      // A held Ctrl+W must close one tab, not one per auto-repeat.
+      if (key.repeat) return;
+      const paneId = paneOfGuest(webContentsId) as PaneId | null;
+      if (!paneId) return;
+      // Clicking into the page focuses its pane (#388), but focus can reach a
+      // page without that click, and every action below works on the focused
+      // pane, so Ctrl+W would close a tab in whichever pane had focus before.
+      // Focus the page's pane first; this effect re-runs for the new pane and
+      // replays the key there (below).
+      if (paneId !== focusedPaneId) {
+        pendingGuestKey.current = { paneId, key, at: Date.now() };
+        onFocusPane?.(paneId);
+        return;
+      }
+      runGuestKey(key);
+    }
+
+    function runGuestKey(key: GuestKey): void {
+      for (const [action, binding] of Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]) {
+        if (!matchesBinding(key, binding)) continue;
+        if (GLOBAL_IN_PAGE.has(action)) handlers[action]?.();
+        return;
+      }
+    }
+
+    // The key handleGuestKey parked while it moved focus to the page's pane.
+    // Short-lived on purpose: a focus change that never lands must not leave
+    // a Ctrl+W waiting to close a tab later.
+    const pending = pendingGuestKey.current;
+    if (pending) {
+      pendingGuestKey.current = null;
+      if (pending.paneId === focusedPaneId && Date.now() - pending.at < 1000) runGuestKey(pending.key);
+    }
+
     document.addEventListener('keydown', handleKeyDown);
+    const offGuestKey: (() => void) | undefined = window.wmux?.browser?.onGuestKey?.(handleGuestKey);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      offGuestKey?.();
     };
   }, [
     shortcuts,

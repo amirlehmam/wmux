@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   GLOBAL_IN_EDITOR,
+  GLOBAL_IN_PAGE,
   isEditableTarget,
   EditableTargetLike,
 } from '../../src/renderer/hooks/shortcut-target';
@@ -79,5 +80,25 @@ describe('toggleMarkdownSource binding (issue #116)', () => {
       .filter(([action, binding]) => action !== 'toggleMarkdownSource' && serialize(binding) === target)
       .map(([action]) => action);
     expect(clashes).toEqual([]);
+  });
+});
+
+describe('GLOBAL_IN_PAGE', () => {
+  // Keys from a browser page reach the page first and stay there, so these
+  // actions fire alongside the page. Only what a browser reserves belongs here.
+  it('lets Ctrl+W close the browser tab from a page', () => {
+    expect(GLOBAL_IN_PAGE.has('closeSurfaceOrPane')).toBe(true);
+    expect(GLOBAL_IN_PAGE.has('newSurface')).toBe(true);
+    expect(GLOBAL_IN_PAGE.has('nextSurface')).toBe(true);
+  });
+
+  it('leaves editor-style chords to the page', () => {
+    for (const action of ['toggleSidebar', 'find', 'splitRight', 'copy', 'paste', 'refreshSurface'] as const) {
+      expect(GLOBAL_IN_PAGE.has(action)).toBe(false);
+    }
+  });
+
+  it('names only real, bound actions', () => {
+    for (const action of GLOBAL_IN_PAGE) expect(DEFAULT_SHORTCUTS[action]?.key).toBeTruthy();
   });
 });
