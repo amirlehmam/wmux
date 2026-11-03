@@ -5,6 +5,12 @@ src/cli-bin/wmux text eol=lf
 # $BROWSER entry point; same reason — bash shebang, must stay LF.
 src/cli-bin/wmux-open-url text eol=lf
 
+# Every shell script, for the same reason. The release is built on a Windows
+# runner with core.autocrlf=true, so without this the bash integration shipped
+# with CRLF and WSL's bash refused to source it (#428): `syntax error near
+# unexpected token $'{\r'`. Git Bash happens to tolerate the CRs; WSL does not.
+*.sh text eol=lf
+
 # ...and its cmd.exe twin needs the opposite, explicitly. cmd.exe parses a .cmd
 # by byte offset assuming CRLF: fed LF-only it resumes mid-token, so `setlocal`
 # runs as `tlocal` and `REM` as `M`. It half-works — the last line still
