@@ -1,7 +1,7 @@
 /* The surface tab bar's height. Shared, because a divider runs the full height
    of the panes it separates and has to know where their opaque chrome ends. */
 :root {
-  --wmux-tab-bar-h: 32px;
+  --wmux-tab-bar-h: 31px;
 }
 
 .split-container {
