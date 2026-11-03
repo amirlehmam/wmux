@@ -138,6 +138,8 @@ export function useKeyboardShortcuts(
   onFocusPane?: (paneId: PaneId) => void,
   onToggleZoom?: () => void,
   onToggleExplorer?: () => void,
+  /** Zoom one pane (#420): deltaY < 0 in, > 0 out, 0 resets. */
+  onPaneZoom?: (paneId: PaneId, deltaY: number) => void,
 ): void {
   const {
     shortcuts,
@@ -314,9 +316,10 @@ export function useKeyboardShortcuts(
       return surface?.type === 'terminal' ? surface.id : null;
     };
 
-    const adjustFontSize = (next: (size: number) => number) => {
-      const prefs = useStore.getState().terminalPrefs;
-      useStore.getState().setTerminalPrefs({ fontSize: next(prefs.fontSize) });
+    // The font-size shortcuts zoom the focused pane only, as in Windows
+    // Terminal (#420); the default size for every terminal stays in Settings.
+    const zoomFocusedPane = (deltaY: number) => {
+      if (focusedPaneId) onPaneZoom?.(focusedPaneId, deltaY);
     };
 
     const togglePinWorkspace = () => {
@@ -415,9 +418,9 @@ export function useKeyboardShortcuts(
         const surface = leaf?.surfaces[leaf.activeSurfaceIndex];
         if (surface) fire('wmux:refresh-surface', { surfaceId: surface.id });
       },
-      fontSizeIncrease: () => adjustFontSize((s) => Math.min(32, s + 1)),
-      fontSizeDecrease: () => adjustFontSize((s) => Math.max(8, s - 1)),
-      fontSizeReset: () => useStore.getState().setTerminalPrefs({ fontSize: 13 }),
+      fontSizeIncrease: () => zoomFocusedPane(-1),
+      fontSizeDecrease: () => zoomFocusedPane(1),
+      fontSizeReset: () => zoomFocusedPane(0),
       openSettings: () => onOpenSettings?.(true),
       openMarkdownPanel: () => { if (activeWorkspaceId && focusedPaneId) addSurface(activeWorkspaceId, focusedPaneId, 'markdown'); },
       // Focus-or-create: the diff panel is a singleton view of the working tree,
@@ -528,6 +531,7 @@ export function useKeyboardShortcuts(
     onFocusPane,
     onToggleZoom,
     onToggleExplorer,
+    onPaneZoom,
     t,
   ]);
 

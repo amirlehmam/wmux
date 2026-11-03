@@ -1,6 +1,26 @@
 // @vitest-environment jsdom
 import { it, expect, vi } from 'vitest';
-import { installWheelZoom, nextPaneZoom } from '../../src/renderer/utils/wheel-zoom';
+import { installWheelZoom, nextPaneZoom, paneFontSize, paneIdAt } from '../../src/renderer/utils/wheel-zoom';
+
+it('zooms a terminal through its font size, never below a readable floor (#420)', () => {
+  expect(paneFontSize(13, 1)).toBe(13);
+  expect(paneFontSize(13, undefined)).toBe(13);
+  expect(paneFontSize(13, 1.2)).toBe(16);
+  expect(paneFontSize(13, 0.5)).toBe(7);
+  expect(paneFontSize(8, 0.5)).toBe(6);
+});
+
+it('finds the pane a wheel event happened over (#420)', () => {
+  const pane = document.createElement('div');
+  pane.setAttribute('data-pane-id', 'pane-1');
+  const inner = document.createElement('span');
+  pane.append(inner);
+  document.body.append(pane);
+  expect(paneIdAt(inner)).toBe('pane-1');
+  expect(paneIdAt(document.body)).toBeNull();
+  expect(paneIdAt(null)).toBeNull();
+  pane.remove();
+});
 
 it('claims Ctrl+wheel before a terminal receives it and removes the listener on teardown', () => {
   const terminal = document.createElement('div');
@@ -15,7 +35,7 @@ it('claims Ctrl+wheel before a terminal receives it and removes the listener on 
     return event;
   };
   expect(wheel(true).defaultPrevented).toBe(true);
-  expect(zoom).toHaveBeenCalledWith(-120);
+  expect(zoom).toHaveBeenCalledWith(-120, terminal);
   expect(forward).not.toHaveBeenCalled();
   expect(wheel(false).defaultPrevented).toBe(false);
   expect(forward).toHaveBeenCalledOnce();

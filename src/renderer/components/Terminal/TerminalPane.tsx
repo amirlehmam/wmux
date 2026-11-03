@@ -43,6 +43,8 @@ export interface TerminalPaneProps {
    * so it refits, repaints and takes focus back the way it does when shown.
    */
   attachGeneration?: number;
+  /** The pane's zoom, applied to the font size (#420). */
+  fontZoom?: number;
 }
 
 export default function TerminalPane({
@@ -65,8 +67,9 @@ export default function TerminalPane({
   onFindBarClose,
   copyModeActive = false,
   attachGeneration,
+  fontZoom,
 }: TerminalPaneProps) {
-  const { terminalRef, searchAddonRef, xtermRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, attachGeneration, colorScheme, startupCommands, env, claudeSessionId, codexSessionId, opencodeSessionId, agySessionId, qwenSessionId, ompSessionId, piSessionFile });
+  const { terminalRef, searchAddonRef, xtermRef } = useTerminal({ surfaceId, shell, cwd, visible, focused, attachGeneration, fontZoom, colorScheme, startupCommands, env, claudeSessionId, codexSessionId, opencodeSessionId, agySessionId, qwenSessionId, ompSessionId, piSessionFile });
 
   const [_lastQuery, setLastQuery] = useState('');
 

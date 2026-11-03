@@ -264,6 +264,8 @@ export default function PaneWrapper({
             // visible workspace. Gate on isWorkspaceActive to respect parent.
             visibility: isVisible ? 'visible' : 'hidden',
             zIndex: isActive ? 1 : 0,
+            // A terminal zooms through its font instead (#420, see paneFontSize).
+            ...(surface.type !== 'terminal' && paneZoom !== 1 ? { zoom: paneZoom } : {}),
           }}
         >
           {surface.type === 'terminal' && (
@@ -289,6 +291,7 @@ export default function PaneWrapper({
               showFindBar={findBarVisible && isFocused && isActive}
               onFindBarClose={handleFindBarClose}
               copyModeActive={copyModeActive && isFocused && isActive}
+              fontZoom={paneZoom}
             />
           )}
           {surface.type === 'browser' && (
@@ -740,7 +743,7 @@ export default function PaneWrapper({
         isDragActive={dragActive}
         isFocused={isFocused}
       />
-      <div className="pane-wrapper__content" style={{ zoom: paneZoom }}>
+      <div className="pane-wrapper__content">
         {renderAllSurfaces()}
         <NotificationRing visible={hasUnread} flashing={justFired} />
         <div
