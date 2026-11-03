@@ -20,6 +20,7 @@ import type { WebglAddon } from '@xterm/addon-webgl';
 interface WebglRendererLike {
   _canvas?: HTMLCanvasElement;
   _gl?: WebGLRenderingContext | WebGL2RenderingContext;
+  _cursorBlinkStateManager?: { clear(): void };
 }
 
 /** Dispose the addon, then release what it leaves behind. Never throws. */
@@ -29,6 +30,13 @@ export function disposeWebglAddon(addon: WebglAddon): void {
   try {
     renderer = (addon as unknown as { _renderer?: WebglRendererLike })._renderer;
   } catch { /* internals changed; dispose still runs */ }
+  // addon-webgl 0.19.0 never disposes the renderer's cursor-blink manager
+  // (xtermjs/xterm.js#5818, fixed upstream after 0.19.0). Its 600 ms interval
+  // outlives the addon and keeps the renderer and the whole Terminal, scrollback
+  // included, reachable forever, so every hide or close of a focused terminal
+  // leaked one. tests/unit/webgl-cursor-blink-leak.test.ts fails once the addon
+  // fixes this itself or renames the field.
+  try { renderer?._cursorBlinkStateManager?.clear(); } catch { /* internals changed */ }
   try { addon.dispose(); } catch { /* already disposed with the terminal */ }
   // After dispose, so the renderer's own `webglcontextlost` listener is gone
   // and losing the context on purpose is not reported as a context loss.
