@@ -1,4 +1,4 @@
-import { getAgentState, wasAgentReleased, isSessionMissing, orphanedSession } from './agent-state';
+import { getAgentState, wasAgentReleased, isSessionMissing, orphanedSession, agentSessionHost } from './agent-state';
 import { mapSurfaces, stampClaudeSessionIds } from './claude-resume';
 import { stampCodexSessionIds } from './codex-resume';
 import { stampOpencodeSessionIds } from './opencode-resume';
@@ -43,7 +43,7 @@ function dropMissingCodexIds<T>(tree: T): T {
 }
 
 export function stampAgentSessionIds<T>(tree: T): T {
-  const claude = stampClaudeSessionIds(tree, providerLookup('claude'));
+  const claude = stampClaudeSessionIds(tree, providerLookup('claude'), agentSessionHost);
   const codex = dropMissingCodexIds(stampCodexSessionIds(claude, providerLookup('codex')));
   const opencode = stampOpencodeSessionIds(codex, providerLookup('opencode'));
   const agy = stampAgySessionIds(opencode, providerLookup('agy'));

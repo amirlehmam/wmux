@@ -366,6 +366,9 @@ describe.skipIf(!hasGitBash)('a hook fired by Claude Code in a WSL pane', () => 
       expect(line).toContain('surf-wsl');
       expect(line).toContain(SESSION);
       expect(line).toContain('SessionStart');
+      // Marked as a WSL session, so the startup prune does not judge it by the
+      // Windows transcripts (#428).
+      expect(JSON.parse(line).params.host).toBe('wsl');
     } finally {
       server.close();
     }
@@ -392,10 +395,10 @@ describe.skipIf(!hasGitBash)('a hook fired by Claude Code in a WSL pane', () => 
     const hookJs = path.join(ROOT, 'resources', 'cli', 'wmux-hook.js');
 
     const electron = await runHookCommand(wslHookCommand('Bash'), paneEnv({ ...base, WMUX_NODE_ELECTRON: '1' }), '{}');
-    expect(electron.out).toBe(`1|WMUX:ELECTRON_RUN_AS_NODE|${hookJs} Bash`);
+    expect(electron.out).toBe(`1|WMUX:ELECTRON_RUN_AS_NODE|${hookJs} Bash --host wsl`);
 
     const node = await runHookCommand(wslHookCommand('Bash'), paneEnv(base), '{}');
-    expect(node.out).toBe(`|WMUX|${hookJs} Bash`);
+    expect(node.out).toBe(`|WMUX|${hookJs} Bash --host wsl`);
   }, 30_000);
 
   it('succeeds in a pane opened by a wmux without the helper, rather than exiting 2 (block)', async () => {

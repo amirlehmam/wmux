@@ -105,6 +105,11 @@ export interface AgentStateRecord {
   /** Resumable session handle (a file/id), not a PID — survives a restart. */
   sessionId: string | null;
   sessionProvider?: AgentSessionProvider;
+  /**
+   * Where the session's transcript lives when it is not on Windows: `wsl` for
+   * Claude running inside a WSL pane (#428), whose transcript is in the distro.
+   */
+  sessionHost?: AgentSessionHost;
   /** Session capture alone says nothing about the agent's activity. */
   sessionOnly?: boolean;
   metadata: AgentMetadata;
@@ -204,9 +209,20 @@ const MAX_TRACKED_SURFACES = 256;
  * process. The handle stays, so the next restore reopens the conversation
  * instead of a bare shell in every tab that was working.
  */
-const orphanedSessions = new Map<SurfaceId, { provider: AgentSessionProvider; sessionId: string }>();
-export function orphanedSession(surfaceId: SurfaceId): { provider: AgentSessionProvider; sessionId: string } | undefined {
+const orphanedSessions = new Map<SurfaceId, { provider: AgentSessionProvider; sessionId: string; host?: AgentSessionHost }>();
+export function orphanedSession(surfaceId: SurfaceId): { provider: AgentSessionProvider; sessionId: string; host?: AgentSessionHost } | undefined {
   return orphanedSessions.get(surfaceId);
+}
+
+/**
+ * Where the handle this surface holds (live, or orphaned by a dead PTY) keeps
+ * its transcript: `wsl`, or undefined for Windows. Read at save time next to
+ * the handle itself, so the two always describe the same session.
+ */
+export function agentSessionHost(surfaceId: SurfaceId): AgentSessionHost | undefined {
+  const record = records.get(surfaceId);
+  if (record?.sessionId) return record.sessionHost;
+  return orphanedSessions.get(surfaceId)?.host;
 }
 
 function blank(surfaceId: SurfaceId): AgentStateRecord {
@@ -549,6 +565,9 @@ const SESSION_VALIDATORS: Record<AgentSessionProvider, (id: unknown) => id is st
   // A path, checked against pi's sessions dir — the dir default is read per call.
   pi: (id: unknown): id is string => isValidPiSessionFile(id),
 };
+/** Where a session's transcript lives, when that is not Windows (#428). */
+export type AgentSessionHost = 'wsl';
+
 function isSessionProvider(value: unknown): value is AgentSessionProvider {
   return typeof value === 'string' && Object.hasOwn(SESSION_VALIDATORS, value);
 }
@@ -556,7 +575,7 @@ function isSessionProvider(value: unknown): value is AgentSessionProvider {
 /** `pane.report_agent_session` — tie the pane to a resumable session handle. */
 export function reportAgentSession(
   surfaceId: SurfaceId,
-  params: { seq?: number; sessionId: string | null; provider?: unknown },
+  params: { seq?: number; sessionId: string | null; provider?: unknown; host?: unknown },
 ): AgentStateRecord | null {
   // Validated at the door, not at the point of use (issue #186). This value
   // arrives over the named pipe — a public interface — and since #186 it can
@@ -574,9 +593,12 @@ export function reportAgentSession(
   const record = getOrCreate(surfaceId);
   if (!acceptSeq(record, params.seq)) return null;
   if (sessionOnly) record.sessionOnly = true;
-  const changed = record.sessionId !== sessionId || record.sessionProvider !== provider;
+  // Anything but the one known value means Windows, as every report before #428 did.
+  const host: AgentSessionHost | undefined = params.host === 'wsl' ? 'wsl' : undefined;
+  const changed = record.sessionId !== sessionId || record.sessionProvider !== provider || record.sessionHost !== host;
   record.sessionId = sessionId;
   record.sessionProvider = provider;
+  record.sessionHost = host;
   releasedSessions.delete(surfaceId);
   orphanedSessions.delete(surfaceId);
   missingSessions.delete(surfaceId);
@@ -953,7 +975,11 @@ export function clearAgentState(surfaceId: SurfaceId): void {
     if (orphanedSessions.size >= MAX_TRACKED_SURFACES && !orphanedSessions.has(surfaceId)) {
       orphanedSessions.delete(orphanedSessions.keys().next().value!);
     }
-    orphanedSessions.set(surfaceId, { provider: record.sessionProvider ?? 'claude', sessionId: record.sessionId });
+    orphanedSessions.set(surfaceId, {
+      provider: record.sessionProvider ?? 'claude',
+      sessionId: record.sessionId,
+      ...(record.sessionHost ? { host: record.sessionHost } : {}),
+    });
   }
   forget(surfaceId, { release: false });
 }

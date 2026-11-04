@@ -38,4 +38,8 @@ if [ -n "${WMUX_NODE_ELECTRON-}" ]; then
     export ELECTRON_RUN_AS_NODE WSLENV
 fi
 
-exec "$WMUX_WSL_NODE" "$_wmux_hook_js" "$@"
+# `--host wsl` marks the session id as living in this distro's ~/.claude, not
+# Windows'. Startup prunes ids without a transcript, and it can only read the
+# Windows one; without the mark every WSL conversation looked dead there and
+# restore never typed its `claude --resume` (#428).
+exec "$WMUX_WSL_NODE" "$_wmux_hook_js" "$@" --host wsl

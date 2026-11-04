@@ -199,10 +199,13 @@ describe('index.ts worktree restore verification wiring', () => {
     expect(INDEX).toMatch(/verifyRestoredWorktrees\(\s*savedWindows\s*,\s*\{\s*showNotice:\s*deliverPaneNotice\s*\}\s*\)/);
   });
 
-  it('places verifyRestoredWorktrees after pruneRestoredOmpSessions and before sessionWindows.prime', () => {
+  it('places verifyRestoredWorktrees after pruneRestoredOmpSessions and before the windows are primed', () => {
     const ompIndex = INDEX.indexOf('pruneRestoredOmpSessions(savedWindows)');
     const verifyIndex = INDEX.indexOf('verifyRestoredWorktrees(savedWindows');
-    const primeIndex = INDEX.indexOf('sessionWindows.prime(');
+    // openStartupWindows primes every restored window; startup calls it last.
+    const opener = INDEX.slice(INDEX.indexOf('function openStartupWindows('));
+    expect(opener.slice(0, opener.search(/\r?\n\}\r?\n/))).toContain('sessionWindows.prime(');
+    const primeIndex = INDEX.indexOf('openStartupWindows(savedWindows)');
 
     expect(ompIndex).toBeGreaterThan(-1);
     expect(verifyIndex).toBeGreaterThan(-1);

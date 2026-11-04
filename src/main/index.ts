@@ -1340,6 +1340,9 @@ function handleHookEvent(params: any): void {
     reportAgentSession(params.surfaceId as SurfaceId, {
       sessionId: String(params.sessionId),
       provider: params.provider === 'qwen' ? 'qwen' : undefined,
+      // A WSL pane's Claude keeps its transcript in the distro (#428), where the
+      // startup prune cannot look; the mark exempts it from that prune.
+      host: params.host === 'wsl' ? 'wsl' : undefined,
     });
   }
 
@@ -1395,6 +1398,28 @@ function pruneRestoredClaudeSessions(windows: SavedWindow[]): void {
     console.log(`[claude-resume] dropped ${dropped} session id(s) with no transcript`);
   }
 }
+/**
+ * Open one window per saved slot, or a single fresh one when there is none.
+ * Each restored window owns its slot and its terminal history, revoked when
+ * its renderer goes away.
+ */
+function openStartupWindows(savedWindows: SavedWindow[]): void {
+  if (savedWindows.length === 0) {
+    sessionWindows.markStartup(windowManager.createWindow());
+    return;
+  }
+  for (const saved of savedWindows) {
+    const id = windowManager.createWindow(saved.bounds, saved.maximized);
+    sessionWindows.prime(id, saved);
+    sessionWindows.markStartup(id);
+    const win = windowManager.getWindow(id);
+    if (!win) continue;
+    const owner = win.webContents.id;
+    terminalHistory.seedWindow(owner);
+    win.webContents.once('destroyed', () => terminalHistory.revokeOwner(owner));
+  }
+}
+
 function pruneRestoredOmpSessions(windows: SavedWindow[]): void {
   if (windows.length === 0) return;
   let dropped = 0;
@@ -1668,21 +1693,7 @@ app.whenReady().then(async () => {
   pruneRestoredOmpSessions(savedWindows);
   pruneRestoredPiSessions(savedWindows);
   verifyRestoredWorktrees(savedWindows, { showNotice: deliverPaneNotice });
-  if (savedWindows.length === 0) {
-    sessionWindows.markStartup(windowManager.createWindow());
-  } else {
-    for (const saved of savedWindows) {
-      const id = windowManager.createWindow(saved.bounds, saved.maximized);
-      sessionWindows.prime(id, saved);
-      sessionWindows.markStartup(id);
-      const win = windowManager.getWindow(id);
-      if (win) {
-        const owner = win.webContents.id;
-        terminalHistory.seedWindow(owner);
-        win.webContents.once('destroyed', () => terminalHistory.revokeOwner(owner));
-      }
-    }
-  }
+  openStartupWindows(savedWindows);
 
   // Everything wmux writes into ~/.claude and ~/.config/opencode now runs behind
   // a stored consent decision, and asks for one on first launch (issue #132).

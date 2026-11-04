@@ -83,6 +83,12 @@ WSL pane shows its state in the sidebar and its session comes back with
 `claude --resume` when wmux restores the pane (with the bash integration line above, so
 the pane also restores its folder).
 
+On startup wmux drops saved Claude sessions whose conversation no longer exists, but it
+can only check the Windows `~/.claude`. A session that ran in WSL is marked as such and
+kept without that check, so wmux never has to start a distro at launch. If you deleted
+that conversation inside the distro, the restored pane's `claude --resume` reports it as
+missing and you are left at the prompt.
+
 It is the **Status hooks** feature of the agent integration (Settings → General), with
 the same consent: nothing is written until you allow it, and switching it off or choosing
 "Never" takes the hooks back out. Your own hooks and settings stay as they are.

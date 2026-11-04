@@ -122,6 +122,13 @@ export interface SurfaceRef {
    * `claude --resume <id>` prepended to its startup commands.
    */
   claudeSessionId?: string;
+  /**
+   * Where `claudeSessionId`'s transcript lives when it is not on Windows: `wsl`
+   * for a Claude that ran inside a WSL pane (#428). The startup prune reads
+   * only the Windows `~/.claude/projects`, so it keeps a `wsl` id rather than
+   * calling it dead. Stamped and removed together with the id.
+   */
+  claudeSessionHost?: 'wsl';
   /** Exact Codex conversation to resume, independently of Claude. */
   codexSessionId?: string;
   /**

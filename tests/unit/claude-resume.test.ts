@@ -204,3 +204,71 @@ describe('pruneDeadClaudeSessions', () => {
     expect(dropped).toBe(2);
   });
 });
+
+/**
+ * #428: a Claude that ran in a WSL pane keeps its transcript in the distro's
+ * ~/.claude, which the startup prune never reads. Judged by the Windows index,
+ * every such id looked dead and restore never typed its `claude --resume`.
+ */
+describe('a WSL session through the startup prune (#428)', () => {
+  it('keeps a WSL id the Windows transcript index does not list', () => {
+    const tree = leaf([terminal('surf-1', { claudeSessionId: ID_A, claudeSessionHost: 'wsl' })]);
+    const { tree: out, dropped } = pruneDeadClaudeSessions(tree, new Set([ID_B]));
+    expect((out as any).surfaces[0].claudeSessionId).toBe(ID_A);
+    expect((out as any).surfaces[0].claudeSessionHost).toBe('wsl');
+    expect(dropped).toBe(0);
+  });
+
+  it('still prunes the Windows id next to it', () => {
+    const tree = leaf([
+      terminal('surf-1', { claudeSessionId: ID_A, claudeSessionHost: 'wsl' }),
+      terminal('surf-2', { claudeSessionId: ID_B }),
+    ]);
+    const { tree: out, dropped } = pruneDeadClaudeSessions(tree, new Set<string>());
+    expect((out as any).surfaces[0].claudeSessionId).toBe(ID_A);
+    expect('claudeSessionId' in (out as any).surfaces[1]).toBe(false);
+    expect(dropped).toBe(1);
+  });
+
+  it('still drops a WSL-marked id that is not a valid handle, with its mark', () => {
+    const tree = leaf([terminal('surf-1', { claudeSessionId: 'x; rm -rf /', claudeSessionHost: 'wsl' })]);
+    const { tree: out, dropped } = pruneDeadClaudeSessions(tree, new Set<string>());
+    expect(out).toEqual(leaf([terminal('surf-1')]));
+    expect(dropped).toBe(1);
+  });
+
+  it('does not exempt a host value it does not know', () => {
+    const tree = leaf([terminal('surf-1', { claudeSessionId: ID_A, claudeSessionHost: 'mars' })]);
+    expect(pruneDeadClaudeSessions(tree, new Set<string>()).dropped).toBe(1);
+  });
+});
+
+describe('stampClaudeSessionIds with a host (#428)', () => {
+  const wsl = (id: string) => (id === 'surf-1' ? 'wsl' : undefined);
+
+  it('stamps the host next to a found id', () => {
+    const out = stampClaudeSessionIds(leaf([terminal('surf-1')]), () => ID_A, wsl);
+    expect((out as any).surfaces[0]).toEqual(terminal('surf-1', { claudeSessionId: ID_A, claudeSessionHost: 'wsl' }));
+  });
+
+  it('clears the host when the same id is now reported from Windows', () => {
+    const tree = leaf([terminal('surf-2', { claudeSessionId: ID_A, claudeSessionHost: 'wsl' })]);
+    const out = stampClaudeSessionIds(tree, () => ID_A, wsl);
+    expect((out as any).surfaces[0]).toEqual(terminal('surf-2', { claudeSessionId: ID_A }));
+  });
+
+  it('removes the host with a released id', () => {
+    const tree = leaf([terminal('surf-1', { claudeSessionId: ID_A, claudeSessionHost: 'wsl' })]);
+    expect((stampClaudeSessionIds(tree, () => null, wsl) as any).surfaces[0]).toEqual(terminal('surf-1'));
+  });
+
+  it('keeps the host, untouched, while a restored pane is silent', () => {
+    const tree = leaf([terminal('surf-1', { claudeSessionId: ID_A, claudeSessionHost: 'wsl' })]);
+    expect(stampClaudeSessionIds(tree, () => undefined, () => undefined)).toBe(tree);
+  });
+
+  it('returns the same tree when id and host are unchanged', () => {
+    const tree = leaf([terminal('surf-1', { claudeSessionId: ID_A, claudeSessionHost: 'wsl' })]);
+    expect(stampClaudeSessionIds(tree, () => ID_A, wsl)).toBe(tree);
+  });
+});

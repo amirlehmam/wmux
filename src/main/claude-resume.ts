@@ -62,7 +62,7 @@ export function buildResumeCommand(sessionId: string): string {
 // ─── Tree walk ───────────────────────────────────────────────────────────────
 
 /** A persisted terminal surface, as far as this module needs to care. */
-type SurfaceLike = Record<string, unknown> & { id?: unknown; type?: unknown; claudeSessionId?: unknown };
+type SurfaceLike = Record<string, unknown> & { id?: unknown; type?: unknown; claudeSessionId?: unknown; claudeSessionHost?: unknown };
 
 /**
  * Map every surface in a serialized split tree, structurally sharing anything
@@ -97,16 +97,18 @@ export function mapSurfaces<T>(tree: T, fn: (surface: SurfaceLike) => SurfaceLik
   return { ...node, children: [left, right] } as unknown as T;
 }
 
-/** Copy without the stamped id. */
+/** Copy without the stamped id, and without the host that described it. */
 function withoutSessionId(surface: SurfaceLike): SurfaceLike {
   const rest = { ...surface };
   delete rest.claudeSessionId;
+  delete rest.claudeSessionHost;
   return rest;
 }
 
 // ─── Stamping (save time) ────────────────────────────────────────────────────
 
 type SessionIdLookup = (surfaceId: SurfaceId) => string | null | undefined;
+type SessionHostLookup = (surfaceId: SurfaceId) => string | undefined;
 
 /**
  * Rewrite a split tree so every terminal surface that currently hosts a Claude
@@ -130,16 +132,24 @@ type SessionIdLookup = (surfaceId: SurfaceId) => string | null | undefined;
  * been shown, so its PTY does not exist — keeps the id it was restored with.
  * Treating silence as an exit wiped every unopened tab's conversation on the
  * first 30 s auto-save after a restart (same rule as codex-resume.ts).
+ *
+ * `hostLookup` says where a found id's transcript lives (#428). It travels with
+ * the id as `claudeSessionHost` and follows the same three answers: a found id
+ * sets or clears it, a released one removes it, silence keeps it.
  */
-export function stampClaudeSessionIds<T>(tree: T, lookup: SessionIdLookup): T {
+export function stampClaudeSessionIds<T>(tree: T, lookup: SessionIdLookup, hostLookup: SessionHostLookup = () => undefined): T {
   return mapSurfaces(tree, (s) => {
     if (s.type !== 'terminal') return s;
     const found = lookup(s.id as SurfaceId);
     if (found === undefined) return s;
     const next = isValidClaudeSessionId(found) ? found : undefined;
-    const prev = typeof s.claudeSessionId === 'string' ? s.claudeSessionId : undefined;
-    if (next === prev) return s;
-    return next ? { ...s, claudeSessionId: next } : withoutSessionId(s);
+    if (!next) return s.claudeSessionId === undefined && s.claudeSessionHost === undefined ? s : withoutSessionId(s);
+    const host = hostLookup(s.id as SurfaceId) === 'wsl' ? 'wsl' : undefined;
+    if (next === s.claudeSessionId && host === s.claudeSessionHost) return s;
+    const stamped: SurfaceLike = { ...s, claudeSessionId: next };
+    if (host) stamped.claudeSessionHost = host;
+    else delete stamped.claudeSessionHost;
+    return stamped;
   });
 }
 
@@ -202,7 +212,13 @@ export function pruneDeadClaudeSessions<T>(
   const next = mapSurfaces(tree, (s) => {
     const id = s.claudeSessionId;
     if (typeof id !== 'string') return s;
-    if (isValidClaudeSessionId(id) && known.has(id)) return s;
+    // A WSL pane's transcript is in the distro's ~/.claude (#428), and `known`
+    // is the Windows one only. Absence there says nothing, so the id is kept,
+    // as every id is when Claude's directory cannot be read. Checking the
+    // distro instead would mean wsl.exe on the startup path, and could boot a
+    // stopped distro just to restore a tab.
+    const onDisk = s.claudeSessionHost === 'wsl' || known.has(id);
+    if (isValidClaudeSessionId(id) && onDisk) return s;
     dropped++;
     return withoutSessionId(s);
   });

@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }));
 import { reportAgent, reportAgentSession, releaseAgent, clearAgentState, resetAgentState } from '../../src/main/agent-state';
 import { stampAgentSessionIds } from '../../src/main/agent-session-persistence';
+import { pruneDeadClaudeSessions } from '../../src/main/claude-resume';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import type { SurfaceId } from '../../src/shared/types';
 
 const A = '11111111-2222-3333-4444-555555555555';
@@ -104,5 +107,52 @@ describe('a pane whose process was killed under its agent', () => {
     reportAgent(SA, { runDelta: 1 });
     releaseAgent(SA);
     expect('claudeSessionId' in stampAgentSessionIds(leaf([terminal(SA, { claudeSessionId: A })])).surfaces[0]).toBe(false);
+  });
+});
+
+/**
+ * #428: the hook in a WSL pane reports with `host: 'wsl'`, and that mark has to
+ * reach session.json next to the id, or the startup prune (which reads only the
+ * Windows transcripts) throws the id away and restore types nothing.
+ */
+describe('a Claude session reported from a WSL pane', () => {
+  it('is saved with its host, and survives a prune against the Windows transcripts', () => {
+    reportAgentSession(SA, { sessionId: A, host: 'wsl' });
+    const saved = stampAgentSessionIds(leaf([terminal(SA)]));
+    expect(saved.surfaces[0]).toMatchObject({ claudeSessionId: A, claudeSessionHost: 'wsl' });
+    const { tree, dropped } = pruneDeadClaudeSessions(saved, new Set([B]));
+    expect(dropped).toBe(0);
+    expect(tree.surfaces[0].claudeSessionId).toBe(A);
+  });
+
+  it('keeps its host through a PTY exit', () => {
+    reportAgentSession(SA, { sessionId: A, host: 'wsl' });
+    clearAgentState(SA);
+    expect(stampAgentSessionIds(leaf([terminal(SA)])).surfaces[0].claudeSessionHost).toBe('wsl');
+  });
+
+  it('loses the mark when the tab reports a Windows Claude', () => {
+    reportAgentSession(SA, { sessionId: A, host: 'wsl' });
+    const saved = stampAgentSessionIds(leaf([terminal(SA)]));
+    reportAgentSession(SA, { sessionId: B });
+    expect('claudeSessionHost' in stampAgentSessionIds(saved).surfaces[0]).toBe(false);
+  });
+
+  it('ignores a host value it does not know', () => {
+    reportAgentSession(SA, { sessionId: A, host: 'mars' });
+    expect('claudeSessionHost' in stampAgentSessionIds(leaf([terminal(SA)])).surfaces[0]).toBe(false);
+  });
+
+  it('drops id and mark together when the user exits Claude', () => {
+    reportAgentSession(SA, { sessionId: A, host: 'wsl' });
+    const saved = stampAgentSessionIds(leaf([terminal(SA)]));
+    releaseAgent(SA);
+    expect(stampAgentSessionIds(saved).surfaces[0]).toEqual(terminal(SA));
+  });
+
+  it('is forwarded by the hook handler in index.ts', () => {
+    const source = readFileSync(resolve(__dirname, '../../src/main/index.ts'), 'utf8');
+    const call = source.slice(source.indexOf('reportAgentSession(params.surfaceId as SurfaceId, {'));
+    expect(call.slice(0, call.indexOf('});'))).toContain("host: params.host === 'wsl' ? 'wsl' : undefined");
   });
 });
