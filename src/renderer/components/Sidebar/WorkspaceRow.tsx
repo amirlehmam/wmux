@@ -351,8 +351,6 @@ export default function WorkspaceRow({
     workingSessions,
     blockedSessions,
     currentToolLabel,
-    // Idle claims come from the roster, never retained activity history.
-    claudeIsIdle: false,
     shellState: workspace.shellState,
     notificationText: details.notificationMessage ? workspace.notificationText : undefined,
   }), [workspace.statusOverride, agentCounts, runningAgentCount, wsAgents, sessions, workingSessions, blockedSessions, currentToolLabel, workspace.shellState, workspace.notificationText, details.notificationMessage]);

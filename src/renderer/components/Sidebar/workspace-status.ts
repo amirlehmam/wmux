@@ -32,7 +32,6 @@ export interface StatusTextInputs {
   workingSessions: number;
   blockedSessions: number;
   currentToolLabel: string | null;
-  claudeIsIdle: boolean;
   shellState?: string;
   notificationText?: string;
 }
@@ -82,10 +81,10 @@ export function mergedAgentSignals(s: StatusTextInputs): MergedAgentSignals {
   return {
     blocked: Math.max(s.blockedSessions, counts?.blocked ?? 0),
     working: Math.max(s.workingSessions, counts?.working ?? 0),
-    // `claudeIsIdle` is gated on a running shell where it is computed; a
-    // declared or detected idle agent is a claim in its own right and needs no
-    // such gate.
-    idle: s.claudeIsIdle || (counts?.idle ?? 0) > 0,
+    // Only the roster can claim idle: a declared or detected idle agent is a
+    // claim in its own right, whereas retained hook or observer history is
+    // not, and a released agent's leftover activity must not read as one.
+    idle: (counts?.idle ?? 0) > 0,
   };
 }
 

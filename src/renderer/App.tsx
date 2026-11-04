@@ -263,11 +263,10 @@ function workspaceForSurface(surfaceId: string): WorkspaceInfo | undefined {
 type HookActivityMap = Record<string, { lastTool: string; toolCount: number; lastSeen: number }>;
 
 /**
- * Stop hook = the turn is over. Zero out lastSeen so the sidebar flips to
- * "Idle" immediately instead of waiting out the ACTIVITY_TTL window, and
- * upsert the entry so turns with zero tool uses (pure text generation) still
- * register as "Claude ran here and finished" — otherwise WorkspaceRow falls
- * back to the shell's perpetual "Running" while the TUI sits idle (issue #81).
+ * Stop hook = the turn is over. Zero out lastSeen so the last tool label (and
+ * the `unknown`-state working fallback) expires immediately instead of waiting
+ * out the activity TTL window. The idle claim itself comes from the agent
+ * roster, not from this entry (issue #81 is answered there now).
  *
  * Keyed by SURFACE, not workspace: two Claude sessions split inside one
  * workspace must not zero each other's freshness. Only surfaceId-less legacy
@@ -1154,11 +1153,13 @@ export default function App() {
     return unsub;
   }, []);
 
-  // NOTE: hookActivity entries are intentionally kept forever (not cleaned up).
-  // Keys are surface ids (per Claude session) or workspace ids (legacy events).
-  // WorkspaceRow uses the lastSeen timestamp + TTL to decide what to display.
-  // Keeping stale entries lets us distinguish "Claude was active but stopped"
-  // (idle) from "a regular shell command is running" (no hookActivity at all).
+  // NOTE: hookActivity entries are not cleaned up, but they no longer decide
+  // whether a pane hosts an agent or whether it is idle: the shared agent
+  // roster owns membership and idle claims. Keys are surface ids (per Claude
+  // session) or workspace ids (legacy events). WorkspaceRow reads an entry only
+  // while its lastSeen is inside the activity TTL, for the tool label and for a
+  // roster member whose state is `unknown`, and sums toolCount for the trace
+  // odometer. A stale entry is therefore inert.
 
   // Listen for Claude Code activity parsed from terminal output
   useEffect(() => {

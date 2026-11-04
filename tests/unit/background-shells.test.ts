@@ -311,7 +311,7 @@ describe('status text with background shells (#276)', () => {
     workingSessions: 0,
     blockedSessions: 0,
     currentToolLabel: null,
-    claudeIsIdle: true,
+    agentCounts: { blocked: 0, question: 0, working: 0, idle: 1, unknown: 0, total: 1 },
     shellState: 'running',
   };
 
@@ -327,7 +327,7 @@ describe('status text with background shells (#276)', () => {
   });
 
   it('gives way to the agent working — a live tool label is the finer fact', () => {
-    const s = { ...base, claudeIsIdle: false, workingSessions: 1, currentToolLabel: 'Reading file...', backgroundShellCount: 1 };
+    const s = { ...base, agentCounts: undefined, workingSessions: 1, currentToolLabel: 'Reading file...', backgroundShellCount: 1 };
     expect(resolveStatusText(s, t as any)).toBe('Reading file...');
   });
 
