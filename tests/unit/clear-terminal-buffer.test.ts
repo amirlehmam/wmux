@@ -10,6 +10,7 @@ import { useStore } from '../../src/renderer/store';
 import { createLeaf } from '../../src/renderer/store/split-utils';
 import { DEFAULT_SHORTCUTS } from '../../src/renderer/store/settings-slice';
 import CommandPalette from '../../src/renderer/components/CommandPalette/CommandPalette';
+import { __resetPromptLog, handlePromptMark } from '../../src/renderer/utils/prompt-log';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -20,11 +21,15 @@ let otherTerminal: Terminal;
 let surfaceId: string;
 let paneId: PaneId;
 const refs = new Map<string, React.RefObject<Terminal | null>>();
+const ptyRefs = new Map<string, React.RefObject<string | null>>();
+const ESC = '\x1b';
+const mark = (kind: string) => `${ESC}]133;${kind}${ESC}\\`;
 
 function Probe({ id }: { id: string }) {
   /** Attach a headless emulator after mount so the real event effect runs without a PTY or canvas. */
-  const { xtermRef } = useTerminal({ surfaceId: id });
+  const { xtermRef, ptyIdRef } = useTerminal({ surfaceId: id });
   refs.set(id, xtermRef);
+  ptyRefs.set(id, ptyIdRef);
   return null;
 }
 
@@ -49,12 +54,15 @@ function bufferText(term: Terminal) {
 }
 
 beforeEach(async () => {
-  useStore.setState({ language: 'en', workspaces: [], activeWorkspaceId: null, shortcuts: { ...DEFAULT_SHORTCUTS } });
+  __resetPromptLog();
+  useStore.setState({ language: 'en', workspaces: [], activeWorkspaceId: null, shortcuts: { ...DEFAULT_SHORTCUTS }, prompts: {} });
   const leaf = createLeaf();
   paneId = leaf.paneId;
   surfaceId = leaf.surfaces[0].id;
   useStore.getState().createWorkspace({ title: 'ws', shell: 'pwsh', splitTree: leaf });
   terminal = new Terminal({ cols: 40, rows: 4, allowProposedApi: true });
+  // Wired the way useTerminal wires a live terminal (issue #207's OSC 133 handler).
+  terminal.parser.registerOscHandler(133, (data) => handlePromptMark(terminal, surfaceId, data));
   otherTerminal = new Terminal({ cols: 40, rows: 4 });
   await write(terminal, 'old output\r\n'.repeat(12) + 'PS> typed command');
   await write(otherTerminal, 'other output\r\nother prompt');
@@ -74,6 +82,8 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   refs.clear();
+  ptyRefs.clear();
+  Reflect.deleteProperty(window, 'wmux');
   terminal.dispose();
   otherTerminal.dispose();
   vi.restoreAllMocks();
@@ -114,7 +124,10 @@ describe('Clear terminal buffer', () => {
     expect(bufferText(terminal)).toBe('PS> typed command');
   });
 
-  it('ignores the shortcut when a non-terminal surface is active', () => {
+  it('ignores the shortcut while a non-terminal surface is active, and honours it once the terminal is back', () => {
+    const shortcut = () => act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'k', code: 'KeyK', ctrlKey: true, altKey: true, bubbles: true, cancelable: true,
+    })); });
     act(() => {
       const state = useStore.getState();
       state.addSurface(state.activeWorkspaceId!, paneId, 'browser');
@@ -122,16 +135,68 @@ describe('Clear terminal buffer', () => {
         ...DEFAULT_SHORTCUTS, clearTerminalBuffer: { key: 'k', ctrl: true, alt: true },
       } });
     });
-    act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'k', ctrlKey: true, altKey: true, bubbles: true,
-    })); });
+    shortcut();
+    expect(bufferText(terminal)).toContain('old output');
+
+    act(() => {
+      const state = useStore.getState();
+      state.selectSurface(state.activeWorkspaceId!, paneId, 0);
+    });
+    shortcut();
+    expect(bufferText(terminal)).toBe('PS> typed command');
+  });
+
+  it('stops listening on unmount', async () => {
+    clear();
+    expect(bufferText(terminal)).toBe('PS> typed command');
+    await write(terminal, '\r\nlater output\r\n'.repeat(6));
+    act(() => root.render(null));
+    clear();
+    expect(bufferText(terminal)).toContain('later output');
+  });
+
+  // #434 review F1: a frontend-only clear desyncs from ConPTY (see pty-manager.test.ts).
+  it("clears the pane's ConPTY before xterm, and only that pane's", () => {
+    const seen: string[] = [];
+    const clearPty = vi.fn(() => { seen.push(bufferText(terminal)); });
+    Object.defineProperty(window, 'wmux', { configurable: true, value: { pty: { clear: clearPty } } });
+    ptyRefs.get(surfaceId)!.current = surfaceId;
+    ptyRefs.get('surf-other')!.current = 'surf-other';
+
+    clear();
+
+    expect(clearPty).toHaveBeenCalledExactlyOnceWith(surfaceId);
+    expect(seen[0]).toContain('old output');
+    expect(bufferText(terminal)).toBe('PS> typed command');
+  });
+
+  // #434 review F3: the alternate screen has no scrollback and belongs to the program on it.
+  it('does nothing on the alternate screen', async () => {
+    const clearPty = vi.fn();
+    Object.defineProperty(window, 'wmux', { configurable: true, value: { pty: { clear: clearPty } } });
+    ptyRefs.get(surfaceId)!.current = surfaceId;
+    await write(terminal, `${ESC}[?1049h${ESC}[HTUI TOP\r\nTUI MIDDLE\r\nTUI BOTTOM`);
+
+    clear();
+
+    expect(clearPty).not.toHaveBeenCalled();
+    expect(bufferText(terminal)).toBe('TUI TOP\nTUI MIDDLE\nTUI BOTTOM');
+    await write(terminal, `${ESC}[?1049l`);
     expect(bufferText(terminal)).toContain('old output');
   });
 
-  it('removes its event listener on unmount', () => {
-    act(() => root.render(null));
+  // #434 review F2: the shell sent 133;A and 133;B for the prompt on screen and
+  // will not send them again, so the command typed after the clear must still log.
+  it('keeps logging the command typed at a prompt that was waiting when the buffer was cleared', async () => {
+    await write(terminal, `\r\n${mark('A')}PS> ${mark('B')}`);
+
     clear();
-    expect(bufferText(terminal)).toContain('old output');
+    expect(bufferText(terminal)).toBe('PS>');
+
+    await write(terminal, `git status\r\n${mark('C')}`);
+    const prompts = useStore.getState().prompts[surfaceId] ?? [];
+    expect(prompts.map((entry) => entry.text)).toEqual(['git status']);
+    expect(prompts[0].line).toBe(0);
   });
 
   it('exposes the unbound action in the command palette', () => {

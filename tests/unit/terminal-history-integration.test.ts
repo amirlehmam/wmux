@@ -363,7 +363,7 @@ describe('production IPC ownership hooks and preload capture', () => {
     electron.windows = [first, second];
     ipc.registerIpcHandlers({
       idForWebContents: (wc: any) => electron.contents.has(wc.id) ? `win-${wc.id}` : undefined,
-      getWindow: (id: string) => id === 'win-11' ? first : id === 'win-22' ? second : null,
+      getWindow: (id: string) => ({ 'win-11': first, 'win-22': second } as Record<string, unknown>)[id] ?? null,
       getAllWindows: () => [{ id: 'win-11' }, { id: 'win-22' }],
     } as any);
     await ipc.terminalHistory.setEnabled(true);
@@ -419,6 +419,33 @@ describe('production IPC ownership hooks and preload capture', () => {
     expect(kill).toHaveBeenCalledExactlyOnceWith('surf-close-after-exit');
     expect(ipc.terminalHistory.getBinding(11, 'surf-close-after-exit').ok).toBe(false);
     await ipc.terminalHistory.setEnabled(true);
+  });
+
+  // #434: Clear terminal buffer must reach ConPTY, and only from the owning window.
+  it('preload pty.clear reaches PtyManager.clear only for the owning window of a live PTY', async () => {
+    const id = 'surf-clear-owned';
+    let live = true;
+    vi.spyOn(ipc.ptyManager, 'has').mockImplementation((surface) => surface === id && live);
+    vi.spyOn(ipc.ptyManager, 'onData').mockReturnValue(() => {});
+    vi.spyOn(ipc.ptyManager, 'onExit').mockReturnValue(() => {});
+    vi.spyOn(ipc.ptyManager, 'create').mockReturnValue({ id, shell: 'pwsh', reused: false } as any);
+    await electron.handlers.get(IPC_CHANNELS.PTY_CREATE)!({ sender: first.webContents }, { shell: 'pwsh' });
+    const clearPty = vi.spyOn(ipc.ptyManager, 'clear').mockImplementation(() => {});
+
+    const api = electron.expose.mock.calls.find(([name]) => name === 'wmux')![1];
+    electron.send.mockClear();
+    api.pty.clear(id);
+    expect(electron.send).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.PTY_CLEAR, id);
+
+    const onClear = electron.listeners.get(IPC_CHANNELS.PTY_CLEAR)!;
+    onClear({ sender: second.webContents }, id);
+    onClear({ sender: first.webContents }, 42);
+    expect(clearPty).not.toHaveBeenCalled();
+    onClear({ sender: first.webContents }, id);
+    expect(clearPty).toHaveBeenCalledExactlyOnceWith(id);
+    live = false;
+    onClear({ sender: first.webContents }, id);
+    expect(clearPty).toHaveBeenCalledTimes(1);
   });
 
   it.each([true, false])('closing exited A cannot kill B after B creates the same saved ID (history enabled=%s)', async (enabled) => {

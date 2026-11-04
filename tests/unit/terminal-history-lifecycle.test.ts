@@ -50,6 +50,16 @@ async function record() {
   return captured.record;
 }
 
+/** Parse `data` for real; resolves with the deferred delivery of the caller's callback. */
+function drawLater(
+  realWrite: Terminal['write'],
+  data: string | Uint8Array,
+  callback?: () => void,
+): Promise<() => void> {
+  const deliver = () => callback?.();
+  return new Promise((resolve) => { realWrite(data, () => resolve(deliver)); });
+}
+
 /** Real parsing can be delayed separately from delivery of xterm's write callback. */
 function gateWrites(terminal: Terminal) {
   type Job = { text: string; draw(): Promise<() => void> };
@@ -57,9 +67,7 @@ function gateWrites(terminal: Terminal) {
   let waiting: ((job: Job) => void) | undefined;
   const realWrite = terminal.write.bind(terminal);
   vi.spyOn(terminal, 'write').mockImplementation((data, callback) => {
-    const job: Job = { text: String(data), draw: () => new Promise((resolve) => {
-      realWrite(data, () => resolve(() => callback?.()));
-    }) };
+    const job: Job = { text: String(data), draw: () => drawLater(realWrite, data, callback) };
     if (waiting) { const deliver = waiting; waiting = undefined; deliver(job); }
     else jobs.push(job);
   });
@@ -940,13 +948,14 @@ describe('fresh terminal history lifecycle with real xterm', () => {
 describe('useTerminal history ownership wiring', () => {
   const source = readFileSync(new URL('../../src/renderer/hooks/useTerminal.ts', import.meta.url), 'utf8');
   it('uses the behavioral connection helper, guards input and never snapshots provisional disk state', () => {
-    expect(source).toContain('void connectTerminalWithHistory({');
+    expect(source).toContain('    connectTerminalWithHistory({');
     expect(source).toContain('if (liveAttached) snapshotSurfaceBuffer(surfaceId, serializeAddon, terminal)');
     expect(source).toContain('if (!isCurrent() || !liveAttached || replayHold.isHolding || !ptyIdRef.current) return;');
     expect(source).toContain('preparation.abort()');
     expect(source).toContain('forgetPendingTerminalHistoryCreation(surfaceId)');
     expect(source).toContain('if (completed) surfaceBufferCache.retire(surfaceId, () => completed)');
-    expect(source).toContain('retained.attach(onData, onExit, (callback) =>');
+    expect(source).toContain('retained.attach(onData, onExit, afterParsed)');
+    expect(source).toMatch(/const afterParsed = \(callback: \(\) => void\) => \{\s*terminal\.write\('', \(\) => \{ if \(isCurrent\(\)\) callback\(\); \}\);/);
     expect(source).toContain('window.wmux.pty.onData(id, onData), window.wmux.pty.onExit(id, onExit)');
     expect(source).toContain('const reflows = !!ptyIdRef.current &&');
     expect(source).toMatch(/create: \(inheritCursor\) => \{[\s\S]*?inheritCursor \? terminal : proposeInitialDims\(fitAddon\)/);

@@ -58,6 +58,9 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.send(IPC_CHANNELS.PTY_WRITE, id, data),
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.send(IPC_CHANNELS.PTY_RESIZE, id, cols, rows),
+    // ConPTY's own screen copy, cleared alongside xterm's (#434).
+    clear: (id: string) =>
+      ipcRenderer.send(IPC_CHANNELS.PTY_CLEAR, id),
     kill: (id: string) =>
       ipcRenderer.send(IPC_CHANNELS.PTY_KILL, id),
     has: (id: string) =>

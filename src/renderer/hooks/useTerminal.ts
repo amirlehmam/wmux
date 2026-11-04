@@ -31,6 +31,7 @@ import { attachVisibleRenderer, rebuildVisibleRenderer, RendererHandle } from '.
 import { WidthChangeRebuild } from '../utils/renderer-rebuild';
 import { terminalNeedsTransparency } from '../utils/terminal-theme';
 import { resetTerminalModes } from '../utils/terminal-reset';
+import { clearTerminalBuffer } from '../utils/terminal-clear';
 import { trackScreenEvents } from '../utils/screen-report';
 import {
   applyManualReset,
@@ -131,6 +132,8 @@ interface UseTerminalResult {
   fit: () => void;
   xtermRef: React.RefObject<Terminal | null>;
   searchAddonRef: React.RefObject<SearchAddon | null>;
+  /** The live PTY's id once attached; null before the first attach. */
+  ptyIdRef: React.RefObject<string | null>;
 }
 
 function treeHasSurface(node: SplitNode, surfaceId: string): boolean {
@@ -1794,6 +1797,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
     // Connect to PTY — either attach to existing (agent-spawned) or create new
 
+    // Runs once xterm has parsed everything written so far, if this mount is still current.
+    const afterParsed = (callback: () => void) => {
+      terminal.write('', () => { if (isCurrent()) callback(); });
+    };
     const attachToPty = (id: string, retained?: RetainedTerminalEvents) => {
       if (!isCurrent()) return;
       liveAttached = true;
@@ -1873,9 +1880,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       };
 
       if (retained) {
-        cleanupFnsRef.current.push(retained.attach(onData, onExit, (callback) => {
-          terminal.write('', () => { if (isCurrent()) callback(); });
-        }));
+        cleanupFnsRef.current.push(retained.attach(onData, onExit, afterParsed));
       } else {
         cleanupFnsRef.current.push(window.wmux.pty.onData(id, onData), window.wmux.pty.onExit(id, onExit));
       }
@@ -1919,7 +1924,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     // `%VAR%` are expanded in the main process by resolveSpawnCwd.
     const effectiveCwd = withPreference(cwd, useStore.getState().workspacePrefs.defaultCwd);
 
-    void connectTerminalWithHistory({
+    connectTerminalWithHistory({
       terminal, surfaceId, bridge: window.wmux?.terminalHistory, hold: replayHold,
       signal: preparation.signal, isCurrent, events: window.wmux.pty,
       has: surfaceId && window.wmux.pty.has ? () => window.wmux.pty.has(surfaceId) : undefined,
@@ -2139,10 +2144,9 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       if (!surfaceId || detail?.surfaceId !== surfaceId) return;
       const term = xtermRef.current;
       if (!term || replayHoldRef.current.isHolding) return;
-      // Buffer coordinates and pending prompt refinements cannot survive a clear.
-      // Keep the prompt list, but drop its live markers and viewport anchor.
-      forgetPromptLog(surfaceId);
-      term.clear();
+      // The prompt list stays; its markers and anchor go, a prompt in progress
+      // is re-based, and ConPTY is cleared before xterm (utils/terminal-clear.ts).
+      clearTerminalBuffer(term, surfaceId, ptyIdRef.current, window.wmux?.pty?.clear);
     };
     document.addEventListener('wmux:clear-terminal-buffer', handler);
     return () => document.removeEventListener('wmux:clear-terminal-buffer', handler);
@@ -2355,5 +2359,5 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     };
   }, [visible, focused, attachGeneration]);
 
-  return { terminalRef, fit, xtermRef, searchAddonRef };
+  return { terminalRef, fit, xtermRef, searchAddonRef, ptyIdRef };
 }
