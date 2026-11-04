@@ -22,8 +22,8 @@
 # through to the hook.
 #
 # POSIX sh, not bash: Claude Code runs hook commands with /bin/sh, which is dash
-# on Debian and Ubuntu. Always exits 0 when it cannot report, as wmux-hook.js
-# does when wmux is gone, so a hook never fails a Claude turn.
+# on Debian and Ubuntu. Always exits 0, whatever happened, so a hook never fails
+# or blocks a Claude turn (see the last line).
 
 [ -n "${WMUX_WSL_NODE-}" ] && [ -x "$WMUX_WSL_NODE" ] && [ -n "${WMUX_CLI-}" ] || exit 0
 
@@ -42,4 +42,11 @@ fi
 # Windows'. Startup prunes ids without a transcript, and it can only read the
 # Windows one; without the mark every WSL conversation looked dead there and
 # restore never typed its `claude --resume` (#428).
-exec "$WMUX_WSL_NODE" "$_wmux_hook_js" "$@" --host wsl
+#
+# Not `exec`: the runtime's status must never become the hook's. With interop
+# off (`[interop] enabled=false`, or systemd dropping the WSLInterop binfmt) the
+# kernel refuses the Windows binary, and dash and busybox then retry it as a
+# shell script, which ends in a syntax error: exit 2, which Claude Code reads as
+# "block the tool" on PreToolUse and "do not stop" on Stop.
+"$WMUX_WSL_NODE" "$_wmux_hook_js" "$@" --host wsl
+exit 0

@@ -448,6 +448,25 @@ describe.skipIf(!hasGitBash)('a hook fired by Claude Code in a WSL pane', () => 
     expect(out).toBe('');
   }, 30_000);
 
+  it('succeeds whatever the runtime exits with, so a hook never blocks a tool or a stop', async () => {
+    // What dash and busybox do with a Windows binary when interop is off: retry
+    // it as a script, fail to parse it, exit 2. Any runtime failure stands in.
+    const runtime = path.join(bin, 'runtime');
+    fs.writeFileSync(runtime, '#!/bin/sh\necho reported\nexit 2\n');
+    fs.chmodSync(runtime, 0o700);
+    const env = paneEnv({
+      WMUX_BASH_SCRIPT: fwd(path.join(ROOT, 'src', 'shell-integration', 'wmux-bash-integration.sh')),
+      WMUX_CLI: fwd(path.join(ROOT, 'resources', 'cli', 'wmux.js')),
+      WMUX_WSL_NODE: fwd(runtime),
+    });
+    for (const args of ['--event PreToolUse', '--event Stop', '--event UserPromptSubmit']) {
+      const { code, out } = await runHookCommand(wslHookCommand(args), env, '{}');
+      expect(code).toBe(0);
+      // The runtime still ran, and its output still reaches Claude Code.
+      expect(out).toBe('reported\n');
+    }
+  }, 30_000);
+
   it('stays silent when the pane has no Windows runtime', async () => {
     const { code, out } = await runHookCommand(wslHookCommand('--event Stop'), paneEnv({
       WMUX_BASH_SCRIPT: fwd(path.join(ROOT, 'src', 'shell-integration', 'wmux-bash-integration.sh')),
