@@ -23,6 +23,7 @@ import { system32, opensshPath } from './system32';
 import { bashAlias, gitBashCandidates, isWslBashLauncher, isGitBashLauncher, gitBashIntegrationArgs, GIT_BASH_LOGIN_ARGS } from './git-bash';
 import { deliverStartupCommandsWhenReady } from './startup-commands';
 import { browserEnvFor, WSL_ENV_PASSTHROUGH } from './pane-browser-env';
+import { noteWslPaneOpened } from './wsl-claude-hooks';
 
 // Applied once, at load, before any PTY can exist, so no pane can exit before
 // the guard is in place (issue #150). node-pty 1.1.0 looks the exit callback up
@@ -839,6 +840,9 @@ export class PtyManager {
 
     const args = gitBashArgs(shell, shellExtraArgs, integrationDir, env)
       ?? [...buildShellArgs(shellType, env, integrationDir, options.cwd), ...shellExtraArgs];
+    // Claude Code in this pane reads the distro's own ~/.claude (#428). This
+    // only arms a timer; the distro is looked at once it is up, off this loop.
+    if (shellType === 'wsl') noteWslPaneOpened();
 
     // Quick-launch startup commands (issue #32). Run them as part of the shell's
     // own initialization — BEFORE the first interactive prompt — instead of

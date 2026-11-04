@@ -21,6 +21,7 @@ vi.mock('../../src/main/qwen-context', () => ({
   ensureQwenContext: vi.fn(), ensureQwenHooks: vi.fn(), ensureQwenMcp: vi.fn(),
   removeQwenContext: vi.fn(), removeQwenHooks: vi.fn(), removeQwenMcp: vi.fn(),
 }));
+vi.mock('../../src/main/wsl-claude-hooks', () => ({ setWslClaudeHooksWanted: vi.fn() }));
 vi.mock('../../src/main/pi-context', () => ({
   ensurePiExtension: vi.fn(), removePiExtension: vi.fn(), removePiContext: vi.fn(),
 }));

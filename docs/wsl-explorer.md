@@ -75,6 +75,39 @@ CLI), so nothing has to be installed in the distro. With it, a `cd` in the pane 
 saved and a restored WSL pane starts there, which is also where `claude --resume`
 looks for its session.
 
+## Claude Code inside WSL
+
+Claude Code running inside the distro reads the distro's own `~/.claude/settings.json`,
+not the Windows one. wmux writes its status hooks there too, so Claude in a
+WSL pane shows its state in the sidebar and its session comes back with
+`claude --resume` when wmux restores the pane (with the bash integration line above, so
+the pane also restores its folder).
+
+It is the **Status hooks** feature of the agent integration (Settings → General), with
+the same consent: nothing is written until you allow it, and switching it off or choosing
+"Never" takes the hooks back out. Your own hooks and settings stay as they are.
+
+wmux never starts a stopped distro to do this. It only looks at distros that are already
+running, when it starts or when you change the setting, and a few seconds after you open a
+WSL pane. A distro that was stopped when you changed the setting is updated the next time
+wmux sees it running. Nothing is written to a distro where Claude Code has no
+`~/.claude/settings.json` yet, or where that file is a link to the Windows one. Docker
+Desktop's own distros are skipped.
+
+Each hook command looks like this:
+
+```sh
+[ ! -f "${WMUX_BASH_SCRIPT%/*}/wmux-hook-wsl.sh" ] || sh "${WMUX_BASH_SCRIPT%/*}/wmux-hook-wsl.sh" --event Stop
+```
+
+Outside a wmux WSL pane it does nothing. Inside one, `wmux-hook-wsl.sh` runs wmux's hook
+script with Windows `node.exe` through WSL interop, as the bash integration does for its
+reports, so nothing has to be installed in the distro. The command names no install path,
+so it keeps working when wmux moves or updates.
+
+If you added wmux's hooks to the distro by hand (the workaround from issue #428), wmux
+replaces those entries with its own. Your other hooks are not touched.
+
 ## What wmux accepts
 
 OSC 7 travels in the terminal output, so anything printed in a pane can send one,

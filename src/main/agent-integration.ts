@@ -4,7 +4,8 @@
  * wmux integrates with Claude Code, OpenCode, Kiro, omp, pi, Grok, agy and Qwen Code by editing files
  * in the user's home: it appends a block to ~/.claude/CLAUDE.md,
  * ~/.config/opencode/AGENTS.md and ~/.omp/agent/AGENTS.md, writes
- * ~/.kiro/steering/wmux.md, registers eight hook families in ~/.claude/settings.json,
+ * ~/.kiro/steering/wmux.md, registers eight hook families in ~/.claude/settings.json
+ * (and in the same file inside each running WSL distro, #428),
  * installs pi's scoped instructions and status extension into
  * ~/.pi/agent/extensions/wmux/, points chrome-devtools-mcp at its own CDP proxy, and
  * installs an OpenCode orchestrator plugin.
@@ -70,6 +71,7 @@ import {
   removeQwenHooks,
   removeQwenMcp,
 } from './qwen-context';
+import { setWslClaudeHooksWanted } from './wsl-claude-hooks';
 import { loadSettings, saveSetting } from './settings-store';
 
 export type IntegrationDecision = 'unset' | 'granted' | 'declined';
@@ -123,6 +125,8 @@ export const INTEGRATION_CONSENT_DETAIL =
   '  • ~/.claude/settings.json\n' +
   '      eight hook families: PostToolUse, Notification, Stop, SubagentStop,\n' +
   '      SessionStart, UserPromptSubmit, PreToolUse and SessionEnd\n' +
+  '  • ~/.claude/settings.json in each running WSL distro (only where Claude Code\n' +
+  '      has a settings file there) — the same hooks, for Claude Code in a WSL pane\n' +
   '  • ~/.pi/agent/extensions/wmux/\n' +
   '      scoped pi instructions and independently enabled sidebar reporting\n' +
   '  • ~/.omp/agent/extensions/wmux.js\n' +
@@ -197,6 +201,11 @@ function applyFeature(feature: IntegrationFeature, enabled: boolean): void {
       // the same job Claude's SessionStart hook does from this toggle.
       if (enabled) { ensureClaudeHooks(); ensureOmpExtension(); ensureGrokHooks(); ensureAgyPlugin(); ensureQwenHooks(); }
       else { removeClaudeHooks(); removeOmpExtension(); removeGrokHooks(); removeAgyPlugin(); removeQwenHooks(); }
+      // Claude Code inside WSL distros (#428): the same hooks in each RUNNING
+      // distro's ~/.claude/settings.json, in both directions. Asynchronous, and
+      // it never wakes a stopped distro, so a stopped one is reconciled when it
+      // is next seen running (wsl-claude-hooks.ts).
+      setWslClaudeHooksWanted(enabled);
       break;
     case 'orchestrator':
       // The Claude Code half of this feature is DEPRECATED (issue #239) and has
