@@ -93,9 +93,7 @@ export default function SurfaceTabBar({
   const ctxSurface = surfaces.find((s) => s.id === ctxMenu?.surfaceId);
   const ctxFilePath = ctxSurface?.type === 'markdown' ? ctxSurface.markdownFilePath
     : ctxSurface?.type === 'code' ? ctxSurface.codeFilePath : undefined;
-  // Which control-cluster dropdown is open, and where to anchor it (issue #34).
-  // Menus render through a portal to document.body so the tab bar's
-  // `overflow: hidden` can no longer clip them (the old caret-dropdown bug).
+  // Portal the menus so the tab bar's overflow cannot clip them.
   const [openMenu, setOpenMenu] = useState<'new' | 'layout' | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -245,7 +243,6 @@ export default function SurfaceTabBar({
     }
   }, [renamingId]);
 
-  // Toggle a portalled dropdown, anchoring it to the trigger caret button.
   const toggleMenu = useCallback((menu: 'new' | 'layout', ref: React.RefObject<HTMLButtonElement | null>) => {
     if (openMenu === menu) { setOpenMenu(null); return; }
     const rect = ref.current?.getBoundingClientRect();
@@ -512,29 +509,41 @@ export default function SurfaceTabBar({
           )}
         </div>
 
-        {/* Layout (split-button): main click = split right, caret = right/down menu */}
         {onSplitRight && (
-          <div className="surface-tab-bar__group">
-            <button
-              className="surface-tab-bar__ctl surface-tab-bar__ctl--layout"
-              onClick={onSplitRight}
-              tabIndex={-1}
-              title={t('surfaceTab.splitRightTooltip', 'Split right ({binding})').replace('{binding}', bindingFor('splitRight'))}
-            >
-              <IconSplit />
-            </button>
-            <button
-              ref={layoutCaretRef}
-              className="surface-tab-bar__ctl surface-tab-bar__caret"
-              onClick={() => toggleMenu('layout', layoutCaretRef)}
-              tabIndex={-1}
-              aria-haspopup="menu"
-              aria-expanded={openMenu === 'layout'}
-              title={t('surfaceTab.splitLayout', 'Split layout…')}
-            >
-              <IconCaret />
-            </button>
-          </div>
+          <button
+            className="surface-tab-bar__ctl surface-tab-bar__ctl--layout"
+            onClick={onSplitRight}
+            tabIndex={-1}
+            aria-label={t('surfaceTab.splitRight', 'Split right')}
+            title={t('surfaceTab.splitRightTooltip', 'Split right ({binding})').replace('{binding}', bindingFor('splitRight'))}
+          >
+            <IconSplit />
+          </button>
+        )}
+        {onSplitDown && (
+          <button
+            className="surface-tab-bar__ctl surface-tab-bar__ctl--layout"
+            onClick={onSplitDown}
+            tabIndex={-1}
+            aria-label={t('surfaceTab.splitDown', 'Split down')}
+            title={`${t('surfaceTab.splitDown', 'Split down')} (${bindingFor('splitDown')})`}
+          >
+            <IconSplitDown />
+          </button>
+        )}
+
+        {(onSplitRight || onSplitDown) && (
+          <button
+            ref={layoutCaretRef}
+            className="surface-tab-bar__ctl surface-tab-bar__caret surface-tab-bar__layout-menu"
+            onClick={() => toggleMenu('layout', layoutCaretRef)}
+            tabIndex={-1}
+            aria-haspopup="menu"
+            aria-expanded={openMenu === 'layout'}
+            title={t('surfaceTab.splitLayout', 'Split layout…')}
+          >
+            <IconCaret />
+          </button>
         )}
 
         {/* Close pane */}
@@ -620,16 +629,18 @@ export default function SurfaceTabBar({
             </>
           ) : (
             <>
-              <button role="menuitem" onClick={() => pickSplit('right')}>
-                <span className="surface-tab-menu__icon"><IconSplit size={15} /></span>
-                {t('surfaceTab.splitRight', 'Split right')}
-                <span className="surface-tab-menu__kbd">Ctrl+D</span>
-              </button>
+              {onSplitRight && (
+                <button role="menuitem" onClick={() => pickSplit('right')}>
+                  <span className="surface-tab-menu__icon"><IconSplit size={15} /></span>
+                  {t('surfaceTab.splitRight', 'Split right')}
+                  <span className="surface-tab-menu__kbd">{bindingFor('splitRight')}</span>
+                </button>
+              )}
               {onSplitDown && (
                 <button role="menuitem" onClick={() => pickSplit('down')}>
                   <span className="surface-tab-menu__icon"><IconSplitDown size={15} /></span>
                   {t('surfaceTab.splitDown', 'Split down')}
-                  <span className="surface-tab-menu__kbd">Ctrl+Shift+D</span>
+                  <span className="surface-tab-menu__kbd">{bindingFor('splitDown')}</span>
                 </button>
               )}
             </>
