@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -42,6 +42,10 @@ beforeEach(() => {
   events.length = 0;
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('WebGL release stops the cursor-blink interval (#421)', () => {
   it('clears the blink manager before disposing the addon on hide/close', () => {
     const handle = attachVisibleRenderer(fakeTerminal());
@@ -56,7 +60,6 @@ describe('WebGL release stops the cursor-blink interval (#421)', () => {
     addons[0].contextLoss!();
     expect(events).toEqual(['blink cleared', 'addon disposed']);
     expect(getActiveWebglCount()).toBe(before - 1);
-    vi.unstubAllGlobals();
   });
 
   it('still disposes the addon when the private field is missing', () => {
