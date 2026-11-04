@@ -72,6 +72,7 @@ import {
 } from '../utils/prompt-anchor';
 import { withClaudeResume } from './claude-resume-command';
 import '@xterm/xterm/css/xterm.css';
+import { trackTerminal, markTerminalDisposed } from '../utils/terminal-census';
 
 declare global {
   interface Window {
@@ -1119,6 +1120,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     });
 
     xtermRef.current = terminal;
+    trackTerminal(terminal);
 
     // Set true by the cleanup below. React StrictMode (dev) double-invokes
     // effects as setup → cleanup → setup, so the terminal can be disposed while
@@ -2113,6 +2115,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
 
       // Dispose terminal
       terminal.dispose();
+      markTerminalDisposed(terminal);
       xtermRef.current = null;
       ptyIdRef.current = null;
     };

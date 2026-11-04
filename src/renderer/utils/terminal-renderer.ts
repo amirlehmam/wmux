@@ -1,6 +1,7 @@
 import type { Terminal } from '@xterm/xterm';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { patchWebglDefaultBackground } from './webgl-default-bg';
+import { trackWebglRenderer, markWebglRendererDisposed } from './terminal-census';
 import { disposeWebglAddon } from './webgl-release';
 
 export type RendererKind = 'dom' | 'webgl';
@@ -49,12 +50,17 @@ export function attachVisibleRenderer(terminal: Terminal): RendererHandle {
     return DOM_RENDERER_HANDLE;
   }
   activeWebglCount++;
+  // The renderer, not the addon: it is what holds the Terminal and the GL
+  // context, and what the cursor-blink leak kept alive (#421).
+  const census: object = (webgl as unknown as { _renderer?: object })._renderer ?? webgl;
+  trackWebglRenderer(census);
 
   let released = false;
   const release = (): void => {
     if (released) return;
     released = true;
     activeWebglCount--;
+    markWebglRendererDisposed(census);
   };
 
   const handle: RendererHandle = {
