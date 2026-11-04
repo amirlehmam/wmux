@@ -106,6 +106,7 @@ export const en = {
   'titlebar.help': 'Help / Tutorial',
   'titlebar.devtools': 'Toggle Developer Tools',
   'titlebar.settings': 'Settings (Ctrl+,)',
+  'titlebar.browserPanel': 'Toggle browser panel',
   'titlebar.gitView': 'Toggle Git view',
   'titlebar.gitViewTab': 'as a tab',
   'titlebar.focusMode': 'Focus mode: dim every pane but the focused one',

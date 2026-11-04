@@ -11,6 +11,7 @@ import { DEFAULT_SHORTCUTS, DEFAULT_SIDEBAR_PREFS } from '../../src/renderer/sto
 
 const store = create(() => ({
   sidebarVisible: true,
+  browserOpen: false,
   sidebarPrefs: DEFAULT_SIDEBAR_PREFS,
   shortcuts: DEFAULT_SHORTCUTS,
   savedLayouts: [],
@@ -26,7 +27,7 @@ let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
-  store.setState({ sidebarVisible: true });
+  store.setState({ sidebarVisible: true, browserOpen: false, shortcuts: DEFAULT_SHORTCUTS });
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -41,11 +42,13 @@ function renderTitlebar() {
   const onToggleExplorer = vi.fn();
   function Header() {
     const sidebarVisible = store(s => s.sidebarVisible);
+    const browserOpen = store(s => s.browserOpen);
     return React.createElement(Titlebar, {
       sidebarVisible, onToggleSidebar: toggleSidebar,
       notifications: [], workspaceNames: new Map(), notificationPanelOpen: false,
       onToggleNotificationPanel: vi.fn(), onNotificationJump: vi.fn(), onMarkAllNotificationsRead: vi.fn(),
       explorerOpen: true, onToggleExplorer,
+      browserOpen, onToggleBrowser: () => store.setState(s => ({ browserOpen: !s.browserOpen })),
     });
   }
   act(() => root.render(React.createElement(Header)));
@@ -87,6 +90,27 @@ describe('titlebar sidebar toggle', () => {
     expect(toggleSidebar).toHaveBeenCalledTimes(2);
   });
 
+  it('toggles the browser panel and reflects external visibility and shortcut changes', () => {
+    renderTitlebar();
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Toggle browser panel"]')!;
+    expect(button).not.toBeNull();
+    expect(button.title).toBe('Toggle browser panel (Ctrl+Shift+I)');
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(button.classList.contains('titlebar__btn--active')).toBe(false);
+    act(() => button.click());
+    expect(store.getState().browserOpen).toBe(true);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(button.classList.contains('titlebar__btn--active')).toBe(true);
+    act(() => button.click());
+    expect(store.getState().browserOpen).toBe(false);
+    act(() => store.setState({
+      browserOpen: true,
+      shortcuts: { ...DEFAULT_SHORTCUTS, openBrowser: { key: 'b', alt: true } },
+    }));
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(button.title).toBe('Toggle browser panel (Alt+B)');
+  });
+
   it('reflects sidebar visibility changes made outside the titlebar', () => {
     renderTitlebar();
     act(() => store.setState({ sidebarVisible: false }));
@@ -100,6 +124,8 @@ describe('titlebar sidebar toggle', () => {
     const titlebar = app.match(/<Titlebar[\s\S]*?\/>/)?.[0];
     expect(titlebar).toContain('sidebarVisible={sidebarVisible}');
     expect(titlebar).toContain('onToggleSidebar={toggleSidebar}');
+    expect(titlebar).toContain('browserOpen={sideBrowserVisible}');
+    expect(titlebar).toContain('onToggleBrowser={toggleSideBrowser}');
     expect(app).toContain('className="sidebar-expand-strip"');
     expect(app).toContain('onCollapse={toggleSidebar}');
   });

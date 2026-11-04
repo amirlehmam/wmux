@@ -10,7 +10,7 @@ import logoSrc from '../../../../resources/icons/icon.svg';
 import NotificationBell from './NotificationBell';
 import UpdateBadge from './UpdateBadge';
 import KeepAwakeMenu from './KeepAwakeMenu';
-import { IconSettings, IconPixelAgent, IconFocus, IconFolder, IconSidebar, IconGitBranch } from './icons';
+import { IconSettings, IconPixelAgent, IconFocus, IconFolder, IconSidebar, IconGitBranch, IconBrowser } from './icons';
 import WindowControls, { useIsFramelessWindow } from './WindowControls';
 import { NotificationInfo, WorkspaceId, PaneId, SurfaceId } from '../../../shared/types';
 import { useT } from '../../i18n';
@@ -39,6 +39,8 @@ interface TitlebarProps {
    *  panel once it has been closed. */
   explorerOpen?: boolean;
   onToggleExplorer?: () => void;
+  browserOpen?: boolean;
+  onToggleBrowser?: () => void;
   /** Project Git view (#362) of the active workspace: open beside the focused
    *  pane, or close. Lit while the workspace shows one. */
   gitOpen?: boolean;
@@ -64,6 +66,8 @@ export default function Titlebar({
   onToggleExplorer,
   gitOpen,
   onToggleGit,
+  browserOpen,
+  onToggleBrowser,
 }: TitlebarProps) {
   const t = useT();
   const sidebarLabel = sidebarVisible
@@ -73,6 +77,8 @@ export default function Titlebar({
   // advertised as Ctrl+Shift+X would teach the user a key that does nothing.
   const explorerBinding = formatBinding(useStore((s) => s.shortcuts.toggleExplorer));
   const explorerLabel = t('shortcutAction.toggleExplorer', 'Toggle file explorer');
+  const browserBinding = formatBinding(useStore((s) => s.shortcuts.openBrowser));
+  const browserLabel = t('titlebar.browserPanel', 'Toggle browser panel');
   const gitBinding = formatBinding(useStore((s) => s.shortcuts.openGitPanel));
   const gitLabel = t('titlebar.gitView', 'Toggle Git view');
   // Clear-transparency windows are frameless and have no native caption
@@ -117,6 +123,17 @@ export default function Titlebar({
             aria-pressed={!!explorerOpen}
           >
             <IconFolder />
+          </button>
+        )}
+        {onToggleBrowser && (
+          <button
+            className={`titlebar__btn${browserOpen ? ' titlebar__btn--active' : ''}`}
+            onClick={onToggleBrowser}
+            title={browserBinding ? `${browserLabel} (${browserBinding})` : browserLabel}
+            aria-label={browserLabel}
+            aria-pressed={!!browserOpen}
+          >
+            <IconBrowser />
           </button>
         )}
         {onToggleGit && (
