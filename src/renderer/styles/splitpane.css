@@ -286,17 +286,18 @@ html.wmux-transparent .split-divider--horizontal {
   transition: color 0.1s ease, background 0.1s ease;
 }
 .surface-tab-bar__caret { min-width: 16px; }
+.surface-tab-bar__layout-menu { display: none; }
 .surface-tab-bar__ctl:hover { background: rgba(var(--ui-overlay-rgb),0.10); color: var(--ui-text-primary); }
 /* per-control accent colors */
 .surface-tab-bar__ctl--new:hover { color: #5fb85f; background: rgba(95,184,95,0.12); }
 .surface-tab-bar__ctl--layout:hover { color: var(--ui-accent); background: rgba(var(--ui-accent-rgb), 0.12); }
 .surface-tab-bar__ctl--close:hover { color: #ff6b6b; background: rgba(255,100,100,0.14); }
 
-/* The layout menu retains both split actions when a pane cannot fit their
-   dedicated shortcut button. Keep New and Close reachable at narrow widths. */
+/* Use a compact dropdown instead of the split buttons in narrow panes. */
 @container (max-width: 300px) {
   .surface-tab-bar__cluster { gap: 0; padding-left: 2px; }
   .surface-tab-bar__ctl--layout { display: none; }
+  .surface-tab-bar__layout-menu { display: flex; }
   .surface-tab { padding: 0 5px; gap: 4px; }
 }
 
