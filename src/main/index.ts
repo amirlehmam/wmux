@@ -55,6 +55,7 @@ import {
 import { randomUUID } from 'crypto';
 import { SessionFlushWaiters, SESSION_FLUSH_TIMEOUT_MS } from './session-flush';
 import { hardenWebviewPreferences } from './webview-prefs';
+import { ignoreMenuShortcutsInGuest } from './webview-menu-shortcuts';
 import { applyHistoryRestore, claimHistoryRestore, forgetHistoryRestore, parkHistoryRestore } from './browser-history-restore';
 import { stampAgentSessionIds } from './agent-session-persistence';
 import { noteIconRevision } from './icon-cache';
@@ -1064,6 +1065,10 @@ function hardenWebContents(): void {
     // would apply two zoom steps to the same wheel input.
     if (type === 'webview') {
       installPageZoom(contents);
+      // Electron's default menu would otherwise take keys the page leaves
+      // unhandled: Ctrl+W ran Window → Close and quit wmux. See
+      // webview-menu-shortcuts.ts.
+      ignoreMenuShortcutsInGuest(contents);
     }
 
     // Enforce safe webview preferences regardless of attributes set in the DOM,
