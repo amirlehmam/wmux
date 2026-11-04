@@ -5,6 +5,7 @@ import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, t
   type WorktreeCloseMode, type WorktreeInspectResult, type WorktreeRemoveResult,
 } from '../shared/types';
 import type { BrowserHistory } from '../shared/browser-history';
+import type { GuestKey } from '../shared/guest-key';
 import type { TerminalHistoryBridge, TerminalHistoryState } from '../shared/terminal-history';
 import type {
   RemoteConsoleBridge,
@@ -166,6 +167,12 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.invoke(IPC_CHANNELS.BROWSER_GET_HISTORY, webContentsId),
     focusDevTools: (webContentsId: number): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.BROWSER_FOCUS_DEVTOOLS, webContentsId),
+    /** Shortcut-shaped keys pressed inside a browser pane's page. See webview-guest-keys.ts. */
+    onGuestKey: (cb: (webContentsId: number, key: GuestKey) => void) => {
+      const handler = (_event: unknown, webContentsId: number, key: GuestKey) => cb(webContentsId, key);
+      ipcRenderer.on(IPC_CHANNELS.BROWSER_GUEST_KEY, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.BROWSER_GUEST_KEY, handler);
+    },
   },
   agent: {
     list: (workspaceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_LIST, workspaceId),

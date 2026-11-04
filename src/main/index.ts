@@ -56,6 +56,7 @@ import { randomUUID } from 'crypto';
 import { SessionFlushWaiters, SESSION_FLUSH_TIMEOUT_MS } from './session-flush';
 import { hardenWebviewPreferences } from './webview-prefs';
 import { ignoreMenuShortcutsInGuest } from './webview-menu-shortcuts';
+import { forwardGuestKeys } from './webview-guest-keys';
 import { applyHistoryRestore, claimHistoryRestore, forgetHistoryRestore, parkHistoryRestore } from './browser-history-restore';
 import { stampAgentSessionIds } from './agent-session-persistence';
 import { noteIconRevision } from './icon-cache';
@@ -1069,6 +1070,9 @@ function hardenWebContents(): void {
       // unhandled: Ctrl+W ran Window → Close and quit wmux. See
       // webview-menu-shortcuts.ts.
       ignoreMenuShortcutsInGuest(contents);
+      // ...and the desktop's tab-level shortcuts get them instead (Ctrl+W closes
+      // the browser tab). See webview-guest-keys.ts.
+      forwardGuestKeys(contents);
     }
 
     // Enforce safe webview preferences regardless of attributes set in the DOM,
