@@ -431,6 +431,7 @@ export const en = {
   'shortcutAction.markWorkspaceRead': 'Mark workspace read',
   'shortcutAction.toggleShortcutCheatSheet': 'Shortcut cheat-sheet',
   'shortcutAction.resetTerminal': 'Reset terminal state',
+  'shortcutAction.clearTerminalBuffer': 'Clear terminal buffer',
   'shortcutAction.toggleExplorer': 'Toggle file explorer',
   // File explorer panel
   'explorer.title': 'Explorer',

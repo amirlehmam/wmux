@@ -1526,6 +1526,10 @@ export default function App() {
 
     if (isPaletteResetAction(action)) {
       dispatchPaletteReset(action, terminalSurfaceId);
+    } else if (action === 'clearTerminalBuffer') {
+      if (terminalSurfaceId) {
+        document.dispatchEvent(new CustomEvent('wmux:clear-terminal-buffer', { detail: { surfaceId: terminalSurfaceId } }));
+      }
     } else if (action === 'togglePromptOutline') {
       togglePromptOutlineFor(
         terminalSurfaceId,

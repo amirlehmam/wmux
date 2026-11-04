@@ -2133,6 +2133,21 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
     return () => document.removeEventListener('wmux:paste-terminal', handler);
   }, [surfaceId]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!surfaceId || detail?.surfaceId !== surfaceId) return;
+      const term = xtermRef.current;
+      if (!term || replayHoldRef.current.isHolding) return;
+      // Buffer coordinates and pending prompt refinements cannot survive a clear.
+      // Keep the prompt list, but drop its live markers and viewport anchor.
+      forgetPromptLog(surfaceId);
+      term.clear();
+    };
+    document.addEventListener('wmux:clear-terminal-buffer', handler);
+    return () => document.removeEventListener('wmux:clear-terminal-buffer', handler);
+  }, [surfaceId]);
+
   // Manual pane recovery (issue #175). The PTY-exit path above handles the case
   // where wmux can see the application die; this handles the one where it
   // cannot — a TUI that crashed *inside* a still-running shell. wmux has no
