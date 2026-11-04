@@ -59,6 +59,27 @@ export function matchesBinding(
   return keyMatch && ctrlMatch && shiftMatch && altMatch;
 }
 
+/**
+ * The action a key forwarded from a browser pane's page should run, or null.
+ *
+ * Decided by the first of the user's bindings the key matches: when that
+ * action is not GLOBAL_IN_PAGE the key stays with the page, even if a later
+ * binding would also match, exactly as the document-level handler stops at
+ * the first match. An auto-repeat never answers, so a held Ctrl+W closes one
+ * tab, not one per repeat.
+ */
+export function guestShortcutAction(
+  key: GuestKey,
+  shortcuts: Readonly<Record<ShortcutAction, ShortcutBinding>>,
+): ShortcutAction | null {
+  if (key.repeat) return null;
+  for (const [action, binding] of Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]) {
+    if (!matchesBinding(key, binding)) continue;
+    return GLOBAL_IN_PAGE.has(action) ? action : null;
+  }
+  return null;
+}
+
 // ─── Spatial pane navigation ─────────────────────────────────────────────────
 
 interface PaneRect {
@@ -537,11 +558,8 @@ export function useKeyboardShortcuts(
     }
 
     function runGuestKey(key: GuestKey): void {
-      for (const [action, binding] of Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][]) {
-        if (!matchesBinding(key, binding)) continue;
-        if (GLOBAL_IN_PAGE.has(action)) handlers[action]?.();
-        return;
-      }
+      const action = guestShortcutAction(key, shortcuts);
+      if (action) handlers[action]?.();
     }
 
     // The key handleGuestKey parked while it moved focus to the page's pane.
