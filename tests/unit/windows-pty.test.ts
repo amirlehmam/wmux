@@ -67,7 +67,7 @@ describe('useTerminal wiring', () => {
 
     // Runtime lookup/restore ordering is exercised by the production helper's
     // behavioral lifecycle tests. The initial synchronous fit still precedes it.
-    const connection = USE_TERMINAL.indexOf('void connectTerminalWithHistory({');
+    const connection = USE_TERMINAL.indexOf('    connectTerminalWithHistory({');
     expect(connection).toBeGreaterThan(fit);
     expect(USE_TERMINAL.indexOf('restoreLive: restoreSurfaceState', connection)).toBeGreaterThan(connection);
   });

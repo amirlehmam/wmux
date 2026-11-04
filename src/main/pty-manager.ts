@@ -615,6 +615,16 @@ function wslCdArg(cwd: string | undefined): string {
 }
 
 /**
+ * The shell spec a live PTY reports back on reuse: the caller's own spec when
+ * the requested executable is what runs, the substituted shell when it is not,
+ * and nothing when no spec resolved at all (see the note at the call site).
+ */
+function launchShellFor(spec: string, requested: string | undefined, shell: string): string {
+  if (requested === undefined) return '';
+  return requested === shell ? spec : shell;
+}
+
+/**
  * Arguments appended after the shell-type args. A spec's own args apply only
  * when the REQUESTED executable resolved — a fallback to the default shell
  * must not inherit ssh's destination. A bare "Git Bash" alias that landed on
@@ -770,7 +780,7 @@ export class PtyManager {
     // WSL shell substituted for a POSIX directory. Reuse returns this snapshot.
     // No spec at all stays empty: the resolved path is versioned for a Store
     // PowerShell (#334), so inheriting it would pin tabs to a folder an update deletes.
-    const launchShell = requested === undefined ? '' : requested === shell ? options.shell : shell;
+    const launchShell = launchShellFor(options.shell, requested, shell);
     const shellExtraArgs = extraArgsForSpec(spec, requested);
     const shellType = getShellType(shell);
     const integrationDir = getShellIntegrationPath();
@@ -1064,6 +1074,33 @@ export class PtyManager {
       entry.pty.resize(cols, rows);
     } catch {
       // Exited between the liveness check and the call — nothing to resize.
+    }
+  }
+
+  /**
+   * Drop ConPTY's own copy of the screen, to match a renderer-side clear (#434).
+   *
+   * ConPTY renders the console into a buffer of its own and diffs every repaint
+   * against it. Clearing xterm alone leaves that buffer, and the cursor in it,
+   * where they were: the next echoed keystroke comes back as an absolute CUP to
+   * the old bottom row, so the prompt jumps down over the emptied screen. Clearing
+   * ConPTY first re-bases it to the top, which is what VS Code does for its
+   * "Clear" too.
+   *
+   * node-pty's `clear()` is a no-op outside ConPTY, and the method is checked for
+   * rather than assumed so a backend without it (a test double, an older build)
+   * is a no-op here as well.
+   */
+  clear(id: SurfaceId): void {
+    const entry = this.ptys.get(id);
+    // Same liveness rule as resize(): node-pty throws for an exited pty.
+    if (!entry?.alive) return;
+    const ptyProcess = entry.pty as Partial<Pick<pty.IPty, 'clear'>>;
+    if (typeof ptyProcess.clear !== 'function') return;
+    try {
+      ptyProcess.clear();
+    } catch {
+      // Exited between the liveness check and the call — nothing to clear.
     }
   }
 

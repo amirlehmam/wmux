@@ -755,6 +755,13 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     remoteTaps.noteResize(id);
   });
 
+  // Clear terminal buffer (#434). Only the window that owns the pane may clear
+  // its ConPTY; any other sender, or a pane with no live PTY, is ignored.
+  ipcMain.on(IPC_CHANNELS.PTY_CLEAR, (event, id: unknown) => {
+    if (!ownsLiveSurface(id, event.sender)) return;
+    ptyManager.clear(id);
+  });
+
   ipcMain.on(IPC_CHANNELS.PTY_KILL, (_event, id: SurfaceId) => {
     const closedHistory = terminalHistory.closeSurface(_event.sender.id, id);
     const owner = surfaceOwners.get(id);

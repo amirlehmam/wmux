@@ -426,6 +426,10 @@ export function useKeyboardShortcuts(
       copy: copySelection,
       paste: pasteIntoFocusedTerminal,
       resetTerminal: resetFocusedTerminal,
+      clearTerminalBuffer: () => {
+        const surfaceId = focusedTerminalSurfaceId();
+        if (surfaceId) fire('wmux:clear-terminal-buffer', { surfaceId });
+      },
       // Issue #207. The bodies live in store/prompt-actions.ts so the command
       // palette runs the same code — see the note there.
       // The pane context is what lets `outlineMode: 'pane'` put the outline in

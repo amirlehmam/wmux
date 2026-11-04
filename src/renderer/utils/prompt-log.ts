@@ -463,6 +463,50 @@ export function forgetSurface(surfaceId: string): void {
   anchor.forgetSurface(surfaceId);
 }
 
+/** A kept absolute line, re-based so that row `kept` becomes line 0; null when it is gone. */
+function rebaseLine(line: number | null, kept: number): number | null {
+  if (line === null || line < kept) return null;
+  return line - kept;
+}
+
+/** Move a pending prompt's marks onto the coordinates `clear()` leaves behind. */
+function rebaseShellState(surfaceId: string, kept: number): void {
+  const state = shellState.get(surfaceId);
+  if (!state) return;
+  const inputLine = rebaseLine(state.inputLine, kept);
+  if (state.inputLine !== null && inputLine === null) {
+    shellState.delete(surfaceId);
+    return;
+  }
+  state.promptLine = rebaseLine(state.promptLine, kept);
+  state.inputLine = inputLine;
+}
+
+/**
+ * Prepare a surface for xterm's `clear()` (Clear terminal buffer, #434). Call it
+ * BEFORE the clear, while the buffer still has the coordinates it describes.
+ *
+ * `clear()` keeps exactly one row, the cursor's, and makes it line 0. The marks
+ * and the anchor are tied to rows that are about to vanish, so they go, exactly
+ * as in `forgetSurface`. A prompt in progress is different: the shell already
+ * sent `133;A` and `133;B` for the prompt still on screen and will not send them
+ * again before the user presses Enter, so deleting that state would drop the
+ * next command from the log. It is re-based instead, onto the row that survives.
+ * A mark that was on a row above the cursor (a two-line prompt, input that has
+ * wrapped) points at text that is gone: the prompt line falls back to the input
+ * line, and input whose start is gone cannot be read back, so that prompt alone
+ * is given up.
+ */
+export function rebaseForClear(terminal: Terminal, surfaceId: string): void {
+  const buf = terminal.buffer.active;
+  rebaseShellState(surfaceId, buf.baseY + buf.cursorY);
+  for (const key of Array.from(tintRetries.keys())) {
+    if (key.startsWith(`${surfaceId}:`)) cancelTintRetry(key);
+  }
+  marks.forgetSurface(surfaceId);
+  anchor.forgetSurface(surfaceId);
+}
+
 /** Test seam. */
 export function __resetPromptLog(): void {
   shellState.clear();
