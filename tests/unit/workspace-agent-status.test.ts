@@ -36,15 +36,23 @@ afterEach(() => {
   store.setState({ agentIdentities: {}, agentDetections: {} });
 });
 
-function render(states: Record<string, DeclaredAgentSnapshot> = {}, overrides: Partial<WorkspaceInfo> = {}) {
+function render(
+  states: Record<string, DeclaredAgentSnapshot> = {},
+  overrides: Partial<WorkspaceInfo> = {},
+  history: Pick<React.ComponentProps<typeof WorkspaceRow>, 'hookActivity' | 'claudeActivity'> = {},
+) {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
-  act(() => root!.render(React.createElement(WorkspaceRow, {
-    workspace: { ...workspace, ...overrides }, isActive: false,
-    onSelect: () => {}, onClose: () => {}, agentStates: states,
-    hookActivity: {}, claudeActivity: {},
-  })));
+  const update = (nextStates: Record<string, DeclaredAgentSnapshot>) => {
+    act(() => root!.render(React.createElement(WorkspaceRow, {
+      workspace: { ...workspace, ...overrides }, isActive: false,
+      onSelect: () => {}, onClose: () => {}, agentStates: nextStates,
+      hookActivity: {}, claudeActivity: {}, ...history,
+    })));
+  };
+  update(states);
+  return update;
 }
 /** `base` plus its BEM modifier, or `base` alone when the chain yielded none. */
 function withModifier(base: string, modifier: string): string {
@@ -64,7 +72,7 @@ describe('workspace status shares the roster state (#235)', () => {
     render({ a: { state: 'unknown' }, b: { state: 'unknown' }, c: { state: 'unknown' } });
     const detail = () => [...container.querySelectorAll('.workspace-row__sessions .workspace-row__agent-detail')]
       .map(el => el.textContent);
-    expect(detail()).toEqual(['Idle', 'Idle', 'Idle']);
+    expect(detail()).toEqual([]);
     act(() => store.setState({ agentDetections: {
       a: { agent: 'codex', state: 'working' },
       b: { agent: 'codex', state: 'idle' }, c: { agent: 'codex', state: 'idle' },
@@ -78,6 +86,52 @@ describe('workspace status shares the roster state (#235)', () => {
     expectStatus('Idle', 'idle', 'idle');
     expect(detail()).toEqual(['Idle', 'Idle', 'Idle']);
   });
+  it('removes released pi rows despite retained tool history and restores shell status', () => {
+    const now = Date.now();
+    const update = render({
+      a: { state: 'idle', sessionId: '/sessions/a.jsonl', sessionProvider: 'pi' },
+      b: { state: 'idle', sessionId: '/sessions/b.jsonl', sessionProvider: 'pi' },
+    }, { shellState: 'running' }, {
+      hookActivity: { a: { lastTool: 'Edit', toolCount: 1, lastSeen: now } },
+      claudeActivity: { b: { agents: [], lastTool: 'Bash', lastUpdate: now, isDone: false } },
+    });
+    expect(container.querySelectorAll('.workspace-row__session')).toHaveLength(2);
+    update({ a: { state: 'unknown', sessionId: null }, b: { state: 'unknown', sessionId: null } });
+    expect(container.querySelectorAll('.workspace-row__session')).toHaveLength(0);
+    expectStatus('Running', 'running', 'running');
+  });
+
+  it('preserves first-observer skill selection while ignoring released panes', () => {
+    const update = render({ a: { state: 'idle' }, b: { state: 'idle' } }, {}, {
+      claudeActivity: {
+        a: { agents: [], activeSkill: null },
+        b: { agents: [], activeSkill: 'debugging' },
+      },
+    });
+    expect(container.querySelector('.workspace-row__skill')).toBeNull();
+    update({ a: { state: 'unknown', sessionId: null }, b: { state: 'idle' } });
+    expect(container.querySelector('.workspace-row__skill')?.textContent).toBe('debugging');
+  });
+
+  it('shows genuinely present unknown agents as silent, not idle', () => {
+    store.setState({ agentIdentities: {
+      a: { kind: 'pi', source: 'command' }, b: { kind: 'codex', source: 'command' },
+    } });
+    render({ a: { state: 'unknown' } }, { shellState: 'running' });
+    expect([...container.querySelectorAll('.workspace-row__sessions .workspace-row__agent-detail')]
+      .map(el => el.textContent)).toEqual(['reports no state', 'reports no state']);
+    expect(container.querySelectorAll('.workspace-row__session--idle')).toHaveLength(0);
+    expectStatus('Running', 'running', 'running');
+  });
+
+  it('includes silent agents in mixed-session totals without labeling their detail idle', () => {
+    store.setState({ agentIdentities: { b: { kind: 'codex', source: 'command' } } });
+    render({ a: { state: 'working' } });
+    expectStatus('1/2 running', 'working', 'running');
+    expect([...container.querySelectorAll('.workspace-row__sessions .workspace-row__agent-detail')]
+      .map(el => el.textContent)).toEqual(['Running…', 'reports no state']);
+  });
+
   it('updates the mounted row for a detected working remote tab without hook reports', () => {
     render();
     expectStatus('Idle', 'done', 'idle');

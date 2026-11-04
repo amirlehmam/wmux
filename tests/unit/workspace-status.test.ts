@@ -18,7 +18,6 @@ function inputs(over: Partial<StatusTextInputs> = {}): StatusTextInputs {
     workingSessions: 0,
     blockedSessions: 0,
     currentToolLabel: null,
-    claudeIsIdle: false,
     ...over,
   };
 }
@@ -31,7 +30,7 @@ describe('resolveStatusText — declared work outranks the shell', () => {
   //
   // `workingSessions` used to be consulted ONLY inside the `sessionCount >= 2`
   // branch, so a single session fell past it, past the null tool label, past
-  // claudeIsIdle (false — it early-returns unless the shell says "running"),
+  // the idle claim (none here),
   // and landed on the shell's own state. A shell reporting idle (the Claude
   // Code TUI is not a "running command") then rendered the row "Idle" while the
   // agent worked — the authoritative signal computed, then dropped.
@@ -79,7 +78,7 @@ describe('resolveStatusText — active subagents exclude completed history', () 
       agents.forEach((agent, i) => { agent.done = i < finished; });
       const view = agentsForWorkspace(tree, activity, new Map(), now);
       expect(resolveStatusText(inputs({
-        runningAgentCount: view.running, claudeIsIdle: true,
+        runningAgentCount: view.running, agentCounts: counts({ idle: 1 }),
       }), t)).toBe(expected);
     }
     expect(agentsForWorkspace(tree, activity, new Map(), now).total).toBe(5);
@@ -111,8 +110,8 @@ describe('resolveStatusText — established precedence is unchanged', () => {
       .toBe('Idle');
   });
 
-  it('claudeIsIdle stops a busy shell from reading as Running', () => {
-    const s = inputs({ sessionCount: 1, workingSessions: 0, claudeIsIdle: true, shellState: 'running' });
+  it('an idle claim stops a busy shell from reading as Running', () => {
+    const s = inputs({ sessionCount: 1, workingSessions: 0, agentCounts: counts({ idle: 1 }), shellState: 'running' });
     expect(resolveStatusText(s, t)).toBe('Idle');
   });
 
@@ -153,7 +152,7 @@ describe('statusClassFor — the colour must not contradict the words', () => {
   });
 
   it('an idle session with a busy shell stays idle, not running', () => {
-    const s = inputs({ sessionCount: 1, workingSessions: 0, claudeIsIdle: true, shellState: 'running' });
+    const s = inputs({ sessionCount: 1, workingSessions: 0, agentCounts: counts({ idle: 1 }), shellState: 'running' });
     expect(statusClassFor(s)).toBe('workspace-row__status--idle');
     expect(resolveStatusText(s, t)).toBe('Idle');
   });
@@ -228,9 +227,9 @@ describe('mergedAgentSignals — the roster joins the older signals (issue #235)
     expect(mergedAgentSignals(s)).toEqual({ blocked: 3, working: 2, idle: false });
   });
 
-  it('an idle claim from either source reads as idle', () => {
+  it('only a roster idle claim reads as idle', () => {
     expect(mergedAgentSignals(inputs({ agentCounts: counts({ idle: 1 }) })).idle).toBe(true);
-    expect(mergedAgentSignals(inputs({ claudeIsIdle: true })).idle).toBe(true);
+    expect(mergedAgentSignals(inputs()).idle).toBe(false);
     expect(mergedAgentSignals(inputs({ agentCounts: counts({ unknown: 2 }) })).idle).toBe(false);
   });
 

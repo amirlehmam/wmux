@@ -1,5 +1,5 @@
 import { SplitNode, SurfaceId, PaneId } from '../../shared/types';
-import { surfaceAgentState, type DetectionSnapshot } from './agent-rollup';
+import type { AgentPresenceState, AgentRosterEntry, DeclaredAgentSnapshot } from './agent-rollup';
 import { runningBackgroundShells } from './agent-view';
 
 /** One sidebar hook-activity entry — written by App.tsx from Claude Code hook events. */
@@ -18,64 +18,39 @@ interface ObserverActivity {
   isDone: boolean;
 }
 
-/** How long a hook/observer signal counts as "actively working" (ms). */
+/** Tool labels expire independently of the agent's declared run state. */
 export const SESSION_ACTIVITY_TTL_MS = 5000;
 
-/** One answer the blocked agent declared it will accept (issue #128). */
+/** An answer is only offerable when the agent explicitly declared it. */
 export interface AgentChoiceView {
   id: string;
   label: string;
 }
 
-/** Declared state pushed by the agent itself (src/main/agent-state.ts, issue #128). */
-export interface DeclaredAgentState {
-  state: 'blocked' | 'working' | 'idle' | 'unknown';
-  blockedReason?: string | null;
-  choices?: AgentChoiceView[];
-  answeredAt?: number | null;
-  /** When this pane became blocked — see AgentStateRecord.blockedSince. */
-  blockedSince?: number | null;
-  /** Which turn and session a question belongs to — see isCurrentQuestion. */
-  idleSince?: number;
-  sessionId?: string | null;
-}
-
-/** One agent session inside a workspace (legacy name retained for callers). */
+/** Sidebar details enrich roster membership; history cannot establish presence. */
 export interface ClaudeSessionView {
   surfaceId: SurfaceId;
   paneId: PaneId;
   /** User-set tab title, else folder name of the pane's cwd — distinguishes sessions at a glance. */
   label: string;
+  state: AgentPresenceState;
   working: boolean;
   /**
-   * Shells this pane's agent left running in the background (#276). Says
-   * nothing about `working`: the agent may be idle at its prompt while they
-   * run, and a sub-line reading "Idle" over a running test suite is the bug.
+   * Shells the agent left running are independent of its own turn state: an
+   * idle agent can still have tests running in the background.
    */
   backgroundShells: number;
-  /**
-   * The agent is parked on a human — a permission prompt, a question, a menu.
-   * Distinct from `working`: a blocked agent emits nothing while it waits, so
-   * the freshness heuristic alone would decay it to idle and hide the one pane
-   * that actually needs the user (issue #128).
-   */
+  /** A blocked agent needs the human even when every activity signal is quiet. */
   blocked: boolean;
   /**
-   * The agent ended its turn on a question that is still current. Not
-   * `blocked`: nothing is parked behind it and there is nothing to answer
-   * from here, but the row must not read "Idle" under a header that says
-   * "Question for you".
+   * A finished turn asking a question is distinct from a blocked permission
+   * prompt: nothing is parked behind it and there is nothing to approve here.
    */
   question: boolean;
-  /** What it is waiting for, when the agent said. */
   blockedReason: string | null;
-  /**
-   * Answers offerable from the sidebar. Empty for a blocked pane whose agent
-   * declared none — still worth showing as "needs you", just not answerable
-   * from here.
-   */
+  /** Only choices explicitly declared for a live block may be offered. */
   choices: AgentChoiceView[];
-  /** An answer has been relayed and the agent has not yet reported back. */
+  /** Relaying an answer does not clear the block until the agent confirms. */
   answerPending: boolean;
   /** Raw tool name while working, null when idle or unknown. */
   tool: string | null;
@@ -85,16 +60,11 @@ export interface ClaudeSessionView {
 export interface WorkspaceSessionsView {
   /** Tree order — stable across renders. */
   sessions: ClaudeSessionView[];
-  /** Number of sessions currently working. */
   working: number;
-  /** Number of sessions parked on the user — the "who needs me?" count. */
   blocked: number;
   /**
-   * Earliest block still open in this workspace, or null when none is.
-   *
-   * The row is one row for N panes, so it reports the OLDEST wait rather than
-   * the newest: a workspace where something has been stuck for ten minutes is
-   * not made less urgent by a second agent blocking just now.
+   * A workspace represents several panes, so the oldest open block determines
+   * how long it has needed the human. Null means nothing is currently blocked.
    */
   oldestBlockedSince: number | null;
 }
@@ -135,70 +105,25 @@ function cwdBasename(cwd: string | undefined): string | null {
 }
 
 /**
- * Fold declared state, screen detection and hook/observer activity for a surface.
- *
- * Declared state beats inference: the agent knows what it is doing, whereas
- * the 5s freshness window is only a guess for agents that never told us.
- * `unknown` falls through to screen detection, then to fresh hook/observer
- * activity, matching the summary and tab dots rather than asserting idle.
- */
-function resolveActivity(
-  hook: HookActivityEntry | undefined,
-  observed: ObserverActivity | undefined,
-  declared: DeclaredAgentState | undefined,
-  now: number,
-  detection: DetectionSnapshot | undefined,
-): Pick<ClaudeSessionView, 'working' | 'blocked' | 'question' | 'blockedReason' | 'tool' | 'choices' | 'answerPending'> {
-  const hookFresh = !!hook && now - hook.lastSeen < SESSION_ACTIVITY_TTL_MS;
-  const obsFresh = !!observed && !observed.isDone && !!observed.lastTool
-    && now - observed.lastUpdate < SESSION_ACTIVITY_TTL_MS;
-
-  // Use the same declared > detected precedence as the workspace summary
-  // and tab dots. A saved Codex handle declares `unknown`, not `idle`.
-  const state = surfaceAgentState(declared, detection)?.state;
-  const blocked = state === 'blocked';
-  const working = state ? state === 'working' : (hookFresh || obsFresh);
-
-  let tool: string | null = null;
-  if (working && obsFresh) tool = observed.lastTool;
-  else if (working && hookFresh && hook.lastTool) tool = hook.lastTool;
-
-  // Choices only ever ride along with a live block. An answered prompt keeps
-  // showing "sent" until the agent confirms — wmux deliberately does not clear
-  // `blocked` on its own say-so (see answerAgent in src/main/agent-state.ts).
-  const declaredBlocked = declared?.state === 'blocked';
-  const choices = declaredBlocked ? (declared.choices ?? []) : [];
-  const answerPending = declaredBlocked && choices.length === 0 && !!declared.answeredAt;
-
-  return {
-    working,
-    blocked,
-    question: state === 'question',
-    blockedReason: declaredBlocked ? (declared.blockedReason ?? null) : null,
-    tool,
-    choices,
-    answerPending,
-  };
-}
-
-/**
- * Per-surface agent session states of one workspace. A surface is a session
- * when it has declared state, a detected state, or hook/observer history
- * — entries never expire (a stale entry just reads as idle), mirroring the
- * intentional keep-forever semantics of hookActivity in App.tsx: "was active
- * but stopped" (idle) must stay distinguishable from "plain shell command"
- * (no session), or the row falls back to the shell's perpetual "Running".
+ * The roster owns both presence and state so released agents cannot survive as
+ * idle rows through retained hook or observer history. Keep the sidebar's pane
+ * labels and activity details without using them to invent agent membership.
+ * The one place activity still decides state is a member whose state is
+ * `unknown`: fresh hook or observer activity reads as working there.
+ * Read the original block timestamp separately so roster dwell-time fallbacks
+ * do not change the sidebar's existing oldest-block timing.
  */
 export function claudeSessionsForWorkspace(
   splitTree: SplitNode,
   claudeActivity: Record<string, ObserverActivity | undefined>,
   hookActivity: Record<string, HookActivityEntry | undefined>,
   now: number,
-  agentStates: Record<string, DeclaredAgentState | undefined> = {},
-  agentDetections: Record<string, DetectionSnapshot | undefined> = {},
+  roster: readonly AgentRosterEntry[],
+  agentStates: Record<string, DeclaredAgentSnapshot | undefined>,
 ): WorkspaceSessionsView {
   const surfaces: SurfaceEntry[] = [];
   collectTerminalSurfaces(splitTree, surfaces);
+  const bySurface = new Map(roster.map(entry => [entry.surfaceId, entry]));
 
   const sessions: ClaudeSessionView[] = [];
   let working = 0;
@@ -206,33 +131,43 @@ export function claudeSessionsForWorkspace(
   let oldestBlockedSince: number | null = null;
 
   for (const { surfaceId, paneId, currentCwd, customTitle, defaultTitle } of surfaces) {
+    const entry = bySurface.get(surfaceId);
+    if (!entry) continue;
     const hook = hookActivity[surfaceId];
     const observed = claudeActivity[surfaceId];
-    const declared = agentStates[surfaceId];
-    const detection = agentDetections[surfaceId];
-    // A declared state alone is enough to make a surface a session — an agent
-    // that reports over the pipe need never trip a hook or the TUI scraper.
-    if (!hook && !observed && !declared && (!detection || detection.state === 'unknown')) continue;
-
-    const activity = resolveActivity(hook, observed, declared, now, detection);
+    const hookFresh = !!hook && now - hook.lastSeen < SESSION_ACTIVITY_TTL_MS;
+    const obsFresh = !!observed && !observed.isDone && !!observed.lastTool
+      && now - observed.lastUpdate < SESSION_ACTIVITY_TTL_MS;
+    // `unknown` is the absence of a claim, not a claim of idleness: a roster
+    // member that has not said what it is doing falls back to fresh activity,
+    // as the summary and tab dots do. Membership stays roster-gated above, so
+    // history alone still cannot bring a released agent back.
+    const state: AgentPresenceState = entry.state === 'unknown' && (hookFresh || obsFresh)
+      ? 'working'
+      : entry.state;
+    const isWorking = state === 'working';
+    const isBlocked = state === 'blocked';
+    const declaredBlock = isBlocked && entry.stateSource === 'declared';
 
     sessions.push({
       surfaceId,
       paneId,
-      // User-set tab title wins (rename must reflect here); cwd folder second.
-      // A profile/manifest name (#291) is a default, but still a better one than the folder.
-      label: customTitle ?? defaultTitle ?? cwdBasename(currentCwd) ?? detection?.agent ?? 'Agent',
-      ...activity,
+      label: customTitle ?? defaultTitle ?? cwdBasename(currentCwd) ?? entry.kind ?? 'Agent',
+      state,
+      working: isWorking,
+      blocked: isBlocked,
+      question: state === 'question',
+      blockedReason: declaredBlock ? entry.blockedReason : null,
+      choices: declaredBlock ? entry.choices : [],
+      answerPending: declaredBlock && entry.answerPending,
+      tool: isWorking ? (obsFresh ? observed.lastTool : hookFresh ? hook.lastTool : null) : null,
       backgroundShells: runningBackgroundShells(observed, now),
       skill: observed?.activeSkill ?? null,
     });
-    if (activity.working) working++;
-    if (activity.blocked) {
+    if (isWorking) working++;
+    if (isBlocked) {
       blocked++;
-      // `?? now` so a block declared before main stamped one still counts as a
-      // block: the rail is driven by "is anything waiting", and a missing
-      // timestamp must not read as "nothing is".
-      const since = declared?.blockedSince ?? now;
+      const since = agentStates[surfaceId]?.blockedSince ?? now;
       if (oldestBlockedSince === null || since < oldestBlockedSince) oldestBlockedSince = since;
     }
   }

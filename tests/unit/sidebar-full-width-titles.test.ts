@@ -53,7 +53,7 @@ function render(unreadCount = workspace.unreadCount, hookActivity = busy) {
   act(() => root!.render(React.createElement(WorkspaceRow, {
     workspace: { ...workspace, unreadCount }, isActive: true,
     onSelect: () => {}, onClose: () => {},
-    hookActivity, claudeActivity: {}, agentStates: {},
+    hookActivity, claudeActivity: {}, agentStates: hookActivity.a ? { a: { state: 'working' } } : {},
   })));
 }
 
