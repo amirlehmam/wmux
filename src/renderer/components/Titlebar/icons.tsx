@@ -92,6 +92,16 @@ export function IconFolder({ className, size = 16 }: IconProps) {
   );
 }
 
+export function IconBrowser({ className, size = 16 }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" strokeWidth={2} {...base} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" />
+      <path d="M3 12h18" />
+    </svg>
+  );
+}
+
 /** Git branch — the project Git view (#362). */
 export function IconGitBranch({ className, size = 16 }: IconProps) {
   return (

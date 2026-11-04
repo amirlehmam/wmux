@@ -1813,6 +1813,8 @@ export default function App() {
         onToggleFocusMode={() => setFocusMode((on) => !on)}
         explorerOpen={explorerOpen}
         onToggleExplorer={() => handleToggleExplorer()}
+        browserOpen={sideBrowserVisible}
+        onToggleBrowser={toggleSideBrowser}
         gitOpen={gitViewOpen}
         onToggleGit={handleToggleGit}
       />
