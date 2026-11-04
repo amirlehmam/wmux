@@ -108,6 +108,8 @@ function cwdBasename(cwd: string | undefined): string | null {
  * The roster owns both presence and state so released agents cannot survive as
  * idle rows through retained hook or observer history. Keep the sidebar's pane
  * labels and activity details without using them to invent agent membership.
+ * The one place activity still decides state is a member whose state is
+ * `unknown`: fresh hook or observer activity reads as working there.
  * Read the original block timestamp separately so roster dwell-time fallbacks
  * do not change the sidebar's existing oldest-block timing.
  */
@@ -133,21 +135,28 @@ export function claudeSessionsForWorkspace(
     if (!entry) continue;
     const hook = hookActivity[surfaceId];
     const observed = claudeActivity[surfaceId];
-    const isWorking = entry.state === 'working';
-    const isBlocked = entry.state === 'blocked';
-    const declaredBlock = isBlocked && entry.stateSource === 'declared';
     const hookFresh = !!hook && now - hook.lastSeen < SESSION_ACTIVITY_TTL_MS;
     const obsFresh = !!observed && !observed.isDone && !!observed.lastTool
       && now - observed.lastUpdate < SESSION_ACTIVITY_TTL_MS;
+    // `unknown` is the absence of a claim, not a claim of idleness: a roster
+    // member that has not said what it is doing falls back to fresh activity,
+    // as the summary and tab dots do. Membership stays roster-gated above, so
+    // history alone still cannot bring a released agent back.
+    const state: AgentPresenceState = entry.state === 'unknown' && (hookFresh || obsFresh)
+      ? 'working'
+      : entry.state;
+    const isWorking = state === 'working';
+    const isBlocked = state === 'blocked';
+    const declaredBlock = isBlocked && entry.stateSource === 'declared';
 
     sessions.push({
       surfaceId,
       paneId,
       label: customTitle ?? defaultTitle ?? cwdBasename(currentCwd) ?? entry.kind ?? 'Agent',
-      state: entry.state,
+      state,
       working: isWorking,
       blocked: isBlocked,
-      question: entry.state === 'question',
+      question: state === 'question',
       blockedReason: declaredBlock ? entry.blockedReason : null,
       choices: declaredBlock ? entry.choices : [],
       answerPending: declaredBlock && entry.answerPending,

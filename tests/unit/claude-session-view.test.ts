@@ -59,15 +59,38 @@ describe('sidebar sessions share roster membership and state', () => {
     }).sessions).toEqual([]);
   });
 
-  it('preserves genuinely identified and session-only unknown agents without inferring idle or working', () => {
+  it('preserves genuinely identified and session-only unknown agents without inferring idle', () => {
     const out = view({
       states: { 'surf-b': { state: 'unknown', sessionId: 'conversation', sessionProvider: 'codex' } },
       identities: { 'surf-a': { kind: 'claude', source: 'command' } },
-      hooks: { 'surf-a': hook('Bash') },
+      hooks: { 'surf-a': hook('Bash', NOW - 60_000) },
     });
     expect(out.sessions.map(s => [s.surfaceId, s.state, s.working, s.tool])).toEqual([
       ['surf-a', 'unknown', false, null], ['surf-b', 'unknown', false, null],
     ]);
+  });
+
+  it('unknown falls back to inference instead of pinning the pane idle', () => {
+    // A roster member with no claim: fresh hook or observer activity decides.
+    const out = view({
+      identities: { 'surf-a': { kind: 'claude', source: 'command' } },
+      states: { 'surf-b': { state: 'unknown', sessionId: 'conversation', sessionProvider: 'codex' } },
+      hooks: { 'surf-a': hook('Edit') },
+      activity: { 'surf-b': obs({ lastTool: 'Grep' }) },
+    });
+    expect(out.sessions.map(s => [s.surfaceId, s.state, s.working, s.tool])).toEqual([
+      ['surf-a', 'working', true, 'Edit'], ['surf-b', 'working', true, 'Grep'],
+    ]);
+    expect(out.working).toBe(2);
+  });
+
+  it('does not let fresh history bring back a released agent through the unknown fallback', () => {
+    const out = view({
+      states: { 'surf-a': { state: 'unknown', sessionId: null } },
+      hooks: { 'surf-a': hook('Edit') },
+      activity: { 'surf-a': obs({ lastTool: 'Edit' }) },
+    });
+    expect(out).toEqual({ sessions: [], working: 0, blocked: 0, oldestBlockedSince: null });
   });
 
   it('keeps detected states and explicit declarations in the same order as the roster', () => {
