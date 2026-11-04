@@ -248,7 +248,7 @@ const reconciled = new Map<string, boolean>();
 let inFlight: Promise<void> | null = null;
 let rerun = false;
 let lastPaneAt = -Infinity;
-const armed = new Map<number, NodeJS.Timeout>();
+const armed = new Map<number, { timer: NodeJS.Timeout; firstAt: number }>();
 
 function requestSync(): void {
   if (wanted === null) return;
@@ -262,19 +262,29 @@ function requestSync(): void {
     });
 }
 
+/** How long panes opening steadily may postpone a pass, as a multiple of its delay. */
+const PANE_SYNC_MAX_WAIT_FACTOR = 3;
+
 /**
- * A throttle, not a debounce: a delay whose timer is already pending keeps it,
- * so restoring twenty WSL panes schedules two passes, not forty, and a pass
- * still runs at most `delay` after the FIRST pane that asked for it. Replacing
- * the timer instead would let panes opening steadily (a script, a restore
- * spread over minutes) postpone every pass for as long as they kept coming.
+ * A debounce with a maximum wait. Restoring twenty WSL panes schedules two
+ * passes, not forty. Each pass runs `delay` after the LAST pane that asked for
+ * it, so a distro opened while a timer was already pending still gets its full
+ * boot window (a plain throttle fired the 30 s pass before such a distro was
+ * up, and nothing ran after it). The pass is never pushed past
+ * `PANE_SYNC_MAX_WAIT_FACTOR × delay` after the FIRST pending request, so panes
+ * opening steadily (a script, a restore spread over minutes) cannot postpone it
+ * forever; a pane opened after that pass arms a fresh one.
  */
 function armPaneSyncs(): void {
+  const now = Date.now();
   for (const delay of PANE_SYNC_DELAYS_MS) {
-    if (armed.has(delay)) continue;
-    const timer = setTimeout(() => { armed.delete(delay); requestSync(); }, delay);
+    const pending = armed.get(delay);
+    if (pending) clearTimeout(pending.timer);
+    const firstAt = pending?.firstAt ?? now;
+    const due = Math.min(now + delay, firstAt + delay * PANE_SYNC_MAX_WAIT_FACTOR);
+    const timer = setTimeout(() => { armed.delete(delay); requestSync(); }, Math.max(0, due - now));
     timer.unref?.();
-    armed.set(delay, timer);
+    armed.set(delay, { timer, firstAt });
   }
 }
 
@@ -299,7 +309,7 @@ export function noteWslPaneOpened(): void {
 
 /** Tests: the boundary to use, and a clean slate. */
 export function resetWslClaudeHooksForTests(next: WslBoundary = defaultWslBoundary): void {
-  for (const timer of armed.values()) clearTimeout(timer);
+  for (const { timer } of armed.values()) clearTimeout(timer);
   armed.clear();
   reconciled.clear();
   wanted = null;

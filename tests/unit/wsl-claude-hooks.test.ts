@@ -249,7 +249,7 @@ describe('when a pass runs', () => {
   it('nothing is read or written before the consent gate decides', async () => {
     const ubuntu = distroSettings('Ubuntu', '{}');
     const wsl = fakeWsl(['Ubuntu'], { Ubuntu: { file: ubuntu } });
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     resetWslClaudeHooksForTests(wsl.boundary);
 
     noteWslPaneOpened();
@@ -263,7 +263,7 @@ describe('when a pass runs', () => {
     const ubuntu = distroSettings('Ubuntu', '{}');
     const debian = distroSettings('Debian', '{}');
     const wsl = fakeWsl(['Ubuntu'], { Ubuntu: { file: ubuntu }, Debian: { file: debian } });
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     resetWslClaudeHooksForTests(wsl.boundary);
 
     setWslClaudeHooksWanted(true);
@@ -285,10 +285,10 @@ describe('when a pass runs', () => {
     expect(wsl.probed).toEqual(['Ubuntu', 'Debian']);
   });
 
-  it('panes opening steadily cannot postpone a pass: it runs within the first delay of the first open', async () => {
+  it('panes opening steadily cannot postpone a pass past its maximum wait', async () => {
     const ubuntu = distroSettings('Ubuntu', '{}');
     const wsl = fakeWsl([], { Ubuntu: { file: ubuntu } });
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     resetWslClaudeHooksForTests(wsl.boundary);
     setWslClaudeHooksWanted(true);
     await wslClaudeHooksIdle();
@@ -297,7 +297,7 @@ describe('when a pass runs', () => {
     wsl.running.push('Ubuntu');
     const [first] = PANE_SYNC_DELAYS_MS;
     noteWslPaneOpened();
-    for (let elapsed = 0; elapsed < first; elapsed += 1_000) {
+    for (let elapsed = 0; elapsed < first * 3; elapsed += 1_000) {
       await vi.advanceTimersByTimeAsync(1_000);
       noteWslPaneOpened();
     }
@@ -306,11 +306,31 @@ describe('when a pass runs', () => {
     expect(commandsOf(JSON.parse(fs.readFileSync(ubuntu, 'utf8'))).length).toBeGreaterThan(0);
   });
 
+  it('a pane opened while a pass is pending still gets the full boot window', async () => {
+    const debian = distroSettings('Debian', '{}');
+    const wsl = fakeWsl([], { Debian: { file: debian } });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    resetWslClaudeHooksForTests(wsl.boundary);
+    setWslClaudeHooksWanted(true);
+    await wslClaudeHooksIdle();
+
+    // A pane at t=0, a Debian pane at t=25s, and Debian is only up at t=35s.
+    // A throttle fired its last pass at t=30s and never looked again.
+    noteWslPaneOpened();
+    await vi.advanceTimersByTimeAsync(25_000);
+    noteWslPaneOpened();
+    await vi.advanceTimersByTimeAsync(10_000);
+    wsl.running.push('Debian');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await wslClaudeHooksIdle();
+    expect(commandsOf(JSON.parse(fs.readFileSync(debian, 'utf8'))).length).toBeGreaterThan(0);
+  });
+
   it('a burst of pane opens still costs one pass per delay', async () => {
     const wsl = fakeWsl([], {});
     let lists = 0;
     const boundary: WslBoundary = { ...wsl.boundary, runningDistros: async () => { lists++; return []; } };
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     resetWslClaudeHooksForTests(boundary);
     setWslClaudeHooksWanted(true);
     await wslClaudeHooksIdle();
