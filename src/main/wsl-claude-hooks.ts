@@ -262,12 +262,16 @@ function requestSync(): void {
     });
 }
 
+/**
+ * A throttle, not a debounce: a delay whose timer is already pending keeps it,
+ * so restoring twenty WSL panes schedules two passes, not forty, and a pass
+ * still runs at most `delay` after the FIRST pane that asked for it. Replacing
+ * the timer instead would let panes opening steadily (a script, a restore
+ * spread over minutes) postpone every pass for as long as they kept coming.
+ */
 function armPaneSyncs(): void {
   for (const delay of PANE_SYNC_DELAYS_MS) {
-    // Re-arming replaces the pending timer, so restoring twenty WSL panes
-    // schedules two passes, not forty.
-    const prev = armed.get(delay);
-    if (prev) clearTimeout(prev);
+    if (armed.has(delay)) continue;
     const timer = setTimeout(() => { armed.delete(delay); requestSync(); }, delay);
     timer.unref?.();
     armed.set(delay, timer);

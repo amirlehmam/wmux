@@ -285,6 +285,43 @@ describe('when a pass runs', () => {
     expect(wsl.probed).toEqual(['Ubuntu', 'Debian']);
   });
 
+  it('panes opening steadily cannot postpone a pass: it runs within the first delay of the first open', async () => {
+    const ubuntu = distroSettings('Ubuntu', '{}');
+    const wsl = fakeWsl([], { Ubuntu: { file: ubuntu } });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    resetWslClaudeHooksForTests(wsl.boundary);
+    setWslClaudeHooksWanted(true);
+    await wslClaudeHooksIdle();
+
+    // Ubuntu boots with the first pane; another pane opens every second after.
+    wsl.running.push('Ubuntu');
+    const [first] = PANE_SYNC_DELAYS_MS;
+    noteWslPaneOpened();
+    for (let elapsed = 0; elapsed < first; elapsed += 1_000) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      noteWslPaneOpened();
+    }
+    await wslClaudeHooksIdle();
+    expect(wsl.probed).toEqual(['Ubuntu']);
+    expect(commandsOf(JSON.parse(fs.readFileSync(ubuntu, 'utf8'))).length).toBeGreaterThan(0);
+  });
+
+  it('a burst of pane opens still costs one pass per delay', async () => {
+    const wsl = fakeWsl([], {});
+    let lists = 0;
+    const boundary: WslBoundary = { ...wsl.boundary, runningDistros: async () => { lists++; return []; } };
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    resetWslClaudeHooksForTests(boundary);
+    setWslClaudeHooksWanted(true);
+    await wslClaudeHooksIdle();
+    lists = 0;
+
+    for (let i = 0; i < 20; i++) noteWslPaneOpened();
+    await vi.advanceTimersByTimeAsync(Math.max(...PANE_SYNC_DELAYS_MS) + 1);
+    await wslClaudeHooksIdle();
+    expect(lists).toBe(PANE_SYNC_DELAYS_MS.length);
+  });
+
   it('switching hooks off takes them back from every running distro', async () => {
     const ubuntu = distroSettings('Ubuntu', '{"model":"opus"}');
     const wsl = fakeWsl(['Ubuntu'], { Ubuntu: { file: ubuntu } });
