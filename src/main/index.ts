@@ -6,6 +6,7 @@ import { handleDetectionV2 } from './detection-rpc';
 import { isPtyCrashGuardInstalled } from './pty-manager';
 import { logDiagnostic, getDiagnosticsPath } from './crash-diagnostics';
 import { armExitWatchdog } from './exit-watchdog';
+import { isChatGPTDictationContents } from './chatgpt-dictation-host';
 import { planQuit } from './quit-sequence';
 import { handleBrowserV2 } from './v2-browser';
 import { pickBrowserSurface } from './browser-engine-surface';
@@ -1059,6 +1060,7 @@ if (!gotInstanceLock) {
 function hardenWebContents(): void {
   app.on('web-contents-created', (_event, contents) => {
     const type = contents.getType();
+    const dictation = isChatGPTDictationContents(contents);
 
     // Guest pages zoom through Electron's zoom-changed. The desktop already
     // handles its captured DOM gesture through WINDOW_ZOOM: Electron emits
@@ -1136,6 +1138,22 @@ function hardenWebContents(): void {
         contents.once('destroyed', closeChild);
         child.once('closed', () => contents.removeListener('destroyed', closeChild));
       });
+    } else if (dictation) {
+      // Only the dedicated profile, created without a preload, may keep its
+      // authentication chain inside wmux. Desktop windows retain their lock.
+      contents.setWindowOpenHandler(({url}) => /^https:\/\//i.test(url) ? {
+        action:'allow',
+        overrideBrowserWindowOptions:{autoHideMenuBar:true,webPreferences:{session:contents.session,nodeIntegration:false,contextIsolation:true,sandbox:true}},
+      } : {action:'deny'});
+      contents.on('did-create-window', (child) => {
+        child.setMenu(null);
+        const close=()=>{if(!child.isDestroyed())child.destroy();};
+        contents.once('destroyed',close);
+        child.once('closed',()=>contents.removeListener('destroyed',close));
+        child.webContents.on('page-title-updated',(event,title)=>{
+          event.preventDefault();child.setTitle(popupWindowTitle(child.webContents.getURL(),title));
+        });
+      });
     } else {
       // Open new-window requests externally rather than spawning in-app windows
       // with full privileges. Only http/https go to the OS browser; deny the rest.
@@ -1155,7 +1173,7 @@ function hardenWebContents(): void {
     // handles same-frame navigations only; new-window requests never reach it
     // (setWindowOpenHandler above owns those), so a single gesture is launched
     // by one path, never both.
-    if (needsAppWindowNavigationLock(type, !!contents.opener)) {
+    if (needsAppWindowNavigationLock(type, !!contents.opener, dictation)) {
       contents.on('will-navigate', (e, url) => {
         const { preventDefault, openExternal } = willNavigatePolicy(url);
         if (preventDefault) e.preventDefault();

@@ -165,6 +165,7 @@ For containers and remote setups, see the [devcontainer guide](docs/DEVCONTAINER
 | [Devcontainers](docs/DEVCONTAINER.md) | Connecting container shells to the desktop app |
 | [OpenCode integration](docs/opencode-plugin.md) | Plugin behavior, compatibility and troubleshooting |
 | [Codex session restore](docs/codex-session-restore.md) | Resuming the right conversation in each tab |
+| [ChatGPT Web dictation](docs/chatgpt-web-dictation.md) | Account setup, microphones and dictating into a terminal |
 | [omp session restore](docs/omp-session-restore.md) | Transcript tracking and restore behavior |
 | [Crash reports](docs/crash-reports.md) | Collecting a useful report without sending a memory dump |
 

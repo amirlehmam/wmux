@@ -201,6 +201,7 @@ export type ShortcutAction =
   | 'clearTerminalBuffer'
   // ─── file explorer panel ──────────────────────────────────────────────────
   | 'toggleExplorer'
+  | 'toggleDictation'
   // ─── issue #207: the prompt log and its four consumers ────────────────────
   | 'togglePromptOutline'
   | 'togglePinnedPrompt'
@@ -292,6 +293,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // reaches the terminal. Users wanting VS Code muscle memory can swap the two
   // in Settings → Keyboard, which is what #202/#203 landed for.
   toggleExplorer:    { key: 'x', ctrl: true, shift: true },
+  toggleDictation:   { key: 'v', ctrl: true, alt: true },
   // ─── Agent roster ───────────────────────────────────────────────────────────
   // Ctrl+Shift+B and Ctrl+Shift+A were both unbound. Shift-modified like every
   // batch above, so isSafeToIntercept keeps bare Ctrl+A (start-of-line in every

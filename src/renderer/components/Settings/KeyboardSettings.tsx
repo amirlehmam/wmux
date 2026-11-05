@@ -73,6 +73,7 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   resetTerminal: 'Reset terminal state',
   clearTerminalBuffer: 'Clear terminal buffer',
   toggleExplorer: 'Toggle file explorer',
+  toggleDictation: 'Start or stop dictation',
   togglePromptOutline: 'Prompt outline',
   togglePinnedPrompt: 'Pin / unpin prompt',
   followOutput: 'Follow output',

@@ -133,8 +133,8 @@ export function webviewWindowOpenPolicy(details: {
  * apart: measured, it is set by the time `web-contents-created` fires, and is
  * null for every window wmux creates itself.
  */
-export function needsAppWindowNavigationLock(type: string, hasOpener: boolean): boolean {
-  return type !== 'webview' && !hasOpener;
+export function needsAppWindowNavigationLock(type: string, hasOpener: boolean, isolatedDictation = false): boolean {
+  return type !== 'webview' && !hasOpener && !isolatedDictation;
 }
 
 /**

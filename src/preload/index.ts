@@ -5,6 +5,7 @@ import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, t
   type WorktreeCloseMode, type WorktreeInspectResult, type WorktreeRemoveResult,
 } from '../shared/types';
 import type { BrowserHistory } from '../shared/browser-history';
+import type { DictationBridge, DictationCommand, DictationState } from '../shared/dictation';
 import type { GuestKey } from '../shared/guest-key';
 import type { TerminalHistoryBridge, TerminalHistoryState } from '../shared/terminal-history';
 import type {
@@ -50,6 +51,14 @@ const terminalHistory: TerminalHistoryBridge = {
 };
 
 contextBridge.exposeInMainWorld('wmux', {
+  dictation: {
+    command: (command: DictationCommand) => ipcRenderer.invoke(IPC_CHANNELS.DICTATION_COMMAND, command),
+    onState: (callback: (state: DictationState) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: DictationState) => callback(state);
+      ipcRenderer.on(IPC_CHANNELS.DICTATION_STATE, handler);
+      return () => { ipcRenderer.removeListener(IPC_CHANNELS.DICTATION_STATE, handler); };
+    },
+  } satisfies DictationBridge,
   terminalHistory,
   pty: {
     create: (options: { shell: string; cwd: string; env: Record<string, string>; surfaceId?: string; startupCommands?: string[]; cols?: number; rows?: number; conptyInheritCursor?: boolean }) =>

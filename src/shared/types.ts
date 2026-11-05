@@ -715,6 +715,8 @@ export interface SessionSaveRequest {
 
 // IPC channel names
 export const IPC_CHANNELS = {
+  DICTATION_COMMAND: 'dictation:command',
+  DICTATION_STATE: 'dictation:state',
   // PTY
   PTY_CREATE: 'pty:create',
   PTY_WRITE: 'pty:write',

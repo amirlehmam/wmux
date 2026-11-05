@@ -20,6 +20,8 @@ import { isDiffTabDismissed } from './store/surface-slice';
 import Sidebar from './components/Sidebar/Sidebar';
 import { applyPrCommand } from './pr-metadata';
 import Titlebar from './components/Titlebar/Titlebar';
+import { dictationDelivery } from './utils/dictation-delivery';
+import type { DictationResult } from '../shared/dictation';
 import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcuts';
 import SettingsWindow, { type SettingsTab } from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
@@ -746,6 +748,12 @@ export default function App() {
   // the surfaces this window hosts. One IPC listener, no store subscription —
   // it does nothing until a phone attaches.
   useEffect(() => installRemoteRendererHandler(), []);
+  useEffect(() => {
+    const bridge = window as unknown as { __wmux_deliverDictation?: (result: DictationResult) => boolean };
+    const deliver = (result: DictationResult) => dictationDelivery.deliver(result);
+    bridge.__wmux_deliverDictation = deliver;
+    return () => { if (bridge.__wmux_deliverDictation === deliver) delete bridge.__wmux_deliverDictation; };
+  }, []);
 
   // Global keyboard listener for command palette toggle (Ctrl+Shift+P)
   useEffect(() => {
@@ -1304,6 +1312,8 @@ export default function App() {
 
   // Auto-focus first pane whenever the active workspace changes or gains its first pane
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
+  const dictationLeaf = activeWorkspace && focusedPaneId ? findLeaf(activeWorkspace.splitTree, focusedPaneId) : undefined;
+  const dictationSurface = dictationLeaf?.surfaces[dictationLeaf.activeSurfaceIndex];
   const sideBrowserVisible = browserOpen && !activeWorkspace?.browserPanelDocked;
   const toggleSideBrowser = () => {
     if (activeWorkspace?.browserPanelDocked) {
@@ -1542,6 +1552,8 @@ export default function App() {
       followOutputFor(terminalSurfaceId);
     } else if (action === 'toggleExplorer') {
       handleToggleExplorer();
+    } else if (action === 'toggleDictation') {
+      document.dispatchEvent(new CustomEvent('wmux:dictation-toggle'));
     } else if (action === 'openGitPanel') {
       if (activeWorkspaceId) openGitView(useStore.getState(), activeWorkspaceId, focusedPaneId);
     } else {
@@ -1802,6 +1814,7 @@ export default function App() {
         />
       )}
       <Titlebar
+        dictationSurfaceId={dictationSurface?.type === 'terminal' ? dictationSurface.id : undefined}
         title={titlebarText}
         sidebarVisible={sidebarVisible}
         onToggleSidebar={toggleSidebar}

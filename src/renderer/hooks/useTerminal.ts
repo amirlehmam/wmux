@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { dictationDelivery } from '../utils/dictation-delivery';
 import { Terminal, ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -1209,6 +1210,10 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       surfaceTerminalRegistry.set(surfaceId, terminal);
       surfaceSerializerRegistry.set(surfaceId, serializeAddon);
     }
+    const releaseDictation = surfaceId ? dictationDelivery.register(surfaceId, crypto.randomUUID(),
+      (text) => terminal.paste(text),
+      () => isCurrent() && liveAttached && !replayHold.isHolding && !!ptyIdRef.current,
+    ) : () => {};
 
     const stopHistoryObservation = terminalHistoryCheckpoints.observe(terminal, () => isCurrent() && liveAttached);
 
@@ -1987,7 +1992,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // out to every terminal pane in the workspace that owns this surface. Only
       // the focused terminal's onData fires, so this is the single source pane.
       const st = useStore.getState();
-      if (st.broadcastInputActive && surfaceId) {
+      if (st.broadcastInputActive && surfaceId && !dictationDelivery.isTargeted(surfaceId)) {
         const ws = st.workspaces.find((w) => treeHasSurface(w.splitTree, surfaceId));
         if (ws) {
           for (const id of collectActiveTerminalSurfaceIds(ws.splitTree)) {
@@ -2069,6 +2074,7 @@ export function useTerminal({ surfaceId, shell, cwd, visible = true, focused = t
       // (see snapshotSurfaceBuffer).
       if (liveAttached) snapshotSurfaceBuffer(surfaceId, serializeAddon, terminal);
       stopHistoryObservation();
+      releaseDictation();
 
       // Drop the read-screen registry entry — but only if it still points at
       // THIS terminal (StrictMode re-setup may already have registered the

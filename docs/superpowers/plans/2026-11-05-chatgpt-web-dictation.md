@@ -90,3 +90,14 @@
 - [ ] Document website dependence, setup, exact button behavior, append-at-cursor behavior, supported languages, known verified limitations and diagnostics without sensitive content.
 - [ ] Request one independent whole-branch review, resolve material findings with regression tests, and rerun affected checks.
 - [ ] Commit docs and verified changes; report branch, checks, remaining real-world validation, and how to run the isolated build. Do not claim upstream acceptance or real microphone success without evidence.
+
+## Execution notes
+
+- Implemented on `feat/chatgpt-web-dictation`; the bridge uses a typed command union and state subscription rather than separate IPC methods. Device selection persists through the existing main settings store.
+- Real Portuguese website controls were inspected. The user confirmed website dictation works signed-in, and later confirmed the integrated microphone/Stop flow works manually.
+- Positive account verification is mandatory before capture. Recording hides the website header/composer, so an already verified session continues through that modal without mistaking unknown UI for sign-out. Explicit sign-out still rejects it.
+- Authentication initially escaped to Chrome because the general desktop navigation lock also covered WebContentsView. Only the main-owned isolated Session is now exempt; desktop protection stays enabled.
+- User requested icon-only normal states after the successful manual trial: Mic -> Stop -> clickable cancel X with animated 1/2/3 dots. No recording/processing popover; login/error/recovery guidance remains.
+- Independent review findings were reproduced with failing regressions and fixed: navigation provenance, completion gating, stale capture errors, and operation-scoped permission cleanup.
+- Typecheck, main build, renderer build and feature-module lint passed. Full suite before the final modal/UI regression: 6517 passed, 1 failed, 95 skipped; the remaining pwsh.exe resolution failure existed at baseline. Repository lint retains its baseline 8 errors and 13 warnings. New modal and compact UI regressions also pass.
+- Non-default physical-device enforcement, Claude Code specifically, and the full multi-pane/manual matrix were not physically verified. They remain explicit validation limits, not claims of completion. No upstream PR, release, tag or installed-app replacement was performed.

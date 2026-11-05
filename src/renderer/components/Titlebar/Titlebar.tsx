@@ -10,6 +10,7 @@ import logoSrc from '../../../../resources/icons/icon.svg';
 import NotificationBell from './NotificationBell';
 import UpdateBadge from './UpdateBadge';
 import KeepAwakeMenu from './KeepAwakeMenu';
+import DictationButton from './DictationButton';
 import { IconSettings, IconPixelAgent, IconFocus, IconFolder, IconSidebar, IconGitBranch, IconBrowser } from './icons';
 import WindowControls, { useIsFramelessWindow } from './WindowControls';
 import { NotificationInfo, WorkspaceId, PaneId, SurfaceId } from '../../../shared/types';
@@ -19,6 +20,7 @@ import { formatBinding } from '../Settings/KeyboardSettings';
 import '../../styles/titlebar.css';
 
 interface TitlebarProps {
+  dictationSurfaceId?: string;
   title?: string;
   sidebarVisible: boolean;
   onToggleSidebar: () => void;
@@ -48,6 +50,7 @@ interface TitlebarProps {
 }
 
 export default function Titlebar({
+  dictationSurfaceId,
   title,
   sidebarVisible,
   onToggleSidebar,
@@ -159,6 +162,7 @@ export default function Titlebar({
       <span className="titlebar__title">{title ?? ''}</span>
       <div className="titlebar__actions">
         <UpdateBadge />
+        <DictationButton surfaceId={dictationSurfaceId} />
         <KeepAwakeMenu />
         <NotificationBell
           notifications={notifications}
