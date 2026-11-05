@@ -1,10 +1,11 @@
 # ChatGPT Web dictation for terminal prompts
 
-Status: proposed; awaiting user design approval.
+Status: accepted direction, updated with the user's titlebar/settings requirements
+and explicit confirmation that each segment is inserted by clicking Stop.
 
 ## Intent
 
-Let a Windows wmux user dictate a Codex prompt using the dictation UI at
+Let a Windows wmux user dictate a Codex, Claude Code, or other terminal prompt using the dictation UI at
 https://chatgpt.com, without manually switching applications or copying text.
 Use the signed-in website, without an OpenAI API key or direct calls to private
 ChatGPT endpoints. Transcription still happens through ChatGPT's online service.
@@ -25,9 +26,20 @@ ChatGPT endpoints. Transcription still happens through ChatGPT's online service.
 
 ## Proposed experience
 
-- An explicitly named ChatGPT Web dictation action, accessible from the command
-  palette and a rebindable shortcut. Proposed default: Ctrl+Alt+V, subject to the
-  existing shortcut table's conflict rules.
+- A microphone button in the main window titlebar, immediately to the left of
+  Keep Computer Awake. This is a window control, not a terminal-tab control, so
+  splitting panes does not duplicate it. The button becomes Stop while recording,
+  has a distinct processing state, and has localized tooltips/accessibility labels.
+  Keep the action accessible from the command palette and a rebindable shortcut.
+  Proposed default: Ctrl+Alt+V, subject to existing conflict rules.
+- Add a Voice settings section alongside Prompts, Browser and Notifications.
+  Include Connect/Manage ChatGPT account (manual login in the dedicated page),
+  selected microphone, and permission/device availability feedback. Use the
+  repository's existing locale system for every user-facing string. Persist the
+  selected device, handle hotplug/default-device changes, and do not switch
+  microphones silently during a recording. A microphone chooser must actually
+  constrain the microphone used by the website; selecting a device in wmux alone
+  is not sufficient. Verify this in the feasibility test.
 - Capture the active terminal surface and window when starting; reject actions
   from non-terminal surfaces. One pending dictation per window.
 - On first use, open a dedicated ChatGPT page for the user to sign in manually
@@ -43,6 +55,15 @@ ChatGPT endpoints. Transcription still happens through ChatGPT's online service.
   never mistaken for a new transcript or overwritten.
 - Insert a successfully completed result once into the original terminal prompt
   for review. Never click ChatGPT Send and never press Enter in the terminal.
+- Support successive short dictations into the same prompt. Each completed
+  segment is appended at the terminal input cursor without clearing or replacing
+  the previous segment. Insert a separating space between successive segments
+  where appropriate, never a submission newline. Do not send synthetic cursor
+  movement keys: manual editing/cursor changes remain under the user's control.
+- Each segment ends only when the user clicks Stop. Silence never automatically
+  commits text or restarts recording. The user explicitly confirmed this matches
+  the ChatGPT website interaction. A subsequent click on Microphone starts a new
+  segment, targeted to the terminal focused at that new click.
 - Switching panes never redirects the result. If the target terminal disappears,
   preserve the result in the panel for explicit copy; do not choose another target.
 - On login expiry, missing controls, denied microphone, navigation, guest crash,
