@@ -44,6 +44,29 @@ afterEach(() => {
   vi.resetModules();
 });
 
+describe('dictation default promotion',()=>{
+  it('upgrades the previous default once without changing existing split or paste bindings',async()=>{
+    const {shortcuts,writes}=await loadWith({
+      [SHORTCUTS_KEY]:{...DEFAULT_SHORTCUTS,toggleDictation:{key:'v',ctrl:true,alt:true}},
+      [REV_KEY]:{shortcutDefaultRev:1},
+    });
+    expect(shortcuts.toggleDictation).toEqual({key:'s',ctrl:true,shift:true});
+    expect(shortcuts.splitDown).toEqual(DEFAULT_SHORTCUTS.splitDown);
+    expect(shortcuts.paste).toEqual(DEFAULT_SHORTCUTS.paste);
+    expect(writes[REV_KEY]).toEqual({shortcutDefaultRev:SHORTCUT_DEFAULT_REV});
+  });
+  it('preserves custom and explicitly unbound dictation shortcuts',async()=>{
+    for(const binding of [{key:'F8'},{key:''}]){
+      const {shortcuts}=await loadWith({[SHORTCUTS_KEY]:{...DEFAULT_SHORTCUTS,toggleDictation:binding},[REV_KEY]:{shortcutDefaultRev:1}});
+      expect(shortcuts.toggleDictation).toEqual(binding);
+    }
+  });
+  it('does not promote onto a customized shortcut owned by another action',async()=>{
+    const {shortcuts}=await loadWith({[SHORTCUTS_KEY]:{...DEFAULT_SHORTCUTS,toggleDictation:{key:'v',ctrl:true,alt:true},newWorkspace:{key:'s',ctrl:true,shift:true}},[REV_KEY]:{shortcutDefaultRev:1}});
+    expect(shortcuts.toggleDictation).toEqual({key:'v',ctrl:true,alt:true});
+  });
+});
+
 describe('shortcut default promotion (#249)', () => {
   it('gives a fresh install Ctrl+Tab and stamps the rev', async () => {
     const { shortcuts, writes } = await loadWith();

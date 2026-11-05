@@ -293,7 +293,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // reaches the terminal. Users wanting VS Code muscle memory can swap the two
   // in Settings → Keyboard, which is what #202/#203 landed for.
   toggleExplorer:    { key: 'x', ctrl: true, shift: true },
-  toggleDictation:   { key: 'v', ctrl: true, alt: true },
+  toggleDictation:   { key: 's', ctrl: true, shift: true },
   // ─── Agent roster ───────────────────────────────────────────────────────────
   // Ctrl+Shift+B and Ctrl+Shift+A were both unbound. Shift-modified like every
   // batch above, so isSafeToIntercept keeps bare Ctrl+A (start-of-line in every
@@ -355,8 +355,9 @@ export interface ShortcutDefaultsState {
 /**
  * 0 — every release through 2.13.x. No promotion has ever run.
  * 1 — #249: nextSurface/prevSurface Ctrl+Shift+] / [ → Ctrl+Tab / Ctrl+Shift+Tab.
+ * 2 — Dictation: Ctrl+Alt+V → Ctrl+Shift+S (D and V already belong to split/paste).
  */
-export const SHORTCUT_DEFAULT_REV = 1;
+export const SHORTCUT_DEFAULT_REV = 2;
 
 /** The pre-#249 surface-cycling defaults, which the rev-1 promotion replaces. */
 export const PRE_249_SURFACE_CYCLE: Readonly<Partial<Record<ShortcutAction, ShortcutBinding>>> = {
@@ -394,6 +395,7 @@ interface ShortcutPromotion {
 
 const SHORTCUT_PROMOTIONS: ReadonlyArray<ShortcutPromotion> = [
   { current: 1, apply: (s) => promoteUnchosen(s, PRE_249_SURFACE_CYCLE) },
+  { current: 2, apply: (s) => promoteUnchosen(s, {toggleDictation:{key:'v',ctrl:true,alt:true}}) },
 ];
 
 /**

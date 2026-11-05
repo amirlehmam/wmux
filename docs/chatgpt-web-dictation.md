@@ -26,7 +26,9 @@ not in wmux settings. Ordinary browser cookies are not copied.
 ## Dictate into a terminal
 
 Select a terminal, click the microphone, speak, then click **Stop**. You can also
-use **Ctrl+Alt+V**, rebind it in Shortcuts, or use the command palette. The button
+use **Ctrl+Shift+S**, rebind **Start or stop dictation** in **Settings → Shortcuts**,
+or use the command palette. Press once to start and again to stop; holding the
+keys does not repeatedly toggle recording. The button
 turns red and shows a stop icon while recording. After Stop, it becomes an X
 with animated dots cycling from one to three. Click that X to cancel a pending
 transcription. Normal recording and processing do not open a status panel;

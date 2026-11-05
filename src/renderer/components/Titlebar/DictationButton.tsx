@@ -3,9 +3,12 @@ import { useDictation } from '../../hooks/useDictation';
 import { useT } from '../../i18n';
 import { dictationDelivery } from '../../utils/dictation-delivery';
 import { dictationErrorMessage } from '../Settings/voice-copy';
+import { useStore } from '../../store';
+import { formatBinding } from '../Settings/KeyboardSettings';
 
 export default function DictationButton({surfaceId}:{surfaceId?:string}) {
   const t=useT();const {state,command}=useDictation();
+  const bindingLabel=formatBinding(useStore(s=>s.shortcuts.toggleDictation));
   const [localError,setLocalError]=useState(false);
   const recording=state.phase==='recording';
   const pending=['starting','processing','cancelling'].includes(state.phase);
@@ -25,8 +28,9 @@ export default function DictationButton({surfaceId}:{surfaceId?:string}) {
   const waitingLabel=state.phase==='starting'?t('voice.starting','Checking ChatGPT and starting microphone…'):t('voice.processing','Processing dictation…');
   const label=recording?t('voice.stop','Stop dictation'):pending?t('voice.cancel','Cancel dictation'):t('voice.start','Start dictation');
   const error=localError?'no-terminal':state.error;
+  const tooltip=pending?`${waitingLabel} — ${label}`:label;
   return <div className="dictation-control">
-    <button type="button" className={`titlebar__btn${recording?' titlebar__btn--recording':''}${pending?' titlebar__btn--dictation-busy':''}`} title={pending?`${waitingLabel} — ${label}`:label} aria-label={label} aria-pressed={recording} disabled={state.phase==='cancelling'}
+    <button type="button" className={`titlebar__btn${recording?' titlebar__btn--recording':''}${pending?' titlebar__btn--dictation-busy':''}`} title={bindingLabel?`${tooltip} (${bindingLabel})`:tooltip} aria-label={label} aria-pressed={recording} disabled={state.phase==='cancelling'}
       onMouseDown={e=>e.preventDefault()} onClick={()=>{void toggle();}}>
       {pending?<><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg><span className="dictation-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></>
         :recording?<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>

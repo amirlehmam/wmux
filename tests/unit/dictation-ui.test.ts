@@ -6,6 +6,7 @@ import { act } from 'react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import DictationButton from '../../src/renderer/components/Titlebar/DictationButton';
+import { useStore } from '../../src/renderer/store';
 
 (globalThis as unknown as {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 vi.mock('../../src/renderer/i18n',()=>({useT:()=> (_key:string,fallback?:string)=>fallback||_key}));
@@ -18,6 +19,17 @@ let root:Root|undefined;
 afterEach(async()=>{if(root)await act(async()=>root!.unmount());root=undefined;document.body.innerHTML='';phase='idle';error=undefined;command.mockClear();});
 async function mount(){const div=document.createElement('div');document.body.append(div);root=createRoot(div);await act(async()=>root!.render(React.createElement(DictationButton,{surfaceId:'surf-test'})));return div;}
 describe('dictation titlebar',()=>{
+  it('shows the configured shortcut in the tooltip and follows rebinding',async()=>{
+    const original=useStore.getState().shortcuts;
+    try{
+      const div=await mount();
+      expect(div.querySelector('button')!.title).toBe('Start dictation (Ctrl+Shift+S)');
+      await act(async()=>useStore.setState({shortcuts:{...original,toggleDictation:{key:'F8'}}}));
+      expect(div.querySelector('button')!.title).toBe('Start dictation (F8)');
+      await act(async()=>useStore.setState({shortcuts:{...original,toggleDictation:{key:''}}}));
+      expect(div.querySelector('button')!.title).toBe('Start dictation');
+    }finally{await act(async()=>useStore.setState({shortcuts:original}));}
+  });
   it('places the single global control immediately before Keep Computer Awake',()=>{
     const src=readFileSync(join(__dirname,'../../src/renderer/components/Titlebar/Titlebar.tsx'),'utf8');
     expect(src).toMatch(/<DictationButton[^>]*\/>\s*<KeepAwakeMenu/);
