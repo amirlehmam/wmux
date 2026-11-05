@@ -104,6 +104,27 @@ ChatGPT endpoints. Transcription still happens through ChatGPT's online service.
 
 ## Feasibility gate
 
+### Development findings (2026-11-05)
+
+- A separate Electron 43 wmux instance loads the real ChatGPT page successfully.
+  The observed Portuguese dictation button is `Iniciar ditado`; the public
+  mobile composer is a textarea with id `mobile-composer-prompt`. These are
+  observations, not a guarantee about the signed-in desktop composer.
+- The user tried dictation and received `Não foi possível transcrever. Tente
+  novamente.` The test page remains signed out (login buttons are present).
+  Read-only diagnostics show microphone permission `granted` and audio inputs
+  available. Network observation returned HTTP 401 on anonymous-session
+  preparation requests; no audio payload, authentication headers, or prompt
+  text was recorded. These observations do not yet identify the transcription
+  failure's cause. Signed-in validation is pending the user's manual login.
+- Baseline before product changes: typecheck, main build and renderer build pass;
+  lint reports 8 errors and 13 warnings; tests report 6 failed, 6481 passed and
+  95 skipped. Retain the original failures separately from feature validation.
+- A development CLI must set `WMUX_PIPE` explicitly and clear inherited
+  `WMUX_PIPE_TOKEN` and `WMUX_SURFACE_ID`: a parent wmux's pipe takes precedence
+  over `WMUX_INSTANCE` in the CLI. The development instance uses its own pipe,
+  profile and app-data directory.
+
 Before building out all UI, validate login and microphone access against the
 real ChatGPT page in a separate wmux development instance. The user performs
 login and speaks a short sample if needed. Do not promise unattended background
