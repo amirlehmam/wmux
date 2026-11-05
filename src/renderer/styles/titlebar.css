@@ -298,8 +298,8 @@
 }
 .dictation-control { position: relative; -webkit-app-region: no-drag; }
 .titlebar__btn--recording { color: #ef5350; background: rgba(239,83,80,.12); }
-.titlebar__btn--dictation-busy { width: 44px; gap: 3px; }
-.dictation-dots { display: inline-flex; width: 12px; font-size: 13px; font-weight: 700; line-height: 1; }
+.titlebar__btn--dictation-busy { flex-direction: column; gap: 0; }
+.dictation-dots { display: inline-flex; width: 12px; height: 4px; font-size: 13px; font-weight: 700; line-height: 4px; }
 .dictation-dots > span { width: 4px; }
 .dictation-dots > span:nth-child(2) { animation: dictation-dot-two 1.2s steps(1, end) infinite; }
 .dictation-dots > span:nth-child(3) { animation: dictation-dot-three 1.2s steps(1, end) infinite; }
