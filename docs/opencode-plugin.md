@@ -225,6 +225,10 @@ restore** can reopen it with `opencode -s <id>`. Version 10 tightens the rules:
   viewed session, prompts, blocked state and working/idle for remote and shared
   servers. Run the installer after a wmux update so the installed marker
   matches.
+- The CLI also retries **idempotent report verbs** — `report-session`,
+  `report-agent`, `report-metadata`, `report-subagent`, `release-agent` and the
+  prompt `hook` — when the named pipe is busy or drops before a reply. A spawn
+  or a typed key never takes that path, so a retry cannot duplicate real work.
 
 ---
 
