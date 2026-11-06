@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -12,11 +12,13 @@ import * as path from 'path';
  * (`process.execPath`) that no test of a paraphrase would have caught.
  */
 const calls: Array<{ file: string; argv: string[]; opts: any }> = [];
+const execResults: Array<{ error?: Error | null; stdout?: string; stderr?: string }> = [];
 
 vi.mock('node:child_process', () => ({
   execFile: (file: string, argv: string[], opts: any, cb: any) => {
     calls.push({ file, argv, opts });
-    if (typeof cb === 'function') cb(null, '', '');
+    const result = execResults.shift() ?? { error: null, stdout: '', stderr: '' };
+    if (typeof cb === 'function') cb(result.error ?? null, result.stdout ?? '', result.stderr ?? '');
   },
   execFileSync: (file: string, argv: string[], opts: any) => {
     calls.push({ file, argv, opts });
@@ -35,7 +37,12 @@ const load = () => import(/* @vite-ignore */ PLUGIN);
 const internals = async () => (await load()).WmuxPlugin.__wmuxInternals;
 
 /** Every wmux CLI invocation the plugin made, as flat argv (minus the script). */
-const verbs = () => calls.map((c) => c.argv.slice(1));
+const verbs = () => calls.map((c) => {
+  const argv = c.argv.slice(1);
+  // The ordering stamp is asserted separately; keep exact-shape assertions
+  // readable.
+  return argv.filter((x, i, a) => x !== '--seq' && a[i - 1] !== '--seq');
+});
 
 const SURFACE = 'surf-1';
 
@@ -53,6 +60,7 @@ async function pluginWith(env: Record<string, string> = {}) {
 
 beforeEach(() => {
   calls.length = 0;
+  execResults.length = 0;
   for (const k of [
     'WMUX',
     'WMUX_SURFACE_ID',
@@ -65,6 +73,12 @@ beforeEach(() => {
   }
 });
 
+afterEach(async () => {
+  const { resetPendingReleases } = await internals();
+  resetPendingReleases();
+  vi.useRealTimers();
+});
+
 describe('the plugin file itself', () => {
   const src = fs.readFileSync(PLUGIN, 'utf8');
 
@@ -72,7 +86,9 @@ describe('the plugin file itself', () => {
     // pluginNeedsUpdate() compares this; an install stuck on v4 keeps #191.
     // v5 → v6 is #271: every v5 install is the file OpenCode v2 rejects.
     // v7 → v8 is #304: without the bump no installed copy gains the prompt hook.
-    expect(src).toMatch(/wmux-plugin-version:\s*9/);
+    // v9 → v10 retries a lost session report, keeps a shared server's signals
+    // out of the starter pane, and stops a reload from releasing the handle.
+    expect(src).toMatch(/wmux-plugin-version:\s*10/);
   });
 
   it('exports WmuxPlugin and the default definition, NOTHING else (#191, #271)', async () => {
@@ -189,6 +205,16 @@ describe('event mapping (#188)', () => {
     calls.length = 0;
     await p.event({ event: { type: 'question.replied' } });
     expect(verbs()[0]).toEqual(['report-agent', '--surface', SURFACE, '--unblocked']);
+  });
+
+  it('orders blocked and unblocked reports with an increasing seq', async () => {
+    const p = await pluginWith();
+    await p.event({ event: { type: 'permission.asked', properties: { title: 'Run?' } } });
+    await p.event({ event: { type: 'permission.replied', properties: { requestID: 'per_1' } } });
+    const blocked = calls.find((c) => c.argv.includes('--blocked'));
+    const unblocked = calls.find((c) => c.argv.includes('--unblocked'));
+    const seqOf = (c: any) => Number(c.argv[c.argv.indexOf('--seq') + 1]);
+    expect(seqOf(unblocked)).toBeGreaterThan(seqOf(blocked));
   });
 
   it('keeps the block when the ask\'s own tool part goes to "running" (#189)', async () => {
@@ -592,7 +618,11 @@ describe('session handle for restore (#290)', () => {
   // 2.0.24 running a task subagent.
   const PARENT = 'ses_ebee54158ffe0s9gKyn9y27AJz';
   const CHILD = 'ses_ebee52e87ffevI7qoPYR1XlB05';
-  const reports = () => verbs().filter((v) => v[0] === 'report-session' || v[0] === 'release-agent');
+  const reports = () => verbs()
+    .filter((v) => v[0] === 'report-session' || v[0] === 'release-agent')
+    // The ordering stamp is asserted separately; keep the existing exact-shape
+    // assertions readable.
+    .map((v) => v.filter((x, i, a) => x !== '--seq' && a[i - 1] !== '--seq'));
 
   /** Run with process.once('exit') captured, so the exit release can be fired by hand. */
   async function withExitHook<T>(fn: (fireExit: () => void) => Promise<T>): Promise<T> {
@@ -630,14 +660,34 @@ describe('session handle for restore (#290)', () => {
     });
   });
 
-  it('reads v2 flat session.created, including its parentID', async () => {
+  it('reads the mapped v2 session shape', async () => {
+    const { sessionFacts } = await internals();
+    expect(sessionFacts({ type: 'session.created', properties: { sessionID: PARENT, projectID: 'p' } }))
+      .toEqual({ id: PARENT, child: false });
+    expect(sessionFacts({ type: 'session.created', properties: { sessionID: CHILD, parentID: PARENT } }))
+      .toEqual({ id: CHILD, child: true });
+  });
+
+  it('maps a raw v2 event to the shape sessionFacts reads', async () => {
+    const { v2SessionSource } = await internals();
+    expect(v2SessionSource({ type: 'session.created', data: { sessionID: PARENT, projectID: 'p' } }))
+      .toEqual({ type: 'session.created', properties: { sessionID: PARENT, projectID: 'p' } });
+    expect(v2SessionSource({ type: 'session.idle', properties: { sessionID: PARENT } }))
+      .toEqual({ type: 'session.idle', properties: { sessionID: PARENT } });
+    expect(v2SessionSource(null)).toBeNull();
+  });
+
+  it('leaves v2 session handles to the TUI half', async () => {
+    // v2 has a TUI process per pane, and its TUI half knows which session is
+    // being viewed. The server half cannot tell a background session from the
+    // one on screen, so it must not write the restore handle.
     await withExitHook(async () => {
       const { push, cleanup } = await v2PluginWith();
       await push({ type: 'session.created', data: { sessionID: PARENT, projectID: 'p' } });
       await push({ type: 'session.inbox.enqueued', data: { sessionID: PARENT, inboxID: 'msg_x' } });
       await push({ type: 'session.created', data: { sessionID: CHILD, parentID: PARENT } });
       await push({ type: 'session.execution.started', data: { sessionID: CHILD } });
-      expect(reports()).toEqual([['report-session', PARENT, '--provider', 'opencode', '--surface', SURFACE]]);
+      expect(reports()).toEqual([]);
       await cleanup();
     });
   });
@@ -661,15 +711,17 @@ describe('session handle for restore (#290)', () => {
     });
   });
 
-  it("reports nothing from OpenCode 2's shared background server", async () => {
+  it("reports nothing pane-specific from OpenCode 2's shared background server", async () => {
     // `opencode serve --service` hosts every pane's sessions; its
-    // WMUX_SURFACE_ID is just the pane that started it.
+    // WMUX_SURFACE_ID is just the pane that started it. The TUI half owns every
+    // pane-specific signal for that server.
     const argv = process.argv;
     process.argv = [...argv, 'serve', '--service'];
     try {
       await withExitHook(async () => {
         const hooks = await pluginWith();
-        await hooks.event({ event: { type: 'session.idle', properties: { sessionID: PARENT } } });
+        expect(hooks.event).toBeUndefined();
+        expect(hooks['shell.env']).toBeUndefined();
         expect(reports()).toEqual([]);
       });
     } finally {
@@ -677,14 +729,235 @@ describe('session handle for restore (#290)', () => {
     }
   });
 
-  it('releases on v2 dispose, once even if exit follows', async () => {
+  it('treats any `serve` invocation as shared, not only --service', async () => {
+    // A plain `opencode serve --port 4096` is just as shared as --service. The
+    // old check looked only for --service, so the server half would attribute
+    // every pane's session to whoever started the server.
+    const argv = process.argv;
+    process.argv = [...argv, 'serve', '--port', '4096'];
+    try {
+      await withExitHook(async () => {
+        const hooks = await pluginWith();
+        expect(hooks.event).toBeUndefined();
+        expect(reports()).toEqual([]);
+      });
+    } finally {
+      process.argv = argv;
+    }
+  });
+
+  it('treats a standalone private server as private, not shared', async () => {
+    // `opencode --standalone` spawns `opencode serve --stdio --port 0`; that
+    // server belongs to one TUI, so its session handle is attributable. Only a
+    // serve without --stdio (and --service) is shared.
+    const argv = process.argv;
+    process.argv = [...argv, 'serve', '--stdio', '--port', '0'];
+    try {
+      await withExitHook(async () => {
+        const hooks = await pluginWith();
+        expect(hooks.event).toBeDefined();
+        await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+        expect(reports()).toHaveLength(1);
+      });
+    } finally {
+      process.argv = argv;
+    }
+  });
+
+  it('registers no pane-specific v2 hooks on a shared server', async () => {
+    const argv = process.argv;
+    process.argv = [...argv, 'serve'];
+    try {
+      const fake = fakeV2Context();
+      const { default: def } = await load();
+      const cleanup = await def.setup(fake.ctx);
+      expect(cleanup).toBeUndefined();
+      expect(fake.hooks).toEqual({});
+      await fake.push({ type: 'permission.asked', data: { sessionID: PARENT } });
+      expect(verbs()).toEqual([]);
+    } finally {
+      process.argv = argv;
+    }
+  });
+
+  it('does not hold or release a v2 session handle', async () => {
+    // The TUI half owns v2 handles, so dispose and exit have nothing to release
+    // here — and a plugin reload therefore cannot clear the TUI's handle.
     await withExitHook(async (fireExit) => {
       const { push, cleanup } = await v2PluginWith();
       await push({ type: 'session.execution.started', data: { sessionID: PARENT } });
       calls.length = 0;
       await cleanup();
       fireExit();
+      expect(reports()).toEqual([]);
+    });
+  });
+
+  /** Let wmuxAsync's promise callbacks run after the mocked execFile resolves. */
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+
+  it('retries a report that never landed, then confirms it', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      execResults.push({ error: new Error('All pipe instances are busy') });
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+      await flush();
+      expect(reports()).toEqual([['report-session', PARENT, '--provider', 'opencode', '--surface', SURFACE]]);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await flush();
+      expect(reports()).toHaveLength(2);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(reports()).toHaveLength(2);
+    });
+  });
+
+  it('does not retry a report the main process rejected', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      execResults.push({ stdout: '{"accepted":false}' });
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+      await flush();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(reports()).toEqual([['report-session', PARENT, '--provider', 'opencode', '--surface', SURFACE]]);
+    });
+  });
+
+  it('drops a pending retry when the user switches sessions', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      const OTHER = 'ses_ebee49dd7ffeliSGc2ATav2wlN';
+      execResults.push({ error: new Error('All pipe instances are busy') });
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+      await flush();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: OTHER } } });
+      await flush();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(reports().map((r) => r[1])).toEqual([PARENT, OTHER]);
+    });
+  });
+
+  it('reasserts a confirmed handle on a later turn, once per throttle window', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+      await flush();
+      expect(reports()).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(31_000);
+      await hooks.event({ event: { type: 'session.status', properties: { sessionID: PARENT, status: { type: 'busy' } } } });
+      await flush();
+      expect(reports()).toHaveLength(2);
+    });
+  });
+
+  it('cancels a pending retry when the session is deleted, and releases it', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      execResults.push({ error: new Error('All pipe instances are busy') });
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+      await flush();
+      await hooks.event({ event: { type: 'session.deleted', properties: { sessionID: PARENT, info: { id: PARENT } } } });
+      await flush();
+      expect(reports().some((r) => r[0] === 'release-agent')).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(reports().filter((r) => r[0] === 'report-session')).toHaveLength(1);
+    });
+  });
+
+  it('tries again on a later event after the retry budget is exhausted', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      for (let i = 0; i < 5; i++) execResults.push({ error: new Error('All pipe instances are busy') });
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+      await flush();
+      await vi.advanceTimersByTimeAsync(1000);
+      await flush();
+      await vi.advanceTimersByTimeAsync(3000);
+      await flush();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flush();
+      expect(reports()).toHaveLength(4);
+
+      // The next event is a new chance, not a permanently deduped id.
+      await hooks.event({ event: { type: 'session.status', properties: { sessionID: PARENT, status: { type: 'busy' } } } });
+      await flush();
+      expect(reports()).toHaveLength(5);
+    });
+  });
+
+  it('stamps reports with an increasing seq so a late report cannot win', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      const OTHER = 'ses_ebee49dd7ffeliSGc2ATav2wlN';
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: PARENT } } });
+      await hooks.event({ event: { type: 'session.created', properties: { sessionID: OTHER } } });
+      await flush();
+      const seqs = calls
+        .filter((c) => c.argv[1] === 'report-session')
+        .map((c) => Number(c.argv[c.argv.indexOf('--seq') + 1]));
+      expect(seqs).toHaveLength(2);
+      expect(seqs[1]).toBeGreaterThan(seqs[0]);
+    });
+  });
+
+  it('releases after a v1 dispose when no new instance replaces it', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.idle', properties: { sessionID: PARENT } } });
+      await flush();
+      calls.length = 0;
+      hooks.__wmuxShutdown();
+      // A dispose may be a reload: nothing may be released immediately.
+      expect(reports()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1400);
+      expect(reports()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(200);
       expect(reports()).toEqual([['release-agent', '--provider', 'opencode', '--session', PARENT, '--surface', SURFACE]]);
+    });
+  });
+
+  it('does not release when a v1 plugin is disposed for a reload', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async () => {
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.idle', properties: { sessionID: PARENT } } });
+      await flush();
+      calls.length = 0;
+      hooks.__wmuxShutdown();
+      // The replacement instance starts before the delayed release fires.
+      await pluginWith();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(reports()).toEqual([]);
+    });
+  });
+
+  it('releases once when dispose is followed by a real exit', async () => {
+    vi.useFakeTimers();
+    await withExitHook(async (fireExit) => {
+      const hooks = await pluginWith();
+      await hooks.event({ event: { type: 'session.idle', properties: { sessionID: PARENT } } });
+      await flush();
+      calls.length = 0;
+      hooks.__wmuxShutdown();
+      expect(reports()).toEqual([]);
+      fireExit();
+      expect(reports()).toEqual([['release-agent', '--provider', 'opencode', '--session', PARENT, '--surface', SURFACE]]);
+      expect(calls[0].opts.stdio).toBe('ignore');
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(reports()).toHaveLength(1);
     });
   });
 

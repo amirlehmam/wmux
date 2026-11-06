@@ -1,4 +1,4 @@
-// wmux-plugin-version: 9
+// wmux-plugin-version: 10
 // wmux OpenCode plugin — bridges OpenCode hooks/events to the wmux sidebar.
 // Auto-installed by wmux to ~/.config/opencode/plugin/wmux.js.
 // No-ops entirely outside wmux (WMUX !== '1').
@@ -167,6 +167,9 @@ function askReason(event) {
 /** Mirrors OPENCODE_SESSION_ID_RE in wmux's src/main/opencode-resume.ts. */
 const SESSION_ID_RE = /^ses_[A-Za-z0-9_]{8,120}$/;
 
+/** How long one wmux CLI call may run before execFile kills it and reports. */
+const CLI_TIMEOUT_MS = 10_000;
+
 /**
  * What an event says about sessions (#290): the session it concerns, and — for
  * the events that describe a session itself — whether that session is a
@@ -195,7 +198,41 @@ function sessionFacts(event) {
   return typeof id === "string" ? { id, child: false } : null;
 }
 
-export const WmuxPlugin = async () => {
+/**
+ * A plugin dispose is not necessarily a process exit: OpenCode also reloads
+ * plugins when their files change. Releasing immediately there cleared every
+ * open private-server handle on `wmux` upgrade. The timer gives a replacement
+ * instance time to start and cancel it; a real exit releases synchronously and
+ * cancels the timer first.
+ */
+const RELEASE_DELAY_MS = 1500;
+const pendingReleases = new Map();
+
+function cancelPendingRelease(surface) {
+  const pending = pendingReleases.get(surface);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pendingReleases.delete(surface);
+}
+
+function schedulePendingRelease(surface, release) {
+  cancelPendingRelease(surface);
+  const timer = setTimeout(() => {
+    pendingReleases.delete(surface);
+    release();
+  }, RELEASE_DELAY_MS);
+  // A pending release must not keep a quitting OpenCode alive.
+  if (timer && typeof timer.unref === "function") timer.unref();
+  pendingReleases.set(surface, { timer });
+}
+
+/** Test-only: clear delayed releases between cases. */
+function resetPendingReleases() {
+  for (const pending of pendingReleases.values()) clearTimeout(pending.timer);
+  pendingReleases.clear();
+}
+
+export const WmuxPlugin = async (options = {}) => {
   // Resolved before the WMUX gate so "the plugin loaded but did nothing" is
   // itself a visible log line — otherwise the commonest failure is silence.
   const log = makeLogger(resolveDebugLog(process.env.WMUX_PLUGIN_DEBUG));
@@ -204,6 +241,28 @@ export const WmuxPlugin = async () => {
     log("init: inactive", { WMUX: process.env.WMUX, surface });
     return {};
   }
+  // A replacement instance cancels the delayed release its predecessor
+  // scheduled on dispose. If this is a real shutdown, the process exit hook
+  // releases synchronously before this line can run.
+  cancelPendingRelease(surface);
+
+  // A shared server sees every pane's sessions while WMUX_SURFACE_ID names
+  // only the pane that started it. No pane-specific signal from this process
+  // can be attributed: session handles, activity, blocked state, prompts and
+  // shell env all belong to the TUI half, which runs inside the pane.
+  //
+  // `opencode --standalone` also runs `opencode serve`, but with `--stdio` and
+  // a private port on the TUI's own pipes — that server belongs to one pane.
+  // Only a serve without `--stdio` (or the background `--service`) is shared.
+  const sharedServer =
+    process.argv.includes("--service") ||
+    (process.argv.includes("serve") && !process.argv.includes("--stdio"));
+  if (sharedServer) {
+    log("shared server: pane signals handled by the TUI half");
+    return {};
+  }
+  const sessionHandles = options.sessionHandles !== false;
+  if (!sessionHandles) log("session: handles are reported by the TUI half");
 
   const runtime = resolveNodeRuntime();
   log("init", {
@@ -230,35 +289,72 @@ export const WmuxPlugin = async () => {
     return { file: "wmux", argv: args, opts };
   }
 
-  function wmux(args) {
-    // Fire-and-forget; never block or throw into OpenCode.
-    try {
-      const command = cliCommand(args);
-      if (!command) {
-        log("cli: skipped (no WMUX_CLI on win32)", args);
-        return;
-      }
-      const { file, argv, opts } = command;
-      log("cli", args);
-      execFile(file, argv, opts, (err, _stdout, stderr) => {
-        // v2 passed `() => {}` here, which is how #187 stayed silent for a
-        // whole release line. Still non-fatal, but no longer unobservable —
-        // and since #190 it lands somewhere the agent itself can read.
-        if (err || stderr) {
-          log(`cli: ${args[0]} failed`, (err && err.message) || String(stderr).trim());
-        } else {
-          log(`cli: ${args[0]} ok`);
+  /**
+   * Run one wmux CLI call and resolve its result — never rejects into OpenCode.
+   *
+   * `stdout` is parsed when it is JSON so a caller can tell `accepted: true`
+   * from `accepted: false`; the CLI prints that for report-session. The
+   * timeout matters: a CLI that never returns must not leave an in-flight
+   * report forever.
+   */
+  function wmuxAsync(args) {
+    return new Promise((resolve) => {
+      try {
+        const command = cliCommand(args);
+        if (!command) {
+          log("cli: skipped (no WMUX_CLI on win32)", args);
+          resolve({ ok: false, permanent: true });
+          return;
         }
-      });
-    } catch (err) {
-      log("cli: threw", (err && err.message) || String(err));
-    }
+        const { file, argv, opts } = command;
+        log("cli", args);
+        execFile(file, argv, { ...opts, timeout: CLI_TIMEOUT_MS }, (err, stdout, stderr) => {
+          if (err) {
+            log(`cli: ${args[0]} failed`, (err && err.message) || String(err));
+            resolve({ ok: false, error: err });
+            return;
+          }
+          // A warning on stderr with exit 0 is not a failure — the CLI uses a
+          // non-zero exit for the ones that matter.
+          if (stderr) log(`cli: ${args[0]} warned`, String(stderr).trim());
+          log(`cli: ${args[0]} ok`);
+          let value = null;
+          if (typeof stdout === "string" && stdout.trim()) {
+            try { value = JSON.parse(stdout); } catch {}
+          }
+          resolve({ ok: true, value });
+        });
+      } catch (err) {
+        log("cli: threw", (err && err.message) || String(err));
+        resolve({ ok: false, error: err });
+      }
+    });
+  }
+
+  /**
+   * Fire-and-forget for signals whose next event corrects them. The promise is
+   * still observed so a failed call is logged rather than becoming an
+   * unhandled rejection.
+   */
+  function wmux(args) {
+    void wmuxAsync(args);
   }
 
   // message.part.updated fires per streaming delta (many per second). Throttle
   // the "active" pings so we don't spawn a CLI process for every token.
   let lastActivePing = 0;
   let blocked = false;
+
+  /**
+   * Monotonic stamp for main's `acceptSeq`. Reports arrive from separate CLI
+   * processes and a late `report-session` for the old session must not overwrite
+   * the newer one. Date.now() keeps it roughly time-ordered across reloads.
+   */
+  let seq = Date.now();
+  const nextSeq = () => {
+    seq = Math.max(seq + 1, Date.now());
+    return seq;
+  };
 
   /**
    * Real work by the agent also proves it is NOT waiting on a human.
@@ -275,7 +371,7 @@ export const WmuxPlugin = async () => {
   const clearBlocked = () => {
     if (!blocked) return;
     blocked = false;
-    wmux(["report-agent", "--surface", surface, "--unblocked"]);
+    wmux(["report-agent", "--surface", surface, "--unblocked", "--seq", String(nextSeq())]);
   };
   /** Tell wmux the pane is alive. Says nothing about whether it is blocked. */
   const ping = () => {
@@ -299,8 +395,21 @@ export const WmuxPlugin = async () => {
    * other events, in both generations (verified on 1.18.35 and 2.0.24).
    */
   const childSessions = new Set();
-  let reportedSession = null;
+  let pendingSession = null;
+  let confirmedSession = null;
+  let retryTimer = null;
+  let retryStep = 0;
+  let lastSentAt = 0;
   let exitHookArmed = false;
+  const SESSION_RETRY_MS = [1000, 3000, 10000];
+  const REASSERT_MS = 30_000;
+
+  const clearRetry = () => {
+    if (retryTimer === null) return;
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  };
+
   const releaseSession = (id, sync) => {
     const args = ["release-agent", "--provider", "opencode", "--session", id, "--surface", surface];
     if (!sync) {
@@ -315,16 +424,115 @@ export const WmuxPlugin = async () => {
       if (command) execFileSync(command.file, command.argv, { ...command.opts, timeout: 1500, stdio: "ignore" });
     } catch {}
   };
-  // OpenCode 2 runs one background server (`opencode serve --service`) for
-  // every TUI on the machine, and plugins live in it — so this process sees
-  // every pane's sessions while its WMUX_SURFACE_ID names only the pane that
-  // happened to start the server. Reporting from there would resume pane B's
-  // conversation in pane A. A private server (`--standalone`, or any v1) is
-  // one pane's, and is the only place a handle is attributable.
-  const sharedServer = process.argv.includes("--service");
-  if (sharedServer) log("session: shared server, handles not reported");
+
+  const scheduleRetry = (id) => {
+    if (pendingSession !== id || retryTimer !== null) return;
+    const delay = SESSION_RETRY_MS[retryStep];
+    if (delay === undefined) {
+      // Let a later event try again: the handle is still the one this pane
+      // wants, even if this burst of reports never landed.
+      pendingSession = null;
+      log("session: gave up", id);
+      return;
+    }
+    retryStep += 1;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (pendingSession === id) sendReport(id);
+    }, delay);
+    // A pending retry must not keep a quitting OpenCode alive.
+    if (retryTimer && typeof retryTimer.unref === "function") retryTimer.unref();
+  };
+
+  const sendReport = (id) => {
+    lastSentAt = Date.now();
+    pendingSession = id;
+    void wmuxAsync([
+      "report-session",
+      id,
+      "--provider",
+      "opencode",
+      "--surface",
+      surface,
+      "--seq",
+      String(nextSeq()),
+    ]).then((result) => {
+      // A newer session, a delete, or a dispose superseded this report.
+      if (pendingSession !== id) return;
+      if (!result.ok) {
+        if (result.permanent) {
+          pendingSession = null;
+          log("session: skipped", id);
+          return;
+        }
+        log("session: report failed", (result.error && result.error.message) || "unknown");
+        scheduleRetry(id);
+        return;
+      }
+      const accepted = result.value && result.value.accepted;
+      if (accepted === false) {
+        pendingSession = null;
+        log("session: rejected", id);
+        return;
+      }
+      confirmedSession = id;
+      pendingSession = null;
+      retryStep = 0;
+      clearRetry();
+    });
+  };
+
+  /**
+   * Repeat a confirmed handle on a later turn. Main can drop a handle after a
+   * successful report (a late PTY clear, or an exit release racing the next
+   * OpenCode in this tab); one report per turn window heals it without turning
+   * the reporter into a poll. A pending report is already retrying.
+   */
+  const reassert = (id) => {
+    if (id !== confirmedSession || pendingSession === id) return;
+    if (Date.now() - lastSentAt < REASSERT_MS) return;
+    log("session: reassert", id);
+    sendReport(id);
+  };
+
+  const armExitHook = () => {
+    if (exitHookArmed) return;
+    exitHookArmed = true;
+    // Quitting OpenCode is choosing to end the conversation: forget it, so a
+    // restore gives back the shell rather than relaunching OpenCode.
+    process.once("exit", releaseNow);
+  };
+
+  /** Synchronous release for a real process exit; cancels a pending dispose. */
+  const releaseNow = () => {
+    cancelPendingRelease(surface);
+    const id = pendingSession || confirmedSession;
+    pendingSession = null;
+    confirmedSession = null;
+    clearRetry();
+    if (id) releaseSession(id, true);
+  };
+
+  /**
+   * A dispose may be a shutdown OR a plugin reload. Wait one short window; a
+   * replacement instance cancels this at setup, while a real shutdown is
+   * already covered by the synchronous exit hook. If the process stays alive
+   * after dispose, the async release still lands.
+   */
+  const releaseOnDispose = () => {
+    const id = pendingSession || confirmedSession;
+    if (!id) return;
+    schedulePendingRelease(surface, () => {
+      if (pendingSession !== id && confirmedSession !== id) return;
+      pendingSession = null;
+      confirmedSession = null;
+      clearRetry();
+      releaseSession(id, false);
+    });
+  };
+
   const noteSession = (event) => {
-    if (sharedServer) return;
+    if (!sessionHandles) return;
     const facts = sessionFacts(event);
     if (!facts || !SESSION_ID_RE.test(facts.id)) return;
     if (facts.child) {
@@ -333,29 +541,32 @@ export const WmuxPlugin = async () => {
     }
     if (event.type === "session.deleted") {
       // Resuming a deleted id makes OpenCode start an empty session instead.
-      if (facts.id === reportedSession) {
-        reportedSession = null;
+      // Release even a pending id: a timed-out report may have landed, and a
+      // release for one that did not is a harmless no-op.
+      if (facts.id === pendingSession || facts.id === confirmedSession) {
+        pendingSession = null;
+        confirmedSession = null;
+        clearRetry();
         releaseSession(facts.id, false);
       }
       return;
     }
-    if (childSessions.has(facts.id) || facts.id === reportedSession) return;
-    reportedSession = facts.id;
-    wmux(["report-session", facts.id, "--provider", "opencode", "--surface", surface]);
-    if (!exitHookArmed) {
-      exitHookArmed = true;
-      // Quitting OpenCode is choosing to end the conversation: forget it, so a
-      // restore gives back the shell rather than relaunching OpenCode.
-      process.once("exit", releaseOnShutdown);
+    if (childSessions.has(facts.id)) return;
+    if (facts.id === pendingSession) return;
+    if (facts.id === confirmedSession) {
+      reassert(facts.id);
+      return;
     }
+    // A new top-level session supersedes any pending retry for the old one.
+    cancelPendingRelease(surface);
+    pendingSession = facts.id;
+    confirmedSession = null;
+    retryStep = 0;
+    clearRetry();
+    log("session", facts.id);
+    sendReport(facts.id);
+    armExitHook();
   };
-  /** Idempotent: v2 disposes the plugin AND exits, and only one may release. */
-  function releaseOnShutdown() {
-    if (!reportedSession) return;
-    const id = reportedSession;
-    reportedSession = null;
-    releaseSession(id, true);
-  }
 
   /**
    * The cap `wmux-hook.js` applies to Claude Code prompts (#304). A prompt
@@ -451,7 +662,7 @@ export const WmuxPlugin = async () => {
         // Issue #188: the sidebar's whole point is telling a user with ten
         // panes open which one is waiting for them.
         blocked = true;
-        wmux(["report-agent", "--surface", surface, "--blocked", askReason(event)]);
+        wmux(["report-agent", "--surface", surface, "--blocked", askReason(event), "--seq", String(nextSeq())]);
       } else if (REPLY_EVENTS.has(type)) {
         clearBlocked();
         pingActive();
@@ -473,7 +684,7 @@ export const WmuxPlugin = async () => {
   };
   // For v2's dispose (setupV2). Non-enumerable, so a loader walking the hooks
   // object never mistakes it for a hook.
-  Object.defineProperty(hooks, "__wmuxShutdown", { value: releaseOnShutdown });
+  Object.defineProperty(hooks, "__wmuxShutdown", { value: releaseOnDispose });
   return hooks;
 };
 
@@ -497,6 +708,13 @@ const V2_STREAMING_EVENTS = new Set([
   "session.tool.input.delta",
   "session.step.started",
 ]);
+
+/** The raw v2 event in the v1 shape `sessionFacts` reads: `properties` from `data`. */
+function v2SessionSource(raw) {
+  return raw && typeof raw.type === "string"
+    ? { type: raw.type, properties: raw.data || raw.properties || {} }
+    : null;
+}
 
 function fromV2Event(event) {
   if (!event || typeof event.type !== "string") return null;
@@ -533,7 +751,11 @@ function fromV2Event(event) {
  */
 async function setupV2(ctx) {
   const log = makeLogger(resolveDebugLog(process.env.WMUX_PLUGIN_DEBUG));
-  const hooks = await WmuxPlugin();
+  // v2 has a TUI process per pane and its TUI half knows which session is on
+  // screen. The server half cannot tell a background session from the viewed
+  // one, so it must not write the restore handle. It keeps activity, blocked
+  // state and prompts for private servers; a shared server returned {} above.
+  const hooks = await WmuxPlugin({ sessionHandles: false });
   if (!hooks.event) return; // outside wmux — WmuxPlugin already logged why
 
   const registrations = [];
@@ -569,9 +791,7 @@ async function setupV2(ctx) {
     for await (const raw of subscribe.call(ctx.event, { signal: controller.signal })) {
       const event = fromV2Event(raw);
       if (!event) log("v2: unmapped event", raw && raw.type);
-      const sessionSource =
-        raw && typeof raw.type === "string" ? { type: raw.type, properties: raw.data || raw.properties || {} } : null;
-      await hooks.event({ event, sessionSource });
+      await hooks.event({ event, sessionSource: v2SessionSource(raw) });
     }
   })().catch((err) => {
     if (!controller.signal.aborted) log("v2: event stream ended", (err && err.message) || String(err));
@@ -619,4 +839,4 @@ export default { id: "wmux", server: WmuxPlugin, setup: setupV2 };
  * `WmuxPlugin` and the default definition must stay the only exports in this
  * file. A test asserts it.
  */
-WmuxPlugin.__wmuxInternals = { resolveNodeRuntime, resolveDebugLog, summarize, askReason, fromV2Event, sessionFacts };
+WmuxPlugin.__wmuxInternals = { resolveNodeRuntime, resolveDebugLog, summarize, askReason, fromV2Event, v2SessionSource, sessionFacts, resetPendingReleases };
