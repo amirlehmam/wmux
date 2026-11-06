@@ -276,6 +276,10 @@ export function createSessionReporter({
   let retryTimer = null;
   let retryStep = 0;
   let lastSentAt = 0;
+  // Only the newest report call may settle state: a late failure from an older
+  // call must not undo a confirmation, nor start a second retry chain.
+  let sendSeq = 0;
+  let inFlight = false;
 
   const clearRetry = () => {
     if (retryTimer === null) return;
@@ -306,10 +310,14 @@ export function createSessionReporter({
 
   const sendReport = (id) => {
     lastSentAt = Date.now();
+    const seq = ++sendSeq;
+    inFlight = true;
     let answered = false;
     const done = (failure) => {
       if (answered) return;
       answered = true;
+      if (seq !== sendSeq) return;
+      inFlight = false;
       if (disposed || last !== id) return;
       if (failure) {
         confirmed = false;
@@ -371,6 +379,9 @@ export function createSessionReporter({
     reassert(id) {
       if (disposed || !last) return false;
       if (typeof id === "string" && id && id !== last) return false;
+      // A report still in flight, or a retry already scheduled, will settle
+      // the handle on its own; a second concurrent call only races it.
+      if (inFlight || retryTimer !== null) return false;
       if (confirmed && Date.now() - lastSentAt < reassertAfterMs) return false;
       retryStep = 0;
       clearRetry();

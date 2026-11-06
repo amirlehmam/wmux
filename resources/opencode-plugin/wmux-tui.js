@@ -207,9 +207,12 @@ export default Plugin.define({
           const stop = ctx.data.on(type, (evt) => {
             try {
               const data = evt && evt.data;
-              const hosted = hostedNow(rootOf(eventSessionID(type, data)));
+              const root = rootOf(eventSessionID(type, data));
+              const hosted = hostedNow(root);
+              // The reporter holds the ROOT session; `currentSession` is the
+              // viewed one, a subagent's own id while the user looks at it.
               if (type === "session.execution.started" && hosted) {
-                reporter.reassert(currentSession);
+                reporter.reassert(root);
               }
               activity.observe(type, data, hosted);
             } catch (err) {

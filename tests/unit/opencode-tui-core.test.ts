@@ -152,7 +152,11 @@ describe('createSessionReporter (#310)', () => {
     const sent: string[][] = [];
     const reporter = createSessionReporter({
       surface: SURFACE,
-      callWmux: (argv: string[]) => sent.push(argv),
+      callWmux: (argv: string[], done: (failure?: unknown) => void) => {
+        sent.push(argv);
+        done(null);
+      },
+      reassertAfterMs: 0,
     });
 
     reporter.observe(route('ses_abc12345'), rootOf);
@@ -162,6 +166,51 @@ describe('createSessionReporter (#310)', () => {
       ['report-session', 'ses_abc12345', '--provider', 'opencode', '--surface', SURFACE],
       ['report-session', 'ses_abc12345', '--provider', 'opencode', '--surface', SURFACE],
     ]);
+  });
+
+  it('does not reassert while the report is still in flight', async () => {
+    const { createSessionReporter } = await load();
+    const sent: string[][] = [];
+    const dones: Array<(failure?: unknown) => void> = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (argv: string[], done: (failure?: unknown) => void) => {
+        sent.push(argv);
+        dones.push(done);
+      },
+      reassertAfterMs: 0,
+    });
+
+    reporter.observe(route('ses_abc12345'), rootOf);
+    expect(reporter.reassert('ses_abc12345')).toBe(false);
+    dones[0](null);
+    expect(reporter.reassert('ses_abc12345')).toBe(true);
+    expect(sent).toHaveLength(2);
+  });
+
+  it('ignores a late failure from a call a newer report superseded', async () => {
+    const { createSessionReporter } = await load();
+    const dones: Array<(failure?: unknown) => void> = [];
+    const scheduled: Array<{ fn: () => void; ms: number }> = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (_argv: string[], done: (failure?: unknown) => void) => dones.push(done),
+      schedule: (fn: () => void, ms: number) => {
+        scheduled.push({ fn, ms });
+        return scheduled.length;
+      },
+      cancel: () => {},
+      reassertAfterMs: 0,
+    });
+
+    reporter.observe(route('ses_abc12345'), rootOf);
+    dones[0](null);
+    reporter.reassert('ses_abc12345');
+    reporter.observe(route('ses_def67890'), rootOf);
+    reporter.observe(route('ses_abc12345'), rootOf);
+    dones[3](null);
+    dones[1](new Error('stale failure'));
+    expect(scheduled).toEqual([]);
   });
 
   it('throttles a reassert after a confirmed report', async () => {

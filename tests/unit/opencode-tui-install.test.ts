@@ -181,7 +181,7 @@ describe('the shipped entry file (#310)', () => {
   });
 
   it('reasserts the held handle when a hosted execution starts', () => {
-    expect(src).toContain('reporter.reassert(currentSession)');
+    expect(src).toContain('reporter.reassert(root)');
     expect(src).toContain('"session.execution.started"');
   });
 
