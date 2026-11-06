@@ -140,6 +140,11 @@ describe('webviewWindowOpenPolicy (#281)', () => {
 });
 
 describe('needsAppWindowNavigationLock (#281)', () => {
+  it('allows the isolated unprivileged dictation profile to follow authentication redirects', () => {
+    expect(needsAppWindowNavigationLock('window', false, true)).toBe(false);
+    expect(needsAppWindowNavigationLock('browserView', false, true)).toBe(false);
+    expect(needsAppWindowNavigationLock('window', false, false)).toBe(true);
+  });
   it("locks wmux's own windows", () => {
     expect(needsAppWindowNavigationLock('window', false)).toBe(true);
   });

@@ -73,6 +73,7 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   resetTerminal: 'Reset terminal state',
   clearTerminalBuffer: 'Clear terminal buffer',
   toggleExplorer: 'Toggle file explorer',
+  toggleDictation: 'Start or stop dictation',
   togglePromptOutline: 'Prompt outline',
   togglePinnedPrompt: 'Pin / unpin prompt',
   followOutput: 'Follow output',
@@ -117,6 +118,7 @@ export const CATEGORY: Partial<Record<ShortcutAction, string>> = {
   toggleZoom: 'Panes', closeSurfaceOrPane: 'Panes', broadcastInput: 'Panes',
   find: 'Terminal', findNext: 'Terminal', findPrevious: 'Terminal', copyMode: 'Terminal',
   copy: 'Terminal', paste: 'Terminal', fontSizeIncrease: 'Terminal', fontSizeDecrease: 'Terminal',
+  toggleDictation: 'Terminal',
   fontSizeReset: 'Terminal', resetTerminal: 'Terminal', clearTerminalBuffer: 'Terminal',
   // Issue #207. Terminal rather than View: all three act on one pane's
   // scrollback — where its prompts are, which one is pinned above it, and

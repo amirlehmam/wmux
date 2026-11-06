@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
   clipboard: { readText: () => '', writeText: () => {} },
   shell: {},
   dialog: {},
-  app: { getPath: () => os.tmpdir(), getVersion: () => '0.0.0' },
+  app: { getPath: () => os.tmpdir(), getVersion: () => '0.0.0', on: vi.fn() },
   nativeTheme: { on: () => {} },
 }));
 

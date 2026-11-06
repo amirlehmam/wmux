@@ -7,6 +7,7 @@ import NotificationSettings from './NotificationSettings';
 import BrowserSettings from './BrowserSettings';
 import KeyboardSettings from './KeyboardSettings';
 import PromptSettings from './PromptSettings';
+import VoiceSettings from './VoiceSettings';
 import QuickLaunchSettings from './QuickLaunchSettings';
 import HelpSettings from './HelpSettings';
 import ChangelogSettings from './ChangelogSettings';
@@ -19,7 +20,7 @@ import '../../styles/settings.css';
 // preference tabs above them. Remote (#254) closes the preference tabs: it is
 // the one that exposes wmux beyond this machine, so it is not in the way of
 // the everyday ones.
-const TABS = ['General', 'Sidebar', 'Workspace', 'Terminal', 'Prompts', 'Notifications', 'Browser', 'Profiles', 'Shortcuts', 'Remote', 'Changelog', 'Help'] as const;
+const TABS = ['General', 'Sidebar', 'Workspace', 'Terminal', 'Prompts', 'Voice', 'Notifications', 'Browser', 'Profiles', 'Shortcuts', 'Remote', 'Changelog', 'Help'] as const;
 
 // Map each tab to its i18n key (issue #56). Typed as TranslationKey, not
 // string: the lookup is what reaches t(), so the keys are checked here.
@@ -29,6 +30,7 @@ const TAB_LABEL_KEYS: Record<typeof TABS[number], TranslationKey> = {
   Workspace: 'settings.tab.workspace',
   Terminal: 'settings.tab.terminal',
   Prompts: 'settings.tab.prompts',
+  Voice: 'settings.tab.voice',
   Notifications: 'settings.tab.notifications',
   Browser: 'settings.tab.browser',
   Profiles: 'settings.tab.profiles',
@@ -84,6 +86,7 @@ export default function SettingsWindow({ onClose, initialTab, onOpenTutorial }: 
             {activeTab === 'Workspace' && <WorkspaceSettings />}
             {activeTab === 'Terminal' && <TerminalSettings />}
             {activeTab === 'Prompts' && <PromptSettings />}
+            {activeTab === 'Voice' && <VoiceSettings />}
             {activeTab === 'Notifications' && <NotificationSettings />}
             {activeTab === 'Browser' && <BrowserSettings />}
             {activeTab === 'Profiles' && <QuickLaunchSettings />}

@@ -70,6 +70,7 @@ export function isEditableTarget(target: EditableTargetLike | null | undefined):
  */
 export const IGNORES_KEY_REPEAT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
   'resetTerminal',
+  'toggleDictation',
 ]);
 
 /**

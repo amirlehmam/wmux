@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme, webContents } from 'electron';
 import { nextZoomFactor } from './zoom-factor';
+import { registerDictationIpc } from './chatgpt-dictation-ipc';
 import { focusBrowserDevTools } from './browser-tools';
 import * as path from 'path';
 import { promises as fsp } from 'fs';
@@ -609,6 +610,14 @@ const agentBrowserDeps: AgentBrowserDeps = {
 };
 
 export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstance?: CDPProxy): void {
+  registerDictationIpc({
+    desktop: (wc) => {
+      const id=windowManager.idForWebContents(wc);
+      return !!id && windowManager.getWindow(id)?.webContents===wc;
+    },
+    owns: ownsLiveSurface,
+    pid: (id) => ptyManager.getPid(id),
+  });
   historyWindowManager = windowManager;
   terminalHistory.registerIpc(ipcMain);
   // Ctrl+wheel captured by the desktop before terminal scrolling consumes it.

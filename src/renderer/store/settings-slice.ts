@@ -201,6 +201,7 @@ export type ShortcutAction =
   | 'clearTerminalBuffer'
   // ─── file explorer panel ──────────────────────────────────────────────────
   | 'toggleExplorer'
+  | 'toggleDictation'
   // ─── issue #207: the prompt log and its four consumers ────────────────────
   | 'togglePromptOutline'
   | 'togglePinnedPrompt'
@@ -292,6 +293,9 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // reaches the terminal. Users wanting VS Code muscle memory can swap the two
   // in Settings → Keyboard, which is what #202/#203 landed for.
   toggleExplorer:    { key: 'x', ctrl: true, shift: true },
+  // Unbound: dictation is opt-in (workspacePrefs.dictationEnabled), so a
+  // default combo would be taken from terminal programs for a hidden feature.
+  toggleDictation:   { key: '' },
   // ─── Agent roster ───────────────────────────────────────────────────────────
   // Ctrl+Shift+B and Ctrl+Shift+A were both unbound. Shift-modified like every
   // batch above, so isSafeToIntercept keeps bare Ctrl+A (start-of-line in every
@@ -521,6 +525,11 @@ export interface WorkspacePrefs {
    */
   explorerOpenByDefault: boolean;
   /**
+   * ChatGPT Web dictation (#438). Opt-in: off, the titlebar has no microphone
+   * and wmux never loads chatgpt.com.
+   */
+  dictationEnabled: boolean;
+  /**
    * Ask before closing a session (issue #90): an accidental × click or
    * Ctrl+Shift+W kills every PTY in the workspace, including agents that
    * haven't persisted their state yet. Opt-in — off by default so the
@@ -648,6 +657,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   showWelcomeScreen: true,
   autoOpenDiffTab: true,
   explorerOpenByDefault: true,
+  dictationEnabled: false,
   confirmWorkspaceClose: false,
   confirmAppClose: false,
   defaultLayoutId: null,

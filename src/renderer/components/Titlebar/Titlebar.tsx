@@ -10,6 +10,7 @@ import logoSrc from '../../../../resources/icons/icon.svg';
 import NotificationBell from './NotificationBell';
 import UpdateBadge from './UpdateBadge';
 import KeepAwakeMenu from './KeepAwakeMenu';
+import DictationButton from './DictationButton';
 import { IconSettings, IconPixelAgent, IconFocus, IconFolder, IconSidebar, IconGitBranch, IconBrowser } from './icons';
 import WindowControls, { useIsFramelessWindow } from './WindowControls';
 import { NotificationInfo, WorkspaceId, PaneId, SurfaceId } from '../../../shared/types';
@@ -19,6 +20,7 @@ import { formatBinding } from '../Settings/KeyboardSettings';
 import '../../styles/titlebar.css';
 
 interface TitlebarProps {
+  dictationSurfaceId?: string;
   title?: string;
   sidebarVisible: boolean;
   onToggleSidebar: () => void;
@@ -48,6 +50,7 @@ interface TitlebarProps {
 }
 
 export default function Titlebar({
+  dictationSurfaceId,
   title,
   sidebarVisible,
   onToggleSidebar,
@@ -80,6 +83,7 @@ export default function Titlebar({
   const browserBinding = formatBinding(useStore((s) => s.shortcuts.openBrowser));
   const browserLabel = t('titlebar.browserPanel', 'Toggle browser panel');
   const gitBinding = formatBinding(useStore((s) => s.shortcuts.openGitPanel));
+  const dictationEnabled = useStore((s) => s.workspacePrefs.dictationEnabled);
   const gitLabel = t('titlebar.gitView', 'Toggle Git view');
   // Clear-transparency windows are frameless and have no native caption
   // buttons, so this is where they come from.
@@ -159,6 +163,7 @@ export default function Titlebar({
       <span className="titlebar__title">{title ?? ''}</span>
       <div className="titlebar__actions">
         <UpdateBadge />
+        {dictationEnabled && <DictationButton surfaceId={dictationSurfaceId} />}
         <KeepAwakeMenu />
         <NotificationBell
           notifications={notifications}

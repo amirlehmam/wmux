@@ -470,6 +470,7 @@ export function useKeyboardShortcuts(
         if (activeWorkspaceId) openGitView(useStore.getState(), activeWorkspaceId, focusedPaneId);
       },
       toggleExplorer: () => onToggleExplorer?.(),
+      toggleDictation: () => fire('wmux:dictation-toggle'),
       // commandPalette is opened by App.tsx's own listener; keep a no-op so we
       // still preventDefault on the combo. find/copyMode are short-circuited above.
       commandPalette: () => {},

@@ -26,7 +26,7 @@ vi.mock('electron', () => ({
   webContents: { fromId: (id: number) => electron.contents.get(id) },
   BrowserWindow: { getAllWindows: () => electron.windows, fromWebContents: (wc: any) => wc.window, getFocusedWindow: () => null },
   clipboard: {}, shell: {}, dialog: {}, nativeTheme: { on: vi.fn() },
-  app: { getPath: () => os.tmpdir(), getVersion: () => '0.0.0' },
+  app: { getPath: () => os.tmpdir(), getVersion: () => '0.0.0', on: vi.fn() },
 }));
 vi.mock('../../src/shared/instance', async (original) => ({
   ...(await original<Record<string, unknown>>()),
