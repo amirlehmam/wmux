@@ -142,12 +142,14 @@ const CLI_TIMEOUT_MS = 10_000;
  */
 export function callWmux(runtime, argv, log = () => {}, env = process.env, platform = process.platform, done = () => {}) {
   // `done` fires exactly once, on every path, when this call can no longer
-  // reach the pipe — which is what lets a reporter order its own calls.
+  // reach the pipe — which is what lets a reporter order its own calls. The
+  // argument is null on success, and the failure otherwise, so a caller that
+  // must not lose a report can retry exactly the calls that never landed.
   let finished = false;
-  const finish = () => {
+  const finish = (failure = null) => {
     if (finished) return;
     finished = true;
-    try { done(); } catch {}
+    try { done(failure); } catch {}
   };
   try {
     const cli = env.WMUX_CLI;
@@ -179,11 +181,11 @@ export function callWmux(runtime, argv, log = () => {}, env = process.env, platf
       } else {
         log(`cli: ${argv[0]} ok`);
       }
-      finish();
+      finish(err ?? null);
     });
   } catch (err) {
     log("cli: threw", (err && err.message) || String(err));
-    finish();
+    finish(err ?? new Error("wmux CLI threw"));
   }
 }
 
@@ -249,10 +251,82 @@ export function planSessionReport(route, rootOf) {
  * the pane's conversation is still the last one it was in, and restore should
  * reopen it. `disposed` is sticky too — a disposed TUI must not resurrect a
  * handle when a late store update fires.
+ *
+ * A report that never reached main must not leave `last` permanently set: the
+ * pane would look reported while the sidebar held no handle, and every later
+ * `observe` of the same id would be deduped away. Failed calls therefore retry
+ * on a bounded schedule, and `reassert` repeats a handle that main may have
+ * dropped (a late PTY clear, or an exit release racing the next OpenCode in
+ * the same tab) when the pane starts its next turn.
  */
-export function createSessionReporter({ surface, callWmux: send, callWmuxSync: sendSync, log = () => {} }) {
+const SESSION_REPORT_RETRY_MS = [1000, 3000, 10000];
+
+export function createSessionReporter({
+  surface,
+  callWmux: send,
+  callWmuxSync: sendSync,
+  log = () => {},
+  schedule = (fn, ms) => setTimeout(fn, ms),
+  cancel = (timer) => clearTimeout(timer),
+  reassertAfterMs = 30_000,
+}) {
   let last = null;
+  let confirmed = false;
   let disposed = false;
+  let retryTimer = null;
+  let retryStep = 0;
+  let lastSentAt = 0;
+
+  const clearRetry = () => {
+    if (retryTimer === null) return;
+    try { cancel(retryTimer); } catch {}
+    retryTimer = null;
+  };
+
+  const scheduleRetry = (id) => {
+    if (disposed || last !== id || retryTimer !== null) return;
+    const delay = SESSION_REPORT_RETRY_MS[retryStep];
+    if (delay === undefined) {
+      log("session: gave up", id);
+      return;
+    }
+    retryStep += 1;
+    try {
+      retryTimer = schedule(() => {
+        retryTimer = null;
+        if (disposed || last !== id) return;
+        sendReport(id);
+      }, delay);
+      // A pending retry must not keep a quitting TUI alive.
+      if (retryTimer && typeof retryTimer.unref === "function") retryTimer.unref();
+    } catch (err) {
+      log("session: retry failed", (err && err.message) || String(err));
+    }
+  };
+
+  const sendReport = (id) => {
+    lastSentAt = Date.now();
+    let answered = false;
+    const done = (failure) => {
+      if (answered) return;
+      answered = true;
+      if (disposed || last !== id) return;
+      if (failure) {
+        confirmed = false;
+        log("session: report failed", (failure && failure.message) || String(failure));
+        scheduleRetry(id);
+        return;
+      }
+      confirmed = true;
+      retryStep = 0;
+      clearRetry();
+    };
+    try {
+      send(["report-session", id, "--provider", "opencode", "--surface", surface], done);
+    } catch (err) {
+      done(err ?? new Error("report-session threw"));
+    }
+  };
 
   /**
    * Release the last handle. `sync` is for the process-exit hook: an async
@@ -264,6 +338,7 @@ export function createSessionReporter({ surface, callWmux: send, callWmuxSync: s
   const release = (sync) => {
     if (disposed) return false;
     disposed = true;
+    clearRetry();
     if (!last) return false;
     const id = last;
     last = null;
@@ -279,8 +354,28 @@ export function createSessionReporter({ surface, callWmux: send, callWmuxSync: s
       const id = planSessionReport(route, rootOf);
       if (!id || id === last) return false;
       last = id;
+      confirmed = false;
+      retryStep = 0;
+      clearRetry();
       log("session", id);
-      send(["report-session", id, "--provider", "opencode", "--surface", surface]);
+      sendReport(id);
+      return true;
+    },
+    /**
+     * Repeat the held handle when this pane starts a turn.
+     *
+     * `id` is the event's session (its root); a background session must not
+     * overwrite the viewed one, so a mismatch is ignored. Once a report is
+     * confirmed the repeat is throttled — this is reconciliation, not a poll.
+     */
+    reassert(id) {
+      if (disposed || !last) return false;
+      if (typeof id === "string" && id && id !== last) return false;
+      if (confirmed && Date.now() - lastSentAt < reassertAfterMs) return false;
+      retryStep = 0;
+      clearRetry();
+      log("session: reassert", last);
+      sendReport(last);
       return true;
     },
     /**
@@ -292,6 +387,8 @@ export function createSessionReporter({ surface, callWmux: send, callWmuxSync: s
     forget(id) {
       if (disposed || typeof id !== "string" || !id || id !== last) return false;
       last = null;
+      confirmed = false;
+      clearRetry();
       log("session deleted", id);
       send(["release-agent", "--provider", "opencode", "--session", id, "--surface", surface]);
       return true;

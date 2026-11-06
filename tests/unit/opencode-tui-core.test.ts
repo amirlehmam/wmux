@@ -12,11 +12,12 @@ import * as path from 'path';
  */
 const calls: Array<{ file: string; argv: string[]; opts: any }> = [];
 const syncCalls: Array<{ file: string; argv: string[]; opts: any }> = [];
+const execFailure: { value: Error | null } = { value: null };
 
 vi.mock('node:child_process', () => ({
   execFile: (file: string, argv: string[], opts: any, cb: any) => {
     calls.push({ file, argv, opts });
-    if (typeof cb === 'function') cb(null, '', '');
+    if (typeof cb === 'function') cb(execFailure.value, '', '');
   },
   execFileSync: (file: string, argv: string[], opts: any) => {
     syncCalls.push({ file, argv, opts });
@@ -31,6 +32,7 @@ const SURFACE = 'surf-1';
 beforeEach(() => {
   calls.length = 0;
   syncCalls.length = 0;
+  execFailure.value = null;
 });
 
 describe('planSessionReport (#310)', () => {
@@ -89,6 +91,94 @@ describe('createSessionReporter (#310)', () => {
     reporter.observe(route('ses_abc12345'), rootOf);
     reporter.observe(route('ses_abc12345'), rootOf);
     expect(sent).toEqual([['report-session', 'ses_abc12345', '--provider', 'opencode', '--surface', SURFACE]]);
+  });
+
+  it('retries a report that never landed, and stops once it does', async () => {
+    const { createSessionReporter } = await load();
+    const sent: string[][] = [];
+    const dones: Array<(failure?: unknown) => void> = [];
+    const scheduled: Array<{ fn: () => void; ms: number }> = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (argv: string[], done: (failure?: unknown) => void) => {
+        sent.push(argv);
+        dones.push(done);
+      },
+      schedule: (fn: () => void, ms: number) => {
+        scheduled.push({ fn, ms });
+        return scheduled.length;
+      },
+      cancel: () => {},
+    });
+
+    reporter.observe(route('ses_abc12345'), rootOf);
+    expect(sent).toHaveLength(1);
+    expect(reporter.hasSession()).toBe(true);
+
+    dones[0](new Error('pipe busy'));
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0].ms).toBe(1000);
+
+    scheduled[0].fn();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(['report-session', 'ses_abc12345', '--provider', 'opencode', '--surface', SURFACE]);
+
+    dones[1](null);
+    expect(scheduled).toHaveLength(1);
+  });
+
+  it('does not retry a failed report for a session the view already left', async () => {
+    const { createSessionReporter } = await load();
+    const dones: Array<(failure?: unknown) => void> = [];
+    const scheduled: Array<{ fn: () => void; ms: number }> = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (_argv: string[], done: (failure?: unknown) => void) => dones.push(done),
+      schedule: (fn: () => void, ms: number) => {
+        scheduled.push({ fn, ms });
+        return scheduled.length;
+      },
+      cancel: () => {},
+    });
+
+    reporter.observe(route('ses_abc12345'), rootOf);
+    reporter.observe(route('ses_def67890'), rootOf);
+    dones[0](new Error('late failure'));
+    expect(scheduled).toEqual([]);
+  });
+
+  it('reasserts the held handle on a new turn, ignoring another session', async () => {
+    const { createSessionReporter } = await load();
+    const sent: string[][] = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (argv: string[]) => sent.push(argv),
+    });
+
+    reporter.observe(route('ses_abc12345'), rootOf);
+    expect(reporter.reassert('ses_other999')).toBe(false);
+    expect(reporter.reassert('ses_abc12345')).toBe(true);
+    expect(sent).toEqual([
+      ['report-session', 'ses_abc12345', '--provider', 'opencode', '--surface', SURFACE],
+      ['report-session', 'ses_abc12345', '--provider', 'opencode', '--surface', SURFACE],
+    ]);
+  });
+
+  it('throttles a reassert after a confirmed report', async () => {
+    const { createSessionReporter } = await load();
+    const sent: string[][] = [];
+    const reporter = createSessionReporter({
+      surface: SURFACE,
+      callWmux: (argv: string[], done: (failure?: unknown) => void) => {
+        sent.push(argv);
+        done(null);
+      },
+      reassertAfterMs: 60_000,
+    });
+
+    reporter.observe(route('ses_abc12345'), rootOf);
+    expect(reporter.reassert('ses_abc12345')).toBe(false);
+    expect(sent).toHaveLength(1);
   });
 
   it('follows navigation to a different session', async () => {
@@ -672,6 +762,20 @@ describe('callWmux (#310)', () => {
     callWmux(runtimeNode, ['x'], () => {}, { WMUX_CLI: 'wmux.js' }, 'linux', done);
     callWmux(runtimeNode, ['x'], () => {}, {}, 'win32', done);
     expect(done).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands the failure to the caller so a report that never landed can retry', async () => {
+    const { callWmux } = await load();
+    const done = vi.fn();
+    const failure = new Error('pipe busy');
+    execFailure.value = failure;
+    callWmux(runtimeNode, ['report-session', 'ses_abc12345'], () => {}, { WMUX_CLI: 'wmux.js' }, 'linux', done);
+    expect(done).toHaveBeenCalledWith(failure);
+
+    done.mockClear();
+    execFailure.value = null;
+    callWmux(runtimeNode, ['report-session', 'ses_abc12345'], () => {}, { WMUX_CLI: 'wmux.js' }, 'linux', done);
+    expect(done).toHaveBeenCalledWith(null);
   });
 
   it('bounds every call — a hung CLI must not hold the activity reporter in flight forever', async () => {

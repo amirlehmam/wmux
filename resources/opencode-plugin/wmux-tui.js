@@ -1,4 +1,4 @@
-// wmux-plugin-version: 5
+// wmux-plugin-version: 6
 // wmux OpenCode CLI-side (TUI) plugin — the half that runs in the TUI process,
 // so a pane is attributable even when the server is remote or shared (#310).
 // Installed by `wmux opencode-tui` to <config>/plugins/wmux-cli/tui.js.
@@ -189,6 +189,12 @@ export default Plugin.define({
     // Working/idle (#310 phase 3b): absolute `--run-depth` values from the
     // execution events. An end always clears its session id, even after the
     // view moved — hosting only gates a start.
+    //
+    // A start is also the reconciliation point for the restore handle: the
+    // report can have landed once and later been dropped by main (a late PTY
+    // clear, or an exit release racing the next OpenCode in this tab). The
+    // reporter throttles the repeat, so an ordinary turn pays at most one extra
+    // CLI call and a pane that lost its handle heals on the next run.
     const stopActivity = [];
     for (const type of [
       "session.execution.started",
@@ -201,7 +207,11 @@ export default Plugin.define({
           const stop = ctx.data.on(type, (evt) => {
             try {
               const data = evt && evt.data;
-              activity.observe(type, data, hostedNow(rootOf(eventSessionID(type, data))));
+              const hosted = hostedNow(rootOf(eventSessionID(type, data)));
+              if (type === "session.execution.started" && hosted) {
+                reporter.reassert(currentSession);
+              }
+              activity.observe(type, data, hosted);
             } catch (err) {
               log(`activity: ${type} threw`, (err && err.message) || String(err));
             }

@@ -123,6 +123,13 @@ wmux opencode-tui --remove   # remove, only when the file carries our marker
   instead of inflating a refcount. Running sessions are tracked by id: an end
   still clears after the user switches tabs, and a subagent's end cannot return
   a pane to idle while its parent is still running. Tool labels stay out.
+- **Resilience** (plugin v6): a `report-session` call that never reached wmux
+  is retried after 1 s, 3 s and 10 s, so the named pipe answering *All pipe
+  instances are busy* during a restore burst no longer leaves the pane without
+  a handle for the rest of its life. A pane that starts a turn also reasserts
+  the handle it holds, throttled to once per 30 s: a handle main dropped after
+  a successful report heals on the next run rather than waiting for the user to
+  switch sessions.
 - `WMUX_PLUGIN_DEBUG` works as it does for the server half, into
   `wmux-tui-plugin-debug.log`, and logs each distinct TUI event type once —
   which is how the prompt-submission signal was identified.
