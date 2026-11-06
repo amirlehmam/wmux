@@ -162,10 +162,10 @@ describe('the shipped entry file (#310)', () => {
   const coreSrc = fs.readFileSync(corePath, 'utf-8');
 
   it('carries a version marker, or installed copies never update', () => {
-    // v4 → v5 is the startup session seed: without the bump every installed
-    // TUI half keeps missing a conversation that becomes current while the
-    // TUI is still mounting.
-    expect(src).toMatch(/wmux-plugin-version:\s*5/);
+    // v5 → v6 retries a session report that never landed and reasserts the
+    // handle when the pane starts a turn, so a transient CLI failure no longer
+    // leaves the sidebar without that pane's session until the next switch.
+    expect(src).toMatch(/wmux-plugin-version:\s*6/);
   });
 
   it('is a v2 CLI plugin definition and the only export', () => {
@@ -178,6 +178,11 @@ describe('the shipped entry file (#310)', () => {
     expect(src).toContain('createSessionSeeder');
     expect(src).toContain('seeder.start()');
     expect(src).toContain('seeder.stop()');
+  });
+
+  it('reasserts the held handle when a hosted execution starts', () => {
+    expect(src).toContain('reporter.reassert(root)');
+    expect(src).toContain('"session.execution.started"');
   });
 
   it('releases only on a real exit — a plugin reload must keep the handle', () => {
