@@ -5,16 +5,21 @@ on the actual ChatGPT website. It requires a signed-in ChatGPT account and does
 not use an OpenAI API key. Availability and transcription are controlled by the
 website; this is a website-dependent integration, not a stable transcription API.
 
+Dictation is **off by default**. Until you turn it on, the titlebar has no
+microphone and wmux never loads chatgpt.com.
+
 ## Setup
 
-1. Open **Settings → Voice → Sign in to ChatGPT**.
-2. Sign in manually in the dedicated account window. Its persistent browser
+1. Open **Settings → Voice** and turn on **Enable ChatGPT dictation**. The
+   microphone appears in the titlebar.
+2. Click **Sign in to ChatGPT**.
+3. Sign in manually in the dedicated account window. Its persistent browser
    profile is separate from ordinary wmux browser tabs. Authentication redirects
    and HTTPS sign-in popups stay within that isolated profile.
-3. Return to Voice and click **Check connection**. A confirmed connected account
+4. Return to Voice and click **Check connection**. A confirmed connected account
    is required. A signed-out or unverifiable session blocks the first microphone
    click and offers sign-in guidance before recording.
-4. Optionally click **Allow microphone and refresh devices** and choose an input.
+5. Optionally click **Allow microphone and refresh devices** and choose an input.
    Refresh briefly requests microphone access to obtain device labels, then
    stops that stream. The selection is saved in wmux settings.
 
@@ -26,8 +31,8 @@ not in wmux settings. Ordinary browser cookies are not copied.
 ## Dictate into a terminal
 
 Select a terminal, click the microphone, speak, then click **Stop**. You can also
-use **Ctrl+Shift+S**, rebind **Start or stop dictation** in **Settings → Shortcuts**,
-or use the command palette. Press once to start and again to stop; holding the
+bind **Start or stop dictation** in **Settings → Shortcuts** (it has no default
+key, so no terminal program loses one), or use the command palette. Press once to start and again to stop; holding the
 keys does not repeatedly toggle recording. The button
 turns red and shows a stop icon while recording. After Stop, it becomes an X
 with animated dots cycling from one to three. Click that X to cancel a pending

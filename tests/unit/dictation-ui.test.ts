@@ -23,7 +23,7 @@ describe('dictation titlebar',()=>{
     const original=useStore.getState().shortcuts;
     try{
       const div=await mount();
-      expect(div.querySelector('button')!.title).toBe('Start dictation (Ctrl+Shift+S)');
+      expect(div.querySelector('button')!.title).toBe('Start dictation');
       await act(async()=>useStore.setState({shortcuts:{...original,toggleDictation:{key:'F8'}}}));
       expect(div.querySelector('button')!.title).toBe('Start dictation (F8)');
       await act(async()=>useStore.setState({shortcuts:{...original,toggleDictation:{key:''}}}));
@@ -32,7 +32,11 @@ describe('dictation titlebar',()=>{
   });
   it('places the single global control immediately before Keep Computer Awake',()=>{
     const src=readFileSync(join(__dirname,'../../src/renderer/components/Titlebar/Titlebar.tsx'),'utf8');
-    expect(src).toMatch(/<DictationButton[^>]*\/>\s*<KeepAwakeMenu/);
+    expect(src).toMatch(/<DictationButton[^>]*\/>\}\s*<KeepAwakeMenu/);
+  });
+  it('renders the titlebar control only once dictation is enabled',()=>{
+    const src=readFileSync(join(__dirname,'../../src/renderer/components/Titlebar/Titlebar.tsx'),'utf8');
+    expect(src).toMatch(/\{dictationEnabled && <DictationButton/);
   });
   it('starts with the captured terminal binding',async()=>{
     const div=await mount();await act(async()=>div.querySelector('button')!.click());

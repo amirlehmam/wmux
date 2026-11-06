@@ -17,10 +17,8 @@ beforeEach(()=>{
 afterEach(()=>{act(()=>root.unmount());host.remove();Reflect.deleteProperty(window,'wmux');localStorage.clear();vi.clearAllMocks();});
 
 describe('dictation shortcut configuration',()=>{
-  it('uses an available default for press-to-start and press-to-stop',()=>{
-    expect(DEFAULT_SHORTCUTS.toggleDictation).toEqual({key:'s',ctrl:true,shift:true});
-    const same=Object.entries(DEFAULT_SHORTCUTS).filter(([,b])=>b.key.toLowerCase()==='s'&&b.ctrl&&b.shift&&!b.alt);
-    expect(same.map(([action])=>action)).toEqual(['toggleDictation']);
+  it('takes no key by default, since dictation is opt-in',()=>{
+    expect(DEFAULT_SHORTCUTS.toggleDictation).toEqual({key:''});
   });
   it('records a custom dictation shortcut in Shortcuts and persists it',()=>{
     act(()=>root.render(createElement(KeyboardSettings)));

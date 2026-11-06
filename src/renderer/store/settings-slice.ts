@@ -293,7 +293,9 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // reaches the terminal. Users wanting VS Code muscle memory can swap the two
   // in Settings → Keyboard, which is what #202/#203 landed for.
   toggleExplorer:    { key: 'x', ctrl: true, shift: true },
-  toggleDictation:   { key: 's', ctrl: true, shift: true },
+  // Unbound: dictation is opt-in (workspacePrefs.dictationEnabled), so a
+  // default combo would be taken from terminal programs for a hidden feature.
+  toggleDictation:   { key: '' },
   // ─── Agent roster ───────────────────────────────────────────────────────────
   // Ctrl+Shift+B and Ctrl+Shift+A were both unbound. Shift-modified like every
   // batch above, so isSafeToIntercept keeps bare Ctrl+A (start-of-line in every
@@ -355,9 +357,8 @@ export interface ShortcutDefaultsState {
 /**
  * 0 — every release through 2.13.x. No promotion has ever run.
  * 1 — #249: nextSurface/prevSurface Ctrl+Shift+] / [ → Ctrl+Tab / Ctrl+Shift+Tab.
- * 2 — Dictation: Ctrl+Alt+V → Ctrl+Shift+S (D and V already belong to split/paste).
  */
-export const SHORTCUT_DEFAULT_REV = 2;
+export const SHORTCUT_DEFAULT_REV = 1;
 
 /** The pre-#249 surface-cycling defaults, which the rev-1 promotion replaces. */
 export const PRE_249_SURFACE_CYCLE: Readonly<Partial<Record<ShortcutAction, ShortcutBinding>>> = {
@@ -395,7 +396,6 @@ interface ShortcutPromotion {
 
 const SHORTCUT_PROMOTIONS: ReadonlyArray<ShortcutPromotion> = [
   { current: 1, apply: (s) => promoteUnchosen(s, PRE_249_SURFACE_CYCLE) },
-  { current: 2, apply: (s) => promoteUnchosen(s, {toggleDictation:{key:'v',ctrl:true,alt:true}}) },
 ];
 
 /**
@@ -525,6 +525,11 @@ export interface WorkspacePrefs {
    */
   explorerOpenByDefault: boolean;
   /**
+   * ChatGPT Web dictation (#438). Opt-in: off, the titlebar has no microphone
+   * and wmux never loads chatgpt.com.
+   */
+  dictationEnabled: boolean;
+  /**
    * Ask before closing a session (issue #90): an accidental × click or
    * Ctrl+Shift+W kills every PTY in the workspace, including agents that
    * haven't persisted their state yet. Opt-in — off by default so the
@@ -652,6 +657,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   showWelcomeScreen: true,
   autoOpenDiffTab: true,
   explorerOpenByDefault: true,
+  dictationEnabled: false,
   confirmWorkspaceClose: false,
   confirmAppClose: false,
   defaultLayoutId: null,

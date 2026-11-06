@@ -7,6 +7,8 @@ import type { Translation } from './en';
 export const pt: Translation = {
   'voice.starting': 'Verificando ChatGPT e iniciando o microfone…',
   'settings.tab.voice': 'Voz',
+  'voice.enable': "Ativar o ditado do ChatGPT",
+  'voice.disabledHint': "Desativado por padrão: a barra de título não tem microfone e o wmux nunca abre o chatgpt.com. Ativá-lo adiciona o botão; defina um atalho em Atalhos.",
   'voice.title': 'Voz',
   'voice.start': 'Iniciar ditado',
   'voice.stop': 'Parar ditado',

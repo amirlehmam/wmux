@@ -7,6 +7,8 @@ import type { Translation } from './en';
 export const fr: Translation = {
   'voice.starting': 'Vérification de ChatGPT et démarrage du microphone…',
   'settings.tab.voice': 'Voix',
+  'voice.enable': "Activer la dictée ChatGPT",
+  'voice.disabledHint': "Désactivée par défaut : la barre de titre n'a pas de micro et wmux n'ouvre jamais chatgpt.com. L'activer ajoute le bouton ; définissez son raccourci dans Raccourcis.",
   'voice.title': 'Voix',
   'voice.start': 'Démarrer la dictée',
   'voice.stop': 'Arrêter la dictée',

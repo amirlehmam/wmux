@@ -7,12 +7,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Titlebar from '../../src/renderer/components/Titlebar/Titlebar';
 import Sidebar from '../../src/renderer/components/Sidebar/Sidebar';
-import { DEFAULT_SHORTCUTS, DEFAULT_SIDEBAR_PREFS } from '../../src/renderer/store/settings-slice';
+import { DEFAULT_SHORTCUTS, DEFAULT_SIDEBAR_PREFS, DEFAULT_WORKSPACE_PREFS } from '../../src/renderer/store/settings-slice';
 
 const store = create(() => ({
   sidebarVisible: true,
   browserOpen: false,
   sidebarPrefs: DEFAULT_SIDEBAR_PREFS,
+  workspacePrefs: DEFAULT_WORKSPACE_PREFS,
   shortcuts: DEFAULT_SHORTCUTS,
   savedLayouts: [],
 }));

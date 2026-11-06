@@ -10,6 +10,8 @@
 export const en = {
   'voice.starting': 'Checking ChatGPT and starting microphone…',
   'shortcutAction.toggleDictation': 'Start or stop dictation',
+  'voice.enable': "Enable ChatGPT dictation",
+  'voice.disabledHint': "Off by default: the titlebar has no microphone and wmux never opens chatgpt.com. Turning it on adds the button; set a shortcut for it in Shortcuts.",
   "voice.title": "Voice",
   "voice.description": "Dictate with the ChatGPT website using your account. Click the microphone in the titlebar, speak, then click Stop to insert text into the selected terminal. Nothing is sent to the terminal until you click Stop.",
   "voice.account": "ChatGPT account",

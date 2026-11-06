@@ -7,7 +7,7 @@ import { ChatGPTDictationHost } from './chatgpt-dictation-host';
 import { DictationCoordinator } from './chatgpt-dictation';
 import { loadSettings, saveSetting } from './settings-store';
 
-interface DictationOwner { host:ChatGPTDictationHost; coordinator:DictationCoordinator; targetPid?:number; surfaceId?:string }
+interface DictationOwner { host:ChatGPTDictationHost; coordinator:DictationCoordinator; targetPid?:number; surfaceId?:string; watchingSignIn?:boolean }
 export function registerDictationIpc(deps:{ desktop:(wc:WebContents)=>boolean; owns:(id:unknown,wc:WebContents)=>boolean; pid:(id:SurfaceId)=>number|undefined }):void {
   const owners=new Map<number,DictationOwner>();
   const stored=loadSettings()['wmux-voice-device'];
@@ -26,11 +26,20 @@ export function registerDictationIpc(deps:{ desktop:(wc:WebContents)=>boolean; o
       } catch{return false;}
     },state=>{if(!wc.isDestroyed())wc.send(IPC_CHANNELS.DICTATION_STATE,state);})};
     owner.coordinator.setDevice(deviceId);owners.set(wc.id,owner);
+    wc.once('destroyed',()=>dispose(wc.id));win.once('closed',()=>dispose(wc.id));
+    return owner;
+  };
+  // Re-check the account when the user comes back from the sign-in window.
+  // Armed only by an explicit 'account' action: a refresh loads chatgpt.com,
+  // which must never happen on an ordinary window focus.
+  const watchSignIn=(wc:WebContents,owner:DictationOwner)=>{
+    if(owner.watchingSignIn)return;
+    const win=BrowserWindow.fromWebContents(wc);
+    if(!win)return;
+    owner.watchingSignIn=true;
     const refreshAccount=()=>{void owner.coordinator.refresh();};
     win.on('focus',refreshAccount);
     wc.once('destroyed',()=>win.removeListener('focus',refreshAccount));
-    wc.once('destroyed',()=>dispose(wc.id));win.once('closed',()=>dispose(wc.id));
-    return owner;
   };
   ipcMain.handle(IPC_CHANNELS.DICTATION_COMMAND,async(event,raw:unknown)=>{
     if(!deps.desktop(event.sender) || event.senderFrame!==event.sender.mainFrame)throw new Error('Unauthorized dictation owner');
@@ -41,7 +50,7 @@ export function registerDictationIpc(deps:{ desktop:(wc:WebContents)=>boolean; o
       switch(command.action){
         case 'state':return coordinator.getState();
         case 'refresh':await coordinator.refresh();break;
-        case 'account':host.show();await coordinator.refresh();break;
+        case 'account':host.show();watchSignIn(event.sender,owner);await coordinator.refresh();break;
         case 'devices':
           if(!['idle','error'].includes(coordinator.getState().phase))return [];
           return await host.devices();
