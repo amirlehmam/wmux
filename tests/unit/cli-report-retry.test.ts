@@ -42,7 +42,11 @@ function runCli(socketPath: string): Promise<{ code: number | null; stdout: stri
 describe('report-session against a busy pipe', () => {
   it('asks again after the first connection is reset', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-cli-retry-'));
-    const socketPath = path.join(dir, 'pipe.sock');
+    // Windows has no Unix sockets in a temp dir: listen on a named pipe, which
+    // is what the CLI talks to there anyway.
+    const socketPath = process.platform === 'win32'
+      ? `\\\\.\\pipe\\wmux-cli-retry-${process.pid}-${Date.now()}`
+      : path.join(dir, 'pipe.sock');
     let connections = 0;
     const server = net.createServer((socket) => {
       connections += 1;
