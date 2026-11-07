@@ -8,6 +8,7 @@
 // in a tree and which of them the user is looking at.
 
 import type { ExplorerDiffEntry } from '../../../shared/types';
+import { isFileEditTool } from '../../../shared/agent-tools';
 
 /** What one row displays. Folders carry the sum of everything beneath them. */
 export interface DiffStat {
@@ -127,11 +128,6 @@ export function totalStat(files: readonly ExplorerDiffEntry[]): DiffStat {
 // follows: wmux does not guess at agent state, it reports what was declared or
 // nothing at all.
 
-/** Tools whose completion means a file on disk changed. */
-export const EDITING_TOOLS: ReadonlySet<string> = new Set([
-  'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Update',
-]);
-
 /**
  * Bound on remembered paths, per root. A long agent run touching thousands of
  * files should cost a bounded amount of renderer memory, and the dots that fall
@@ -140,8 +136,9 @@ export const EDITING_TOOLS: ReadonlySet<string> = new Set([
  */
 export const MAX_TOUCHED = 512;
 
+/** Whether this tool's completion means a file on disk changed (shared/agent-tools.ts). */
 export function isEditingTool(tool: unknown): boolean {
-  return typeof tool === 'string' && EDITING_TOOLS.has(tool);
+  return isFileEditTool(tool);
 }
 
 /**

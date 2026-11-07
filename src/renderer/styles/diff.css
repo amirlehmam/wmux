@@ -207,6 +207,18 @@
 
 /* ─── Hunk ───────────────────────────────────────────────────────────────── */
 
+/*
+ * All of a file's hunks share one box as wide as the widest line, and at least
+ * as wide as the view (#441). Each row is a block inside it, so its tint spans
+ * that whole width: a row sized to the scroll container stopped at the
+ * viewport's edge and left the rest of a long line on bare background once the
+ * view was scrolled sideways. Shared with the Git view (git.css).
+ */
+.diff-hunks {
+  width: max-content;
+  min-width: 100%;
+}
+
 .diff-hunk {
   margin-bottom: 2px;
 }

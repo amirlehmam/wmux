@@ -69,10 +69,16 @@ const LINE_PREFIX: Record<DiffLine['type'], string> = {
   context: ' ',
 };
 
-/** The hunks of one file, in the Diff tab's markup and styles. */
+/**
+ * The hunks of one file, in the Diff tab's markup and styles.
+ *
+ * Wrapped in one `.diff-hunks` box sized to the widest line (diff.css), so every
+ * row's add/remove tint reaches the end of the longest line when the view is
+ * scrolled sideways, rather than stopping at the viewport's width (#441).
+ */
 export function DiffHunks({ hunks }: Readonly<{ hunks: DiffHunk[] }>) {
   return (
-    <>
+    <div className="diff-hunks">
       {hunks.map((hunk, hi) => (
         <div key={hi} className="diff-hunk">
           <div className="diff-hunk__header">
@@ -95,6 +101,6 @@ export function DiffHunks({ hunks }: Readonly<{ hunks: DiffHunk[] }>) {
           ))}
         </div>
       ))}
-    </>
+    </div>
   );
 }

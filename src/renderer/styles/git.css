@@ -21,7 +21,7 @@
 .git-muted { color: var(--ui-text-muted); }
 
 .git-hash,
-.git-diff > .diff-hunk {
+.git-diff .diff-hunk {
   font-family: 'Cascadia Code', Consolas, monospace;
 }
 
@@ -309,7 +309,9 @@
 .git-commit-row .git-muted { width: 100%; font-size: 10px; padding-left: 0; }
 
 .git-diff { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
-.git-diff > .diff-hunk { flex-shrink: 0; }
+/* The hunks box keeps its max-content width (diff.css, #441); a column flex item
+   must not shrink, or its rows would be squeezed vertically instead. */
+.git-diff > .diff-hunks { flex-shrink: 0; }
 .git-diff__header { position: sticky; top: 0; z-index: 1; display: flex; gap: 10px; align-items: baseline; }
 .git-diff__subtitle { color: var(--ui-text-muted); font-size: 11px; }
 
