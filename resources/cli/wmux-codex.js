@@ -4,9 +4,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isTransientWmuxError = void 0;
 exports.codexLaunchPlan = codexLaunchPlan;
 exports.resumeTarget = resumeTarget;
-exports.isTransientWmuxError = isTransientWmuxError;
 exports.wmuxRequestPatiently = wmuxRequestPatiently;
 exports.codexCapabilityKey = codexCapabilityKey;
 exports.supportsRemote = supportsRemote;
@@ -17,6 +17,8 @@ const fs_1 = __importDefault(require("fs"));
 const net_1 = __importDefault(require("net"));
 const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
+const transport_retry_1 = require("./transport-retry");
+Object.defineProperty(exports, "isTransientWmuxError", { enumerable: true, get: function () { return transport_retry_1.isTransientWmuxError; } });
 const NON_INTERACTIVE = new Set([
     'agents', 'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin', 'app-server',
     'remote-control', 'app', 'completion', 'update', 'doctor', 'sandbox', 'debug',
@@ -130,9 +132,6 @@ function resumeTarget(clientArgs) {
     }
     return undefined;
 }
-/** wmux is there but did not answer in time, or dropped the connection. */
-class WmuxBusyError extends Error {
-}
 /** Authenticated local pipe only; never send environment variables or transcripts. */
 const wmuxRequest = (method, params, timeoutMs) => {
     return new Promise((resolve, reject) => {
@@ -144,7 +143,7 @@ const wmuxRequest = (method, params, timeoutMs) => {
         }
         const socket = net_1.default.connect(pipe);
         let data = '';
-        const timer = setTimeout(() => finish(new WmuxBusyError('wmux did not respond')), timeoutMs);
+        const timer = setTimeout(() => finish(new transport_retry_1.WmuxBusyError('wmux did not respond')), timeoutMs);
         const finish = (error, result) => {
             clearTimeout(timer);
             socket.destroy();
@@ -175,22 +174,9 @@ const wmuxRequest = (method, params, timeoutMs) => {
             }
         });
         socket.on('error', error => finish(error));
-        socket.on('end', () => finish(new WmuxBusyError('wmux disconnected')));
+        socket.on('end', () => finish(new transport_retry_1.WmuxBusyError('wmux disconnected')));
     });
 };
-/**
- * Worth asking again: wmux exists but was too busy to answer. Restoring a
- * session starts every saved Codex at once, beside every other pane, and
- * wmux's main process answers none of them until that burst is through.
- * ENOENT (no wmux at all), "Outside wmux" and an error REPLY (an older wmux
- * that does not know the method) are answers, and are never retried.
- */
-function isTransientWmuxError(error) {
-    if (error instanceof WmuxBusyError)
-        return true;
-    const code = error?.code;
-    return code === 'EBUSY' || code === 'ECONNRESET' || code === 'EPIPE' || code === 'ETIMEDOUT';
-}
 /**
  * The request, asked again while wmux is merely busy. A single 2 s attempt
  * used to decide each launch: during a restore, roughly half the Codex panes
@@ -198,22 +184,7 @@ function isTransientWmuxError(error) {
  * them — a `/new` or a quit there was never recorded.
  */
 async function wmuxRequestPatiently(method, params, patience, request = wmuxRequest, now = Date.now) {
-    const deadline = now() + patience.budgetMs;
-    let attemptMs = patience.firstAttemptMs;
-    for (let attempt = 0;; attempt++) {
-        try {
-            return await request(method, params, Math.max(1, Math.min(attemptMs, deadline - now())));
-        }
-        catch (error) {
-            const pause = Math.min(250 * (attempt + 1), 1000);
-            if (!isTransientWmuxError(error) || now() + pause >= deadline)
-                throw error;
-            if (attempt === 0)
-                patience.onWait?.();
-            await new Promise(resolve => setTimeout(resolve, pause));
-            attemptMs *= 2;
-        }
-    }
+    return (0, transport_retry_1.retryTransient)((timeoutMs) => request(method, params, timeoutMs), patience, now);
 }
 /** Whether to record sessions: decides a restored pane's capture, so it waits for wmux. */
 const CONFIG_PATIENCE = { budgetMs: 45_000, firstAttemptMs: 3_000 };
@@ -335,7 +306,7 @@ async function runWmuxCodex(args = process.argv.slice(2)) {
     catch (error) {
         // An older/offline wmux leaves the CLI usable. Say so when wmux was there
         // but never answered: that pane is about to run without session capture.
-        if (isTransientWmuxError(error))
+        if ((0, transport_retry_1.isTransientWmuxError)(error))
             console.error('[wmux] wmux did not answer; starting Codex without session restore.');
     }
     if (!enabled)

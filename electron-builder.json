@@ -55,6 +55,7 @@
     { "from": "dist/cli/codex-session-tracker.js", "to": "cli/codex-session-tracker.js" },
     { "from": "node_modules/ws", "to": "cli/node_modules/ws" },
     { "from": "dist/cli/transport-deadline.js", "to": "cli/transport-deadline.js" },
+    { "from": "dist/cli/transport-retry.js", "to": "cli/transport-retry.js" },
     { "from": "dist/cli/wsl-network.js", "to": "cli/wsl-network.js" },
     { "from": "dist/cli/opencode-tui-install.js", "to": "cli/opencode-tui-install.js" },
     { "from": "src/cli-bin", "to": "cli-bin" },

@@ -6,6 +6,10 @@ import net from 'net';
 import os from 'os';
 import path from 'path';
 import type { CodexRelay, CodexRelayOptions } from './codex-relay';
+import { WmuxBusyError, isTransientWmuxError, retryTransient, type Patience } from './transport-retry';
+
+export { isTransientWmuxError };
+export type { Patience };
 
 const NON_INTERACTIVE = new Set([
   'agents', 'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin', 'app-server',
@@ -115,9 +119,6 @@ export function resumeTarget(clientArgs: string[]): string | undefined {
   return undefined;
 }
 
-/** wmux is there but did not answer in time, or dropped the connection. */
-class WmuxBusyError extends Error {}
-
 export type WmuxRequest = (method: string, params: Record<string, unknown>, timeoutMs: number) => Promise<any>;
 /** true / false, or null when `codex --help` gave no answer in time. */
 export type RemoteProbe = (executable: string, env: NodeJS.ProcessEnv) => Promise<boolean | null>;
@@ -154,28 +155,6 @@ const wmuxRequest: WmuxRequest = (method, params, timeoutMs) => {
 };
 
 /**
- * Worth asking again: wmux exists but was too busy to answer. Restoring a
- * session starts every saved Codex at once, beside every other pane, and
- * wmux's main process answers none of them until that burst is through.
- * ENOENT (no wmux at all), "Outside wmux" and an error REPLY (an older wmux
- * that does not know the method) are answers, and are never retried.
- */
-export function isTransientWmuxError(error: unknown): boolean {
-  if (error instanceof WmuxBusyError) return true;
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return code === 'EBUSY' || code === 'ECONNRESET' || code === 'EPIPE' || code === 'ETIMEDOUT';
-}
-
-export interface Patience {
-  /** Total time to keep trying. */
-  budgetMs: number;
-  /** First attempt's timeout; each retry doubles it, within the budget. */
-  firstAttemptMs: number;
-  /** Told once, when the first attempt failed and a retry is coming. */
-  onWait?: () => void;
-}
-
-/**
  * The request, asked again while wmux is merely busy. A single 2 s attempt
  * used to decide each launch: during a restore, roughly half the Codex panes
  * timed out and started without session capture, so wmux lost track of
@@ -188,19 +167,7 @@ export async function wmuxRequestPatiently(
   request: WmuxRequest = wmuxRequest,
   now: () => number = Date.now,
 ): Promise<any> {
-  const deadline = now() + patience.budgetMs;
-  let attemptMs = patience.firstAttemptMs;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await request(method, params, Math.max(1, Math.min(attemptMs, deadline - now())));
-    } catch (error) {
-      const pause = Math.min(250 * (attempt + 1), 1000);
-      if (!isTransientWmuxError(error) || now() + pause >= deadline) throw error;
-      if (attempt === 0) patience.onWait?.();
-      await new Promise(resolve => setTimeout(resolve, pause));
-      attemptMs *= 2;
-    }
-  }
+  return retryTransient((timeoutMs) => request(method, params, timeoutMs), patience, now);
 }
 
 /** Whether to record sessions: decides a restored pane's capture, so it waits for wmux. */

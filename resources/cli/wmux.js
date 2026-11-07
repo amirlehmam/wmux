@@ -34,6 +34,7 @@ const stream_1 = require("stream");
 const wsl_network_1 = require("./wsl-network");
 const transport_deadline_1 = require("./transport-deadline");
 const opencode_tui_install_1 = require("./opencode-tui-install");
+const transport_retry_1 = require("./transport-retry");
 /** The two signals wsl-network.ts uses to decide we are inside a WSL distro. */
 function readWslEnvironment() {
     let osRelease = null;
@@ -204,7 +205,15 @@ function connectViaNpiperelay(pipePath, onConnect) {
     }
     // npiperelay names the pipe with forward slashes: \\.\pipe\wmux → //./pipe/wmux
     const child = (0, child_process_1.spawn)(bin, ['-ei', '-s', pipePath.replace(/\\/g, '/')], {
-        stdio: ['pipe', 'pipe', 'inherit'],
+        stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let relayError = '';
+    child.stderr?.on('data', (chunk) => {
+        // npiperelay writes "open //./pipe/wmux: All pipe instances are busy" here
+        // and exits non-zero. Keep it on the error so the caller can tell a busy
+        // pipe (safe to retry for an idempotent request) from a missing one.
+        if (relayError.length < 2_000)
+            relayError += chunk.toString();
     });
     const duplex = new stream_1.Duplex({
         read() { },
@@ -232,8 +241,10 @@ function connectViaNpiperelay(pipePath, onConnect) {
     child.stdout?.on('end', () => duplex.push(null));
     child.on('error', (err) => duplex.destroy(err));
     child.on('exit', (code) => {
-        if (code !== 0 && code !== null)
-            duplex.destroy(new Error(`npiperelay exited with code ${code}`));
+        if (code !== 0 && code !== null) {
+            const detail = relayError.trim().slice(0, 500);
+            duplex.destroy(new Error(detail ? `npiperelay exited with code ${code}: ${detail}` : `npiperelay exited with code ${code}`));
+        }
     });
     // "Ready" here means the relay process exists — NOT that it has attached to the
     // named pipe, which over WSL interop can take seconds longer. onConnect must
@@ -357,6 +368,25 @@ function sendV2(method, params = {}, timeoutMs = transport_deadline_1.DEFAULT_V2
         });
         client.on('error', (err) => { clearTimeout(timer); reject(err); });
     });
+}
+/**
+ * A busy pipe clears in about a second during a restore; this budget keeps a
+ * report from waiting longer than the agent would notice.
+ */
+const REPORT_PATIENCE = { budgetMs: 4_000, firstAttemptMs: 1_500 };
+/** Prompt admission is a log entry, not a turn: don't delay the agent for long. */
+const PROMPT_PATIENCE = { budgetMs: 1_500, firstAttemptMs: 750 };
+/**
+ * `sendV2` for requests that may be asked twice.
+ *
+ * Only reports/releases/prompt admission use this. The request is idempotent at
+ * main's boundary, so a duplicate after a lost reply is harmless; a spawn or a
+ * typed key must never take this path. A successful reply resolves the retry
+ * loop immediately — the next attempt only exists when the previous one never
+ * produced a response.
+ */
+function sendV2Patiently(method, params = {}, patience = REPORT_PATIENCE, timeoutMs = transport_deadline_1.DEFAULT_V2_TIMEOUT_MS) {
+    return (0, transport_retry_1.retryTransient)((attemptMs) => sendV2(method, params, Math.max(1, Math.min(timeoutMs, attemptMs))), patience);
 }
 // Simple flag helpers shared across commands.
 function getFlag(args, name) {
@@ -1449,7 +1479,7 @@ function hookParams(args) {
     return params;
 }
 async function cmdHook(args) {
-    await sendV2('hook.event', hookParams(args));
+    await sendV2Patiently('hook.event', hookParams(args), PROMPT_PATIENCE);
 }
 /**
  * `wmux opencode-tui [--remove]` — install the CLI-side (TUI) half (#310).
@@ -1895,7 +1925,7 @@ async function cmdReportAgent(args) {
             process.exit(1);
         }
     }
-    print(await sendV2('pane.report_agent', params));
+    print(await sendV2Patiently('pane.report_agent', params));
 }
 /**
  * `answer-agent` — reply to a blocked pane from outside it (issue #128).
@@ -1930,7 +1960,7 @@ async function cmdReportMetadata(args) {
     const ttl = getFlag(args, '--ttl');
     if (ttl)
         params.ttlMs = Number(ttl);
-    print(await sendV2('pane.report_metadata', params));
+    print(await sendV2Patiently('pane.report_metadata', params));
 }
 /**
  * A subagent of the calling pane — a background task, a worker, a planner —
@@ -1955,7 +1985,7 @@ async function cmdReportSubagent(args) {
     if (detail !== undefined)
         params.detail = detail;
     params.done = args.includes('--done');
-    print(await sendV2('agent.subagent', params));
+    print(await sendV2Patiently('agent.subagent', params));
 }
 // Keys stay inferred (no Record<string, …> annotation) so spreading this into
 // COMMANDS still satisfies the exhaustive Record<CommandName, …> check.
@@ -1965,7 +1995,7 @@ const AGENT_STATE_COMMANDS = {
     'report-subagent': cmdReportSubagent,
     'report-session': async (args) => {
         const surfaceId = reportingSurface(args, 'report-session');
-        print(await sendV2(getFlag(args, '--provider') === 'codex' ? 'pane.report_codex_session' : 'pane.report_agent_session', {
+        print(await sendV2Patiently(getFlag(args, '--provider') === 'codex' ? 'pane.report_codex_session' : 'pane.report_agent_session', {
             surfaceId,
             seq: seqFlag(args),
             sessionId: getFlag(args, '--session') ?? args[1] ?? null,
@@ -1978,17 +2008,17 @@ const AGENT_STATE_COMMANDS = {
         // OpenCode's plugin releases only the session it reported (#290): main
         // refuses it while quitting, and when the pane already holds a newer one.
         if (getFlag(args, '--provider') === 'opencode') {
-            print(await sendV2('pane.release_opencode_session', { surfaceId, sessionId: getFlag(args, '--session') ?? null }));
+            print(await sendV2Patiently('pane.release_opencode_session', { surfaceId, sessionId: getFlag(args, '--session') ?? null }));
             return;
         }
         if (getFlag(args, '--provider') === 'omp') {
-            print(await sendV2('pane.release_omp_session', { surfaceId, sessionId: getFlag(args, '--session') ?? null }));
+            print(await sendV2Patiently('pane.release_omp_session', { surfaceId, sessionId: getFlag(args, '--session') ?? null }));
             return;
         }
         // pi's extension (#382): main releases only on a quit, only the file the
         // shutdown names, and drops a release older than the pane's last report.
         if (getFlag(args, '--provider') === 'pi') {
-            print(await sendV2('pane.release_pi_session', {
+            print(await sendV2Patiently('pane.release_pi_session', {
                 surfaceId,
                 sessionId: getFlag(args, '--session') ?? null,
                 reason: getFlag(args, '--reason') ?? null,
@@ -1996,7 +2026,7 @@ const AGENT_STATE_COMMANDS = {
             }));
             return;
         }
-        print(await sendV2('pane.release_agent', { surfaceId, seq: seqFlag(args) }));
+        print(await sendV2Patiently('pane.release_agent', { surfaceId, seq: seqFlag(args) }));
     },
     // No --surface → the whole picture, including a `blocked` list that answers
     // "which pane needs me?" in one call.
