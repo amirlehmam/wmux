@@ -444,6 +444,9 @@ export const de: Translation = {
   'settings.workspacePanel.placement.end': 'Am Ende',
   'settings.workspacePanel.autoReorder': 'Bei Benachrichtigung automatisch neu anordnen',
   'settings.workspacePanel.showWelcomeScreen': 'Willkommensbildschirm beim Start anzeigen',
+  'settings.workspacePanel.closeToTray': 'In den Infobereich schließen',
+  'settings.workspacePanel.closeToTrayHint':
+    'Die ×-Schaltfläche des Fensters oder Alt+F4 blendet das letzte wmux-Fenster in den Infobereich aus, statt wmux zu beenden – Terminalsitzungen und Agents laufen weiter. Ein Klick auf das Symbol holt es zurück; „wmux beenden“ in seinem Menü beendet wirklich. Hat Vorrang vor der Bestätigung oben.',
   'settings.workspacePanel.confirmClose': 'Vor dem Schließen einer Sitzung bestätigen',
   'settings.workspacePanel.confirmCloseHint':
     'Fragt nach, bevor die ×-Schaltfläche, das Kontextmenü oder Strg+Umschalt+W eine Sitzung schließt — ein versehentlicher Klick kann keine Agenten beenden, die ihren Status noch nicht gespeichert haben. Schließvorgänge über CLI und Agenten fragen nie nach.',
@@ -686,4 +689,19 @@ export const de: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux lauscht nur auf diesem Computer und es ist keine öffentliche URL gesetzt, daher öffnet sich diese Adresse so nicht auf einem Smartphone. Machen Sie sie zuerst erreichbar:',
   'settings.remote.pair.paired': 'Gekoppelt: {name}',
   'settings.remote.pair.close': 'Schließen',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Link in neuem Tab öffnen",
+  'browser.menu.openLinkExternal': "Link im Systembrowser öffnen",
+  'browser.menu.copyLink': "Linkadresse kopieren",
+  'browser.menu.openImageInNewTab': "Bild in neuem Tab öffnen",
+  'browser.menu.copyImage': "Bild kopieren",
+  'browser.menu.copyImageAddress': "Bildadresse kopieren",
+  'browser.menu.cut': "Ausschneiden",
+  'browser.menu.copy': "Kopieren",
+  'browser.menu.paste': "Einfügen",
+  'browser.menu.selectAll': "Alles auswählen",
+  'browser.menu.back': "Zurück",
+  'browser.menu.forward': "Vorwärts",
+  'browser.menu.reload': "Neu laden",
+  'browser.menu.inspect': "Untersuchen",
 };

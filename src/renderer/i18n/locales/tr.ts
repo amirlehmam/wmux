@@ -455,6 +455,9 @@ export const tr: Translation = {
   'settings.workspacePanel.placement.end': 'Son',
   'settings.workspacePanel.autoReorder': 'Bildirimde otomatik yeniden sırala',
   'settings.workspacePanel.showWelcomeScreen': 'Başlangıçta karşılama ekranını göster',
+  'settings.workspacePanel.closeToTray': 'Sistem tepsisine kapat',
+  'settings.workspacePanel.closeToTrayHint':
+    'Pencerenin × düğmesi veya Alt+F4, wmux’tan çıkmak yerine son wmux penceresini sistem tepsisine gizler; terminal oturumları ve agent’lar çalışmaya devam eder. Geri getirmek için tepsi simgesine tıklayın; menüsündeki "wmux’tan çık" gerçekten çıkar. Yukarıdaki onaya göre önceliklidir.',
   'settings.workspacePanel.confirmClose': 'Bir oturumu kapatmadan önce onayla',
   'settings.workspacePanel.confirmCloseHint':
     'Bir oturumu kapatmadan önce × düğmesi, bağlam menüsü veya Ctrl+Shift+W için sor — yanlışlıkla bir tıklama, durumunu henüz kaydetmemiş araçları durduramaz. CLI ve araç kapatmaları hiç sormaz.',
@@ -697,4 +700,19 @@ export const tr: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux yalnızca bu bilgisayarda dinliyor ve genel URL ayarlı değil; bu adres telefonda olduğu gibi açılmaz. Önce erişilebilir hâle getirin:',
   'settings.remote.pair.paired': 'Eşleştirildi: {name}',
   'settings.remote.pair.close': 'Kapat',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Bağlantıyı yeni sekmede aç",
+  'browser.menu.openLinkExternal': "Bağlantıyı sistem tarayıcısında aç",
+  'browser.menu.copyLink': "Bağlantı adresini kopyala",
+  'browser.menu.openImageInNewTab': "Resmi yeni sekmede aç",
+  'browser.menu.copyImage': "Resmi kopyala",
+  'browser.menu.copyImageAddress': "Resim adresini kopyala",
+  'browser.menu.cut': "Kes",
+  'browser.menu.copy': "Kopyala",
+  'browser.menu.paste': "Yapıştır",
+  'browser.menu.selectAll': "Tümünü seç",
+  'browser.menu.back': "Geri",
+  'browser.menu.forward': "İleri",
+  'browser.menu.reload': "Yeniden yükle",
+  'browser.menu.inspect': "İncele",
 };

@@ -7,7 +7,10 @@ import { decideClose, closeDialogCopy } from '../../src/main/close-guard';
 // Opt-in guard, decided in main (the renderer may be the unresponsive part).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const base = { enabled: true, bypass: false, confirmed: false, pending: false };
+const base = {
+  enabled: true, bypass: false, confirmed: false, pending: false,
+  toTray: false, lastVisibleWindow: true,
+};
 
 describe('decideClose', () => {
   it('asks when the guard is on and nothing else is going on', () => {
@@ -40,6 +43,47 @@ describe('decideClose', () => {
     // own callback, after pending has been cleared — but if the order ever
     // slips, the answer the user just gave must still win.
     expect(decideClose({ ...base, confirmed: true, pending: true })).toBe('allow');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #442 — close to tray: the × hides the last visible window and every
+// PTY keeps running; a real quit still goes through the #227 bypass.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('decideClose — close to tray', () => {
+  const tray = { ...base, enabled: false, toTray: true };
+
+  it('hides the last visible window instead of closing it', () => {
+    expect(decideClose(tray)).toBe('hide');
+  });
+
+  it('is inert when the pref is off — the default', () => {
+    expect(decideClose({ ...tray, toTray: false })).toBe('allow');
+  });
+
+  it('closes one of several visible windows normally', () => {
+    expect(decideClose({ ...tray, lastVisibleWindow: false })).toBe('allow');
+    // ...and with the #227 guard on too, it asks as it always did.
+    expect(decideClose({ ...tray, enabled: true, lastVisibleWindow: false })).toBe('ask');
+  });
+
+  it('wins over the confirm dialog: hiding ends nothing, so nothing is asked', () => {
+    expect(decideClose({ ...tray, enabled: true })).toBe('hide');
+  });
+
+  it('never hides a real quit — tray Quit, update, relaunch, Windows shutdown', () => {
+    // Tray "Quit wmux" is app.quit(), which before-quit turns into `bypass`.
+    expect(decideClose({ ...tray, bypass: true })).toBe('allow');
+    expect(decideClose({ ...tray, enabled: true, bypass: true })).toBe('allow');
+  });
+
+  it('never hides a programmatic close (wmux close-window, another window)', () => {
+    expect(decideClose({ ...tray, confirmed: true })).toBe('allow');
+  });
+
+  it('does not hide a window under a dialog it is still showing', () => {
+    expect(decideClose({ ...tray, enabled: true, pending: true })).toBe('swallow');
   });
 });
 

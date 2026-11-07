@@ -119,6 +119,31 @@
   border: none;
 }
 
+/* The hovered link's URL, bottom-left like Chrome's status bubble (#439).
+   Absolute over the page and click-through, so it never resizes the webview
+   or takes a click meant for the page under it. */
+.browser-pane__link-status {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 2;
+  max-width: min(60%, 520px);
+  padding: 3px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 16px;
+  color: rgba(var(--ui-overlay-rgb), 0.85);
+  background: var(--ui-bg-3);
+  border: 1px solid var(--ui-border);
+  border-left: none;
+  border-bottom: none;
+  border-top-right-radius: 6px;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* A browser surface with no page (#232). Covers the webview rather than letting
    `about:blank` through, because a blank guest page paints WHITE whatever the
    app theme is, and a white rectangle where a dark pane should be reads as a

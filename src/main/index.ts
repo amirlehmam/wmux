@@ -41,6 +41,7 @@ import { PortScanner } from './port-scanner';
 import { CDPProxy } from './cdp-proxy';
 import { IPC_CHANNELS, SurfaceId, BrowserEngine, PaneId, WorkspaceId } from '../shared/types';
 import { getPipePath, getAppDataDir, ensurePipeToken, getAppUserModelId } from '../shared/instance';
+import { isFileEditTool } from '../shared/agent-tools';
 import { resolveUserDataDir } from './chromium-profile';
 import { WORKSPACE_MANIFEST_METHODS, handleWorkspaceManifestV2, pickAndOpenManifest, type ManifestHostDeps } from './workspace-manifest-v2';
 import {
@@ -72,7 +73,8 @@ import { pruneDeadQwenSessions, listKnownQwenSessionIds } from './qwen-resume';
 import { pruneDeadOmpSessions } from './omp-resume';
 import { pruneDeadPiSessions } from './pi-resume';
 import { sessionWindows, MAX_RESTORED_WINDOWS } from './session-windows';
-import { WindowManager, appIconCandidates } from './window-manager';
+import { WindowManager, appIconCandidates, getAppIcon } from './window-manager';
+import { AppTray } from './app-tray';
 import { initAutoUpdater, requestUpdateNow, getUpdateState } from './updater';
 import { sweepUpdateLeftovers, UPDATE_SWEEP_DELAY_MS } from './zip-updater';
 import { initUpdateChecker, getLatestUpdate } from './update-checker';
@@ -1041,8 +1043,10 @@ if (!gotInstanceLock) {
   // process's argv — so the folder has to be read from the event, not from our
   // own process.argv, which still holds the original launch.
   app.on('second-instance', (_event, argv) => {
+    // A window hidden to the tray (#442) comes back first; launching wmux
+    // again is how most people would look for it.
     const win = BrowserWindow.getAllWindows()[0];
-    if (win && !win.isDestroyed()) {
+    if (!windowManager.showHiddenWindows() && win && !win.isDestroyed()) {
       if (win.isMinimized()) win.restore();
       win.focus();
     }
@@ -1367,8 +1371,9 @@ function handleHookEvent(params: any): void {
   // Always refresh the diff for Edit/Write, even without a file path — but only
   // once the write has happened. PreToolUse carries the same tool name and fires
   // BEFORE it, so refreshing on that would render the diff as it was (issue #151).
+  // Any agent's spelling of an editing tool, not only Claude's (issue #440).
   const isPost = !params?.event || params.event === 'PostToolUse';
-  if (isPost && (params?.tool === 'Edit' || params?.tool === 'Write')) pushDiffUpdate(params.file || '');
+  if (isPost && isFileEditTool(params?.tool)) pushDiffUpdate(params.file || '');
 }
 
 // ─── Claude session restore (issue #186) ─────────────────────────────────────
@@ -2531,15 +2536,32 @@ windowManager.beforeClose = (win, isLastWindow) => {
   return flushSessionFrom(win);
 };
 
+/** A boolean workspace pref that is on only when the user turned it on. */
+function workspacePrefOn(key: 'confirmAppClose' | 'closeToTray'): boolean {
+  try {
+    const prefs = loadSettings()['wmux-workspace-prefs'] as Record<string, unknown> | undefined;
+    return prefs?.[key] === true;
+  } catch { return false; }
+}
+
+// Close to tray (issue #442): the icon is up only while a window is hidden to
+// it — see app-tray.ts. Restoring is `showHiddenWindows`, and the icon comes
+// down through onVisibilityChanged once nothing is hidden any more.
+const appTray = new AppTray({
+  icon: getAppIcon,
+  onShow: () => { windowManager.showHiddenWindows(); },
+  onQuit: () => app.quit(),
+});
+windowManager.onVisibilityChanged = () => {
+  if (!windowManager.hasHiddenWindows()) appTray.destroy();
+};
+
 windowManager.closeGuard = {
-  enabled: () => {
-    try {
-      const prefs = loadSettings()['wmux-workspace-prefs'] as { confirmAppClose?: unknown } | undefined;
-      return prefs?.confirmAppClose === true;
-    } catch { return false; }
-  },
+  enabled: () => workspacePrefOn('confirmAppClose'),
   bypass: () => isQuitting || sessionEndHandled,
   ptyCount: () => ptyManager.count(),
+  toTray: () => workspacePrefOn('closeToTray'),
+  ensureTray: () => appTray.ensure(),
 };
 
 app.on('browser-window-created', (_event, win) => {

@@ -455,6 +455,9 @@ export const pl: Translation = {
   'settings.workspacePanel.placement.end': 'Na końcu',
   'settings.workspacePanel.autoReorder': 'Automatyczne sortowanie przy powiadomieniu',
   'settings.workspacePanel.showWelcomeScreen': 'Pokazuj ekran powitalny przy starcie',
+  'settings.workspacePanel.closeToTray': 'Zamykaj do zasobnika',
+  'settings.workspacePanel.closeToTrayHint':
+    'Przycisk × okna lub Alt+F4 ukrywa ostatnie okno wmux w zasobniku systemowym zamiast zamykać program, więc sesje terminala i agenci dalej działają. Kliknij ikonę w zasobniku, aby je przywrócić; „Zakończ wmux” w jej menu naprawdę zamyka program. Ma pierwszeństwo przed potwierdzeniem powyżej.',
   'settings.workspacePanel.confirmClose': 'Potwierdzaj przed zamknięciem sesji',
   'settings.workspacePanel.confirmCloseHint':
     'Pytaj, zanim przycisk ×, menu kontekstowe lub Ctrl+Shift+W zamknie sesję — przypadkowy klik nie może zatrzymać agentów, którzy nie zapisali jeszcze swojego stanu. Zamknięcia z CLI i od agentów nigdy nie pytają.',
@@ -697,4 +700,19 @@ export const pl: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux nasłuchuje tylko na tym komputerze i nie ustawiono publicznego URL, więc ten adres nie otworzy się w takiej postaci na telefonie. Najpierw udostępnij go:',
   'settings.remote.pair.paired': 'Sparowano: {name}',
   'settings.remote.pair.close': 'Zamknij',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Otwórz link w nowej karcie",
+  'browser.menu.openLinkExternal': "Otwórz link w przeglądarce systemowej",
+  'browser.menu.copyLink': "Kopiuj adres linku",
+  'browser.menu.openImageInNewTab': "Otwórz grafikę w nowej karcie",
+  'browser.menu.copyImage': "Kopiuj grafikę",
+  'browser.menu.copyImageAddress': "Kopiuj adres grafiki",
+  'browser.menu.cut': "Wytnij",
+  'browser.menu.copy': "Kopiuj",
+  'browser.menu.paste': "Wklej",
+  'browser.menu.selectAll': "Zaznacz wszystko",
+  'browser.menu.back': "Wstecz",
+  'browser.menu.forward': "Dalej",
+  'browser.menu.reload': "Odśwież",
+  'browser.menu.inspect': "Zbadaj",
 };

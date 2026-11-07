@@ -131,7 +131,8 @@ export function appIconCandidates(): string[] {
       ];
 }
 
-function getAppIcon(): Electron.NativeImage | undefined {
+/** Exported for the tray icon (#442), so the window and the tray load the same file. */
+export function getAppIcon(): Electron.NativeImage | undefined {
   try {
     for (const candidate of appIconCandidates()) {
       const image = nativeImage.createFromPath(candidate);
@@ -201,6 +202,13 @@ export interface CloseGuardDeps {
   enabled: () => boolean;
   bypass: () => boolean;
   ptyCount: () => number;
+  /** The `closeToTray` pref (#442), read at close time. */
+  toTray: () => boolean;
+  /**
+   * Put the tray icon up before a window hides (#442). False means no icon
+   * could be shown, and the close is then decided as if the pref were off.
+   */
+  ensureTray: () => boolean;
 }
 
 export class WindowManager {
@@ -222,6 +230,12 @@ export class WindowManager {
    * state into session.json before the renderer dies — or null to close now.
    */
   beforeClose: ((win: BrowserWindow, isLastWindow: boolean) => Promise<unknown> | null) | null = null;
+
+  /**
+   * Notified when a window is shown or closed (#442), so index.ts can take the
+   * tray icon down once no window is hidden to it any more.
+   */
+  onVisibilityChanged: (() => void) | null = null;
 
   createWindow(
     bounds?: { x: number; y: number; width: number; height: number },
@@ -307,7 +321,9 @@ export class WindowManager {
     win.on('closed', () => {
       this.windows.delete(id);
       this.onWindowClosed?.(id, webContentsId);
+      this.onVisibilityChanged?.();
     });
+    win.on('show', () => this.onVisibilityChanged?.());
 
     const entry: WindowEntry = {
       id, window: win, transparent,
@@ -333,18 +349,31 @@ export class WindowManager {
    */
   private guardClose(entry: WindowEntry, event: Electron.Event): void {
     const guard = this.closeGuard;
-    const decision = decideClose({
+    const input = {
       enabled: guard?.enabled() ?? false,
       bypass: guard?.bypass() ?? true,
       confirmed: entry.closeConfirmed,
       pending: entry.closePending,
-    });
+      toTray: guard?.toTray() ?? false,
+      lastVisibleWindow: !this.getAllWindows().some(e => e !== entry && e.window.isVisible()),
+    };
+    let decision = decideClose(input);
+    // No tray icon, no hiding: the window would be unreachable (#442).
+    if (decision === 'hide' && !(guard?.ensureTray() ?? false)) {
+      decision = decideClose({ ...input, toTray: false });
+    }
     if (decision === 'allow') {
       this.flushBeforeClose(entry, event);
       return;
     }
     event.preventDefault();
     if (decision === 'swallow') return;
+    if (decision === 'hide') {
+      // Nothing ends: the renderer keeps running hidden, the PTYs live in main,
+      // and the 30 s auto-save goes on asking this window for its state.
+      entry.window.hide();
+      return;
+    }
 
     entry.closePending = true;
     const copy = closeDialogCopy({
@@ -406,6 +435,9 @@ export class WindowManager {
           if (kind === 'unresponsive') win.webContents.forcefullyCrashRenderer();
           win.webContents.reload();
         } else if (kind === 'gone') {
+          // The user just answered "close" in a main-process dialog: neither
+          // ask again (#227) nor hide a dead renderer to the tray (#442).
+          entry.closeConfirmed = true;
           win.close();
         }
       }, () => {
@@ -471,6 +503,25 @@ export class WindowManager {
     if (entry && !entry.window.isDestroyed()) {
       entry.window.focus();
     }
+  }
+
+  /**
+   * Bring back every window hidden to the tray (#442) and focus one of them.
+   * False when none was hidden, so a caller can fall back to its own focus.
+   */
+  showHiddenWindows(): boolean {
+    const hidden = this.getAllWindows().filter(e => !e.window.isVisible());
+    for (const e of hidden) e.window.show();
+    const target = hidden.at(-1)?.window;
+    if (!target) return false;
+    if (target.isMinimized()) target.restore();
+    target.focus();
+    return true;
+  }
+
+  /** Any wmux window currently hidden to the tray (#442). */
+  hasHiddenWindows(): boolean {
+    return this.getAllWindows().some(e => !e.window.isVisible());
   }
 
   getWindow(id: WindowId): BrowserWindow | undefined {

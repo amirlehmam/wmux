@@ -105,3 +105,34 @@ export function withLeafSurfaceUrl(tree: SplitNode, paneId: PaneId, url: string)
   if (newLeft === left && newRight === right) return tree;
   return { ...tree, children: [newLeft, newRight] };
 }
+
+/**
+ * The pane a new browser tab goes into when the caller has none of its own —
+ * the workspace's side panel has no tab bar (#439). The first pane already
+ * holding a browser tab, so links collect beside each other; else the first
+ * pane. Null for an empty tree.
+ */
+export function newBrowserTabPane(tree: SplitNode): PaneId | null {
+  const leaves: Extract<SplitNode, { type: 'leaf' }>[] = [];
+  const walk = (node: SplitNode): void => {
+    if (node.type === 'leaf') leaves.push(node);
+    else { walk(node.children[0]); walk(node.children[1]); }
+  };
+  walk(tree);
+  const withBrowser = leaves.find((leaf) => leaf.surfaces.some((s) => s.type === 'browser'));
+  return (withBrowser ?? leaves[0])?.paneId ?? null;
+}
+
+/**
+ * "Open link in new tab" from a browser that is not itself a tab (the side
+ * panel, #439): a new browser tab in the active workspace, never a navigation
+ * of an existing one. False when there is nowhere to put it.
+ */
+export function openInNewBrowserTab(url: string): boolean {
+  const state = useStore.getState();
+  const ws = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+  if (!ws) return false;
+  const paneId = newBrowserTabPane(ws.splitTree);
+  if (!paneId) return false;
+  return state.addSurface(ws.id, paneId, 'browser', { url }) !== null;
+}

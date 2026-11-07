@@ -5,6 +5,7 @@ import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, t
   type WorktreeCloseMode, type WorktreeInspectResult, type WorktreeRemoveResult,
 } from '../shared/types';
 import type { BrowserHistory } from '../shared/browser-history';
+import type { BrowserMenuAction, BrowserMenuItem } from '../shared/browser-context-menu';
 import type { DictationBridge, DictationCommand, DictationState } from '../shared/dictation';
 import type { GuestKey } from '../shared/guest-key';
 import type { TerminalHistoryBridge, TerminalHistoryState } from '../shared/terminal-history';
@@ -185,6 +186,9 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.on(IPC_CHANNELS.BROWSER_GUEST_KEY, handler);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.BROWSER_GUEST_KEY, handler);
     },
+    /** Pop the right-click menu (#439); answers the chosen action or null. See shared/browser-context-menu.ts. */
+    showContextMenu: (items: BrowserMenuItem[]): Promise<BrowserMenuAction | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.BROWSER_CONTEXT_MENU, items),
   },
   agent: {
     list: (workspaceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_LIST, workspaceId),

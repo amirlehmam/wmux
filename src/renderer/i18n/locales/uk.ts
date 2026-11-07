@@ -455,6 +455,9 @@ export const uk: Translation = {
   'settings.workspacePanel.placement.end': 'Наприкінці',
   'settings.workspacePanel.autoReorder': 'Автоперевпорядкування під час сповіщення',
   'settings.workspacePanel.showWelcomeScreen': 'Показувати екран привітання під час запуску',
+  'settings.workspacePanel.closeToTray': 'Згортати в трей',
+  'settings.workspacePanel.closeToTrayHint':
+    'Кнопка × вікна або Alt+F4 ховає останнє вікно wmux у системний трей замість виходу, тож сеанси терміналу й агенти продовжують працювати. Клацніть значок у треї, щоб повернути вікно; «Вийти з wmux» у його меню справді завершує роботу. Має пріоритет над підтвердженням вище.',
   'settings.workspacePanel.confirmClose': 'Підтверджувати закриття сеансу',
   'settings.workspacePanel.confirmCloseHint':
     'Запитувати перед тим, як кнопка ×, контекстне меню або Ctrl+Shift+W закриють сеанс — випадковий клік не зможе зупинити агентів, які ще не зберегли свій стан. Закриття з CLI та від агентів запит не викликають.',
@@ -697,4 +700,19 @@ export const uk: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux слухає лише на цьому комп’ютері, а публічний URL не задано, тож ця адреса не відкриється на телефоні як є. Спершу зробіть її доступною:',
   'settings.remote.pair.paired': 'Спарено: {name}',
   'settings.remote.pair.close': 'Закрити',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Відкрити посилання в новій вкладці",
+  'browser.menu.openLinkExternal': "Відкрити посилання в системному браузері",
+  'browser.menu.copyLink': "Копіювати адресу посилання",
+  'browser.menu.openImageInNewTab': "Відкрити зображення в новій вкладці",
+  'browser.menu.copyImage': "Копіювати зображення",
+  'browser.menu.copyImageAddress': "Копіювати адресу зображення",
+  'browser.menu.cut': "Вирізати",
+  'browser.menu.copy': "Копіювати",
+  'browser.menu.paste': "Вставити",
+  'browser.menu.selectAll': "Вибрати все",
+  'browser.menu.back': "Назад",
+  'browser.menu.forward': "Вперед",
+  'browser.menu.reload': "Перезавантажити",
+  'browser.menu.inspect': "Переглянути код",
 };

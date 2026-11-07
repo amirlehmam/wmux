@@ -534,6 +534,9 @@ export const fr: Translation = {
   'settings.workspacePanel.placement.end': 'À la fin',
   'settings.workspacePanel.autoReorder': 'Réorganisation automatique à la notification',
   'settings.workspacePanel.showWelcomeScreen': "Afficher l'écran d'accueil au démarrage",
+  'settings.workspacePanel.closeToTray': 'Réduire dans la zone de notification',
+  'settings.workspacePanel.closeToTrayHint':
+    'Le bouton × de la fenêtre ou Alt+F4 masque la dernière fenêtre wmux dans la zone de notification au lieu de quitter : les sessions de terminal et les agents continuent de tourner. Cliquez sur l\'icône pour la faire réapparaître ; Quitter wmux dans son menu quitte pour de bon. Prioritaire sur la confirmation ci-dessus.',
   'settings.workspacePanel.confirmClose': 'Confirmer avant de fermer une session',
   'settings.workspacePanel.confirmCloseHint':
     "Demande confirmation avant que le bouton ×, le menu contextuel ou Ctrl+Maj+W ne ferme une session — un clic accidentel ne peut pas interrompre des agents qui n'ont pas encore enregistré leur état. Les fermetures via la CLI ou les agents ne demandent jamais de confirmation.",
@@ -1034,4 +1037,19 @@ export const fr: Translation = {
   'worktreeClose.result.hasWork': "Le dossier du worktree '{branch}' a été laissé sur le disque : il contient {count} fichier(s) modifié(s), non suivi(s) ou ignoré(s).",
   'worktree.badgeTitle': 'Worktree : {branch} (base : {base})',
   'worktree.restoreMissing': "[wmux] Le dossier du worktree de cet espace n'existe plus ; le shell a démarré dans un autre dossier.",
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Ouvrir le lien dans un nouvel onglet",
+  'browser.menu.openLinkExternal': "Ouvrir le lien dans le navigateur système",
+  'browser.menu.copyLink': "Copier l'adresse du lien",
+  'browser.menu.openImageInNewTab': "Ouvrir l'image dans un nouvel onglet",
+  'browser.menu.copyImage': "Copier l'image",
+  'browser.menu.copyImageAddress': "Copier l'adresse de l'image",
+  'browser.menu.cut': "Couper",
+  'browser.menu.copy': "Copier",
+  'browser.menu.paste': "Coller",
+  'browser.menu.selectAll': "Tout sélectionner",
+  'browser.menu.back': "Précédent",
+  'browser.menu.forward': "Suivant",
+  'browser.menu.reload': "Actualiser",
+  'browser.menu.inspect': "Inspecter",
 };

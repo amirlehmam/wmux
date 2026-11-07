@@ -455,6 +455,9 @@ export const ja: Translation = {
   'settings.workspacePanel.placement.end': '末尾',
   'settings.workspacePanel.autoReorder': '通知時に自動で並べ替え',
   'settings.workspacePanel.showWelcomeScreen': '起動時にウェルカム画面を表示',
+  'settings.workspacePanel.closeToTray': '閉じるとトレイに格納',
+  'settings.workspacePanel.closeToTrayHint':
+    'ウィンドウの × ボタンや Alt+F4 で wmux を終了せず、最後の wmux ウィンドウをシステムトレイに隠します。ターミナルセッションとエージェントは動き続けます。トレイアイコンをクリックすると元に戻り、そのメニューの「wmux を終了」で実際に終了します。上の確認より優先されます。',
   'settings.workspacePanel.confirmClose': 'セッションを閉じる前に確認',
   'settings.workspacePanel.confirmCloseHint':
     '× ボタン、コンテキストメニュー、または Ctrl+Shift+W がセッションを閉じる前に確認します — 誤クリックで、まだ状態を保存していないエージェントを落としてしまうことはありません。CLI やエージェントからのクローズでは確認しません。',
@@ -697,4 +700,19 @@ export const ja: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux はこのコンピューターでのみ待ち受けており、公開 URL も設定されていないため、このアドレスはそのままではスマートフォンで開けません。先に接続できるようにしてください：',
   'settings.remote.pair.paired': 'ペアリングしました：{name}',
   'settings.remote.pair.close': '閉じる',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "リンクを新しいタブで開く",
+  'browser.menu.openLinkExternal': "リンクをシステムのブラウザで開く",
+  'browser.menu.copyLink': "リンクのアドレスをコピー",
+  'browser.menu.openImageInNewTab': "画像を新しいタブで開く",
+  'browser.menu.copyImage': "画像をコピー",
+  'browser.menu.copyImageAddress': "画像アドレスをコピー",
+  'browser.menu.cut': "切り取り",
+  'browser.menu.copy': "コピー",
+  'browser.menu.paste': "貼り付け",
+  'browser.menu.selectAll': "すべて選択",
+  'browser.menu.back': "戻る",
+  'browser.menu.forward': "進む",
+  'browser.menu.reload': "再読み込み",
+  'browser.menu.inspect': "検証",
 };

@@ -440,6 +440,9 @@ export const zh: Translation = {
   'settings.workspacePanel.placement.end': '末尾',
   'settings.workspacePanel.autoReorder': '收到通知时自动重新排序',
   'settings.workspacePanel.showWelcomeScreen': '启动时显示欢迎界面',
+  'settings.workspacePanel.closeToTray': '关闭时最小化到托盘',
+  'settings.workspacePanel.closeToTrayHint':
+    '窗口的 × 按钮或 Alt+F4 不再退出 wmux，而是把最后一个 wmux 窗口隐藏到系统托盘，终端会话和 agent 继续运行。点击托盘图标即可恢复；托盘菜单中的“退出 wmux”才会真正退出。优先于上面的确认设置。',
   'settings.workspacePanel.confirmClose': '关闭会话前确认',
   'settings.workspacePanel.confirmCloseHint':
     '在点击 × 按钮、使用右键菜单或按 Ctrl+Shift+W 关闭会话前先询问 —— 这样误点击就不会终止尚未保存状态的代理。通过 CLI 或代理发起的关闭操作永远不会弹出询问。',
@@ -684,4 +687,19 @@ export const zh: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux 仅在这台电脑上监听，且未设置公开 URL，因此该地址无法直接在手机上打开。请先让它可被访问：',
   'settings.remote.pair.paired': '已配对：{name}',
   'settings.remote.pair.close': '关闭',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "在新标签页中打开链接",
+  'browser.menu.openLinkExternal': "在系统浏览器中打开链接",
+  'browser.menu.copyLink': "复制链接地址",
+  'browser.menu.openImageInNewTab': "在新标签页中打开图片",
+  'browser.menu.copyImage': "复制图片",
+  'browser.menu.copyImageAddress': "复制图片地址",
+  'browser.menu.cut': "剪切",
+  'browser.menu.copy': "复制",
+  'browser.menu.paste': "粘贴",
+  'browser.menu.selectAll': "全选",
+  'browser.menu.back': "后退",
+  'browser.menu.forward': "前进",
+  'browser.menu.reload': "重新加载",
+  'browser.menu.inspect': "检查",
 };

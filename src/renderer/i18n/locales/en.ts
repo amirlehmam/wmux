@@ -661,6 +661,9 @@ export const en = {
   'settings.workspacePanel.placement.end': 'End',
   'settings.workspacePanel.autoReorder': 'Auto-reorder on notification',
   'settings.workspacePanel.showWelcomeScreen': 'Show welcome screen on startup',
+  'settings.workspacePanel.closeToTray': 'Close to tray',
+  'settings.workspacePanel.closeToTrayHint':
+    'The window\'s × button or Alt+F4 hides the last wmux window to the system tray instead of quitting, so terminal sessions and agents keep running. Click the tray icon to bring it back; Quit wmux in its menu quits for real. Takes priority over the confirmation above.',
   'settings.workspacePanel.confirmClose': 'Confirm before closing a session',
   'settings.workspacePanel.confirmCloseHint':
     "Ask before the × button, the context menu or Ctrl+Shift+W closes a session — a stray click can't take down agents that haven't saved their state yet. Closes from the CLI and agents never prompt.",
@@ -896,6 +899,22 @@ export const en = {
   // own GitHub repo, which it then remembered as if the user had chosen it.
   'browser.blank.title': 'No page open',
   'browser.blank.hint': 'Type a URL above, or set a start page in Settings → Browser.',
+  // The browser panel's right-click menu (#439). Chrome's wording, so the
+  // entries read the way every browser already taught people.
+  'browser.menu.openLinkInNewTab': "Open link in new tab",
+  'browser.menu.openLinkExternal': "Open link in system browser",
+  'browser.menu.copyLink': "Copy link address",
+  'browser.menu.openImageInNewTab': "Open image in new tab",
+  'browser.menu.copyImage': "Copy image",
+  'browser.menu.copyImageAddress': "Copy image address",
+  'browser.menu.cut': "Cut",
+  'browser.menu.copy': "Copy",
+  'browser.menu.paste': "Paste",
+  'browser.menu.selectAll': "Select all",
+  'browser.menu.back': "Back",
+  'browser.menu.forward': "Forward",
+  'browser.menu.reload': "Reload",
+  'browser.menu.inspect': "Inspect",
   'agentBrowser.setupTitle': 'Let your agent drive a real Chrome',
   'agentBrowser.setupBody': 'agent-browser gives this tab a real Chrome instead of the built-in panel: real profiles, real extensions, sites that refuse an embedded browser. You watch a live viewport and a chronological feed of every command your agent runs.',
   'agentBrowser.setupCost': 'One-time download of about 240 MB (the tool plus its own Chrome).',

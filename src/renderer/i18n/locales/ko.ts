@@ -463,6 +463,9 @@ export const ko: Translation = {
   'settings.workspacePanel.placement.end': '맨 끝',
   'settings.workspacePanel.autoReorder': '알림이 오면 자동으로 정렬',
   'settings.workspacePanel.showWelcomeScreen': '시작할 때 환영 화면 표시',
+  'settings.workspacePanel.closeToTray': '닫을 때 트레이로 숨기기',
+  'settings.workspacePanel.closeToTrayHint':
+    '창의 × 버튼이나 Alt+F4를 누르면 wmux를 종료하는 대신 마지막 wmux 창을 시스템 트레이로 숨겨, 터미널 세션과 에이전트가 계속 실행됩니다. 트레이 아이콘을 클릭하면 다시 나타나고, 메뉴의 "wmux 종료"를 누르면 실제로 종료됩니다. 위의 확인보다 우선합니다.',
   'settings.workspacePanel.confirmClose': '세션을 닫기 전에 확인',
   'settings.workspacePanel.confirmCloseHint':
     '× 버튼, 오른쪽 클릭 메뉴, Ctrl+Shift+W로 세션을 닫기 전에 확인합니다. 실수로 클릭해도 아직 상태를 저장하지 않은 에이전트가 종료되지 않습니다. CLI와 에이전트가 닫을 때는 확인하지 않습니다.',
@@ -706,4 +709,19 @@ export const ko: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux가 이 컴퓨터에서만 수신 대기하고 공개 URL이 설정되지 않아, 이 주소는 휴대폰에서 그대로 열리지 않습니다. 먼저 접속할 수 있게 하세요:',
   'settings.remote.pair.paired': '페어링됨: {name}',
   'settings.remote.pair.close': '닫기',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "새 탭에서 링크 열기",
+  'browser.menu.openLinkExternal': "시스템 브라우저에서 링크 열기",
+  'browser.menu.copyLink': "링크 주소 복사",
+  'browser.menu.openImageInNewTab': "새 탭에서 이미지 열기",
+  'browser.menu.copyImage': "이미지 복사",
+  'browser.menu.copyImageAddress': "이미지 주소 복사",
+  'browser.menu.cut': "잘라내기",
+  'browser.menu.copy': "복사",
+  'browser.menu.paste': "붙여넣기",
+  'browser.menu.selectAll': "모두 선택",
+  'browser.menu.back': "뒤로",
+  'browser.menu.forward': "앞으로",
+  'browser.menu.reload': "새로고침",
+  'browser.menu.inspect': "검사",
 };

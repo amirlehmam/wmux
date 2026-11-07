@@ -445,6 +445,9 @@ export const es: Translation = {
   'settings.workspacePanel.placement.end': 'Al final',
   'settings.workspacePanel.autoReorder': 'Reordenar automáticamente al notificar',
   'settings.workspacePanel.showWelcomeScreen': 'Mostrar pantalla de bienvenida al iniciar',
+  'settings.workspacePanel.closeToTray': 'Cerrar a la bandeja',
+  'settings.workspacePanel.closeToTrayHint':
+    'El botón × de la ventana o Alt+F4 oculta la última ventana de wmux en la bandeja del sistema en lugar de salir, así que las sesiones de terminal y los agentes siguen en marcha. Haz clic en el icono de la bandeja para recuperarla; «Salir de wmux» en su menú sale de verdad. Tiene prioridad sobre la confirmación de arriba.',
   'settings.workspacePanel.confirmClose': 'Confirmar antes de cerrar una sesión',
   'settings.workspacePanel.confirmCloseHint':
     'Pide confirmación antes de que el botón ×, el menú contextual o Ctrl+Mayús+W cierren una sesión — un clic accidental no puede tumbar agentes que aún no han guardado su estado. Los cierres desde la CLI y los agentes nunca preguntan.',
@@ -687,4 +690,19 @@ export const es: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux solo escucha en este equipo y no hay URL pública, así que esta dirección no se abrirá tal cual en un teléfono. Hazla accesible primero:',
   'settings.remote.pair.paired': 'Vinculado: {name}',
   'settings.remote.pair.close': 'Cerrar',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Abrir enlace en una pestaña nueva",
+  'browser.menu.openLinkExternal': "Abrir enlace en el navegador del sistema",
+  'browser.menu.copyLink': "Copiar dirección del enlace",
+  'browser.menu.openImageInNewTab': "Abrir imagen en una pestaña nueva",
+  'browser.menu.copyImage': "Copiar imagen",
+  'browser.menu.copyImageAddress': "Copiar dirección de la imagen",
+  'browser.menu.cut': "Cortar",
+  'browser.menu.copy': "Copiar",
+  'browser.menu.paste': "Pegar",
+  'browser.menu.selectAll': "Seleccionar todo",
+  'browser.menu.back': "Atrás",
+  'browser.menu.forward': "Adelante",
+  'browser.menu.reload': "Volver a cargar",
+  'browser.menu.inspect': "Inspeccionar",
 };

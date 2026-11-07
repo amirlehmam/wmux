@@ -481,6 +481,9 @@ export const pt: Translation = {
   'settings.workspacePanel.placement.end': 'No final',
   'settings.workspacePanel.autoReorder': 'Reordenar automaticamente ao notificar',
   'settings.workspacePanel.showWelcomeScreen': 'Mostrar tela de boas-vindas na inicialização',
+  'settings.workspacePanel.closeToTray': 'Fechar para a bandeja',
+  'settings.workspacePanel.closeToTrayHint':
+    'O botão × da janela ou Alt+F4 oculta a última janela do wmux na bandeja do sistema em vez de sair, então as sessões de terminal e os agentes continuam em execução. Clique no ícone da bandeja para trazê-la de volta; "Sair do wmux" no menu dele sai de verdade. Tem prioridade sobre a confirmação acima.',
   'settings.workspacePanel.confirmClose': 'Confirmar antes de fechar uma sessão',
   'settings.workspacePanel.confirmCloseHint':
     'Pede confirmação antes que o botão ×, o menu de contexto ou Ctrl+Shift+W feche uma sessão — um clique acidental não pode derrubar agentes que ainda não salvaram seu estado. Fechamentos vindos da CLI e de agentes nunca pedem confirmação.',
@@ -723,4 +726,19 @@ export const pt: Translation = {
   'settings.remote.pair.loopbackWarn': 'O wmux só escuta neste computador e não há URL pública, então este endereço não abrirá assim em um celular. Torne-o acessível primeiro:',
   'settings.remote.pair.paired': 'Pareado: {name}',
   'settings.remote.pair.close': 'Fechar',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Abrir link em nova aba",
+  'browser.menu.openLinkExternal': "Abrir link no navegador do sistema",
+  'browser.menu.copyLink': "Copiar endereço do link",
+  'browser.menu.openImageInNewTab': "Abrir imagem em nova aba",
+  'browser.menu.copyImage': "Copiar imagem",
+  'browser.menu.copyImageAddress': "Copiar endereço da imagem",
+  'browser.menu.cut': "Recortar",
+  'browser.menu.copy': "Copiar",
+  'browser.menu.paste': "Colar",
+  'browser.menu.selectAll': "Selecionar tudo",
+  'browser.menu.back': "Voltar",
+  'browser.menu.forward': "Avançar",
+  'browser.menu.reload': "Recarregar",
+  'browser.menu.inspect': "Inspecionar",
 };

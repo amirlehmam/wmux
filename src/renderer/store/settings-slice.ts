@@ -548,6 +548,15 @@ export interface WorkspacePrefs {
    */
   confirmAppClose: boolean;
   /**
+   * Close to tray (issue #442): the window's ×, Alt+F4 or the closeWindow
+   * shortcut HIDES the last visible window behind a tray icon instead of
+   * quitting, so every PTY and agent keeps running. Opt-in. Decided in MAIN
+   * (`close-guard.ts`) off settings.json at close time, like the one above,
+   * and wins over it: hiding ends nothing, so there is nothing to confirm.
+   * Quit from the tray, updates, relaunches and Windows shutdown still quit.
+   */
+  closeToTray: boolean;
+  /**
    * Read agent TUIs off the screen to infer blocked/working/idle for agents
    * that do not report state themselves (Codex, Gemini, Aider, …).
    *
@@ -660,6 +669,7 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefs = {
   dictationEnabled: false,
   confirmWorkspaceClose: false,
   confirmAppClose: false,
+  closeToTray: false,
   defaultLayoutId: null,
   restoreClaudeSessions: false,
   restoreCodexSessions: false,

@@ -248,6 +248,22 @@ export default function WorkspaceSettings() {
       </p>
 
       <div className="settings-row">
+        <label className="settings-label">{t('settings.workspacePanel.closeToTray', 'Close to tray')}</label>
+        <input
+          type="checkbox"
+          className="settings-toggle"
+          checked={workspacePrefs.closeToTray}
+          onChange={(e) => setWorkspacePrefs({ closeToTray: e.target.checked })}
+        />
+      </div>
+      <p className="settings-hint">
+        {t(
+          'settings.workspacePanel.closeToTrayHint',
+          "The window's × button or Alt+F4 hides the last wmux window to the system tray instead of quitting, so terminal sessions and agents keep running. Click the tray icon to bring it back; Quit wmux in its menu quits for real. Takes priority over the confirmation above.",
+        )}
+      </p>
+
+      <div className="settings-row">
         <label className="settings-label" htmlFor="session-snapshot-minutes">
           {t('settings.workspacePanel.sessionSnapshot', 'Snapshot sessions every')}
         </label>

@@ -455,6 +455,9 @@ export const ru: Translation = {
   'settings.workspacePanel.placement.end': 'В конце',
   'settings.workspacePanel.autoReorder': 'Автопереупорядочивание при уведомлении',
   'settings.workspacePanel.showWelcomeScreen': 'Показывать экран приветствия при запуске',
+  'settings.workspacePanel.closeToTray': 'Сворачивать в трей',
+  'settings.workspacePanel.closeToTrayHint':
+    'Кнопка × окна или Alt+F4 скрывает последнее окно wmux в системный трей вместо выхода, поэтому сеансы терминала и агенты продолжают работать. Щёлкните значок в трее, чтобы вернуть окно; «Выйти из wmux» в его меню завершает работу по-настоящему. Имеет приоритет над подтверждением выше.',
   'settings.workspacePanel.confirmClose': 'Подтверждать закрытие сеанса',
   'settings.workspacePanel.confirmCloseHint':
     'Спрашивать перед тем, как кнопка ×, контекстное меню или Ctrl+Shift+W закроют сеанс — случайный клик не сможет остановить агентов, которые ещё не сохранили своё состояние. Закрытия из CLI и от агентов запрос не вызывают.',
@@ -697,4 +700,19 @@ export const ru: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux слушает только на этом компьютере, а публичный URL не задан, поэтому этот адрес не откроется на телефоне как есть. Сначала сделайте его доступным:',
   'settings.remote.pair.paired': 'Сопряжено: {name}',
   'settings.remote.pair.close': 'Закрыть',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Открыть ссылку в новой вкладке",
+  'browser.menu.openLinkExternal': "Открыть ссылку в системном браузере",
+  'browser.menu.copyLink': "Копировать адрес ссылки",
+  'browser.menu.openImageInNewTab': "Открыть изображение в новой вкладке",
+  'browser.menu.copyImage': "Копировать изображение",
+  'browser.menu.copyImageAddress': "Копировать адрес изображения",
+  'browser.menu.cut': "Вырезать",
+  'browser.menu.copy': "Копировать",
+  'browser.menu.paste': "Вставить",
+  'browser.menu.selectAll': "Выделить всё",
+  'browser.menu.back': "Назад",
+  'browser.menu.forward': "Вперёд",
+  'browser.menu.reload': "Перезагрузить",
+  'browser.menu.inspect': "Просмотреть код",
 };

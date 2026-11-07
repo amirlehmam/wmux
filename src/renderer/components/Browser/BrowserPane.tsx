@@ -7,6 +7,9 @@ import type { BrowserEngine } from '../../../shared/types';
 import { browserUrlLabel } from '../SplitPane/surface-label';
 import { BROWSER_BLANK_PAGE } from '../../utils/browser-start-page';
 import { useKeepRendering } from '../../utils/browser-keep-rendering';
+import { openInNewBrowserTab } from '../../utils/open-in-browser';
+import { buildBrowserContextMenu, linkStatusText } from '../../../shared/browser-context-menu';
+import { labelBrowserMenu, runBrowserMenuAction } from './browser-menu-actions';
 import {
   activeHistoryUrl,
   encodeHistoryRestoreSrc,
@@ -63,6 +66,12 @@ interface BrowserPaneProps {
    * into it would fire no `focus` event at all.
    */
   focused?: boolean;
+  /**
+   * "Open link in new tab" from the right-click menu (#439): a new browser tab
+   * beside this one. Without it (the side panel, which has no tabs) the tab
+   * goes into the active workspace's panes instead.
+   */
+  onOpenInNewTab?: (url: string) => void;
 }
 
 /**
@@ -314,6 +323,7 @@ export default function BrowserPane({
   visible = true,
   onActivate,
   focused,
+  onOpenInNewTab,
 }: BrowserPaneProps) {
   const keepRendering = useKeepRendering(surfaceId);
   // src is fixed to the initial page; all later navigation goes through loadURL
@@ -342,6 +352,14 @@ export default function BrowserPane({
   const onTitleChangeRef = useRef(onTitleChange);
   onTitleChangeRef.current = onTitleChange;
   const lastHistoryRef = useRef<BrowserHistory | null>(null);
+  // Read by the context-menu listener, which is registered once: `useT()` and
+  // the callback prop are new on every render (#141).
+  const tRef = useRef(t);
+  tRef.current = t;
+  const onOpenInNewTabRef = useRef(onOpenInNewTab);
+  onOpenInNewTabRef.current = onOpenInNewTab;
+  // The URL of the link under the pointer, for the status bar (#439).
+  const [hoverUrl, setHoverUrl] = useState('');
 
   // Agent mode. `agentUrl` is the page the REMOTE Chrome was last asked to
   // open; it is what the address bar shows in agent mode, because the webview's
@@ -557,6 +575,55 @@ export default function BrowserPane({
       wv.removeEventListener('did-start-loading', onStartLoad);
       wv.removeEventListener('did-stop-loading', onStopLoad);
       wv.removeEventListener('did-fail-load', onFailLoad);
+    };
+  }, []);
+
+  // Right-click menu and link status bar (#439). Both come from the <webview>
+  // tag's own events: `context-menu` carries what was under the pointer, and
+  // `update-target-url` the hovered link ('' when the pointer leaves it). Not
+  // in agent mode, where the page is agent-browser's dashboard, not the user's.
+  useEffect(() => {
+    const wv = webviewRef.current;
+    if (!wv) return;
+    const onTargetUrl = (e: any) => {
+      setHoverUrl(engineRef.current === 'agent' ? '' : linkStatusText(e?.url));
+    };
+    const clearHover = () => setHoverUrl('');
+    const onStartNavigation = (e: any) => { if (e?.isMainFrame !== false) clearHover(); };
+    const onContextMenu = (e: any) => {
+      if (engineRef.current === 'agent') return;
+      const params = e?.params ?? {};
+      const entries = buildBrowserContextMenu(params, { canGoBack: !!wv.canGoBack?.(), canGoForward: !!wv.canGoForward?.() });
+      const show = window.wmux?.browser?.showContextMenu;
+      if (!show) return;
+      show(labelBrowserMenu(entries, tRef.current)).then((action: Parameters<typeof runBrowserMenuAction>[0] | null) => {
+        if (!action || !mountedRef.current) return;
+        runBrowserMenuAction(action, {
+          linkURL: params.linkURL ?? '',
+          srcURL: params.srcURL ?? '',
+          x: params.x ?? 0,
+          y: params.y ?? 0,
+          webview: wv,
+          openInNewTab: (url) => {
+            if (onOpenInNewTabRef.current) onOpenInNewTabRef.current(url);
+            else openInNewBrowserTab(url);
+          },
+          openExternal: (url) => window.wmux?.system?.openExternal?.(url),
+          copyText: (text) => { window.wmux?.clipboard?.writeText?.(text)?.catch?.(() => {}); },
+        });
+      }).catch(() => {});
+    };
+    wv.addEventListener('update-target-url', onTargetUrl);
+    wv.addEventListener('context-menu', onContextMenu);
+    // A link the page navigated away from, or a pointer that left the pane
+    // without leaving the link, would otherwise leave a stale URL showing.
+    wv.addEventListener('did-start-navigation', onStartNavigation);
+    wv.addEventListener('mouseleave', clearHover);
+    return () => {
+      wv.removeEventListener('update-target-url', onTargetUrl);
+      wv.removeEventListener('context-menu', onContextMenu);
+      wv.removeEventListener('did-start-navigation', onStartNavigation);
+      wv.removeEventListener('mouseleave', clearHover);
     };
   }, []);
 
@@ -879,6 +946,11 @@ export default function BrowserPane({
             onRetry={() => void enterAgentMode(agentUrlRef.current)}
             onCancel={() => onEngineChange?.('web')}
           />
+        )}
+        {hoverUrl && !isAgent && !overlay && (
+          // Chrome's bottom-left link readout (#439). Absolute over the page and
+          // click-through, so it never moves or covers what it describes.
+          <div className="browser-pane__link-status" aria-hidden="true">{hoverUrl}</div>
         )}
       </div>
     </div>

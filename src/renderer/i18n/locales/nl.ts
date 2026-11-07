@@ -444,6 +444,9 @@ export const nl: Translation = {
   'settings.workspacePanel.placement.end': 'Einde',
   'settings.workspacePanel.autoReorder': 'Automatisch herordenen bij melding',
   'settings.workspacePanel.showWelcomeScreen': 'Welkomstscherm tonen bij opstarten',
+  'settings.workspacePanel.closeToTray': 'Sluiten naar systeemvak',
+  'settings.workspacePanel.closeToTrayHint':
+    'De ×-knop van het venster of Alt+F4 verbergt het laatste wmux-venster in het systeemvak in plaats van af te sluiten, zodat terminalsessies en agents blijven draaien. Klik op het pictogram om het terug te halen; "wmux afsluiten" in het menu sluit echt af. Gaat voor op de bevestiging hierboven.',
   'settings.workspacePanel.confirmClose': 'Bevestigen voordat een sessie wordt gesloten',
   'settings.workspacePanel.confirmCloseHint':
     'Vraagt om bevestiging voordat de ×-knop, het contextmenu of Ctrl+Shift+W een sessie sluit — een verdwaalde klik kan geen agenten platleggen die hun status nog niet hebben opgeslagen. Sluiten vanuit de CLI en door agenten vraagt nooit om bevestiging.',
@@ -686,4 +689,19 @@ export const nl: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux luistert alleen op deze computer en er is geen openbare URL ingesteld, dus dit adres opent niet zomaar op een telefoon. Maak het eerst bereikbaar:',
   'settings.remote.pair.paired': 'Gekoppeld: {name}',
   'settings.remote.pair.close': 'Sluiten',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Link openen in nieuw tabblad",
+  'browser.menu.openLinkExternal': "Link openen in systeembrowser",
+  'browser.menu.copyLink': "Linkadres kopiëren",
+  'browser.menu.openImageInNewTab': "Afbeelding openen in nieuw tabblad",
+  'browser.menu.copyImage': "Afbeelding kopiëren",
+  'browser.menu.copyImageAddress': "Afbeeldingsadres kopiëren",
+  'browser.menu.cut': "Knippen",
+  'browser.menu.copy': "Kopiëren",
+  'browser.menu.paste': "Plakken",
+  'browser.menu.selectAll': "Alles selecteren",
+  'browser.menu.back': "Terug",
+  'browser.menu.forward': "Vooruit",
+  'browser.menu.reload': "Opnieuw laden",
+  'browser.menu.inspect': "Inspecteren",
 };

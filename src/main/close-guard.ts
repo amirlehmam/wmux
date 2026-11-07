@@ -21,6 +21,10 @@
  * renderer may be exactly the thing that is unresponsive (the reporter's
  * machine was "at its limit"). A main-process modal needs nothing from the
  * page to appear, and nothing from the page to answer.
+ *
+ * Close to tray (issue #442) is the fourth outcome, `hide`: the pref
+ * `closeToTray` turns the last visible window's × into `win.hide()`, and the
+ * tray icon (`app-tray.ts`) brings it back or quits for real.
  */
 
 export interface CloseGuardInput {
@@ -44,6 +48,22 @@ export interface CloseGuardInput {
   confirmed: boolean;
   /** A dialog for this window is already on screen. */
   pending: boolean;
+  /**
+   * The `closeToTray` pref (issue #442), read at close time like `enabled`.
+   * The × hides the window instead of closing it, and the main process keeps
+   * every PTY and agent running behind a tray icon (`app-tray.ts`).
+   */
+  toTray: boolean;
+  /**
+   * No OTHER wmux window is visible. Close to tray only takes the close that
+   * would leave nothing on screen: closing one of several visible windows still
+   * closes that window and ends its sessions, as before, because the app stays
+   * reachable through the others and a hidden window behind a visible one would
+   * be a window the user cannot see is still running. Hidden windows do not
+   * count as "other", so the last visible window hides rather than closing
+   * while an earlier one sits in the tray.
+   */
+  lastVisibleWindow: boolean;
 }
 
 /**
@@ -52,12 +72,25 @@ export interface CloseGuardInput {
  * - `swallow` — cancel it and do nothing: a dialog is already up. A second ×
  *               click (or Alt+F4 repeated by a stuck key) must neither close
  *               the window past the question nor stack a second question.
+ * - `hide`    — cancel it and hide the window to the tray (issue #442).
  */
-export type CloseGuardDecision = 'allow' | 'ask' | 'swallow';
+export type CloseGuardDecision = 'allow' | 'ask' | 'swallow' | 'hide';
 
+/**
+ * Precedence, top down:
+ * 1. `confirmed` and `bypass` win over everything: a programmatic close
+ *    (`wmux close-window`, another window), "Quit wmux" in the tray, an update,
+ *    a relaunch and Windows ending the session all really close. Tray quit runs
+ *    `app.quit()`, so it reaches here as `bypass` exactly like an update does.
+ * 2. Close to tray wins over the confirm dialog (#227): hiding ends nothing, so
+ *    there is nothing to confirm. A dialog already on screen is still honoured
+ *    (`swallow`) so the window never hides under its own question.
+ * 3. Otherwise the #227 guard as before.
+ */
 export function decideClose(input: CloseGuardInput): CloseGuardDecision {
   if (input.confirmed) return 'allow';
   if (input.bypass) return 'allow';
+  if (input.toTray && input.lastVisibleWindow) return input.pending ? 'swallow' : 'hide';
   if (!input.enabled) return 'allow';
   if (input.pending) return 'swallow';
   return 'ask';

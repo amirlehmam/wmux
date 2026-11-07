@@ -469,6 +469,9 @@ export const cs: Translation = {
   'settings.workspacePanel.placement.end': 'Na konec',
   'settings.workspacePanel.autoReorder': 'Automaticky přeřadit při oznámení',
   'settings.workspacePanel.showWelcomeScreen': 'Zobrazit uvítací obrazovku při spuštění',
+  'settings.workspacePanel.closeToTray': 'Zavírat do oznamovací oblasti',
+  'settings.workspacePanel.closeToTrayHint':
+    'Tlačítko × okna nebo Alt+F4 skryje poslední okno wmux do oznamovací oblasti místo ukončení, takže relace terminálu i agenti dál běží. Kliknutím na ikonu ho vrátíte; „Ukončit wmux“ v její nabídce aplikaci skutečně ukončí. Má přednost před potvrzením výše.',
   'settings.workspacePanel.confirmClose': 'Potvrdit před zavřením relace',
   'settings.workspacePanel.confirmCloseHint':
     'Zeptat se, než tlačítko ×, kontextová nabídka nebo Ctrl+Shift+W zavře relaci — náhodný klik tak nemůže shodit agenty, kteří ještě neuložili svůj stav. Zavření z CLI a od agentů se nikdy nepotvrzuje.',
@@ -1073,4 +1076,19 @@ export const cs: Translation = {
   'prompt.paneUnlock': 'Sleduje připnutý panel — kliknutím znovu zapnete sledování aktivního panelu',
   'prompt.paneNoSource': 'Aktivujte terminálový panel a zobrazí se zde jeho zadání.',
   'prompt.paneDisabled': 'Sledování zadání je vypnuté. Zapněte ho v Nastavení → Zadání.',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Otevřít odkaz na nové kartě",
+  'browser.menu.openLinkExternal': "Otevřít odkaz v systémovém prohlížeči",
+  'browser.menu.copyLink': "Kopírovat adresu odkazu",
+  'browser.menu.openImageInNewTab': "Otevřít obrázek na nové kartě",
+  'browser.menu.copyImage': "Kopírovat obrázek",
+  'browser.menu.copyImageAddress': "Kopírovat adresu obrázku",
+  'browser.menu.cut': "Vyjmout",
+  'browser.menu.copy': "Kopírovat",
+  'browser.menu.paste': "Vložit",
+  'browser.menu.selectAll': "Vybrat vše",
+  'browser.menu.back': "Zpět",
+  'browser.menu.forward': "Vpřed",
+  'browser.menu.reload': "Načíst znovu",
+  'browser.menu.inspect': "Prozkoumat",
 };

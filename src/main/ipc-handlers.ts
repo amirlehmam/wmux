@@ -2,6 +2,8 @@ import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme, web
 import { nextZoomFactor } from './zoom-factor';
 import { registerDictationIpc } from './chatgpt-dictation-ipc';
 import { focusBrowserDevTools } from './browser-tools';
+import { popupBrowserContextMenu } from './browser-context-menu-popup';
+import { isSystemBrowserUrl } from '../shared/browser-context-menu';
 import * as path from 'path';
 import { promises as fsp } from 'fs';
 import { IPC_CHANNELS, SurfaceId, WindowId, WorkspaceId, AgentId, type InsertionResult, type ExplorerListError } from '../shared/types';
@@ -795,9 +797,12 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     return listSystemFonts();
   });
 
-  ipcMain.on(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, (_event, url: string) => {
-    if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
-      shell.openExternal(url);
+  // http(s), plus mailto since the browser panel's "Open link in system
+  // browser" (#439) offers it for an email link. Parsed, never prefix-matched;
+  // nothing else may reach openExternal (see isSystemBrowserUrl).
+  ipcMain.on(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, (_event, url: unknown) => {
+    if (typeof url === 'string' && isSystemBrowserUrl(url)) {
+      shell.openExternal(url).catch(() => {});
     }
   });
 
@@ -920,6 +925,8 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     if (effects.toast) {
       notificationManager.showToast(data.title || 'wmux', data.text, () => {
         if (window && !window.isDestroyed()) {
+          // Hidden to the tray (#442): a click on its toast brings it back.
+          if (!window.isVisible()) window.show();
           window.focus();
           window.webContents.send('notification:focus-surface', data.surfaceId);
         }
@@ -1078,6 +1085,11 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     if (!guest || guest.isDestroyed() || guest.getType() !== 'webview' || guest.hostWebContents !== event.sender) return null;
     return readGuestHistory(guest);
   });
+
+  // The browser panel's right-click menu (#439): main only pops it and
+  // answers the choice. See browser-context-menu-popup.ts.
+  ipcMain.handle(IPC_CHANNELS.BROWSER_CONTEXT_MENU, (event, items: unknown) =>
+    popupBrowserContextMenu(event.sender, items));
 
   // The browser toolbar button is also a focus button. Electron's
   // openDevTools() is a no-op when the detached window already exists, so

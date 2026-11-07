@@ -896,6 +896,12 @@ export const IPC_CHANNELS = {
    * whether one of its tab-level actions answers it. See webview-guest-keys.ts.
    */
   BROWSER_GUEST_KEY: 'browser:guest-key',
+  /**
+   * Pop the browser panel's right-click menu (#439) over the asking window
+   * (renderer → main, invoke). Takes labelled items, answers the chosen
+   * action or null. See shared/browser-context-menu.ts.
+   */
+  BROWSER_CONTEXT_MENU: 'browser:context-menu',
   // Active workspace query (renderer → main)
   GET_ACTIVE_WORKSPACE: 'get-active-workspace',
   // Hook events (Claude Code hooks → main → renderer)

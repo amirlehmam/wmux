@@ -455,6 +455,9 @@ export const hi: Translation = {
   'settings.workspacePanel.placement.end': 'अंत',
   'settings.workspacePanel.autoReorder': 'सूचना पर स्वतः पुनः क्रमित करें',
   'settings.workspacePanel.showWelcomeScreen': 'आरंभ पर स्वागत स्क्रीन दिखाएँ',
+  'settings.workspacePanel.closeToTray': 'ट्रे में बंद करें',
+  'settings.workspacePanel.closeToTrayHint':
+    'विंडो का × बटन या Alt+F4 wmux से बाहर निकलने के बजाय आख़िरी wmux विंडो को सिस्टम ट्रे में छिपा देता है, ताकि टर्मिनल सत्र और एजेंट चलते रहें। उसे वापस लाने के लिए ट्रे आइकन पर क्लिक करें; उसके मेनू में "wmux से बाहर निकलें" सचमुच बंद करता है। ऊपर की पुष्टि से पहले लागू होता है।',
   'settings.workspacePanel.confirmClose': 'सत्र बंद करने से पहले पुष्टि करें',
   'settings.workspacePanel.confirmCloseHint':
     '× बटन, कॉन्टेक्स्ट मेन्यू या Ctrl+Shift+W से सत्र बंद होने से पहले पूछें — एक गलत क्लिक उन एजेंटों को नहीं गिरा सकता जिन्होंने अभी अपनी स्थिति सहेजी नहीं है। CLI और एजेंटों से बंद करने पर कभी नहीं पूछा जाता।',
@@ -697,4 +700,19 @@ export const hi: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux केवल इस कंप्यूटर पर सुनता है और कोई सार्वजनिक URL सेट नहीं है, इसलिए यह पता फ़ोन पर ऐसे ही नहीं खुलेगा। पहले इसे पहुँच योग्य बनाएँ:',
   'settings.remote.pair.paired': 'पेयर हुआ: {name}',
   'settings.remote.pair.close': 'बंद करें',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "लिंक को नए टैब में खोलें",
+  'browser.menu.openLinkExternal': "लिंक को सिस्टम ब्राउज़र में खोलें",
+  'browser.menu.copyLink': "लिंक का पता कॉपी करें",
+  'browser.menu.openImageInNewTab': "छवि को नए टैब में खोलें",
+  'browser.menu.copyImage': "छवि कॉपी करें",
+  'browser.menu.copyImageAddress': "छवि का पता कॉपी करें",
+  'browser.menu.cut': "काटें",
+  'browser.menu.copy': "कॉपी करें",
+  'browser.menu.paste': "चिपकाएँ",
+  'browser.menu.selectAll': "सभी चुनें",
+  'browser.menu.back': "पीछे",
+  'browser.menu.forward': "आगे",
+  'browser.menu.reload': "फिर से लोड करें",
+  'browser.menu.inspect': "जाँचें",
 };

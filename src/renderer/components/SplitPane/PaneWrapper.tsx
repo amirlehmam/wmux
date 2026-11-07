@@ -303,6 +303,8 @@ export default function PaneWrapper({
               visible={isVisible}
               onActivate={onActivate}
               focused={isFocused && isActive}
+              // Right-click → "Open link in new tab" (#439): a tab beside this one.
+              onOpenInNewTab={(u) => { addSurface(workspaceId, paneId, 'browser', { url: u }); }}
               // Remembered page, then the configured Start page, then blank.
               // The Start page link is new in #232: a browser TAB used to skip
               // `browserPrefs.defaultUrl` entirely and go straight to
@@ -420,9 +422,9 @@ export default function PaneWrapper({
     if (activeWorkspaceId) {
       // A Git tab pins the folder it opens on (#362) — this pane's terminal.
       const gitRoot = type === 'git' && workspace ? gitRootFor(workspace, paneId) : undefined;
-      const options = type === 'terminal'
-        ? { shell: activeTerminalShell(leaf) }
-        : gitRoot ? { cwd: gitRoot } : undefined;
+      let options: { shell?: string; cwd?: string } | undefined;
+      if (type === 'terminal') options = { shell: activeTerminalShell(leaf) };
+      else if (gitRoot) options = { cwd: gitRoot };
       addSurface(activeWorkspaceId, paneId, type, options);
     }
   };

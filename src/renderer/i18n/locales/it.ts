@@ -444,6 +444,9 @@ export const it: Translation = {
   'settings.workspacePanel.placement.end': 'In fondo',
   'settings.workspacePanel.autoReorder': 'Riordino automatico alla notifica',
   'settings.workspacePanel.showWelcomeScreen': "Mostra schermata di benvenuto all'avvio",
+  'settings.workspacePanel.closeToTray': 'Chiudi nell\'area di notifica',
+  'settings.workspacePanel.closeToTrayHint':
+    'Il pulsante × della finestra o Alt+F4 nasconde l\'ultima finestra di wmux nell\'area di notifica invece di uscire, così le sessioni del terminale e gli agenti continuano a funzionare. Fai clic sull\'icona per riaprirla; «Esci da wmux» nel suo menu esce davvero. Ha la precedenza sulla conferma qui sopra.',
   'settings.workspacePanel.confirmClose': 'Conferma prima di chiudere una sessione',
   'settings.workspacePanel.confirmCloseHint':
     "Chiede conferma prima che il pulsante ×, il menu contestuale o Ctrl+Shift+W chiudano una sessione — un clic accidentale non può eliminare agenti che non hanno ancora salvato il loro stato. Le chiusure da CLI e dagli agenti non chiedono mai conferma.",
@@ -686,4 +689,19 @@ export const it: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux è in ascolto solo su questo computer e non c’è un URL pubblico, quindi questo indirizzo non si aprirà così com’è su un telefono. Rendilo prima raggiungibile:',
   'settings.remote.pair.paired': 'Associato: {name}',
   'settings.remote.pair.close': 'Chiudi',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Apri link in una nuova scheda",
+  'browser.menu.openLinkExternal': "Apri link nel browser di sistema",
+  'browser.menu.copyLink': "Copia indirizzo link",
+  'browser.menu.openImageInNewTab': "Apri immagine in una nuova scheda",
+  'browser.menu.copyImage': "Copia immagine",
+  'browser.menu.copyImageAddress': "Copia indirizzo immagine",
+  'browser.menu.cut': "Taglia",
+  'browser.menu.copy': "Copia",
+  'browser.menu.paste': "Incolla",
+  'browser.menu.selectAll': "Seleziona tutto",
+  'browser.menu.back': "Indietro",
+  'browser.menu.forward': "Avanti",
+  'browser.menu.reload': "Ricarica",
+  'browser.menu.inspect': "Ispeziona",
 };

@@ -444,6 +444,9 @@ export const sv: Translation = {
   'settings.workspacePanel.placement.end': 'Sist',
   'settings.workspacePanel.autoReorder': 'Sortera om automatiskt vid avisering',
   'settings.workspacePanel.showWelcomeScreen': 'Visa startskärm vid uppstart',
+  'settings.workspacePanel.closeToTray': 'Stäng till systemfältet',
+  'settings.workspacePanel.closeToTrayHint':
+    'Fönstrets ×-knapp eller Alt+F4 döljer det sista wmux-fönstret i systemfältet i stället för att avsluta, så terminalsessioner och agenter fortsätter att köra. Klicka på ikonen för att få tillbaka det; "Avsluta wmux" i dess meny avslutar på riktigt. Går före bekräftelsen ovan.',
   'settings.workspacePanel.confirmClose': 'Bekräfta innan en session stängs',
   'settings.workspacePanel.confirmCloseHint':
     'Fråga innan ×-knappen, snabbmenyn eller Ctrl+Skift+W stänger en session — ett felklick kan då inte slå ut agenter som inte har sparat sitt tillstånd än. Stängningar från CLI:t och från agenter frågar aldrig.',
@@ -686,4 +689,19 @@ export const sv: Translation = {
   'settings.remote.pair.loopbackWarn': 'wmux lyssnar bara på den här datorn och ingen offentlig URL är angiven, så adressen öppnas inte som den är på en telefon. Gör den nåbar först:',
   'settings.remote.pair.paired': 'Parkopplad: {name}',
   'settings.remote.pair.close': 'Stäng',
+  // Browser panel right-click menu (#439).
+  'browser.menu.openLinkInNewTab': "Öppna länk i ny flik",
+  'browser.menu.openLinkExternal': "Öppna länk i systemets webbläsare",
+  'browser.menu.copyLink': "Kopiera länkadress",
+  'browser.menu.openImageInNewTab': "Öppna bild i ny flik",
+  'browser.menu.copyImage': "Kopiera bild",
+  'browser.menu.copyImageAddress': "Kopiera bildadress",
+  'browser.menu.cut': "Klipp ut",
+  'browser.menu.copy': "Kopiera",
+  'browser.menu.paste': "Klistra in",
+  'browser.menu.selectAll': "Markera allt",
+  'browser.menu.back': "Bakåt",
+  'browser.menu.forward': "Framåt",
+  'browser.menu.reload': "Läs in igen",
+  'browser.menu.inspect': "Inspektera",
 };
