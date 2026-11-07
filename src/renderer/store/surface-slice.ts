@@ -79,6 +79,8 @@ export interface SurfaceSlice {
       auto?: boolean;
       /** An explorer preview tab (see SurfaceRef.ephemeral). */
       ephemeral?: boolean;
+      /** Add the tab without switching to it, like a browser's background tab. */
+      background?: boolean;
     },
   ) => SurfaceId | null;
 
@@ -380,7 +382,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
       ...(options?.ephemeral ? { ephemeral: true } : {}),
     };
     const newSurfaces = [...leaf.surfaces, newSurface];
-    const newActiveSurfaceIndex = newSurfaces.length - 1;
+    const newActiveSurfaceIndex = options?.background ? leaf.activeSurfaceIndex : newSurfaces.length - 1;
 
     // Rebuild tree with updated leaf (immutable)
     const updatedTree = patchLeaf(ws.splitTree, paneId, {

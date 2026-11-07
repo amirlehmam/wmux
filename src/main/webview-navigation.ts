@@ -102,15 +102,21 @@ export function willNavigatePolicy(url: string): {
 // 'new-window' with NO features: that is a "new window please", not a popup a
 // page is waiting on.
 //
+// Ctrl+click and middle-click on a link arrive as 'background-tab', and those
+// open in a new wmux browser tab beside this one, as they would in a browser.
+// A page cannot ask for that disposition with a plain window.open() (that is
+// 'foreground-tab'), so it takes a modified click by the user.
+//
 // Everything else that is http(s) navigates the panel in place, which is what
 // the bridge has done since #126 — main now covers the requests the bridge
-// cannot see (a click before dom-ready injected it, a modified click, an odd
+// cannot see (a click before dom-ready injected it, a shift+click, an odd
 // feature string Chromium reads as a tab). Nothing from the panel ever goes to
 // the OS browser from here: these requests never reached this handler before,
 // so sending them out now would be a new behaviour nobody asked for.
 
 export type WebviewWindowOpenDecision =
   | { kind: 'popup' }
+  | { kind: 'new-tab'; url: string }
   | { kind: 'navigate-in-place'; url: string }
   | { kind: 'drop' };
 
@@ -121,6 +127,7 @@ export function webviewWindowOpenPolicy(details: {
 }): WebviewWindowOpenDecision {
   if (!isExternalWebUrl(details.url)) return { kind: 'drop' };
   if (details.disposition === 'new-window' && (details.features ?? '').trim() !== '') return { kind: 'popup' };
+  if (details.disposition === 'background-tab') return { kind: 'new-tab', url: details.url };
   return { kind: 'navigate-in-place', url: details.url };
 }
 

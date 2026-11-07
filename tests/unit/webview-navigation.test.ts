@@ -115,11 +115,17 @@ describe('webviewWindowOpenPolicy (#281)', () => {
   it.each([
     ['plain window.open(u)', '', 'foreground-tab'],
     ['noopener only', 'noopener', 'foreground-tab'],
-    ['ctrl+click', '', 'background-tab'],
     ['shift+click (a new window, but no features: nobody is waiting on it)', '', 'new-window'],
     ['a feature string Chromium still reads as a tab', 'location=yes,toolbar=yes', 'foreground-tab'],
   ])('%s navigates the panel in place', (_name, features, disposition) => {
     expect(webviewWindowOpenPolicy({ url: U, features, disposition })).toEqual({ kind: 'navigate-in-place', url: U });
+  });
+
+  // Ctrl+click and middle-click on a link are both 'background-tab', and no
+  // script can ask for that disposition on its own: window.open() is
+  // 'foreground-tab' at most.
+  it('ctrl+click or middle-click opens a new browser tab', () => {
+    expect(webviewWindowOpenPolicy({ url: U, features: '', disposition: 'background-tab' })).toEqual({ kind: 'new-tab', url: U });
   });
 
   it.each(['javascript:alert(1)', 'data:text/html,x', 'file:///C:/Windows/win.ini', 'about:blank'])(
@@ -127,6 +133,7 @@ describe('webviewWindowOpenPolicy (#281)', () => {
     (url) => {
       expect(webviewWindowOpenPolicy({ url, features: 'width=1', disposition: 'new-window' })).toEqual({ kind: 'drop' });
       expect(webviewWindowOpenPolicy({ url, features: '', disposition: 'foreground-tab' })).toEqual({ kind: 'drop' });
+      expect(webviewWindowOpenPolicy({ url, features: '', disposition: 'background-tab' })).toEqual({ kind: 'drop' });
     },
   );
 

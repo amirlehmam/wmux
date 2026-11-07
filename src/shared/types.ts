@@ -902,6 +902,12 @@ export const IPC_CHANNELS = {
    * action or null. See shared/browser-context-menu.ts.
    */
   BROWSER_CONTEXT_MENU: 'browser:context-menu',
+  /**
+   * main → host window: a browser pane's guest asked to open a link in a new
+   * tab (Ctrl+click or middle-click). Carries the guest's webContentsId, so the
+   * pane hosting that guest is the one that answers, and the http(s) url.
+   */
+  BROWSER_OPEN_IN_NEW_TAB: 'browser:open-in-new-tab',
   // Active workspace query (renderer → main)
   GET_ACTIVE_WORKSPACE: 'get-active-workspace',
   // Hook events (Claude Code hooks → main → renderer)

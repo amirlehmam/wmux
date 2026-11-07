@@ -189,6 +189,17 @@ contextBridge.exposeInMainWorld('wmux', {
     /** Pop the right-click menu (#439); answers the chosen action or null. See shared/browser-context-menu.ts. */
     showContextMenu: (items: BrowserMenuItem[]): Promise<BrowserMenuAction | null> =>
       ipcRenderer.invoke(IPC_CHANNELS.BROWSER_CONTEXT_MENU, items),
+    /**
+     * A guest asked to open a link in a new tab (Ctrl+click or middle-click).
+     * Every pane hears it; the one hosting `webContentsId` acts on it.
+     */
+    onOpenInNewTab: (callback: (webContentsId: number, url: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, webContentsId: unknown, url: unknown) => {
+        if (typeof webContentsId === 'number' && typeof url === 'string') callback(webContentsId, url);
+      };
+      ipcRenderer.on(IPC_CHANNELS.BROWSER_OPEN_IN_NEW_TAB, handler);
+      return () => { ipcRenderer.removeListener(IPC_CHANNELS.BROWSER_OPEN_IN_NEW_TAB, handler); };
+    },
   },
   agent: {
     list: (workspaceId?: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_LIST, workspaceId),

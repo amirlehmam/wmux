@@ -8,7 +8,7 @@ import { browserUrlLabel } from '../SplitPane/surface-label';
 import { BROWSER_BLANK_PAGE } from '../../utils/browser-start-page';
 import { useKeepRendering } from '../../utils/browser-keep-rendering';
 import { openInNewBrowserTab } from '../../utils/open-in-browser';
-import { buildBrowserContextMenu, linkStatusText } from '../../../shared/browser-context-menu';
+import { buildBrowserContextMenu, isTabOpenableUrl, linkStatusText } from '../../../shared/browser-context-menu';
 import { labelBrowserMenu, runBrowserMenuAction } from './browser-menu-actions';
 import {
   activeHistoryUrl,
@@ -67,11 +67,13 @@ interface BrowserPaneProps {
    */
   focused?: boolean;
   /**
-   * "Open link in new tab" from the right-click menu (#439): a new browser tab
-   * beside this one. Without it (the side panel, which has no tabs) the tab
-   * goes into the active workspace's panes instead.
+   * "Open link in new tab" from the right-click menu (#439), or a Ctrl+click
+   * or middle-click on a link: a new browser tab beside this one. The clicks
+   * open it in the `background`, as a browser does. Without it (the side
+   * panel, which has no tabs) the tab goes into the active workspace's panes
+   * instead.
    */
-  onOpenInNewTab?: (url: string) => void;
+  onOpenInNewTab?: (url: string, opts?: { background?: boolean }) => void;
 }
 
 /**
@@ -869,6 +871,21 @@ export default function BrowserPane({
     window.addEventListener('wmux:browser-navigate', handler);
     return () => window.removeEventListener('wmux:browser-navigate', handler);
   }, [navigate, surfaceId]);
+
+  // Ctrl+click or middle-click on a link in this pane's page (main's
+  // webviewWindowOpenPolicy). Every pane hears it; only the one hosting that
+  // guest answers. Same destination as the right-click "Open link in new tab";
+  // with no pane to take the tab, the link opens here rather than nowhere.
+  useEffect(() => {
+    return window.wmux?.browser?.onOpenInNewTab?.((guestId: number, url: string) => {
+      const wv = webviewRef.current;
+      let ownId: number | undefined;
+      try { ownId = wv?.getWebContentsId?.(); } catch { return; } // not attached yet
+      if (ownId !== guestId || !isTabOpenableUrl(url)) return;
+      if (onOpenInNewTabRef.current) onOpenInNewTabRef.current(url, { background: true });
+      else if (!openInNewBrowserTab(url)) wv?.loadURL?.(url)?.catch?.(() => {});
+    });
+  }, []);
 
   const isAgent = engine === 'agent';
   const overlay = isAgent && (agentStatus === 'setup' || agentStatus === 'no-dashboard');
