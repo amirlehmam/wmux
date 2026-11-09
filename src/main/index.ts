@@ -1102,11 +1102,23 @@ function hardenWebContents(): void {
 
     if (type === 'webview') {
       // The browser panel (#281): a sized popup — popup sign-in — opens as a
-      // real window that keeps its opener; every other http(s) request
-      // navigates the panel in place, as the popup bridge has since #126.
+      // real window that keeps its opener; a Ctrl+click or middle-click opens
+      // a new wmux browser tab; every other http(s) request navigates the
+      // panel in place, as the popup bridge has since #126.
       // See webviewWindowOpenPolicy for the measured dispositions.
       contents.setWindowOpenHandler((details) => {
         const decision = webviewWindowOpenPolicy(details);
+        if (decision.kind === 'new-tab') {
+          // The host window owns the tabs, and the pane hosting this guest
+          // adds one. With no host to ask, the link still opens, in place.
+          const host = contents.hostWebContents;
+          if (host && !host.isDestroyed()) {
+            host.send(IPC_CHANNELS.BROWSER_OPEN_IN_NEW_TAB, contents.id, decision.url);
+          } else {
+            contents.loadURL(decision.url).catch(() => {});
+          }
+          return { action: 'deny' };
+        }
         if (decision.kind === 'navigate-in-place') {
           contents.loadURL(decision.url).catch(() => {});
           return { action: 'deny' };

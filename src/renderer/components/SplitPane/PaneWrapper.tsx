@@ -303,8 +303,9 @@ export default function PaneWrapper({
               visible={isVisible}
               onActivate={onActivate}
               focused={isFocused && isActive}
-              // Right-click → "Open link in new tab" (#439): a tab beside this one.
-              onOpenInNewTab={(u) => { addSurface(workspaceId, paneId, 'browser', { url: u }); }}
+              // Right-click → "Open link in new tab" (#439), Ctrl+click or
+              // middle-click: a tab beside this one.
+              onOpenInNewTab={(u, o) => { addSurface(workspaceId, paneId, 'browser', { url: u, background: o?.background }); }}
               // Remembered page, then the configured Start page, then blank.
               // The Start page link is new in #232: a browser TAB used to skip
               // `browserPrefs.defaultUrl` entirely and go straight to

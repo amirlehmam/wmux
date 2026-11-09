@@ -315,6 +315,23 @@ describe('surface-slice', () => {
     });
   });
 
+  describe('addSurface', () => {
+    it('makes the new tab active by default', () => {
+      useStore.getState().addSurface(workspaceId, paneId, 'browser', { url: 'https://a.example/' });
+      expect(currentLeaf().activeSurfaceIndex).toBe(1);
+    });
+
+    // Ctrl+click or middle-click on a link in the browser panel opens it the
+    // way a browser does: in a new tab, leaving the user on the page they were.
+    it('leaves the active tab alone for a background open', () => {
+      const id = useStore.getState().addSurface(workspaceId, paneId, 'browser', { url: 'https://a.example/', background: true })!;
+      const leaf = currentLeaf();
+      expect(leaf.activeSurfaceIndex).toBe(0);
+      expect(leaf.surfaces.map((s) => s.id)).toContain(id);
+      expect(leaf.surfaces.find((s) => s.id === id)?.url).toBe('https://a.example/');
+    });
+  });
+
   // Issue #141: closing the auto-opened diff tab used to last only until the
   // next Edit/Write hook fired, so it came back minutes later with no user
   // action — and on a large repo its git polling was what made typing lag.
