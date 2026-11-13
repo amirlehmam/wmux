@@ -1,5 +1,6 @@
 import { useStore } from '../store';
 import { splitNode, getAllPaneIds } from '../store/split-utils';
+import { unlockedPaneIds } from '../store/pane-lock';
 import { PaneId, SplitNode, SurfaceRef, WorkspaceId } from '../../shared/types';
 import { v4 as uuid } from 'uuid';
 
@@ -110,13 +111,15 @@ export function withLeafSurfaceUrl(tree: SplitNode, paneId: PaneId, url: string)
  * The pane a new browser tab goes into when the caller has none of its own —
  * the workspace's side panel has no tab bar (#439). The first pane already
  * holding a browser tab, so links collect beside each other; else the first
- * pane. Null for an empty tree.
+ * pane. Locked panes never qualify. Null when no pane does.
  */
 export function newBrowserTabPane(tree: SplitNode): PaneId | null {
+  const unlocked = new Set(unlockedPaneIds(tree));
   const leaves: Extract<SplitNode, { type: 'leaf' }>[] = [];
   const walk = (node: SplitNode): void => {
-    if (node.type === 'leaf') leaves.push(node);
-    else { walk(node.children[0]); walk(node.children[1]); }
+    if (node.type === 'leaf') {
+      if (unlocked.has(node.paneId)) leaves.push(node);
+    } else { walk(node.children[0]); walk(node.children[1]); }
   };
   walk(tree);
   const withBrowser = leaves.find((leaf) => leaf.surfaces.some((s) => s.type === 'browser'));
