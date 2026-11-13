@@ -109,6 +109,30 @@ describe('autoOpenDiffPane with locked panes', () => {
     expect(autoOpenDiffPane('edit', ws(withLocks(true, true)), ON)).toBeNull();
   });
 
+  describe('with three stacked panes', () => {
+    const MIDDLE = 'pane-middle' as PaneId;
+    const three = (topSurfaces: SurfaceRef[], middleSurfaces: SurfaceRef[]): SplitNode => ({
+      type: 'branch', direction: 'vertical', ratio: 0.33,
+      children: [
+        leaf(TOP, topSurfaces),
+        {
+          type: 'branch', direction: 'vertical', ratio: 0.5,
+          children: [leaf(MIDDLE, middleSurfaces), lock(leaf(BOTTOM, [surf('surf-b', 'terminal')]))],
+        },
+      ],
+    } as SplitNode);
+    const terminal = (id: string) => [surf(id, 'terminal')];
+
+    it('picks the last unlocked pane in reading order, not the first', () => {
+      expect(autoOpenDiffPane('edit', ws(three(terminal('surf-a'), terminal('surf-m'))), ON)).toBe(MIDDLE);
+    });
+
+    it('opens nothing when the last unlocked pane has a diff tab, even if an earlier one has none', () => {
+      const middle = [surf('surf-m', 'terminal'), surf('surf-d', 'diff')];
+      expect(autoOpenDiffPane('edit', ws(three(terminal('surf-a'), middle)), ON)).toBeNull();
+    });
+  });
+
   it('opens nothing when a locked bottom pane already has a diff tab', () => {
     const tree = withLocks(false, true, [surf('surf-b', 'terminal'), surf('surf-d', 'diff')]);
     expect(autoOpenDiffPane('edit', ws(tree), ON)).toBeNull();

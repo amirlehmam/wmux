@@ -40,7 +40,7 @@ export function autoOpenDiffPane(tool: unknown, ws: WorkspaceInfo, ctx: AutoOpen
   if (!ctx.enabled || ctx.dismissed || !isFileEditTool(tool)) return null;
   const hasDiff = (id: PaneId) => findLeaf(ws.splitTree, id)?.surfaces.some((s) => s.type === 'diff') ?? false;
   const bottom = findBottomPane(ws.splitTree);
-  // One diff tab per workspace: a second edit refreshes the one already open.
+  // One diff tab per target pane: a second edit refreshes the one already open.
   if (!findLeaf(ws.splitTree, bottom) || hasDiff(bottom)) return null;
   if (!isPaneLocked(ws.splitTree, bottom)) return bottom;
   const fallback = unlockedPaneIds(ws.splitTree).at(-1);
