@@ -24,13 +24,9 @@
   <a href="#documentation">Docs</a>
 </p>
 
-<p align="center">
-  <a href="https://wmux.org/#film">
-    <img src="docs/assets/wmux-film.webp" alt="The wmux film: six agents in one window, the sidebar flagging the one that needs an answer, a browser panel beside the code, CLI scripting, session restore, the phone Remote Console and the supported agents" width="960" />
-  </a>
-</p>
+https://github.com/user-attachments/assets/0c2f9a1e-5deb-4794-b01e-7c66ae1f1ece
 
-<p align="center"><sub>The one-minute wmux film, silent here. <a href="https://wmux.org/#film">Watch it with sound on wmux.org</a>. Terminal output is staged for the demo.</sub></p>
+<p align="center"><sub>The one-minute wmux film. Terminal output is staged for the demo.</sub></p>
 
 ---
 
