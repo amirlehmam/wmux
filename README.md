@@ -24,13 +24,9 @@
   <a href="#documentation">Docs</a>
 </p>
 
-<p align="center">
-  <a href="https://wmux.org/#film">
-    <img src="docs/assets/wmux-film-poster.jpg" alt="Watch the one-minute wmux film: the sidebar shows Codex needs input while Claude Code and OpenCode are done" width="960" />
-  </a>
-</p>
+https://github.com/user-attachments/assets/0c2f9a1e-5deb-4794-b01e-7c66ae1f1ece
 
-<p align="center"><sub>Click to watch the one-minute film on wmux.org. Terminal output is staged for the demo.</sub></p>
+<p align="center"><sub>The one-minute wmux film. Terminal output is staged for the demo.</sub></p>
 
 ---
 
