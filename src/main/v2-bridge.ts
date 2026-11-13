@@ -273,6 +273,7 @@ const SPECS: Record<string, BridgeSpec> = {
   'surface.create': {
     js: (p) => `window.__wmux_createSurface?.(${S(p || {})})`,
     requireResult: 'No active workspace or panes',
+    errorFromResult: true,
     callerScoped: true,
   },
   'surface.close': {

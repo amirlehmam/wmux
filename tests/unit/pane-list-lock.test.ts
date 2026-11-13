@@ -30,6 +30,7 @@ interface Bridge {
   __wmux_listPanes: (workspaceId?: string) => Array<Record<string, unknown>>;
   __wmux_layoutGrid: (params: { count: number }) => Record<string, unknown> | null;
   __wmux_layoutAgents: (params: { count: number; anchorPaneId?: string }) => Record<string, unknown> | null;
+  __wmux_createSurface: (params?: { type?: string; paneId?: string; workspaceId?: string }) => Record<string, unknown> | null;
 }
 const bridge = () => globalThis.window as unknown as Bridge;
 const tree = () => useStore.getState().workspaces[0].splitTree;
@@ -67,6 +68,40 @@ describe('layout grid on locked panes (AC18)', () => {
     const result = bridge().__wmux_layoutGrid({ count: 4 });
     expect(result).not.toHaveProperty('error');
     expect(getAllPaneIds(tree()).length).toBeGreaterThan(2);
+  });
+});
+
+const surfaceCount = (paneId: string) =>
+  (bridge().__wmux_listPanes().find((p) => p.paneId === paneId)?.tabCount as number);
+
+describe('new-surface placement (AC25, AC26)', () => {
+  it('skips a locked first pane and opens in the first unlocked one', () => {
+    load(split(leaf('pane-a', true), split(leaf('pane-b'), leaf('pane-c'))));
+    const result = bridge().__wmux_createSurface();
+    expect(result?.paneId).toBe('pane-b');
+    expect(surfaceCount('pane-a')).toBe(1);
+    expect(surfaceCount('pane-b')).toBe(2);
+    expect(surfaceCount('pane-c')).toBe(1);
+  });
+
+  it('opens in the first pane when nothing is locked, as before', () => {
+    load(split(leaf('pane-a'), leaf('pane-b')));
+    expect(bridge().__wmux_createSurface()?.paneId).toBe('pane-a');
+  });
+
+  it('answers an error and creates nothing when every pane is locked', () => {
+    load(split(leaf('pane-a', true), leaf('pane-b', true)));
+    const before = tree();
+    const result = bridge().__wmux_createSurface();
+    expect(result).toEqual({ error: `No unlocked panes in workspace ${WS}` });
+    expect(tree()).toBe(before);
+  });
+
+  it('still opens in a locked pane that is named explicitly', () => {
+    load(split(leaf('pane-a', true), leaf('pane-b')));
+    const result = bridge().__wmux_createSurface({ paneId: 'pane-a' });
+    expect(result?.paneId).toBe('pane-a');
+    expect(surfaceCount('pane-a')).toBe(2);
   });
 });
 

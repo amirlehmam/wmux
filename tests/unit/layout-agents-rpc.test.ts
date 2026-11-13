@@ -116,6 +116,37 @@ describe('layout.grid renderer errors over the bridge (AC18)', () => {
   });
 });
 
+describe('surface.create renderer errors over the bridge (AC25)', () => {
+  const callCreate = (result: unknown) => {
+    getAllWindows.mockReturnValue([{ webContents: { executeJavaScript: vi.fn(async () => result) }, isDestroyed: () => false }]);
+    getFocusedWindow.mockReturnValue(null);
+    return new Promise<{ ok?: unknown; error?: { code: number; message: string } }>((resolve) => {
+      handleBridgeV2('surface.create', {}, (ok) => resolve({ ok }), (code, message) => resolve({ error: { code, message } }));
+    });
+  };
+
+  afterEach(() => {
+    getAllWindows.mockReset();
+    getAllWindows.mockReturnValue([]);
+    getFocusedWindow.mockReset();
+    getFocusedWindow.mockReturnValue(null);
+  });
+
+  it('turns an { error } result into -32000 with that message', async () => {
+    const reply = await callCreate({ error: 'No unlocked panes in workspace ws-1' });
+    expect(reply.error).toEqual({ code: -32000, message: 'No unlocked panes in workspace ws-1' });
+  });
+
+  it('passes a created surface through', async () => {
+    const result = { surfaceId: 'surf-x', paneId: 'pane-x' };
+    expect((await callCreate(result)).ok).toEqual(result);
+  });
+
+  it('still reports a null result as the generic missing-workspace error', async () => {
+    expect((await callCreate(null)).error).toEqual({ code: -32000, message: 'No active workspace or panes' });
+  });
+});
+
 describe('layoutAgentsParams (wmux layout agents flags)', () => {
   const parse = (args: string[], caller?: string) => layoutAgentsParams(args, caller);
 
