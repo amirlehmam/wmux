@@ -1,5 +1,14 @@
 # README screenshots
 
+`wmux-film.webp` is the README hero: the landing-page film
+(`site/assets/film/wmux-film.mp4`) re-encoded as a silent animated WebP, because
+GitHub does not play a repository video inline. Regenerate it after the film
+changes, and keep it under about 6 MB:
+
+```powershell
+ffmpeg -i site/assets/film/wmux-film.mp4 -vf "fps=8,scale=960:-1:flags=lanczos" -c:v libwebp -q:v 42 -compression_level 6 -loop 0 -an docs/assets/wmux-film.webp
+```
+
 `wmux-workspace.png` was captured from the running Electron renderer at version
 2.51.0, using the shipped UI styles and components. It is not a design mockup or
 a composited window image.

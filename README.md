@@ -1,26 +1,42 @@
 <p align="center">
-  <img src="resources/icons/icon.png" alt="" width="80" height="80" />
+  <img src="resources/icons/icon.png" alt="" width="72" height="72" />
 </p>
 
 <h1 align="center">wmux</h1>
 
-<p align="center">A Windows terminal for working with several coding agents at once.</p>
-
 <p align="center">
-  <a href="https://github.com/amirlehmam/wmux/releases/latest">Download for Windows</a> ·
-  <a href="#install">Install</a> ·
-  <a href="#keyboard-shortcuts">Shortcuts</a> ·
-  <a href="#documentation">Documentation</a> ·
-  <a href="https://github.com/amirlehmam/wmux/releases">Release notes</a>
+  <strong>Six agents. Which one needs you?</strong><br />
+  A Windows terminal for running several coding agents at once.
 </p>
 
-![wmux with three coding-agent conversations, a live browser preview, and the Git commit graph on the right](docs/assets/wmux-workspace.png)
+<p align="center">
+  <a href="https://github.com/amirlehmam/wmux/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/amirlehmam/wmux?style=flat-square&label=release&color=1e90ff" /></a>
+  <a href="https://github.com/amirlehmam/wmux/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/amirlehmam/wmux/total?style=flat-square&color=1e90ff" /></a>
+  <img alt="Windows x64" src="https://img.shields.io/badge/platform-Windows%20x64-1e90ff?style=flat-square" />
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1e90ff?style=flat-square" /></a>
+</p>
 
-*wmux 2.51.0 — three example conversations, a live browser and real Git history. Terminal output and agent states are staged for the demo. [View full size](docs/assets/wmux-workspace.png).*
+<p align="center">
+  <a href="https://github.com/amirlehmam/wmux/releases/latest"><strong>Download for Windows</strong></a> ·
+  <a href="https://wmux.org">wmux.org</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#keyboard-shortcuts">Shortcuts</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
-Run an agent, keep your tests beside it, and review the changes in the same window. The sidebar shows which workspaces are busy and which need an answer. When an agent stops for you, jump straight to its pane.
+<p align="center">
+  <a href="https://wmux.org/#film">
+    <img src="docs/assets/wmux-film.webp" alt="The wmux film: six agents in one window, the sidebar flagging the one that needs an answer, a browser panel beside the code, CLI scripting, session restore, the phone Remote Console and the supported agents" width="960" />
+  </a>
+</p>
 
-wmux runs your existing command-line tools: Claude Code, Codex, OpenCode, or an ordinary shell. Bring the tools and accounts you already use.
+<p align="center"><sub>The one-minute wmux film, silent here. <a href="https://wmux.org/#film">Watch it with sound on wmux.org</a>. Terminal output is staged for the demo.</sub></p>
+
+---
+
+Run Claude Code in one pane, Codex in the next, your tests below them and the dev server in a browser on the right. The sidebar tells you which agents are working and which one is waiting for you, and one shortcut takes you there.
+
+wmux runs the command-line tools you already have, with the accounts you already pay for. It sells no agent and adds no account.
 
 ## Install
 
@@ -37,9 +53,9 @@ scoop bucket add wmux https://github.com/amirlehmam/wmux
 scoop install wmux/wmux
 ```
 
-Installer and ZIP installs can update through **Settings → Help → Check for updates**. For Scoop, use `scoop update wmux`. Settings and saved sessions live in `%APPDATA%\wmux`, including when you use the ZIP.
+Installer and ZIP installs update through **Settings → Help → Check for updates**; Scoop installs use `scoop update wmux`. Settings and saved sessions live in `%APPDATA%\wmux`, including for the ZIP.
 
-The 2.51.0 release is unsigned, so Windows may show a SmartScreen warning. Download from this repository's releases.
+Releases are not signed with a publicly trusted certificate yet, so Windows may show a SmartScreen warning. Only download wmux from this repository's releases.
 
 <details>
 <summary>Update controls</summary>
@@ -48,60 +64,80 @@ Set `WMUX_DISABLE_UPDATER=1` to disable the updater. For unattended installer do
 
 </details>
 
-## Start with one project
+## Your first five minutes
 
-1. Open wmux and choose your shell. PowerShell, Command Prompt, Git Bash and WSL are supported.
-2. Open your project folder with **Ctrl+O**, then launch your usual agent command.
-3. Split right with **Ctrl+D** or down with **Ctrl+Shift+D**. Run tests, a development server, or a second agent beside the first.
-4. Use **Ctrl+Shift+A** to see the agent navigator, or **Ctrl+Shift+B** to jump to an agent waiting for you.
+1. Open wmux and pick a shell: PowerShell, Command Prompt, Git Bash or WSL.
+2. Open your project with **Ctrl+O** and start your agent as usual.
+3. Split right with **Ctrl+D** or down with **Ctrl+Shift+D**. Put tests, a dev server or a second agent beside the first.
+4. Press **Ctrl+Shift+A** for the agent navigator, or **Ctrl+Shift+B** to jump to the agent waiting for you.
 
-On first launch, choose which integrations to enable. You can change them later in **Settings → General**. wmux asks before installing agent hooks or modifying configuration outside its own directory.
+On first launch you choose which agent integrations to turn on, and you can change them later in **Settings → General**. wmux asks before it installs a hook or writes any configuration outside its own folder.
 
-## Keep the work together
+## What it does
 
-### Terminals and workspaces
+### Every agent, one window
 
-Split panes horizontally or vertically, drag tabs between panes, and zoom a pane when you need more room. Group related terminals in a workspace; save a layout when you want to reuse the arrangement.
+Split panes in any direction, drag tabs between them and zoom the one you are reading. Group the terminals of a project into a workspace, and save the layout to reuse it. Each pane keeps its own shell, folder and colours. wmux ships dark and light appearances, bundled terminal themes and an importer for Windows Terminal and Ghostty settings.
 
-Each pane can have its own shell, working directory and terminal colors. The app has dark and light appearances, bundled terminal themes, and an importer for Windows Terminal and Ghostty settings.
-
-For a repeatable project setup, commit a [`wmux.workspace.json`](docs/workspace-manifest.md). It can open the panes, folders, commands and browser tabs your project needs:
+For a setup the whole team shares, commit a [`wmux.workspace.json`](docs/workspace-manifest.md). It opens the panes, folders, commands and browser tabs your project needs:
 
 ```powershell
 wmux workspace open
 ```
 
-### See who needs an answer
+### See who needs you
 
-The sidebar brings together agent activity, working directories, Git branches and listening ports. The agent navigator puts blocked agents first. Notifications can bring you back when work finishes or needs input.
+The sidebar gathers agent activity, working folders, Git branches and listening ports. The agent navigator lists blocked agents first, and a notification brings you back when an agent finishes or asks something.
 
-Activity comes from agent integrations and, for supported tools, screen detection. What wmux can report depends on the agent and how it is running; a detected agent does not always expose a reliable working or waiting state.
+Activity comes from agent integrations and, for supported tools, from reading the screen. How much wmux can report depends on the agent: a recognized agent does not always expose a reliable working or waiting state.
+
+### A browser beside the code
+
+Open a local dev server or the docs in the browser panel with **Ctrl+Shift+I**. Agents drive it from the CLI: navigate, read the page, click elements and take screenshots, while you watch it happen. Links open in wmux or in your system browser, as set in **Settings → Browser**.
 
 ### Review without leaving the terminal
 
-Open the file explorer with **Ctrl+Shift+X**, or the project Git view with **Ctrl+Alt+G**. Browse working changes, compare a branch against its base, and inspect the commit graph. The Git view stays on the repository you opened while you move between agent panes.
+Open the file explorer with **Ctrl+Shift+X** or the Git view with **Ctrl+Alt+G**. Browse working changes, compare a branch against its base and read the commit graph. The Git view stays on the repository you opened while you move between agent panes.
 
-The file viewer handles quick edits. Markdown panes render plans and documentation, including diagrams and math. Git worktree workspaces give parallel tasks separate checkouts when they need to change the same repository.
+The file viewer handles quick edits, and Markdown panes render plans and docs with diagrams and math. Git worktree workspaces give parallel tasks their own checkout when they touch the same repository.
 
-### Keep a browser beside the code
+### Script it from any pane
 
-Open a local development server or documentation in the browser panel with **Ctrl+Shift+I**. The CLI can navigate it, inspect the page, click elements and take screenshots, so you can watch browser work as it happens.
-
-Links can open in wmux or your system browser; choose the default in **Settings → Browser**.
-
-### Check in from your phone
-
-The optional Remote Console shows agent activity and mirrors terminal panes in a phone browser. You can send text, use the key bar, or answer choices an agent has reported.
-
-Enable it in **Settings → Remote**, configure access through Tailscale or an SSH tunnel, then pair your device. It is off by default and listens on loopback by default. The settings page includes connection instructions and device revocation.
+Every terminal wmux opens has the `wmux` CLI on its PATH, so you, your scripts and your agents can open workspaces, read a pane, drive the browser or send a notification. See [CLI](#cli) below.
 
 ### Pick up where you left off
 
-wmux restores workspace layouts, tabs and working directories. Shells start again; running processes do not survive a restart.
+wmux restores workspace layouts, tabs and working folders. Shells start again; running processes do not survive a restart.
 
-Agent conversation restore has separate opt-in switches in **Settings → Workspace**. See the compatibility notes for [Codex](docs/codex-session-restore.md) and [omp](docs/omp-session-restore.md).
+Agent conversation restore has its own opt-in switches in **Settings → Workspace**. See the notes for [Codex](docs/codex-session-restore.md) and [omp](docs/omp-session-restore.md).
 
-Saving terminal output across restarts is also opt-in, under **Settings → Terminal → Scrollback**. Saved output is local, unencrypted text and can contain anything printed in the terminal. Named sessions do not archive that output.
+Keeping terminal output across restarts is also opt-in, under **Settings → Terminal → Scrollback**. That output is stored locally as unencrypted text and can contain anything printed in the terminal. Named sessions never archive it.
+
+### Check in from your phone
+
+The optional Remote Console shows agent activity and mirrors terminal panes in a phone browser. Send text, use the key bar, or answer a choice an agent is waiting on.
+
+Turn it on in **Settings → Remote**, reach it through Tailscale or an SSH tunnel, then pair your phone. It is off by default and listens on loopback only. The settings page has the connection steps and lets you revoke a device.
+
+## Bring your own agents
+
+**Integrated.** wmux installs hooks, plugins or instructions so the sidebar knows each agent's state, and asks first.
+
+| Agent | What wmux adds |
+| --- | --- |
+| Claude Code | Hooks for state and notifications, session resume, hooks inside running WSL distros |
+| Codex | Opt-in conversation restore through a launcher, without hooks |
+| OpenCode | A plugin and an `AGENTS.md` block, plus session resume ([details](docs/opencode-plugin.md)) |
+| Qwen Code | Hooks, instructions and session resume |
+| Kiro | A wmux steering file in your Kiro folder |
+| pi | An extension, scoped instructions and session resume |
+| omp (Oh My Pi) | An extension, an `AGENTS.md` block and session resume |
+| Grok Build | Hooks and a rules file, only when the `grok` CLI is installed |
+| Antigravity CLI | A plugin and conversation resume for `agy` |
+
+**Recognized.** wmux labels the pane as an agent from its command line and installs nothing: Gemini CLI, Cursor Agent, Copilot CLI, Cline, Aider, Amp, Droid, Goose and Crush.
+
+Any other command-line tool runs in a pane as usual.
 
 ## Keyboard shortcuts
 
@@ -123,11 +159,11 @@ Saving terminal output across restarts is also opt-in, under **Settings → Term
 | Settings | **Ctrl+,** |
 | Shortcut reference | **Ctrl+F1** |
 
-Rebind shortcuts in **Settings → Keyboard**. The workspace and tab number-row shortcuts can be changed or disabled there too.
+Rebind any of them in **Settings → Keyboard**, where the workspace and tab number-row shortcuts can also be changed or turned off.
 
 ## CLI
 
-`wmux` is available inside the terminals it opens. It talks to the running app over a named pipe.
+`wmux` is available inside the terminals it opens and talks to the running app over a named pipe.
 
 ```powershell
 wmux ping
@@ -151,9 +187,9 @@ wmux notify "Tests finished"
 wmux ssh user@host --title "Remote"
 ```
 
-Run `wmux help` for the command list, or `wmux <command> --help` for usage. Commands that target a terminal accept a surface ID where documented, so scripts can address a specific tab.
+Run `wmux help` for the command list, or `wmux <command> --help` for usage. Commands that target a terminal accept a surface ID where documented, so a script can address one specific tab.
 
-For containers and remote setups, see the [devcontainer guide](docs/DEVCONTAINER.md). Paste and drop can upload files in direct SSH panes; [configuration and limitations](docs/config.md#remote-file-upload) cover when that applies.
+For containers and remote machines, see the [devcontainer guide](docs/DEVCONTAINER.md). Paste and drop can upload files into direct SSH panes; [configuration and limitations](docs/config.md#remote-file-upload) explain when that applies.
 
 ## Documentation
 
@@ -169,13 +205,13 @@ For containers and remote setups, see the [devcontainer guide](docs/DEVCONTAINER
 | [omp session restore](docs/omp-session-restore.md) | Transcript tracking and restore behavior |
 | [Crash reports](docs/crash-reports.md) | Collecting a useful report without sending a memory dump |
 
-Looking for a recent change? See the [release notes](https://github.com/amirlehmam/wmux/releases).
+Looking for a recent change? Read the [release notes](https://github.com/amirlehmam/wmux/releases).
 
 ## Build and contribute
 
-wmux uses Electron, React, TypeScript, Zustand, xterm.js and node-pty/ConPTY.
+wmux is built with Electron, React, TypeScript, Zustand, xterm.js and node-pty/ConPTY.
 
-On Windows, with Git and a current Node.js LTS installed:
+On Windows, with Git and a current Node.js LTS:
 
 ```powershell
 git clone https://github.com/amirlehmam/wmux.git
@@ -185,7 +221,7 @@ npm run build:main
 npm run dev
 ```
 
-Use a short checkout path without spaces, such as `C:\dev\wmux`, to avoid native build and packaging issues.
+Clone into a short path without spaces, such as `C:\dev\wmux`, to avoid native build and packaging issues.
 
 ```powershell
 npm test
@@ -194,12 +230,12 @@ npm run lint
 npm run build:renderer
 ```
 
-The main process lives in `src/main`, the UI in `src/renderer`, and the CLI in `src/cli`. [AGENTS.md](AGENTS.md) describes the module boundaries and development conventions. Release builds run in GitHub Actions when a version tag is pushed.
+The main process lives in `src/main`, the UI in `src/renderer` and the CLI in `src/cli`. [AGENTS.md](AGENTS.md) describes the module boundaries and conventions. Release builds run in GitHub Actions when a version tag is pushed.
 
-[Open an issue](https://github.com/amirlehmam/wmux/issues) for a bug or feature request, or start a [discussion](https://github.com/amirlehmam/wmux/discussions). For bugs, include the wmux version, shell, reproduction steps and what you expected. For crashes, start with `wmux crash-report`; do not attach a memory dump, which can contain credentials.
+[Open an issue](https://github.com/amirlehmam/wmux/issues) for a bug or a feature request, or start a [discussion](https://github.com/amirlehmam/wmux/discussions). For a bug, include the wmux version, the shell, the steps to reproduce and what you expected. For a crash, start with `wmux crash-report`, and never attach a memory dump: it can contain credentials.
 
 ## Credits and license
 
-wmux is an independent Windows implementation inspired by [cmux](https://github.com/manaflow-ai/cmux). It does not reuse cmux's source code. The agent visibility model was also influenced by [herdr](https://github.com/herdrdev/herdr).
+wmux is an independent Windows implementation inspired by [cmux](https://github.com/manaflow-ai/cmux), and reuses none of its code. The agent visibility model was also influenced by [herdr](https://github.com/herdrdev/herdr).
 
 Licensed under [MIT](LICENSE).
