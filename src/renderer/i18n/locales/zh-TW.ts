@@ -625,6 +625,7 @@ export const zhTW: Translation = {
   'diffPane.waitingForChanges': '等待變更中…',
   'diffPane.hint': '當 agent 編輯檔案時，差異會顯示在這裡',
   'diffPane.noDiffAvailable': '{file} 沒有可顯示的差異',
+  'diffPane.wrapLines': '長行自動換行',
   // 終端機 — 複製模式、尋找列、提示音通知
   'terminal.bell': '終端機提示音',
   'terminal.uploadFailed': '上傳到 {host} 失敗：{reason}',

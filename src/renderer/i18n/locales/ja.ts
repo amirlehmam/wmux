@@ -506,6 +506,7 @@ export const ja: Translation = {
   'diffPane.waitingForChanges': '変更を待機中...',
   'diffPane.hint': 'エージェントがファイルを編集すると、ここに diff が表示されます',
   'diffPane.noDiffAvailable': '{file} の diff は利用できません',
+  'diffPane.wrapLines': '長い行を折り返す',
   // ターミナル — コピーモード、検索バー、ベルの通知
   'terminal.bell': 'ターミナルベル',
   'terminal.uploadFailed': '{host} へのアップロードに失敗しました: {reason}',

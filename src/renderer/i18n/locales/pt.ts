@@ -532,6 +532,7 @@ export const pt: Translation = {
   'diffPane.waitingForChanges': 'Aguardando alterações...',
   'diffPane.hint': 'Os diffs aparecerão aqui quando um agente editar arquivos',
   'diffPane.noDiffAvailable': 'Nenhum diff disponível para {file}',
+  'diffPane.wrapLines': 'Quebrar linhas longas',
   // Terminal — modo de cópia, barra de busca, notificação de campainha
   'terminal.bell': 'Campainha do terminal',
   'terminal.uploadFailed': 'Falha ao enviar para {host}: {reason}',

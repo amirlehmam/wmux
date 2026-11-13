@@ -506,6 +506,7 @@ export const pl: Translation = {
   'diffPane.waitingForChanges': 'Oczekiwanie na zmiany...',
   'diffPane.hint': 'Diffy pojawią się tutaj, gdy agent edytuje pliki',
   'diffPane.noDiffAvailable': 'Brak diffa dla {file}',
+  'diffPane.wrapLines': 'Zawijaj długie wiersze',
   // Terminal — tryb kopiowania, pasek wyszukiwania, dzwonek
   'terminal.bell': 'Dzwonek terminala',
   'terminal.uploadFailed': 'Przesyłanie na {host} nie powiodło się: {reason}',

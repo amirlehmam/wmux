@@ -495,6 +495,7 @@ export const it: Translation = {
   'diffPane.waitingForChanges': 'In attesa di modifiche...',
   'diffPane.hint': 'Le modifiche appariranno qui quando un agente modifica i file',
   'diffPane.noDiffAvailable': 'Nessuna differenza disponibile per {file}',
+  'diffPane.wrapLines': 'A capo automatico',
   // Terminale — modalità copia, barra di ricerca, notifica campanella
   'terminal.bell': 'Campanella del terminale',
   'terminal.uploadFailed': 'Caricamento su {host} non riuscito: {reason}',

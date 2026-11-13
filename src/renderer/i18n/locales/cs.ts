@@ -520,6 +520,7 @@ export const cs: Translation = {
   'diffPane.waitingForChanges': 'Čekání na změny...',
   'diffPane.hint': 'Zde se zobrazí rozdíly, jakmile agent upraví soubory',
   'diffPane.noDiffAvailable': 'Pro {file} není k dispozici žádný diff',
+  'diffPane.wrapLines': 'Zalamovat dlouhé řádky',
   // Git zobrazení projektu (#362)
   'git.baseTitle': 'Báze pro porovnání',
   'git.pickBase': 'Vyberte bázi…',

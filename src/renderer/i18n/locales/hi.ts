@@ -506,6 +506,7 @@ export const hi: Translation = {
   'diffPane.waitingForChanges': 'बदलावों की प्रतीक्षा...',
   'diffPane.hint': 'जब कोई एजेंट फ़ाइलें संपादित करेगा तो diff यहाँ दिखेंगे',
   'diffPane.noDiffAvailable': '{file} के लिए कोई diff उपलब्ध नहीं',
+  'diffPane.wrapLines': 'लंबी पंक्तियाँ लपेटें',
   // टर्मिनल — कॉपी मोड, खोज बार, घंटी की सूचना
   'terminal.bell': 'टर्मिनल घंटी',
   'terminal.uploadFailed': '{host} पर अपलोड विफल: {reason}',

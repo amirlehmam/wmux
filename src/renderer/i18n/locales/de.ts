@@ -495,6 +495,7 @@ export const de: Translation = {
   'diffPane.waitingForChanges': 'Warte auf Änderungen...',
   'diffPane.hint': 'Diffs erscheinen hier, wenn ein Agent Dateien bearbeitet',
   'diffPane.noDiffAvailable': 'Kein Diff verfügbar für {file}',
+  'diffPane.wrapLines': 'Lange Zeilen umbrechen',
   // Terminal — Kopiermodus, Suchleiste, Klingelbenachrichtigung
   'terminal.bell': 'Terminal-Klingel',
   'terminal.uploadFailed': 'Upload auf {host} fehlgeschlagen: {reason}',

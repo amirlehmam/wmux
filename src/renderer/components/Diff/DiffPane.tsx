@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useT } from '../../i18n';
 import { DIFF_SELECT_EVENT, takeDiffSelection } from './open-diff';
-import { DiffHunks, parseDiff, type DiffHunk } from './diff-render';
+import { DiffHunks, DiffWrapToggle, parseDiff, type DiffHunk } from './diff-render';
 import '../../styles/diff.css';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -344,6 +344,7 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
           <>
             <div className="diff-pane__file-header">
               <span className="diff-pane__file-header-path">{selectedFile}</span>
+              <DiffWrapToggle />
             </div>
             <DiffHunks hunks={hunks} />
             <div className="diff-pane__end-spacer" />

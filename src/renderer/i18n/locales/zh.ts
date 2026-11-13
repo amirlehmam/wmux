@@ -495,6 +495,7 @@ export const zh: Translation = {
   'diffPane.waitingForChanges': '等待更改...',
   'diffPane.hint': '代理编辑文件时，差异将显示在这里',
   'diffPane.noDiffAvailable': '{file} 没有可用的差异',
+  'diffPane.wrapLines': '长行自动换行',
   // 终端 — 复制模式、查找栏、响铃通知
   'terminal.bell': '终端响铃',
   'terminal.uploadFailed': '上传到 {host} 失败：{reason}',

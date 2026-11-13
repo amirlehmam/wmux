@@ -197,8 +197,46 @@
   backdrop-filter: blur(8px);
 }
 
+.diff-pane__file-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .diff-pane__file-header-path {
   font-family: inherit;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The wrap toggle sits at the header's right end, in the Diff tab and the Git view (#450). */
+.diff-wrap-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: -3px 0 -3px auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.diff-wrap-toggle:hover {
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+  color: var(--ui-text-primary);
+}
+
+.diff-wrap-toggle--on {
+  background: rgba(var(--ui-accent-rgb), 0.16);
+  color: var(--ui-text-primary);
 }
 
 .diff-pane__end-spacer {
@@ -217,6 +255,21 @@
 .diff-hunks {
   width: max-content;
   min-width: 100%;
+}
+
+/*
+ * Wrapped (#450): the box is the view's width, so there is no sideways scroll,
+ * and a long line breaks inside its own row. `pre-wrap` keeps indentation and
+ * runs of spaces; `anywhere` breaks a token with no space in it (a URL, a
+ * minified line) rather than letting it push the row wider than the view.
+ */
+.diff-hunks--wrap {
+  width: auto;
+}
+
+.diff-hunks--wrap .diff-line__content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .diff-hunk {

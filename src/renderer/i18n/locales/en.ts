@@ -794,6 +794,7 @@ export const en = {
   'diffPane.waitingForChanges': 'Waiting for changes...',
   'diffPane.hint': 'Diffs will appear here when an agent edits files',
   'diffPane.noDiffAvailable': 'No diff available for {file}',
+  'diffPane.wrapLines': 'Wrap long lines',
   // Project Git view (#362)
   'git.baseTitle': 'Base to compare against',
   'git.pickBase': 'Pick a base…',

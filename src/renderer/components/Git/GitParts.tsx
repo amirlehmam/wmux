@@ -7,7 +7,7 @@
 import React, { useEffect, useRef } from 'react';
 import type { GitFileChange, GitViewRequest } from '../../../shared/git-view';
 import { useT } from '../../i18n';
-import { DiffHunks, parseDiff } from '../Diff/diff-render';
+import { DiffHunks, DiffWrapToggle, parseDiff } from '../Diff/diff-render';
 import { useGitQuery } from './git-api';
 
 const STATUS_LETTER: Record<GitFileChange['status'], string> = {
@@ -116,6 +116,7 @@ export function GitDiffView({ request, title, subtitle, refresh = 0 }: Readonly<
         <div className="diff-pane__file-header git-diff__header">
           <span className="diff-pane__file-header-path">{title}</span>
           {subtitle && <span className="git-diff__subtitle">{subtitle}</span>}
+          <DiffWrapToggle />
         </div>
       )}
       {body}

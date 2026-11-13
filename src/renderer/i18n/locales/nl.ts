@@ -495,6 +495,7 @@ export const nl: Translation = {
   'diffPane.waitingForChanges': 'Wachten op wijzigingen...',
   'diffPane.hint': 'Diffs verschijnen hier wanneer een agent bestanden bewerkt',
   'diffPane.noDiffAvailable': 'Geen diff beschikbaar voor {file}',
+  'diffPane.wrapLines': 'Lange regels afbreken',
   // Terminal — kopieermodus, zoekbalk, belmelding
   'terminal.bell': 'Terminalbel',
   'terminal.uploadFailed': 'Uploaden naar {host} mislukt: {reason}',

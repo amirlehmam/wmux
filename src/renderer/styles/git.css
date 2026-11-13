@@ -312,7 +312,7 @@
 /* The hunks box keeps its max-content width (diff.css, #441); a column flex item
    must not shrink, or its rows would be squeezed vertically instead. */
 .git-diff > .diff-hunks { flex-shrink: 0; }
-.git-diff__header { position: sticky; top: 0; z-index: 1; display: flex; gap: 10px; align-items: baseline; }
+.git-diff__header { position: sticky; top: 0; z-index: 1; display: flex; gap: 10px; align-items: center; }
 .git-diff__subtitle { color: var(--ui-text-muted); font-size: 11px; }
 
 /* ─── Commit details ─── */

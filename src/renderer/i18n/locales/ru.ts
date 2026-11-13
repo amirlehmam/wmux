@@ -506,6 +506,7 @@ export const ru: Translation = {
   'diffPane.waitingForChanges': 'Ожидание изменений...',
   'diffPane.hint': 'Диффы появятся здесь, когда агент отредактирует файлы',
   'diffPane.noDiffAvailable': 'Для {file} дифф недоступен',
+  'diffPane.wrapLines': 'Переносить длинные строки',
   // Терминал — режим копирования, строка поиска, уведомление о звонке
   'terminal.bell': 'Звонок терминала',
   'terminal.uploadFailed': 'Не удалось загрузить на {host}: {reason}',

@@ -514,6 +514,7 @@ export const ko: Translation = {
   'diffPane.waitingForChanges': '변경 사항 대기 중...',
   'diffPane.hint': '에이전트가 파일을 편집하면 여기에 변경 사항이 표시됩니다',
   'diffPane.noDiffAvailable': '{file}에 대한 변경 내용이 없습니다',
+  'diffPane.wrapLines': '긴 줄 줄바꿈',
   // 터미널 — 복사 모드, 찾기 바, 벨 알림
   'terminal.bell': '터미널 벨',
   'terminal.uploadFailed': '{host}(으)로 업로드하지 못했습니다: {reason}',

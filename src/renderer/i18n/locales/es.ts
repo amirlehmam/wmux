@@ -496,6 +496,7 @@ export const es: Translation = {
   'diffPane.waitingForChanges': 'Esperando cambios...',
   'diffPane.hint': 'Los diffs aparecerán aquí cuando un agente edite archivos',
   'diffPane.noDiffAvailable': 'No hay diferencias disponibles para {file}',
+  'diffPane.wrapLines': 'Ajustar líneas largas',
   // Terminal — modo copia, barra de búsqueda, notificación de campana
   'terminal.bell': 'Campana del terminal',
   'terminal.uploadFailed': 'Error al subir a {host}: {reason}',

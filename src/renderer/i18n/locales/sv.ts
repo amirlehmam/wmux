@@ -495,6 +495,7 @@ export const sv: Translation = {
   'diffPane.waitingForChanges': 'Väntar på ändringar...',
   'diffPane.hint': 'Diffar visas här när en agent redigerar filer',
   'diffPane.noDiffAvailable': 'Ingen diff tillgänglig för {file}',
+  'diffPane.wrapLines': 'Radbryt långa rader',
   // Terminal — kopieringsläge, sökfält, klockaviseringar
   'terminal.bell': 'Terminalklocka',
   'terminal.uploadFailed': 'Uppladdningen till {host} misslyckades: {reason}',

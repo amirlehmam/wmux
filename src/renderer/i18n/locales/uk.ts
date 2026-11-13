@@ -506,6 +506,7 @@ export const uk: Translation = {
   'diffPane.waitingForChanges': 'Очікування змін...',
   'diffPane.hint': 'Диффи з\'являться тут, коли агент відредагує файли',
   'diffPane.noDiffAvailable': 'Для {file} диф недоступний',
+  'diffPane.wrapLines': 'Переносити довгі рядки',
   // Термінал — режим копіювання, рядок пошуку, сповіщення про дзвінок
   'terminal.bell': 'Дзвінок термінала',
   'terminal.uploadFailed': 'Не вдалося завантажити на {host}: {reason}',

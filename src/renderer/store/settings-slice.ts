@@ -1237,6 +1237,12 @@ export interface AppearancePrefs {
    * against — see HUB_DEFAULT_REV.
    */
   hubDefaultRev: number;
+  /**
+   * Soft-wrap long lines in diffs (#450). Shared by the Diff tab and the Git
+   * view, which render through the same `DiffHunks`, so the toggle in either
+   * one flips both.
+   */
+  diffWrap: boolean;
 }
 
 /**
@@ -1287,6 +1293,7 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
   hubEnabled: true,
   hubDefaultRev: HUB_DEFAULT_REV,
+  diffWrap: false,
 };
 
 /**

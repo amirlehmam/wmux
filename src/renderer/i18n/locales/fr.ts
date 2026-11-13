@@ -623,6 +623,7 @@ export const fr: Translation = {
   'diffPane.waitingForChanges': 'En attente de modifications...',
   'diffPane.hint': 'Les diffs apparaîtront ici quand un agent modifie des fichiers',
   'diffPane.noDiffAvailable': 'Aucun diff disponible pour {file}',
+  'diffPane.wrapLines': 'Retour à la ligne automatique',
   // Vue Git du projet (#362)
   'git.baseTitle': 'Base de comparaison',
   'git.pickBase': 'Choisir une base…',

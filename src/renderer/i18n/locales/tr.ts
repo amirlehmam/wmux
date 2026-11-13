@@ -506,6 +506,7 @@ export const tr: Translation = {
   'diffPane.waitingForChanges': 'Değişiklikler bekleniyor...',
   'diffPane.hint': 'Bir aracı dosyaları düzenlediğinde alınan farklar burada görünür',
   'diffPane.noDiffAvailable': '{file} için fark yok',
+  'diffPane.wrapLines': 'Uzun satırları kaydır',
   // Terminal — kopyalama modu, bulma çubuğu, zil bildirimi
   'terminal.bell': 'Terminal zili',
   'terminal.uploadFailed': '{host} sunucusuna yükleme başarısız: {reason}',

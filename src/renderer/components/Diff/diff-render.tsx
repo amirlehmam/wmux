@@ -3,6 +3,8 @@
  * project Git view (#362) so a diff looks — and parses — the same in both.
  */
 import React from 'react';
+import { useT } from '../../i18n';
+import { useStore } from '../../store';
 
 export interface DiffLine {
   type: 'add' | 'remove' | 'context';
@@ -74,11 +76,14 @@ const LINE_PREFIX: Record<DiffLine['type'], string> = {
  *
  * Wrapped in one `.diff-hunks` box sized to the widest line (diff.css), so every
  * row's add/remove tint reaches the end of the longest line when the view is
- * scrolled sideways, rather than stopping at the viewport's width (#441).
+ * scrolled sideways, rather than stopping at the viewport's width (#441). With
+ * wrapping on (#450) the box is the view's width instead and long lines break
+ * inside their row, under their own gutter.
  */
 export function DiffHunks({ hunks }: Readonly<{ hunks: DiffHunk[] }>) {
+  const wrap = useStore((s) => s.appearancePrefs.diffWrap);
   return (
-    <div className="diff-hunks">
+    <div className={wrap ? 'diff-hunks diff-hunks--wrap' : 'diff-hunks'}>
       {hunks.map((hunk, hi) => (
         <div key={hi} className="diff-hunk">
           <div className="diff-hunk__header">
@@ -102,5 +107,34 @@ export function DiffHunks({ hunks }: Readonly<{ hunks: DiffHunk[] }>) {
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * The wrap toggle for a diff's file header (#450). It writes the one stored
+ * pref `DiffHunks` reads, so it is the same switch in the Diff tab and the Git
+ * view, and it survives a restart.
+ */
+export function DiffWrapToggle() {
+  const t = useT();
+  const wrap = useStore((s) => s.appearancePrefs.diffWrap);
+  const setAppearancePrefs = useStore((s) => s.setAppearancePrefs);
+  const label = t('diffPane.wrapLines', 'Wrap long lines');
+  return (
+    <button
+      type="button"
+      className={wrap ? 'diff-wrap-toggle diff-wrap-toggle--on' : 'diff-wrap-toggle'}
+      onClick={() => setAppearancePrefs({ diffWrap: !wrap })}
+      aria-pressed={wrap}
+      title={label}
+      aria-label={label}
+    >
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M2 3.5h12" />
+        <path d="M2 8h10a2.25 2.25 0 0 1 0 4.5H8" />
+        <path d="M9.5 11 8 12.5 9.5 14" />
+        <path d="M2 12.5h3" />
+      </svg>
+    </button>
   );
 }
