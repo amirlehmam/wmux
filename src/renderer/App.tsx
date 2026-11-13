@@ -1389,11 +1389,25 @@ export default function App() {
     setExplorerOpen(byDefault || !!activeWorkspace?.explorerOpen);
   }, [activeWorkspaceId, activeWorkspace?.explorerOpen, activeWorkspace?.explorerDismissed, explorerOpenByDefault, workspaceHasRoot]);
 
+  // The pane each workspace last had focused (#449). Focus is one value per
+  // window, so a switch always lands on a pane the new workspace doesn't have;
+  // without this the reset below sent every return trip to the first pane.
+  // Recorded only while the pane belongs to the active workspace: on the render
+  // that switches, `focusedPaneId` is still the previous workspace's pane.
+  const lastFocusedPaneRef = useRef(new Map<WorkspaceId, PaneId>());
+  useEffect(() => {
+    if (!activeWorkspace || !focusedPaneId) return;
+    if (findLeaf(activeWorkspace.splitTree, focusedPaneId)) {
+      lastFocusedPaneRef.current.set(activeWorkspace.id, focusedPaneId);
+    }
+  }, [activeWorkspace?.id, activeWorkspace?.splitTree, focusedPaneId]);
+
   useEffect(() => {
     if (!activeWorkspace) return;
     const paneIds = getAllPaneIds(activeWorkspace.splitTree);
     if (paneIds.length > 0 && (focusedPaneId === null || !paneIds.includes(focusedPaneId))) {
-      setFocusedPaneId(paneIds[0]);
+      const remembered = lastFocusedPaneRef.current.get(activeWorkspace.id);
+      setFocusedPaneId(remembered && paneIds.includes(remembered) ? remembered : paneIds[0]);
     }
   }, [activeWorkspace?.id, activeWorkspace?.splitTree]);
 
