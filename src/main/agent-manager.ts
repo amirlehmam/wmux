@@ -19,6 +19,7 @@ import { AgentId, AgentInfo, AgentSpawnParams, PaneId, SurfaceId, WorkspaceId } 
 export interface PaneLoadInfo {
   paneId: string;
   tabCount: number;
+  locked?: boolean;
 }
 
 export function distributeAgents(count: number, panes: PaneLoadInfo[]): string[] {

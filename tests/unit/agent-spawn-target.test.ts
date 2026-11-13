@@ -4,8 +4,10 @@ import {
   resolveSpawnWorkspace,
   resolveSpawnPaneLoads,
   SpawnTargetError,
+  lockedAssignedPane,
   type SpawnTargetLookups,
 } from '../../src/main/agent-spawn-target';
+import { distributeAgents } from '../../src/main/agent-manager';
 
 // Issue #242. The repro is two workspaces where the pane is in the NON-active
 // one, which is exactly the situation an orchestrator creates and a single
@@ -254,5 +256,103 @@ describe('the batch path shares the workspace decision', () => {
     expect(
       await codeOf(() => resolveSpawnPaneLoads('ws-nowhere', lookups())),
     ).toBe(-32000);
+  });
+});
+
+describe('locked panes', () => {
+  const MIXED = [
+    { paneId: 'pane-locked', tabCount: 0, locked: true },
+    { paneId: 'pane-open', tabCount: 3 },
+  ];
+  const ALL_LOCKED = [
+    { paneId: 'pane-a', tabCount: 0, locked: true },
+    { paneId: 'pane-b', tabCount: 1, locked: true },
+  ];
+
+  async function messageOf(fn: () => Promise<unknown>): Promise<{ code: number; message: string }> {
+    try {
+      await fn();
+    } catch (err) {
+      if (err instanceof SpawnTargetError) return { code: err.code, message: err.message };
+      throw err;
+    }
+    throw new Error('expected a SpawnTargetError, got a resolution');
+  }
+
+  it('refuses an explicit locked pane with -32000 and its id', async () => {
+    const err = await messageOf(() =>
+      resolveSpawnTarget(
+        { paneId: PANE_ADMIN },
+        lookups({ paneLoads: async () => [{ paneId: PANE_ADMIN, tabCount: 1, locked: true }] }),
+      ),
+    );
+    expect(err).toEqual({ code: -32000, message: `Pane ${PANE_ADMIN} is locked` });
+  });
+
+  it('still accepts an explicit unlocked pane next to a locked one', async () => {
+    const target = await resolveSpawnTarget(
+      { paneId: 'pane-open' },
+      lookups({
+        workspaceForPane: async () => WS_ADMIN,
+        paneLoads: async () => MIXED,
+      }),
+    );
+    expect(target).toEqual({ paneId: 'pane-open', workspaceId: WS_ADMIN });
+  });
+
+  it('a single spawn skips the locked pane even when it is the least loaded', async () => {
+    const target = await resolveSpawnTarget({}, lookups({ paneLoads: async () => MIXED }));
+    expect(target.paneId).toBe('pane-open');
+  });
+
+  it('a batch distribute lands only in unlocked panes', async () => {
+    const loads = await resolveSpawnPaneLoads(WS_ADMIN, lookups({ paneLoads: async () => MIXED }));
+    expect(distributeAgents(4, loads)).toEqual(Array(4).fill('pane-open'));
+  });
+
+  it('a batch stack path sees only unlocked panes', async () => {
+    const loads = await resolveSpawnPaneLoads(WS_ADMIN, lookups({ paneLoads: async () => MIXED }));
+    expect(loads.map((l) => l.paneId)).toEqual(['pane-open']);
+  });
+
+  it('every pane locked is -32000 naming the workspace, for a single spawn', async () => {
+    const err = await messageOf(() =>
+      resolveSpawnTarget({ workspaceId: WS_ADMIN }, lookups({ paneLoads: async () => ALL_LOCKED })),
+    );
+    expect(err).toEqual({ code: -32000, message: `No unlocked panes in workspace ${WS_ADMIN}` });
+  });
+
+  it('every pane locked is the same error for a batch', async () => {
+    const err = await messageOf(() =>
+      resolveSpawnPaneLoads(WS_ADMIN, lookups({ paneLoads: async () => ALL_LOCKED })),
+    );
+    expect(err).toEqual({ code: -32000, message: `No unlocked panes in workspace ${WS_ADMIN}` });
+  });
+
+  it('an empty workspace keeps its own message', async () => {
+    const err = await messageOf(() =>
+      resolveSpawnPaneLoads(WS_ADMIN, lookups({ paneLoads: async () => [] })),
+    );
+    expect(err.message).toBe('No panes available');
+  });
+});
+
+describe('lockedAssignedPane', () => {
+  const loads = [
+    { paneId: 'p1', tabCount: 0 },
+    { paneId: 'p2', tabCount: 0, locked: true },
+    { paneId: 'p3', tabCount: 0, locked: true },
+  ];
+
+  it('returns the first locked assigned pane', () => {
+    expect(lockedAssignedPane(loads, ['p1', 'p3', 'p2'])).toBe('p3');
+  });
+
+  it('returns null when no assigned pane is locked', () => {
+    expect(lockedAssignedPane(loads, ['p1'])).toBeNull();
+  });
+
+  it('ignores locked panes that were not assigned', () => {
+    expect(lockedAssignedPane(loads, [])).toBeNull();
   });
 });

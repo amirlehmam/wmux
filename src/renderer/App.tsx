@@ -844,7 +844,11 @@ export default function App() {
       if (!ws) return [];
       return getAllPaneIds(ws.splitTree).map((pid) => {
         const leaf = findLeafFromTree(ws.splitTree, pid);
-        return { paneId: pid, tabCount: leaf ? leaf.surfaces.length : 0 };
+        return {
+          paneId: pid,
+          tabCount: leaf ? leaf.surfaces.length : 0,
+          ...(leaf?.locked ? { locked: true } : {}),
+        };
       });
     };
     // Which workspace owns this pane (#242). The split tree lives here and main
