@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import {
-  gitCandidates, handleGitView, isHash, isSafeRepoPath, isSafeRev, joinFileStats,
+  gitCandidates, gitCommand, parseWslUnc, wslPathToWindows, fromGitPath, handleGitView, isHash, isSafeRepoPath, isSafeRev, joinFileStats,
   parseLog, parseNameStatusZ, parseNumstatZ, parseRefs, parseStatusV2, parseWorktreePorcelain,
   pickDefaultBase, summarizeStatus, LOG_FORMAT,
 } from '../../src/main/git-view';
@@ -294,5 +294,59 @@ describe('git-view: a repository with a linked worktree', () => {
   it('answers not_repo outside a repository, never throws', async () => {
     const res = await handleGitView({ op: 'repo', cwd: tmp });
     expect(res).toMatchObject({ ok: false, code: 'not_repo' });
+  });
+});
+
+describe('git-view: git for folders on a WSL share', () => {
+  const REPO = '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\repo';
+  const WIN_GIT = 'C:\\Program Files\\Git\\cmd\\git.exe';
+  const winGit = () => WIN_GIT;
+
+  it('parses both slash spellings and rejects lookalikes', () => {
+    const want = { distro: 'Ubuntu-24.04', posix: '/home/me/repo' };
+    expect(parseWslUnc(REPO)).toEqual(want);
+    expect(parseWslUnc('//wsl.localhost/Ubuntu-24.04/home/me/repo/')).toEqual(want);
+    expect(parseWslUnc('\\\\WSL$\\Ubuntu\\home\\me')).toEqual({ distro: 'Ubuntu', posix: '/home/me' });
+    expect(parseWslUnc('\\\\wsl.localhost\\Ubuntu')).toEqual({ distro: 'Ubuntu', posix: '/' });
+    for (const p of ['C:\\repo', '\\\\server\\share\\repo', '\\\\wsl.localhost\\', '\\\\wsl.localhostx\\d\\r', '/home/me', '']) {
+      expect(parseWslUnc(p)).toBeNull();
+    }
+  });
+
+  it('turns a POSIX path git printed back into a Windows path', () => {
+    expect(wslPathToWindows('Ubuntu-24.04', '/home/me/repo')).toBe(REPO);
+    expect(wslPathToWindows('Ubuntu', '/mnt/c/Users/me')).toBe('C:\\Users\\me');
+    expect(wslPathToWindows('Ubuntu', '/mnt/d')).toBe('D:\\');
+    expect(fromGitPath(REPO, '/home/me/repo/wt')).toBe('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\repo\\wt');
+    expect(fromGitPath(REPO, 'relative/path')).toBe('relative/path');
+    expect(fromGitPath('C:\\repo', '/home/me')).toBe('/home/me');
+  });
+
+  it('runs Windows git unchanged outside a WSL share', () => {
+    const cmd = gitCommand('C:\\repo', ['status'], { GIT_OPTIONAL_LOCKS: '0' }, winGit);
+    expect(cmd.file).toBe(WIN_GIT);
+    expect(cmd.args).toEqual(['status']);
+    expect(cmd.cwd).toBe('C:\\repo');
+    expect(cmd.env.GIT_OPTIONAL_LOCKS).toBe('0');
+    expect(cmd.env.WSLENV).toBe(process.env.WSLENV);
+  });
+
+  it('runs git inside the distro with no config flags and no shell', () => {
+    const cmd = gitCommand(`${REPO}\\src`, ['status', '--porcelain'], {}, () => { throw new Error('must not look up Windows git'); });
+    expect(cmd.file.toLowerCase()).toMatch(/system32[\\/]wsl\.exe$/);
+    expect(cmd.args).toEqual(['-d', 'Ubuntu-24.04', '--cd', '/home/me/repo/src', '--exec', 'git', 'status', '--porcelain']);
+    expect(cmd.args.join(' ')).not.toMatch(/safe\.directory|core\.filemode|core\.symlinks/);
+    expect(cmd.cwd).not.toBe(REPO);
+  });
+
+  it('forwards extra variables through WSLENV without duplicating', () => {
+    const saved = process.env.WSLENV;
+    try {
+      process.env.WSLENV = 'FOO/p:GIT_TERMINAL_PROMPT';
+      const { env } = gitCommand(REPO, ['log'], { GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' });
+      expect(env.WSLENV).toBe('FOO/p:GIT_TERMINAL_PROMPT:GIT_OPTIONAL_LOCKS');
+    } finally {
+      if (saved === undefined) delete process.env.WSLENV; else process.env.WSLENV = saved;
+    }
   });
 });
