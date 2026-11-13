@@ -35,6 +35,9 @@ interface ExplorerPanelProps {
   inSidebar?: boolean;
 }
 
+/** How often a pane that has not reported a cwd yet is asked about again. */
+const NO_ROOT_RETRY_MS = 3000;
+
 export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurfaceId, docked,
   onMoveToWorkspace, onMoveSide, inSidebar }: ExplorerPanelProps): React.JSX.Element {
   const t = useT();
@@ -303,6 +306,25 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
     setTruncated(false);
     if (surfaceId && root) void fetchDir('');
   }, [surfaceId, root, cacheKey, fetchDir]);
+
+  // `no_root` is "main has not been told this pane's cwd yet", and that is not
+  // permanent: a pane restored after a wmux restart (a devcontainer shell, say)
+  // reports its cwd only when its shell next speaks, which can be well after
+  // this panel first asked. Nothing re-fetches when that report lands, so
+  // without this the error stays on screen until the user presses Refresh.
+  // Poll gently, only while this exact error is showing and the panel is
+  // mounted; any other outcome clears `error` or changes it and stops the loop.
+  // `noRootTries` is what re-arms it: a retry that is told `no_root` again sets
+  // the same `error`, which alone would not re-run this effect.
+  const [noRootTries, setNoRootTries] = useState(0);
+  useEffect(() => {
+    if (error !== 'no_root' || !surfaceId || !root) { setNoRootTries(0); return; }
+    const timer = setTimeout(() => {
+      setNoRootTries((n) => n + 1);
+      void fetchDir('');
+    }, NO_ROOT_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [error, noRootTries, surfaceId, root, fetchDir]);
 
   // `expanded` is PERSISTED per root and `tree` is not, so the two start out
   // disagreeing after every reload — and an expanded folder with no entry in
