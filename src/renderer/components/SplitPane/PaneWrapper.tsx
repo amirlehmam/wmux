@@ -692,6 +692,9 @@ export default function PaneWrapper({
 
     if (target === 'center' && locked && surfaceDrag?.sourcePaneId !== paneId) {
       e.dataTransfer.dropEffect = 'none';
+      // Still reported: buildSurfaceDragPreview turns it into null, which wipes a
+      // split preview left by an edge zone of this same pane.
+      if (surfaceDrag) onSurfaceDragPreviewTarget(paneId, target);
       return;
     }
     e.dataTransfer.dropEffect = 'move';
