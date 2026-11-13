@@ -157,6 +157,9 @@ export const sv: Translation = {
   'surfaceTab.close': 'Stäng',
   'surfaceTab.closeOthers': 'Stäng övriga',
   'surfaceTab.closeToRight': 'Stäng till höger',
+  'surfaceTab.lockPane': 'Lås ruta',
+  'surfaceTab.unlockPane': 'Lås upp ruta',
+  'surfaceTab.lockedTooltip': 'Rutan är låst: agenter och flyttade flikar kan inte komma in. Klicka för att låsa upp.',
   // Introduktionsgenomgång
   'tutorial.skip': 'Hoppa över',
   'tutorial.previous': 'Föregående',

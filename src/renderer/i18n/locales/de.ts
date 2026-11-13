@@ -157,6 +157,9 @@ export const de: Translation = {
   'surfaceTab.close': 'Schließen',
   'surfaceTab.closeOthers': 'Andere schließen',
   'surfaceTab.closeToRight': 'Rechte schließen',
+  'surfaceTab.lockPane': 'Bereich sperren',
+  'surfaceTab.unlockPane': 'Bereich entsperren',
+  'surfaceTab.lockedTooltip': 'Bereich gesperrt: Agenten und verschobene Tabs kommen nicht hinein. Zum Entsperren klicken.',
   // Einführungstutorial
   'tutorial.skip': 'Überspringen',
   'tutorial.previous': 'Zurück',

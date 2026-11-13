@@ -80,6 +80,7 @@ export default function PaneWrapper({
   const moveSurface = useStore((s) => s.moveSurface);
   const splitAndMoveSurface = useStore((s) => s.splitAndMoveSurface);
   const reorderSurface = useStore((s) => s.reorderSurface);
+  const setPaneLocked = useStore((s) => s.setPaneLocked);
   const shortcuts = useStore((s) => s.shortcuts);
   const workspace = useStore((s) => s.workspaces.find(w => w.id === workspaceId));
   const globalProfiles = useStore((s) => s.quickLaunchProfiles);
@@ -506,6 +507,10 @@ export default function PaneWrapper({
 
   const locked = workspace ? isPaneLocked(workspace.splitTree, paneId) : false;
 
+  const handleToggleLock = () => {
+    if (activeWorkspaceId) setPaneLocked(activeWorkspaceId, paneId, !locked);
+  };
+
   const handleDropSurface = (sourcePaneId: PaneId, surfaceId: SurfaceId, targetPaneId: PaneId) => {
     // Checked before onSurfaceDragCommit, which would clear zoom for a move that never happens.
     if (!activeWorkspaceId || targetPaneId !== paneId || sourcePaneId === targetPaneId || locked) {
@@ -759,6 +764,7 @@ export default function PaneWrapper({
         isDragActive={dragActive}
         isFocused={isFocused}
         locked={locked}
+        onToggleLock={handleToggleLock}
       />
       <div className="pane-wrapper__content">
         {renderAllSurfaces()}

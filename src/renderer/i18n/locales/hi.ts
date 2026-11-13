@@ -168,6 +168,9 @@ export const hi: Translation = {
   'surfaceTab.close': 'बंद करें',
   'surfaceTab.closeOthers': 'अन्य बंद करें',
   'surfaceTab.closeToRight': 'दाईं ओर के सभी बंद करें',
+  'surfaceTab.lockPane': 'पैन लॉक करें',
+  'surfaceTab.unlockPane': 'पैन अनलॉक करें',
+  'surfaceTab.lockedTooltip': 'पैन लॉक है: एजेंट और खींचे गए टैब इसमें नहीं आ सकते। अनलॉक करने के लिए क्लिक करें।',
   // ट्यूटोरियल ओवरले
   'tutorial.skip': 'छोड़ें',
   'tutorial.previous': 'पिछला',

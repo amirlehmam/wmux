@@ -168,6 +168,9 @@ export const pl: Translation = {
   'surfaceTab.close': 'Zamknij',
   'surfaceTab.closeOthers': 'Zamknij pozostałe',
   'surfaceTab.closeToRight': 'Zamknij po prawej',
+  'surfaceTab.lockPane': 'Zablokuj panel',
+  'surfaceTab.unlockPane': 'Odblokuj panel',
+  'surfaceTab.lockedTooltip': 'Panel zablokowany: agenci i przeniesione karty nie mogą do niego trafić. Kliknij, aby odblokować.',
   // Nakładka samouczka
   'tutorial.skip': 'Pomiń',
   'tutorial.previous': 'Wstecz',

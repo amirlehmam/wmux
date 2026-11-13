@@ -177,6 +177,9 @@ export const cs: Translation = {
   'surfaceTab.close': 'Zavřít',
   'surfaceTab.closeOthers': 'Zavřít ostatní',
   'surfaceTab.closeToRight': 'Zavřít vpravo',
+  'surfaceTab.lockPane': 'Zamknout panel',
+  'surfaceTab.unlockPane': 'Odemknout panel',
+  'surfaceTab.lockedTooltip': 'Panel je zamčený: nelze do něj spouštět agenty ani přesouvat karty. Kliknutím odemknete.',
   // Úvodní příručka (overlay)
   'tutorial.skip': 'Přeskočit',
   'tutorial.previous': 'Zpět',

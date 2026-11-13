@@ -217,6 +217,9 @@ export const fr: Translation = {
   'surfaceTab.close': 'Fermer',
   'surfaceTab.closeOthers': 'Fermer les autres',
   'surfaceTab.closeToRight': 'Fermer ceux de droite',
+  'surfaceTab.lockPane': 'Verrouiller le panneau',
+  'surfaceTab.unlockPane': 'Déverrouiller le panneau',
+  'surfaceTab.lockedTooltip': 'Panneau verrouillé : les agents et les onglets déplacés ne peuvent pas y entrer. Cliquez pour déverrouiller.',
   // Tutoriel d'accueil
   'tutorial.skip': 'Passer',
   'tutorial.previous': 'Précédent',

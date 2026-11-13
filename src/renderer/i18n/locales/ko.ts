@@ -173,6 +173,9 @@ export const ko: Translation = {
   'surfaceTab.close': '닫기',
   'surfaceTab.closeOthers': '다른 탭 닫기',
   'surfaceTab.closeToRight': '오른쪽 탭 모두 닫기',
+  'surfaceTab.lockPane': '창 잠금',
+  'surfaceTab.unlockPane': '창 잠금 해제',
+  'surfaceTab.lockedTooltip': '창이 잠겨 있습니다: 에이전트와 이동한 탭이 들어올 수 없습니다. 클릭하면 잠금이 해제됩니다.',
   // 튜토리얼 오버레이
   'tutorial.skip': '건너뛰기',
   'tutorial.previous': '이전',

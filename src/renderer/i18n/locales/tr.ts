@@ -168,6 +168,9 @@ export const tr: Translation = {
   'surfaceTab.close': 'Kapat',
   'surfaceTab.closeOthers': 'Diğerlerini kapat',
   'surfaceTab.closeToRight': 'Sağdakileri kapat',
+  'surfaceTab.lockPane': 'Paneli kilitle',
+  'surfaceTab.unlockPane': 'Panelin kilidini aç',
+  'surfaceTab.lockedTooltip': 'Panel kilitli: ajanlar ve taşınan sekmeler giremez. Kilidi açmak için tıklayın.',
   // Eğitim katmanı
   'tutorial.skip': 'Atla',
   'tutorial.previous': 'Önceki',

@@ -154,6 +154,9 @@ export const zh: Translation = {
   'surfaceTab.close': '关闭',
   'surfaceTab.closeOthers': '关闭其他',
   'surfaceTab.closeToRight': '关闭右侧标签',
+  'surfaceTab.lockPane': '锁定窗格',
+  'surfaceTab.unlockPane': '解锁窗格',
+  'surfaceTab.lockedTooltip': '窗格已锁定：代理和移入的标签页无法进入。点击解锁。',
   // 新手引导
   'tutorial.skip': '跳过',
   'tutorial.previous': '上一步',

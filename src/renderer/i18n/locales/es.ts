@@ -158,6 +158,9 @@ export const es: Translation = {
   'surfaceTab.close': 'Cerrar',
   'surfaceTab.closeOthers': 'Cerrar las demás',
   'surfaceTab.closeToRight': 'Cerrar las de la derecha',
+  'surfaceTab.lockPane': 'Bloquear panel',
+  'surfaceTab.unlockPane': 'Desbloquear panel',
+  'surfaceTab.lockedTooltip': 'Panel bloqueado: no admite agentes ni pestañas movidas. Haz clic para desbloquear.',
   // Tutorial de bienvenida
   'tutorial.skip': 'Saltar',
   'tutorial.previous': 'Anterior',

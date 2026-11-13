@@ -168,6 +168,9 @@ export const ru: Translation = {
   'surfaceTab.close': 'Закрыть',
   'surfaceTab.closeOthers': 'Закрыть остальные',
   'surfaceTab.closeToRight': 'Закрыть справа',
+  'surfaceTab.lockPane': 'Заблокировать панель',
+  'surfaceTab.unlockPane': 'Разблокировать панель',
+  'surfaceTab.lockedTooltip': 'Панель заблокирована: агенты и перенесённые вкладки сюда не попадут. Нажмите, чтобы разблокировать.',
   // Оверлей обучения
   'tutorial.skip': 'Пропустить',
   'tutorial.previous': 'Назад',

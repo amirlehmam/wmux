@@ -278,6 +278,9 @@ export const en = {
   'surfaceTab.close': 'Close',
   'surfaceTab.closeOthers': 'Close others',
   'surfaceTab.closeToRight': 'Close to the right',
+  'surfaceTab.lockPane': 'Lock pane',
+  'surfaceTab.unlockPane': 'Unlock pane',
+  'surfaceTab.lockedTooltip': 'Pane locked: agents and moved tabs can’t enter. Click to unlock.',
   // Tutorial overlay
   'tutorial.skip': 'Skip',
   'tutorial.previous': 'Previous',

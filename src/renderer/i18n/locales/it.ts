@@ -157,6 +157,9 @@ export const it: Translation = {
   'surfaceTab.close': 'Chiudi',
   'surfaceTab.closeOthers': 'Chiudi le altre',
   'surfaceTab.closeToRight': 'Chiudi quelle a destra',
+  'surfaceTab.lockPane': 'Blocca riquadro',
+  'surfaceTab.unlockPane': 'Sblocca riquadro',
+  'surfaceTab.lockedTooltip': 'Riquadro bloccato: agenti e schede spostate non possono entrarvi. Clicca per sbloccare.',
   // Tutorial iniziale
   'tutorial.skip': 'Salta',
   'tutorial.previous': 'Indietro',
