@@ -157,6 +157,36 @@ describe('surface drag preview decisions', () => {
     })).toEqual({ action: 'commit', commitOptions: { clearZoom: false } });
   });
 
+  it('builds no center preview onto a locked pane, but still previews an edge drop on it', () => {
+    const lockedTarget = { ...leaf('pane-target', [surface('surf-target')]), locked: true };
+    const tree = branch(leaf('pane-source', [surface('surf-drag')]), lockedTarget);
+    const request = (target: 'center' | 'right') => ({
+      workspaces: [workspace('ws-active', tree)],
+      activeWorkspaceId: 'ws-active' as WorkspaceId,
+      drag: {
+        workspaceId: 'ws-active' as WorkspaceId,
+        sourcePaneId: 'pane-source' as PaneId,
+        surfaceId: 'surf-drag' as SurfaceId,
+      },
+      pendingTarget: { targetPaneId: 'pane-target' as PaneId, target },
+    });
+
+    expect(buildSurfaceDragPreview(request('center'))).toBeNull();
+    expect(buildSurfaceDragPreview(request('right'))).not.toBeNull();
+  });
+
+  it('cancels a center drop on a locked pane but not an edge drop', () => {
+    const base = {
+      sourcePaneId: 'pane-source' as PaneId,
+      targetPaneId: 'pane-target' as PaneId,
+      sourceSurfaceCount: 2,
+      targetLocked: true,
+    };
+
+    expect(getSurfaceDragDropDecision({ ...base, target: 'center' })).toEqual({ action: 'cancel' });
+    expect(getSurfaceDragDropDecision({ ...base, target: 'edge' }).action).toBe('commit');
+  });
+
   it('parses only well-formed surface drag payloads', () => {
     expect(parseSurfaceDragData(JSON.stringify({
       sourcePaneId: 'pane-source',

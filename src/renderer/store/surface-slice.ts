@@ -676,6 +676,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     const sourceLeaf = findLeaf(ws.splitTree, sourcePaneId);
     const targetLeaf = findLeaf(ws.splitTree, targetPaneId);
     if (!sourceLeaf || !targetLeaf) return;
+    if (targetLeaf.locked === true) return;
 
     // Find the surface in the source
     const surfaceIndex = sourceLeaf.surfaces.findIndex((s) => s.id === surfaceId);

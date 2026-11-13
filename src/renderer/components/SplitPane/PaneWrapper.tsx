@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { PaneId, SplitNode, SurfaceId, WorkspaceId, QuickLaunchProfile, ShellInfo, engineOf } from '../../../shared/types';
 import { workspaceFallbackCwd } from '../../../shared/paths';
 import { activeTerminalShell, findLeaf, splitNode } from '../../store/split-utils';
+import { isPaneLocked } from '../../store/pane-lock';
 import KeptAliveTerminal from '../Terminal/KeptAliveTerminal';
 import BrowserPane from '../Browser/BrowserPane';
 import { ExplorerPanel } from '../Explorer/ExplorerPanel';
@@ -503,8 +504,11 @@ export default function PaneWrapper({
     }
   };
 
+  const locked = workspace ? isPaneLocked(workspace.splitTree, paneId) : false;
+
   const handleDropSurface = (sourcePaneId: PaneId, surfaceId: SurfaceId, targetPaneId: PaneId) => {
-    if (!activeWorkspaceId || targetPaneId !== paneId || sourcePaneId === targetPaneId) {
+    // Checked before onSurfaceDragCommit, which would clear zoom for a move that never happens.
+    if (!activeWorkspaceId || targetPaneId !== paneId || sourcePaneId === targetPaneId || locked) {
       onSurfaceDragEnd();
       return;
     }
@@ -667,6 +671,7 @@ export default function PaneWrapper({
         sourcePaneId,
         targetPaneId: paneId,
         sourceSurfaceCount: sourceLeaf.surfaces.length,
+        targetLocked: locked,
       });
 
       if (decision.action === 'cancel') {
@@ -684,6 +689,11 @@ export default function PaneWrapper({
   const handleDropZoneDragOver = (e: React.DragEvent, target: SurfaceDragPreviewTarget) => {
     e.preventDefault();
     e.stopPropagation();
+
+    if (target === 'center' && locked && surfaceDrag?.sourcePaneId !== paneId) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
     e.dataTransfer.dropEffect = 'move';
 
     if (!surfaceDrag) return;
@@ -745,6 +755,7 @@ export default function PaneWrapper({
         onSurfaceDragEnd={onSurfaceDragEnd}
         isDragActive={dragActive}
         isFocused={isFocused}
+        locked={locked}
       />
       <div className="pane-wrapper__content">
         {renderAllSurfaces()}

@@ -45,6 +45,7 @@ interface SurfaceTabBarProps {
   onSurfaceDragEnd?: () => void;
   isDragActive?: boolean;
   isFocused?: boolean;
+  locked?: boolean;
 }
 
 function surfaceIcon(type: string, isAgent: boolean): React.ReactNode {
@@ -79,6 +80,7 @@ export default function SurfaceTabBar({
   onSurfaceDragEnd,
   isDragActive,
   isFocused,
+  locked,
 }: SurfaceTabBarProps) {
   const t = useT();
   const [draggingSurfaceId, setDraggingSurfaceId] = useState<SurfaceId | null>(null);
@@ -311,6 +313,9 @@ export default function SurfaceTabBar({
     }
   }, [onSurfaceDragPreviewTarget, paneId, surfaceDrag]);
 
+  // Read from the prop: dataTransfer.getData is empty during dragover.
+  const refusesMoveIn = locked === true && surfaceDrag?.sourcePaneId !== paneId;
+
   // Always show tab bar (even for 1 surface — like browser tabs)
   return (
     <div
@@ -324,6 +329,10 @@ export default function SurfaceTabBar({
       }}
       onDragOver={(e) => {
         e.preventDefault();
+        if (refusesMoveIn) {
+          e.dataTransfer.dropEffect = 'none';
+          return;
+        }
         e.dataTransfer.dropEffect = 'move';
         requestCenterPreview();
       }}
@@ -431,6 +440,10 @@ export default function SurfaceTabBar({
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                if (refusesMoveIn) {
+                  e.dataTransfer.dropEffect = 'none';
+                  return;
+                }
                 const rect = e.currentTarget.getBoundingClientRect();
                 const midpoint = rect.left + rect.width / 2;
                 const newInsertIndex = e.clientX < midpoint ? index : index + 1;
