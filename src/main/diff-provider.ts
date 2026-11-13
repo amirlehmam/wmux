@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
-import { gitExecutable, isSafeRev } from './git-view';
+import { gitCommand, isSafeRev } from './git-view';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,8 +20,10 @@ export interface ChangedFile {
 // there would run on every diff poll. Same resolver as git-view.ts.
 async function git(cwd: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await execFileAsync(gitExecutable(), args, {
-      cwd,
+    const cmd = gitCommand(cwd, args);
+    const { stdout } = await execFileAsync(cmd.file, cmd.args, {
+      cwd: cmd.cwd,
+      env: cmd.env,
       windowsHide: true,
       timeout: 10_000,
       maxBuffer: 5 * 1024 * 1024,

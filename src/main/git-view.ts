@@ -358,16 +358,89 @@ export function gitExecutable(): string {
   return gitExeMemo;
 }
 
+// Both slash spellings: git run inside WSL prints POSIX paths, and a UNC path
+// can reach us as `\\wsl.localhost\<distro>\…` or `//wsl.localhost/<distro>/…`.
+const WSL_UNC = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([A-Za-z0-9][\w.-]*)((?:[\\/].*)?)$/i;
+
+/** The distro and POSIX path a WSL UNC folder names, or null for anything else. */
+export function parseWslUnc(p: string): { distro: string; posix: string } | null {
+  const m = WSL_UNC.exec(p);
+  if (!m) return null;
+  const posix = m[2].replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1');
+  return { distro: m[1], posix: posix === '' ? '/' : posix };
+}
+
+/** The path Windows uses for a POSIX path git printed inside `distro`. */
+export function wslPathToWindows(distro: string, posix: string): string {
+  const drive = /^\/mnt\/([a-zA-Z])(\/.*)?$/.exec(posix);
+  if (drive) return `${drive[1].toUpperCase()}:${(drive[2] ?? '/').replace(/\//g, '\\')}`;
+  return `\\\\wsl.localhost\\${distro}${posix.replace(/\//g, '\\')}`;
+}
+
+/** A path git printed for a command run in `cwd`, as the Windows path wmux uses. */
+export function fromGitPath(cwd: string, p: string): string {
+  const wsl = parseWslUnc(cwd);
+  return wsl && p.startsWith('/') ? wslPathToWindows(wsl.distro, p) : p;
+}
+
+export interface GitCommand {
+  file: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * How to run `git <gitArgs>` for `cwd`.
+ *
+ * A folder on a WSL share (`\\wsl.localhost\<distro>\…`) is read by git inside
+ * that distro: `wsl.exe -d <distro> --cd <path> --exec git …`. Linux git sees the
+ * real executable bits and symlinks, owns the repository (no "dubious ownership"
+ * refusal) and does no CRLF conversion, so nothing has to be configured or
+ * trusted. Windows git over the share gets all of those wrong. `--exec` runs git
+ * without a shell, so arguments are never re-parsed. `wsl.exe` is the absolute
+ * System32 one for the same reason `gitExecutable` is absolute.
+ *
+ * Every other folder runs the absolute Windows git as before. `extraEnv` is
+ * forwarded into WSL through `WSLENV`.
+ */
+export function gitCommand(
+  cwd: string,
+  gitArgs: string[],
+  extraEnv: Record<string, string> = {},
+  windowsGit: () => string = gitExecutable,
+): GitCommand {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
+  const wsl = parseWslUnc(cwd);
+  if (!wsl) return { file: windowsGit(), args: gitArgs, cwd, env };
+
+  const forwarded = (env.WSLENV ?? '').split(':').filter(Boolean);
+  for (const name of Object.keys(extraEnv)) {
+    if (!forwarded.some((f) => f.split('/')[0] === name)) forwarded.push(name);
+  }
+  if (forwarded.length) env.WSLENV = forwarded.join(':');
+  const systemRoot = env.SystemRoot ?? env.windir ?? 'C:\\Windows';
+  return {
+    file: path.win32.join(systemRoot, 'System32', 'wsl.exe'),
+    args: ['-d', wsl.distro, '--cd', wsl.posix, '--exec', 'git', ...gitArgs],
+    cwd: systemRoot,
+    env,
+  };
+}
+
 function git(cwd: string, args: string[], maxBuffer = 20 * 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
-    let exe: string;
-    try { exe = gitExecutable(); } catch (err) { reject(err); return; }
-    execFile(exe, ['-c', 'core.quotepath=off', '-c', 'color.ui=never', '--literal-pathspecs', ...args], {
-      cwd,
+    let cmd: GitCommand;
+    try {
+      cmd = gitCommand(cwd, ['-c', 'core.quotepath=off', '-c', 'color.ui=never', '--literal-pathspecs', ...args],
+        { GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' });
+    } catch (err) { reject(err); return; }
+    execFile(cmd.file, cmd.args, {
+      cwd: cmd.cwd,
       windowsHide: true,
       timeout: 15_000,
       maxBuffer,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' },
+      env: cmd.env,
     }, (err, stdout, stderr) => {
       if (err) {
         const first = String(stderr || err.message).split(/\r?\n/).find((l) => l.trim()) ?? 'git failed';
@@ -398,14 +471,15 @@ function assertDir(cwd: unknown): string {
 
 async function toplevel(cwd: string): Promise<string> {
   try {
-    return (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
+    return fromGitPath(cwd, (await git(cwd, ['rev-parse', '--show-toplevel'])).trim());
   } catch {
     throw new GitError('Not a Git repository', 'not_repo');
   }
 }
 
 async function listWorktrees(cwd: string): Promise<GitWorktree[]> {
-  return parseWorktreePorcelain(await git(cwd, ['worktree', 'list', '--porcelain']));
+  return parseWorktreePorcelain(await git(cwd, ['worktree', 'list', '--porcelain']))
+    .map((w) => ({ ...w, path: fromGitPath(cwd, w.path) }));
 }
 
 /** The worktree path the renderer named, as long as git lists it for `cwd`. */
