@@ -166,6 +166,7 @@ function applyMintedIds(template: SplitNode, idMap: Map<SurfaceId, SurfaceId>): 
         return next;
       }),
       activeSurfaceIndex: template.activeSurfaceIndex,
+      ...(template.locked ? { locked: true } : {}),
     };
   }
   return {
