@@ -109,7 +109,9 @@ function MarkdownSource({ content }: { content: string }) {
           {/* The gutter is user-select:none in CSS, so dragging across lines
               yields the text without the numbers mixed into the selection. */}
           <span className="markdown-pane__source-gutter">{index + 1}</span>
-          <span className="markdown-pane__source-text">{line || ' '}</span>
+          {/* A blank line holds a <br>: a space would be copied as a stray
+              trailing space, and an empty span drops the line from the copy. */}
+          <span className="markdown-pane__source-text">{line || <br />}</span>
         </div>
       ))}
     </div>

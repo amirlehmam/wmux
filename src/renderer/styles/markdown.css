@@ -24,6 +24,13 @@
   opacity: 0.5;
 }
 
+/* The app turns selection off on <html> (global.css) and Chromium passes that
+   down, so the document text has to turn it back on to be copied. */
+.markdown-pane__content,
+.markdown-pane__source {
+  user-select: text;
+}
+
 /* ─── Toolbar ─────────────────────────────────────────────────────────────────
    Uses the theme variables the diff pane already uses rather than the
    hard-coded hex values further down this file; those are a pre-existing wart
@@ -241,6 +248,9 @@
   padding: 2px 6px;
   cursor: pointer;
   transition: opacity 0.12s;
+  /* Its label is not part of the code, so a selection across the block must
+     not carry it into the clipboard. */
+  user-select: none;
 }
 
 .markdown-pane__code-block:hover .markdown-pane__code-copy,
