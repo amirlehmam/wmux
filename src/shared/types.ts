@@ -28,12 +28,60 @@ export type SurfaceType = 'terminal' | 'browser' | 'markdown' | 'diff' | 'code' 
  * `web`   — the Electron <webview>. The default, always, and what every
  *           browser surface was before agent-browser existed.
  * `agent` — vercel-labs/agent-browser: a real Chrome driven by the CLI, shown
- *           through its own dashboard.
+ *           through the Page viewer or its dashboard.
  *
  * Absent means `web`, so an older saved session restores correctly with no
  * migration (session-persistence.ts superset rule, #145).
  */
 export type BrowserEngine = 'web' | 'agent';
+
+export interface AgentBrowserTab {
+  tabId: string;
+  title: string;
+  url: string;
+  active: boolean;
+}
+
+export type AgentViewerInput =
+  | { type: 'input_mouse'; eventType: 'mouseMoved' | 'mousePressed' | 'mouseReleased' | 'mouseWheel';
+      x: number; y: number; button: 'none' | 'left' | 'middle' | 'right'; clickCount: number;
+      modifiers: number; deltaX?: number; deltaY?: number }
+  | { type: 'input_keyboard'; eventType: 'keyDown' | 'rawKeyDown' | 'keyUp' | 'char'; key?: string; code?: string;
+      text?: string; windowsVirtualKeyCode: number; modifiers: number };
+
+export type AgentViewerAction =
+  | { type: 'viewport'; width: number; height: number }
+  | { type: 'insert-text'; text: string }
+  | { type: 'copy' | 'paste' | 'back' | 'forward' | 'reload' }
+  | { type: 'tab-new' }
+  | { type: 'navigate'; url: string }
+  | { type: 'tab-select' | 'tab-close'; tabId: string }
+  | { type: 'visibility'; visible: boolean };
+
+export type AgentViewerMessage =
+  | { type: 'frame'; id: number; data: string; width: number; height: number }
+  | { type: 'status'; connected: boolean; width: number; height: number }
+  | { type: 'tabs'; tabs: AgentBrowserTab[] }
+  | { type: 'url'; url: string }
+  | { type: 'error'; message: string };
+
+export interface AgentViewerEvent {
+  surfaceId: string;
+  token: string;
+  revision: number;
+  message: AgentViewerMessage;
+}
+
+export interface AgentViewerBridge {
+  attach: (surfaceId: string, token: string) => Promise<void>;
+  reconnect: (surfaceId: string, previousToken: string, token: string) => Promise<void>;
+  reportFailure: (surfaceId: string, token: string, revision: number, failure: 'decode') => void;
+  detach: (surfaceId: string, token: string) => void;
+  ack: (surfaceId: string, token: string, id: number, drawn: boolean) => void;
+  input: (surfaceId: string, token: string, revision: number, input: AgentViewerInput) => void;
+  action: (surfaceId: string, token: string, revision: number, action: AgentViewerAction) => Promise<void>;
+  onEvent: (callback: (event: AgentViewerEvent) => void) => () => void;
+}
 
 export interface WorktreeMetadata {
   repoRoot: string;      // the MAIN checkout, not this one
@@ -868,22 +916,19 @@ export const IPC_CHANNELS = {
    * plus the install flow that makes `agent` reachable at all. The renderer
    * cannot do any of it itself — the binary, the session registry and the
    * dashboard refcount all live in main.
-   *
-   * `CURRENT_URL` and `OPEN` are the two exceptions to that framing, and they
-   * exist because the pane's address bar was lying. In agent mode the bar can
-   * only show the last URL the PANE asked for, while the agent navigates the
-   * real Chrome independently — so the two drift and the bar reports a page
-   * nobody is on. `CURRENT_URL` reads where the session actually is.
-   * `OPEN` is its counterpart: the pane used to reuse `ENABLE` to mean
-   * "navigate", which re-acquired the dashboard and re-bound the stream on
-   * every address-bar Enter.
    */
   AGENT_BROWSER_ENABLE: 'agent-browser:enable',
   AGENT_BROWSER_DISABLE: 'agent-browser:disable',
   AGENT_BROWSER_STATUS: 'agent-browser:status',
   AGENT_BROWSER_INSTALL: 'agent-browser:install',
-  AGENT_BROWSER_CURRENT_URL: 'agent-browser:current-url',
-  AGENT_BROWSER_OPEN: 'agent-browser:open',
+  AGENT_VIEWER_ATTACH: 'agent-viewer:attach',
+  AGENT_VIEWER_RECONNECT: 'agent-viewer:reconnect',
+  AGENT_VIEWER_FAILURE: 'agent-viewer:failure',
+  AGENT_VIEWER_DETACH: 'agent-viewer:detach',
+  AGENT_VIEWER_ACK: 'agent-viewer:ack',
+  AGENT_VIEWER_INPUT: 'agent-viewer:input',
+  AGENT_VIEWER_ACTION: 'agent-viewer:action',
+  AGENT_VIEWER_EVENT: 'agent-viewer:event',
   /**
    * The back/forward stack of a browser pane's webview, read so it can be
    * persisted (#315). Takes the guest's webContentsId and answers only for a

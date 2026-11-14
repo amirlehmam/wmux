@@ -11,14 +11,15 @@
  * the other). So routing (`v2-browser.ts`), lifecycle and teardown all import
  * from here rather than constructing their own.
  *
- * It is deliberately a wiring module and nothing else: the interesting logic
- * lives in `agent-browser-session.ts` and `agent-browser-daemon.ts`, both of
- * which are pure/injected so they stay testable with no ports and no child
- * processes. What is added here — and only here — is the impure half.
+ * Registry allocation and daemon policy remain injected in their modules.
+ * The shared startup promise lives here as well: UI and CLI must agree that
+ * allocating a record is not the same as successfully launching Chrome.
  */
 import * as net from 'net';
+import { AGENT_BROWSER_STREAM_DEFAULTS, nativeCaptureArgs } from './agent-browser-capture';
 import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
 import { DashboardDaemon } from './agent-browser-daemon';
+import { AgentBrowserControl, uncertainNativeOutcome, type AgentBrowserControlDeps, type NativeCommandCheck, type NativeCommandRunner } from './agent-browser-control';
 import {
   DASHBOARD_PORT,
   isWmuxSessionName,
@@ -65,6 +66,128 @@ const DASHBOARD_STOP_TIMEOUT_MS = 10_000;
 
 /** surfaceId → agent-browser session. See `agent-browser-session.ts`. */
 export const sessionRegistry = new SessionRegistry();
+
+// Controls outlive viewer subscriptions and remain available for a failed-close retry.
+const sessionControls = new Map<SurfaceId, { session: AgentSession; control: AgentBrowserControl }>();
+let reportControlPause: ((id: SurfaceId, message: string) => void) | undefined;
+
+/** The single viewer bridge observes failures from either UI or pipe commands. */
+export function setAgentControlPauseReporter(reporter: (id: SurfaceId, message: string) => void): void {
+  reportControlPause = reporter;
+}
+
+/** Only a deliberate successful launch may establish a new identity baseline. */
+export async function initializeAgentBrowserControl(
+  session: AgentSession,
+  binary: string,
+  deps?: AgentBrowserControlDeps,
+): Promise<void> {
+  if (sessionControls.has(session.surfaceId)) throw new Error('The previous browser session has not been closed. Retry Start new session.');
+  const control = new AgentBrowserControl(session, binary, {
+    ...deps,
+    onPause: (message) => {
+      if (sessionRegistry.get(session.surfaceId) === session && sessionControls.get(session.surfaceId)?.control === control) {
+        reportControlPause?.(session.surfaceId, message);
+      }
+      deps?.onPause?.(message);
+    },
+  });
+  sessionControls.set(session.surfaceId, { session, control });
+  await control.initialize();
+}
+
+/** UI input, multi-step tab actions and pipe commands share one receive-order queue. */
+export function withAgentSessionWork<T>(
+  session: AgentSession,
+  work: (run: NativeCommandRunner) => T | Promise<T>,
+  timeoutMs?: number,
+): Promise<T> {
+  const entry = sessionControls.get(session.surfaceId);
+  const checkSession = (): void => {
+    if (entry?.session !== session || getStartedSession(session.surfaceId) !== session
+      || sessionControls.get(session.surfaceId) !== entry) throw new Error('Browser session is no longer available.');
+  };
+  try { checkSession(); } catch (error) { return Promise.reject(error); }
+  return entry!.control.enqueue((run) => {
+    checkSession();
+    return work((argv, timeout, check) => run(argv, timeout, async () => {
+      checkSession();
+      await check?.();
+      checkSession();
+    }));
+  }, timeoutMs);
+}
+
+export function runAgentSessionCommand(session: AgentSession, argv: string[], timeoutMs: number): Promise<RunResult> {
+  return withAgentSessionWork(session, (run) => run(argv, timeoutMs), timeoutMs);
+}
+
+/** Recovery checks identity; it never replays the command whose outcome is unknown. */
+export async function resumeAgentSessionCommands(session: AgentSession, check: NativeCommandCheck): Promise<void> {
+  const entry = sessionControls.get(session.surfaceId);
+  if (entry?.session !== session) throw new Error('Browser session identity is unavailable. Start a new session.');
+  await entry.control.resume(async () => {
+    if (getStartedSession(session.surfaceId) !== session || sessionControls.get(session.surfaceId) !== entry) {
+      throw new Error('Browser session changed before recovery.');
+    }
+    await check();
+    if (getStartedSession(session.surfaceId) !== session || sessionControls.get(session.surfaceId) !== entry) {
+      throw new Error('Browser session changed during recovery.');
+    }
+  });
+}
+
+/** The argv adapter is for the existing V2 verb table, not an unguarded native fallback. */
+export function runAgentBrowserForSession(argv: string[], timeoutMs: number): Promise<RunResult> {
+  const entry = argv[0] === '--session'
+    ? [...sessionControls.values()].find(({ session }) => session.sessionName === argv[1]) : undefined;
+  if (!entry) return Promise.reject(new Error('Browser session identity is unavailable. Start a new session.'));
+  return runAgentSessionCommand(entry.session, argv.slice(2), timeoutMs);
+}
+
+/** Bootstrap and orphan cleanup stay explicit; ordinary session calls require a control. */
+export async function runManagedAgentBrowser(
+  binary: string,
+  argv: string[],
+  timeoutMs = 60_000,
+  env?: NodeJS.ProcessEnv,
+): Promise<RunResult> {
+  if (argv[0] !== '--session') return runAgentBrowser(binary, argv, timeoutMs, env);
+  const entry = [...sessionControls.values()].find(({ session }) => session.sessionName === argv[1]);
+  if (env?.AGENT_BROWSER_STREAM_PORT !== undefined) {
+    if (entry) throw new Error('The previous browser session has not been closed. Retry Start new session.');
+    return runAgentBrowser(binary, argv, timeoutMs, env);
+  }
+  const command = argv.slice(argv[2] === '--json' ? 3 : 2);
+  if (command.length === 1 && command[0] === 'close') {
+    if (!entry) {
+      if (!isWmuxSessionName(argv[1])) throw new Error('Refusing to close an unowned browser session.');
+      return runAgentBrowser(binary, argv, timeoutMs, env);
+    }
+    const forgetClosed = (): void => {
+      if (sessionControls.get(entry.session.surfaceId) !== entry) return;
+      entry.control.dispose();
+      sessionControls.delete(entry.session.surfaceId);
+    };
+    const pending: RunResult = { ok: false, spawnFailed: false, data: null, stdout: '',
+      stderr: 'Browser close is still pending. Retry Start new session after the current command finishes.' };
+    const closing = entry.control.close(timeoutMs).catch((error: unknown) => ({ ...pending,
+      stderr: error instanceof Error ? error.message : String(error) }));
+    // Caller waiting is bounded, but an explicit close must survive queue wait.
+    // A fresh-start retry retains the completed result while it still owns the record.
+    void closing.then((result) => {
+      if (result.ok && sessionRegistry.get(entry.session.surfaceId) !== entry.session) forgetClosed();
+    });
+    const result = await withDeadline(closing, timeoutMs, pending);
+    if (result.ok) forgetClosed();
+    return result;
+  }
+  if (!entry) throw new Error('Browser session identity is unavailable. Start a new session.');
+  if (command.length === 2 && command[0] === 'get' && command[1] === 'url') {
+    return entry.control.readback(Math.min(timeoutMs, SESSION_CLOSE_TIMEOUT_MS));
+  }
+  return runAgentSessionCommand(entry.session, command, timeoutMs);
+}
 
 /**
  * Is something already listening on the dashboard port?
@@ -246,6 +369,7 @@ export function acquireDashboardFor(surfaceId: string, now: () => number = Date.
  * is watching. The daemon clamps at zero; it cannot detect a phantom release.
  */
 export async function releaseDashboardFor(surfaceId: string): Promise<void> {
+  await acquiring.get(surfaceId)?.catch(() => {});
   if (!heldFor.delete(surfaceId)) return;
   await dashboardDaemon.release();
 }
@@ -576,9 +700,9 @@ export async function reconcileOrphanSessions(
  */
 export const agentBrowserTeardownDeps: AgentBrowserTeardownDeps = {
   binary: () => agentBrowserPath(),
-  run: (binary, argv, timeoutMs) => runAgentBrowser(binary, argv, timeoutMs),
+  run: (binary, argv, timeoutMs) => runManagedAgentBrowser(binary, argv, timeoutMs),
   listSessions: () => sessionRegistry.all(),
-  forgetSession: (surfaceId) => sessionRegistry.release(surfaceId),
+  forgetSession: (surfaceId) => releaseAgentSession(surfaceId),
   hasSession: (surfaceId) => sessionRegistry.get(surfaceId) !== undefined,
   shutdownDashboard: () => dashboardDaemon.shutdown(),
   warn: (message) => console.warn(message),
@@ -597,15 +721,134 @@ export function agentBrowserNeedsTeardown(): boolean {
   return sessionRegistry.size > 0 || dashboardDaemon.isAvailable;
 }
 
-/**
- * A session for this surface whose stream port the OS agreed we could bind.
- *
- * The one production caller of `SessionRegistry.ensureBindable`; `v2-browser.ts`
- * stays on the synchronous `ensure()` because it only needs a NAME to route a
- * verb, while this is the path that actually launches a browser with
- * `AGENT_BROWSER_STREAM_PORT` set and therefore the only one where the port has
- * to be real.
- */
+/** Both startup paths allocate the stream before launching Chrome. */
 export function ensureBindableSession(surfaceId: SurfaceId): Promise<AgentSession> {
   return sessionRegistry.ensureBindable(surfaceId, (port) => probeBindablePort(port));
+}
+
+export interface AgentBrowserStartupDeps {
+  binary: () => string | null;
+  ensureSession: (id: SurfaceId) => AgentSession | Promise<AgentSession>;
+  getSession: (id: SurfaceId) => AgentSession | undefined;
+  releaseSession?: (id: SurfaceId) => AgentSession | undefined;
+  captureArgs?: () => string[];
+  initializeControl?: (session: AgentSession, binary: string) => Promise<void>;
+  run: (binary: string, argv: string[], env?: NodeJS.ProcessEnv) => Promise<RunResult>;
+}
+
+const starting = new Map<SurfaceId, { promise: Promise<AgentSession>; cancelled: boolean; closed: boolean; closeError?: string }>();
+const stopping = new Map<SurfaceId, Promise<unknown>>();
+const started = new Map<SurfaceId, AgentSession>();
+const uncertainStarts = new Map<SurfaceId, AgentSession>();
+const UNCERTAIN_START = 'Browser startup outcome is unknown. Start new session before trying again; the launch was not retried.';
+const startupDeps: AgentBrowserStartupDeps = {
+  binary: () => agentBrowserPath(),
+  ensureSession: ensureBindableSession,
+  getSession: (id) => sessionRegistry.get(id),
+  releaseSession: (id) => sessionRegistry.release(id),
+  run: (binary, argv, env) => runManagedAgentBrowser(binary, argv, undefined, env),
+  initializeControl: initializeAgentBrowserControl,
+};
+
+/** A registry record allocates a name, not readiness; UI and CLI join this launch. */
+export function ensureStartedSession(
+  id: SurfaceId,
+  url?: string,
+  deps: AgentBrowserStartupDeps = startupDeps,
+): Promise<AgentSession> {
+  const uncertain = uncertainStarts.get(id);
+  if (uncertain && deps.getSession(id) === uncertain) return Promise.reject(new Error(UNCERTAIN_START));
+  const live = started.get(id);
+  if (live && deps.getSession(id) === live) return Promise.resolve(live);
+  const pending = starting.get(id);
+  if (pending && !pending.cancelled) return pending.promise;
+  // The pane passes the last page it showed, which the agent may have left on
+  // any scheme. One `open` cannot take, or that could read as a flag, starts
+  // blank rather than failing the session.
+  const startUrl = typeof url === 'string' && /^(https?|file|about|data):/i.test(url) && url !== 'about:blank' ? url : undefined;
+  const teardown = stopping.get(id);
+  const launch = { promise: undefined as unknown as Promise<AgentSession>, cancelled: false, closed: false, closeError: undefined as string | undefined };
+  const attempt = Promise.resolve().then(async () => {
+    // A renewed enable owns its own cancellation flag, but cannot overlap the old cleanup.
+    if (pending) await pending.promise.catch(() => {});
+    if (teardown) await teardown.catch(() => {});
+    if (launch.cancelled) throw new Error('Browser startup cancelled');
+    const binary = deps.binary();
+    if (!binary) throw new Error('agent-browser is not installed');
+    const session = await deps.ensureSession(id);
+    if (launch.cancelled) {
+      if (deps.getSession(id) === session) deps.releaseSession?.(id);
+      throw new Error('Browser startup cancelled');
+    }
+    const closeCancelled = async (): Promise<never> => {
+      const closed = await deps.run(binary, ['--session', session.sessionName, 'close']).catch(() => null);
+      launch.closed = closed?.ok === true;
+      if (!launch.closed) launch.closeError = closed?.stderr.trim() || 'Could not close the cancelled browser startup. Retry Start new session.';
+      throw new Error('Browser startup cancelled');
+    };
+    // Streaming is enabled at browser launch; a later stream enable cannot move its port.
+    const argv = ['--session', session.sessionName, '--pin-tab', ...(deps.captureArgs ?? nativeCaptureArgs)(), 'open', ...(startUrl ? [startUrl] : [])];
+    const res = await deps.run(binary, argv, { ...AGENT_BROWSER_STREAM_DEFAULTS, AGENT_BROWSER_STREAM_PORT: String(session.streamPort) });
+    if (launch.cancelled || deps.getSession(id) !== session) return closeCancelled();
+    if (uncertainNativeOutcome(res)) {
+      uncertainStarts.set(id, session);
+      throw new Error(UNCERTAIN_START);
+    }
+    if (!res.ok) throw new Error(res.stderr.trim() || res.stdout.trim() || 'agent-browser startup failed');
+    try {
+      await deps.initializeControl?.(session, binary);
+    } catch (error) {
+      if (launch.cancelled || deps.getSession(id) !== session) return closeCancelled();
+      // Chrome opened, but control is paused. A remount must not launch it again.
+      started.set(id, session);
+      throw error;
+    }
+    if (launch.cancelled || deps.getSession(id) !== session) return closeCancelled();
+    started.set(id, session);
+    return session;
+  }).finally(() => {
+    if (starting.get(id) === launch) starting.delete(id);
+  });
+  launch.promise = attempt;
+  starting.set(id, launch);
+  return attempt;
+}
+
+/** Renewed launches wait for the complete prior disable, not just startup cancellation. */
+export function withAgentSessionTeardown<T>(id: SurfaceId, teardown: (startup: { closed: boolean; closeError?: string } | undefined) => Promise<T>): Promise<T> {
+  const previous = stopping.get(id);
+  const pending = starting.get(id);
+  cancelAgentStartup(id);
+  const attempt = Promise.resolve().then(async () => {
+    if (previous) await previous.catch(() => {});
+    if (pending) await pending.promise.catch(() => {});
+    const result = await teardown(pending);
+    uncertainStarts.delete(id);
+    return result;
+  }).finally(() => {
+    if (stopping.get(id) === attempt) stopping.delete(id);
+  });
+  stopping.set(id, attempt);
+  return attempt;
+}
+
+/** An allocated record alone never authorizes a stream attachment. */
+export function getStartedSession(id: SurfaceId): AgentSession | undefined {
+  const session = started.get(id);
+  return session && sessionRegistry.get(id) === session ? session : undefined;
+}
+
+/** Waiting renewals must be cancellable without interrupting their predecessor's cleanup. */
+export function cancelAgentStartup(id: SurfaceId): void {
+  const pending = starting.get(id);
+  if (pending) pending.cancelled = true;
+  sessionControls.get(id)?.control.cancelPending();
+  started.delete(id);
+}
+
+/** Invalidate late startups before releasing the session's port. */
+export function releaseAgentSession(id: SurfaceId): AgentSession | undefined {
+  cancelAgentStartup(id);
+  uncertainStarts.delete(id);
+  return sessionRegistry.release(id);
 }

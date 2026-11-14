@@ -723,8 +723,6 @@ export const fr: Translation = {
   'addressBar.engineAgent': 'agent',
   'addressBar.engineWebTitle': 'Naviguer dans ce panneau. wmux pilote la page lui-même — rien à installer.',
   'addressBar.engineAgentTitle': "Confier cet onglet à un vrai Chrome, hors de wmux, et regarder ici ce que votre agent y fait. Nécessite une installation unique.",
-  'addressBar.backAgent': "L'historique n'est pas disponible pendant que l'agent pilote le navigateur",
-  'addressBar.reloadViewer': "Recharger la visionneuse d'activité (ne recharge pas la page où se trouve l'agent)",
   'agentBrowser.setupTitle': 'Laissez votre agent piloter un vrai Chrome',
   'agentBrowser.setupBody': "agent-browser remplace le panneau intégré par un vrai Chrome pour cet onglet : vrais profils, vraies extensions, sites qui refusent un navigateur embarqué. Vous voyez la page en direct et le fil chronologique de chaque commande lancée par votre agent.",
   'agentBrowser.setupCost': "Téléchargement unique d'environ 240 Mo (l'outil et son propre Chrome).",

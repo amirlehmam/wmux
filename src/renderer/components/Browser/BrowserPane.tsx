@@ -2,10 +2,11 @@ import { useState, useRef, useCallback, useEffect, type CSSProperties } from 're
 import AddressBar from './AddressBar';
 import { useT } from '../../i18n';
 import AgentBrowserSetup from './AgentBrowserSetup';
+import AgentBrowserViewer, { type AgentViewerHandle } from './AgentBrowserViewer';
 import { popupBridgeSource } from './popup-bridge';
-import type { BrowserEngine } from '../../../shared/types';
-import { browserUrlLabel } from '../SplitPane/surface-label';
+import type { AgentBrowserTab, AgentViewerAction, BrowserEngine } from '../../../shared/types';
 import { BROWSER_BLANK_PAGE } from '../../utils/browser-start-page';
+import { canApplyAgentBrowserReadback, getAgentBrowserHandoff, hasPendingAgentBrowserHandoff, invalidateAgentBrowserReadback } from '../../store/agent-browser-handoff';
 import { useKeepRendering } from '../../utils/browser-keep-rendering';
 import { openInNewBrowserTab } from '../../utils/open-in-browser';
 import { buildBrowserContextMenu, isTabOpenableUrl, linkStatusText } from '../../../shared/browser-context-menu';
@@ -32,9 +33,8 @@ interface BrowserPaneProps {
   onTitleChange?: (title: string) => void;
   /**
    * Which backend drives this surface. `web` is the Electron <webview> this
-   * pane has always been; `agent` points the SAME webview at agent-browser's
-   * dashboard, deep-linked to this surface's session, while the actual pages
-   * are driven in a real Chrome outside wmux.
+   * pane has always been; `agent` streams the real Chrome page, with the
+   * hardened webview retained for the optional session dashboard.
    */
   engine?: BrowserEngine;
   onEngineChange?: (engine: BrowserEngine) => void;
@@ -118,30 +118,6 @@ export function engineTransition(
 }
 
 /**
- * What to show once `enable` (and the follow-up `status`) have answered.
- *
- * `dashboardAvailable: false` is NOT a failure of the feature: agent-browser
- * drives Chrome perfectly well without its viewer, and `enable` deliberately
- * swallows a dashboard that did not start. Loading the dashboard URL anyway
- * would paint Chromium's ERR_CONNECTION_REFUSED interstitial, which reads as
- * "my browser is broken" rather than "an optional viewer didn't start" — so it
- * gets its own outcome and its own honest card.
- */
-export type EnableOutcome =
-  | { show: 'setup' }
-  | { show: 'dashboard'; url: string }
-  | { show: 'no-dashboard' };
-
-export function enableOutcome(
-  result: { installed?: boolean; dashboardUrl?: string } | null | undefined,
-  dashboardAvailable: boolean,
-): EnableOutcome {
-  if (!result?.installed) return { show: 'setup' };
-  if (!result.dashboardUrl || !dashboardAvailable) return { show: 'no-dashboard' };
-  return { show: 'dashboard', url: result.dashboardUrl };
-}
-
-/**
  * Where the webview should land when the pane goes back to `web`.
  *
  * The tab is one browser with two backends, not two unrelated tabs, so the
@@ -179,87 +155,7 @@ export function resolveInputUrl(input: string): string {
 }
 
 /** Agent-mode lifecycle, as far as this pane is concerned. */
-type AgentStatus = 'idle' | 'starting' | 'live' | 'setup' | 'no-dashboard';
-
-/**
- * How often the address bar re-asks the session where Chrome actually is.
- *
- * In agent mode the bar can only otherwise show the last URL the PANE asked
- * for, and the agent navigates on its own — so without a poll the bar reports a
- * page nobody is on for as long as the pane is open.
- *
- * 3s, chosen against the two costs. Each poll is a real agent-browser
- * invocation, measured at ~170ms against 0.35.0 for a `get url` on a live
- * session, so 3s is a ~6% duty cycle for one visible agent pane — noticeable if
- * it ran unconditionally, which is why it does not (see `shouldPollAgentUrl`:
- * agent mode only, visible only, never overlapping itself). Going slower makes
- * the bar visibly wrong after a click; going faster buys accuracy nobody reads,
- * since this is a status readout and not a control.
- *
- * Issue #141 is the reason this is a constant and not a nice round 2000 pulled
- * out of a hook: there, a 2s poll ran at RENDER speed because an unstable
- * `useT()` identity invalidated its dependency array every commit. The effect
- * driving this interval depends on primitives only — engine, status, surfaceId
- * — and calls nothing it closes over from render.
- */
-export const AGENT_URL_POLL_MS = 3_000;
-
-/**
- * How long after the pane asks for a URL the poll stops being believed.
- *
- * `open` is asynchronous and Chrome takes a moment to commit the navigation, so
- * a poll landing in that window reports the page the user just navigated AWAY
- * from — and the bar would visibly snap back to it. Slightly longer than one
- * poll interval would be wasteful; slightly less than one is enough, because
- * the tick after that reads the real answer either way.
- */
-export const AGENT_URL_POLL_SUPPRESS_MS = 2_000;
-
-/** Statuses in which a session exists and can be asked where it is. */
-const POLLABLE_STATUSES: ReadonlySet<string> = new Set(['live', 'no-dashboard']);
-
-/**
- * Should this tick actually spend an agent-browser invocation?
- *
- * Pure, so every reason to skip is testable without a timer, a webview or a
- * preload bridge — and so the list of reasons is readable in one place rather
- * than spread across an effect body.
- */
-export function shouldPollAgentUrl(s: {
-  engine: BrowserEngine;
-  status: string;
-  /** The whole window is minimised/backgrounded — nobody is reading anything. */
-  documentHidden: boolean;
-  /** This pane is a hidden keep-alive tab, or an overlaid one. */
-  paneHidden: boolean;
-  /** A previous poll has not answered yet; a second would just queue behind it. */
-  inFlight: boolean;
-  now: number;
-  suppressUntil: number;
-}): boolean {
-  if (s.engine !== 'agent') return false;
-  if (!POLLABLE_STATUSES.has(s.status)) return false;
-  if (s.documentHidden || s.paneHidden) return false;
-  if (s.inFlight) return false;
-  return s.now >= s.suppressUntil;
-}
-
-/**
- * Is this element not being shown? Used to keep hidden tabs from polling.
- *
- * wmux's keep-alive tabs stay mounted and are hidden with `visibility`, which
- * `offsetParent` does NOT report — hence `checkVisibility`, which does, with
- * the older property as the fallback for environments that lack it (jsdom).
- * A missing element answers "not hidden": that is the first-render case, and
- * suppressing the first poll of a pane the user is looking at would be the
- * wrong way to be wrong.
- */
-export function elementHidden(el: HTMLElement | null | undefined): boolean {
-  if (!el) return false;
-  const check = (el as { checkVisibility?: (o?: unknown) => boolean }).checkVisibility;
-  if (typeof check === 'function') return !check.call(el, { visibilityProperty: true });
-  return el.offsetParent === null;
-}
+type AgentStatus = 'idle' | 'starting' | 'live' | 'setup' | 'error';
 
 /**
  * A hidden webview an agent is driving: painted, transparent, out of the way.
@@ -334,9 +230,6 @@ export default function BrowserPane({
   // spurious ERR_ABORTED (logged by the main process' guest-view handler).
   // The engine switch is exactly such a mutation, so it goes through loadURL
   // too and src stays pinned to initialSrc forever.
-  // Render-only: the #141 warning on AGENT_URL_POLL_MS is about `useT()`'s
-  // unstable identity in a dependency ARRAY. This one is read in JSX and never
-  // closed over by an effect.
   const t = useT();
   // A pane with a saved back/forward stack mounts on the restore sentinel and
   // main rebuilds the stack before the guest loads anything (#315); the active
@@ -368,8 +261,18 @@ export default function BrowserPane({
   // own URL is the dashboard and showing that would be a lie about where the
   // agent is.
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
+  const [agentError, setAgentError] = useState('');
   const [agentUrl, setAgentUrl] = useState(initialUrl);
+  const [presentation, setPresentation] = useState<'page' | 'dashboard'>('page');
+  const [dashboardAvailable, setDashboardAvailable] = useState(false);
   const dashboardUrlRef = useRef<string | null>(null);
+  const viewerRef = useRef<AgentViewerHandle>(null);
+  const [agentTabs, setAgentTabs] = useState<AgentBrowserTab[]>([]);
+  const [agentConnected, setAgentConnected] = useState(false);
+  const agentConnectedRef = useRef(false);
+  const pendingNavigationRef = useRef<string | null>(null);
+  const [focusAddress, setFocusAddress] = useState(0);
+  const freshStartRef = useRef(false);
 
   // Mirrors read from webview event listeners and from callbacks that are
   // deliberately dependency-free (they are handed to a memoised child and to
@@ -379,6 +282,8 @@ export default function BrowserPane({
   engineRef.current = engine;
   const currentUrlRef = useRef(currentUrl);
   currentUrlRef.current = currentUrl;
+  const initialUrlRef = useRef(initialUrl);
+  initialUrlRef.current = initialUrl;
   const agentUrlRef = useRef(agentUrl);
   agentUrlRef.current = agentUrl;
 
@@ -397,47 +302,35 @@ export default function BrowserPane({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      // StrictMode double-invokes effects in dev: the pane is torn down and set
-      // up again on the SAME instance, so the refs survive. Putting the
-      // previous engine back to its seed is what makes the second setup redo
-      // the switch — otherwise a pane restored in agent mode would be enabled,
-      // disabled by the simulated unmount, and never enabled again.
+      pendingNavigationRef.current = null;
+      agentConnectedRef.current = false;
+      // Invalidate answers from the detached view, including StrictMode's
+      // simulated unmount. The next setup joins the same main-process startup.
+      switchSeqRef.current++;
       prevEngineRef.current = 'web';
     };
   }, []);
 
-  // Poll bookkeeping. Refs rather than state on purpose: neither value is
-  // rendered, and putting them in state would re-render the pane (and churn the
-  // interval effect's dependencies) on every tick — the shape of #141.
-  const pollInFlightRef = useRef(false);
-  const suppressPollUntilRef = useRef(0);
-  const rootRef = useRef<HTMLDivElement>(null);
+  /** Toolbar commands never address the dashboard guest or start a session. */
+  const agentAction = useCallback((action: AgentViewerAction) => {
+    return viewerRef.current?.action(action) ?? Promise.reject(new Error('Page is not connected'));
+  }, []);
 
-  /**
-   * Ask the agent-browser session to open a URL.
-   *
-   * `open`, not `enable`. This used to reuse `enable` because it was the only
-   * verb the renderer had, but `enable` also acquires a dashboard reference and
-   * relaunches with the stream env — neither of which does anything for a
-   * session that is already live, since the stream port is read at browser
-   * launch and cannot be moved afterwards. `enable` stays as the FALLBACK for
-   * the one case `open` legitimately refuses: no session yet, because the user
-   * typed a URL while the flip into agent mode was still in flight.
-   */
-  const openInAgent = useCallback(async (url: string) => {
-    setAgentUrl(url);
-    // The page is about to change; a poll that lands before Chrome commits
-    // would report where we came FROM and snap the bar back to it.
-    suppressPollUntilRef.current = Date.now() + AGENT_URL_POLL_SUPPRESS_MS;
-    const api = window.wmux?.agentBrowser;
-    try {
-      const res = await api?.open?.(surfaceId, url);
-      if (res?.ok) return;
-      await api?.enable?.(surfaceId, url);
-    } catch {
-      /* the bar already shows the intent; nothing here can recover a dead CLI */
-    }
-  }, [surfaceId]);
+  const onAgentConnection = useCallback((connected: boolean) => {
+    agentConnectedRef.current = connected;
+    setAgentConnected(connected);
+    if (!connected || engineRef.current !== 'agent' || !pendingNavigationRef.current) return;
+    const url = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    void agentAction({ type: 'navigate', url }).catch(() => {});
+  }, [agentAction]);
+
+  // Engine state changes before the outgoing dashboard finishes loading. Keep
+  // its identity until a Web commit (or an explicit toolbar command) owns it.
+  const isOutgoingDashboardUrl = useCallback((url: string) => {
+    const dashboard = dashboardUrlRef.current;
+    return !!dashboard && url.startsWith(dashboard.split('?')[0]);
+  }, []);
 
   const navigate = useCallback((newUrl: string) => {
     const resolved = resolveInputUrl(newUrl);
@@ -445,38 +338,40 @@ export default function BrowserPane({
     // stays on the dashboard; navigating it would throw away the viewer the
     // user just asked to watch.
     if (engineRef.current === 'agent') {
-      openInAgent(resolved).catch(() => {});
+      if (!agentConnectedRef.current || !viewerRef.current) {
+        pendingNavigationRef.current = resolved;
+        return;
+      }
+      void agentAction({ type: 'navigate', url: resolved }).catch(() => {});
       return;
     }
     // Single navigation. loadURL can still reject with ERR_ABORTED for genuine
     // cases (a client-side redirect, an unreachable host, navigating again
     // mid-load); those are reflected by the did-*-load handlers below, so
     // swallow the promise rejection rather than leaving it unhandled.
+    invalidateAgentBrowserReadback(surfaceId);
+    dashboardUrlRef.current = null;
     webviewRef.current?.loadURL(resolved).catch(() => {});
-  }, [openInAgent]);
+  }, [agentAction, surfaceId]);
 
-  // Back/forward/reload in agent mode.
-  //
-  // The webview is showing agent-browser's dashboard SPA, and the remote page's
-  // history belongs to a Chrome this pane cannot reach (there is no renderer
-  // IPC for arbitrary agent-browser verbs — those go through the CLI/pipe).
-  // So:
-  //   • back/forward are DISABLED — canGoBack/canGoForward are forced false in
-  //     agent mode, and the handlers refuse as well so a stale enabled button
-  //     can't walk the user off the viewer. Silently walking the dashboard's
-  //     own SPA history is the one behaviour that is definitely wrong.
-  //   • reload reloads the VIEWER. That is the honest reading of the button in
-  //     agent mode ("the feed looks stuck") and it is the only recovery gesture
-  //     available from here; the address bar covers "go somewhere else".
   const goBack = useCallback(() => {
-    if (engineRef.current === 'agent') return;
+    if (engineRef.current === 'agent') { void agentAction({ type: 'back' }).catch(() => {}); return; }
+    invalidateAgentBrowserReadback(surfaceId);
+    dashboardUrlRef.current = null;
     webviewRef.current?.goBack();
-  }, []);
+  }, [agentAction, surfaceId]);
   const goForward = useCallback(() => {
-    if (engineRef.current === 'agent') return;
+    if (engineRef.current === 'agent') { void agentAction({ type: 'forward' }).catch(() => {}); return; }
+    invalidateAgentBrowserReadback(surfaceId);
+    dashboardUrlRef.current = null;
     webviewRef.current?.goForward();
-  }, []);
-  const reload = useCallback(() => webviewRef.current?.reload(), []);
+  }, [agentAction, surfaceId]);
+  const reload = useCallback(() => {
+    if (engineRef.current === 'agent') { void agentAction({ type: 'reload' }).catch(() => {}); return; }
+    invalidateAgentBrowserReadback(surfaceId);
+    dashboardUrlRef.current = null;
+    webviewRef.current?.reload();
+  }, [agentAction, surfaceId]);
   useEffect(() => {
     const onRefresh = (event: Event) => {
       const id = (event as CustomEvent<{ surfaceId?: string }>).detail?.surfaceId;
@@ -511,25 +406,35 @@ export default function BrowserPane({
       }).catch(() => {});
     };
 
+    const reportWebUrl = (url: string) => {
+      if (isOutgoingDashboardUrl(url)) return false;
+      // The initial guest load is not newer user intent. A different URL is,
+      // including page links and CDP navigation that bypass the address bar.
+      if (url !== currentUrlRef.current) invalidateAgentBrowserReadback(surfaceId);
+      dashboardUrlRef.current = null;
+      currentUrlRef.current = url;
+      setCurrentUrl(url);
+      onUrlChange?.(url);
+      return true;
+    };
     const onNavigate = (e: any) => {
       // In agent mode every navigation here is the dashboard SPA moving around
       // inside itself. Recording it would overwrite the surface's persisted
       // `url` with the dashboard, so flipping back to web would land on the
       // viewer instead of the page.
       if (engineRef.current === 'agent') return;
-      setCurrentUrl(e.url);
-      onUrlChange?.(e.url);
+      if (!reportWebUrl(e.url)) return;
       setCanGoBack(wv.canGoBack());
       setCanGoForward(wv.canGoForward());
       refreshHistory();
+      return true;
     };
     // The old page's title goes with its document. Measured on a real webview:
     // did-navigate always comes before the new page's title event, and a page
     // with no <title> fires none, so without this it would keep the old title.
     // Not for an in-page navigation: the document stays, and so does its title.
     const onNewDocument = (e: any) => {
-      onNavigate(e);
-      if (engineRef.current !== 'agent') onTitleChangeRef.current?.('');
+      if (onNavigate(e)) onTitleChangeRef.current?.('');
     };
     const onTitle = (e: any) => {
       if (engineRef.current === 'agent') return; // the dashboard's own title
@@ -539,9 +444,7 @@ export default function BrowserPane({
     const onStopLoad = () => {
       setIsLoading(false);
       if (engineRef.current === 'agent') return;
-      const finalUrl = wv.getURL();
-      setCurrentUrl(finalUrl);
-      onUrlChange?.(finalUrl);
+      if (!reportWebUrl(wv.getURL())) return;
       // Titles arrive after the commit; this is when the entry has its own.
       refreshHistory();
     };
@@ -560,7 +463,7 @@ export default function BrowserPane({
       const dash = dashboardUrlRef.current;
       if (!dash) return; // nothing of ours is loading; not our failure to explain
       const failed = String(e?.validatedURL ?? '');
-      if (!failed || failed.startsWith(dash.split('?')[0])) setAgentStatus('no-dashboard');
+      if (!failed || failed.startsWith(dash.split('?')[0])) setDashboardAvailable(false);
     };
 
     wv.addEventListener('did-navigate', onNewDocument);
@@ -591,7 +494,13 @@ export default function BrowserPane({
       setHoverUrl(engineRef.current === 'agent' ? '' : linkStatusText(e?.url));
     };
     const clearHover = () => setHoverUrl('');
-    const onStartNavigation = (e: any) => { if (e?.isMainFrame !== false) clearHover(); };
+    const onStartNavigation = (e: any) => {
+      if (e?.isMainFrame === false) return;
+      clearHover();
+      if (engineRef.current !== 'agent' && e?.url && !isOutgoingDashboardUrl(e.url) && e.url !== currentUrlRef.current) {
+        invalidateAgentBrowserReadback(surfaceId);
+      }
+    };
     const onContextMenu = (e: any) => {
       if (engineRef.current === 'agent') return;
       const params = e?.params ?? {};
@@ -724,56 +633,79 @@ export default function BrowserPane({
     const stale = () => !mountedRef.current || switchSeqRef.current !== seq;
     const api = window.wmux?.agentBrowser;
     setAgentStatus('starting');
+    agentConnectedRef.current = false;
+    setAgentConnected(false);
+    setAgentTabs([]);
+    setAgentError('');
+    setDashboardAvailable(false);
     setAgentUrl(url);
     if (!api) { setAgentStatus('setup'); return; }
 
     let result: { installed?: boolean; dashboardUrl?: string } | null;
     try {
       result = await api.enable(surfaceId, url);
-    } catch {
-      result = null;
+    } catch (err) {
+      if (!stale()) { setAgentError(String(err)); setAgentStatus('error'); }
+      return;
     }
     if (stale()) return;
 
-    let dashboardAvailable = true;
-    if (result?.installed) {
-      try {
-        dashboardAvailable = (await api.status()).dashboardAvailable !== false;
-      } catch {
-        dashboardAvailable = false;
-      }
-      if (stale()) return;
-    }
-
-    const outcome = enableOutcome(result, dashboardAvailable);
-    if (outcome.show === 'setup') { setAgentStatus('setup'); return; }
-    if (outcome.show === 'no-dashboard') {
-      dashboardUrlRef.current = result?.dashboardUrl ?? null;
-      setAgentStatus('no-dashboard');
-      return;
-    }
-    dashboardUrlRef.current = outcome.url;
+    if (!result?.installed) { setAgentStatus('setup'); return; }
+    dashboardUrlRef.current = result.dashboardUrl ?? null;
+    freshStartRef.current = false;
     setAgentStatus('live');
-    webviewRef.current?.loadURL(outcome.url).catch(() => {});
+    // Page never waits for the optional dashboard, including its port probe.
+    void api.status().then((status: { dashboardAvailable: boolean }) => {
+      if (stale()) return;
+      const available = status.dashboardAvailable && !!result?.dashboardUrl;
+      setDashboardAvailable(available);
+      if (available) webviewRef.current?.loadURL(result!.dashboardUrl!).catch(() => {});
+    }).catch(() => { if (!stale()) setDashboardAvailable(false); });
   }, [surfaceId]);
+
+  /** A fresh blank session is destructive and only this explicit action requests it. */
+  const startNewAgentSession = useCallback(async () => {
+    const seq = ++switchSeqRef.current;
+    const stale = () => !mountedRef.current || engineRef.current !== 'agent' || switchSeqRef.current !== seq;
+    freshStartRef.current = true;
+    pendingNavigationRef.current = null;
+    setPresentation('page');
+    setAgentStatus('starting');
+    agentConnectedRef.current = false;
+    setAgentConnected(false);
+    setAgentTabs([]);
+    setAgentError('');
+    try {
+      await window.wmux.agentBrowser.disable(surfaceId, true);
+      if (stale()) return;
+      await enterAgentMode(BROWSER_BLANK_PAGE);
+    } catch (err) {
+      if (!stale()) { setAgentError(String(err)); setAgentStatus('error'); }
+    }
+  }, [enterAgentMode, surfaceId]);
+
+  const retryAgentMode = useCallback(() => {
+    if (freshStartRef.current) void startNewAgentSession();
+    else void enterAgentMode(agentUrlRef.current);
+  }, [enterAgentMode, startNewAgentSession]);
 
   const leaveAgentMode = useCallback(async () => {
     const seq = ++switchSeqRef.current;
     const stale = () => !mountedRef.current || switchSeqRef.current !== seq;
     setAgentStatus('idle');
-    dashboardUrlRef.current = null;
+    agentConnectedRef.current = false;
+    pendingNavigationRef.current = null;
 
-    let result: { url?: string } | null;
-    try {
-      result = (await window.wmux?.agentBrowser?.disable(surfaceId)) ?? null;
-    } catch {
-      result = null;
-    }
-    if (stale()) return;
+    const handoff = getAgentBrowserHandoff(surfaceId);
+    const result = (await handoff?.promise) ?? null;
+    const restoredUrl = getAgentBrowserHandoff(surfaceId) === handoff ? handoff?.restoredUrl : undefined;
+    if (stale() || (handoff && restoredUrl === undefined && !canApplyAgentBrowserReadback(surfaceId, handoff.promise))) return;
 
     const showing = webviewRef.current?.getURL?.() ?? '';
-    const target = disableTarget(result, agentUrlRef.current || currentUrlRef.current, showing);
+    const destination = restoredUrl === undefined ? result : { url: restoredUrl || initialUrlRef.current || BROWSER_BLANK_PAGE };
+    const target = disableTarget(destination, agentUrlRef.current || currentUrlRef.current, showing);
     if (target) {
+      currentUrlRef.current = target;
       setCurrentUrl(target);
       webviewRef.current?.loadURL(target).catch(() => {});
     } else {
@@ -783,17 +715,17 @@ export default function BrowserPane({
     }
   }, [surfaceId]);
 
+  // Capture at render: readback may settle before this commit's passive effect.
+  const joiningAgentHandoff = engine === 'web' && hasPendingAgentBrowserHandoff(surfaceId);
   useEffect(() => {
     const prev = prevEngineRef.current;
     prevEngineRef.current = engine;
     const decision = engineTransition(prev, engine, currentUrlRef.current);
-    if (decision.action === 'enable') void enterAgentMode(decision.url);
-    else if (decision.action === 'disable') void leaveAgentMode();
-  }, [engine, enterAgentMode, leaveAgentMode]);
+    if (decision.action === 'enable') { pendingNavigationRef.current = null; freshStartRef.current = false; void enterAgentMode(decision.url); }
+    else if (decision.action === 'disable' || joiningAgentHandoff) void leaveAgentMode();
+  }, [engine, enterAgentMode, leaveAgentMode, joiningAgentHandoff]);
 
-  // The tab's label in agent mode. The webview's title is the dashboard's, and
-  // `url` stops updating, so the URL last read from the session is the only true
-  // answer. Leaving agent mode clears it, and the page's own title takes over.
+  // Streamed tabs supply the Agent title; leaving clears it for the Web page.
   const wasAgentRef = useRef(false);
   useEffect(() => {
     if (engine !== 'agent') {
@@ -802,64 +734,10 @@ export default function BrowserPane({
       return;
     }
     wasAgentRef.current = true;
-    onTitleChangeRef.current?.(browserUrlLabel(agentUrl) ?? '');
-  }, [engine, agentUrl]);
+  }, [engine]);
 
-  // ── keeping the address bar honest ────────────────────────────────────────
-  //
-  // The agent drives a Chrome outside wmux, so the pane cannot observe its
-  // navigation the way it observes the webview's. Without this the bar shows
-  // the last URL the PANE asked for — which is a lie the moment the agent
-  // clicks anything.
-  //
-  // Dependencies are three primitives and nothing else. That is the #141
-  // lesson, stated as code: a poll whose effect depends on a callback or a hook
-  // result gets torn down and re-created on every commit, and a 3s interval
-  // that is re-armed at render speed is a render-speed poll.
-  useEffect(() => {
-    if (engine !== 'agent' || !POLLABLE_STATUSES.has(agentStatus)) return;
-    let cancelled = false;
-
-    const tick = async (): Promise<void> => {
-      const decide = shouldPollAgentUrl({
-        engine,
-        status: agentStatus,
-        documentHidden: typeof document !== 'undefined' && document.visibilityState === 'hidden',
-        paneHidden: elementHidden(rootRef.current),
-        inFlight: pollInFlightRef.current,
-        now: Date.now(),
-        suppressUntil: suppressPollUntilRef.current,
-      });
-      if (!decide) return;
-      pollInFlightRef.current = true;
-      try {
-        const res = await window.wmux?.agentBrowser?.currentUrl?.(surfaceId);
-        // A URL we could not read leaves the bar showing its last value. That
-        // is the honest degradation: the alternative is blanking the bar every
-        // time one invocation fails.
-        if (!cancelled && res?.url) setAgentUrl((prev) => (prev === res.url ? prev : res.url as string));
-      } catch {
-        /* see above */
-      } finally {
-        pollInFlightRef.current = false;
-      }
-    };
-
-    const timer = setInterval(() => { tick().catch(() => {}); }, AGENT_URL_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [engine, agentStatus, surfaceId]);
-
-  // A pane that goes away in agent mode still owns a Chrome and a dashboard
-  // refcount. `disable` is idempotent, so calling it for a pane that was never
-  // enabled is a no-op rather than something to guard against.
-  useEffect(() => () => {
-    if (engineRef.current === 'agent') {
-      window.wmux?.agentBrowser?.disable(surfaceId)?.catch?.(() => {});
-    }
-  }, [surfaceId]);
+  // React unmount only detaches AgentBrowserViewer's stream. The surface owns
+  // Chrome across split-tree reparenting; store close/engine transitions reap it.
 
   // Listen for programmatic navigation (e.g. auto-navigate on dev server detection)
   useEffect(() => {
@@ -887,8 +765,27 @@ export default function BrowserPane({
     });
   }, []);
 
+  const showDashboard = useCallback(() => {
+    setPresentation('dashboard');
+    void window.wmux.agentBrowser.status().then((status: { dashboardAvailable: boolean }) => {
+      if (!mountedRef.current || engineRef.current !== 'agent') return;
+      setDashboardAvailable(status.dashboardAvailable);
+      const url = dashboardUrlRef.current;
+      if (url && status.dashboardAvailable) webviewRef.current?.loadURL(url).catch(() => {});
+    }).catch(() => { if (mountedRef.current) setDashboardAvailable(false); });
+  }, []);
+  const newAgentTab = useCallback(() => {
+    void agentAction({ type: 'tab-new' }).then(() => {
+      if (!mountedRef.current || engineRef.current !== 'agent') return;
+      setPresentation('page');
+      setFocusAddress((request) => request + 1);
+    }).catch(() => {});
+  }, [agentAction]);
+
   const isAgent = engine === 'agent';
-  const overlay = isAgent && (agentStatus === 'setup' || agentStatus === 'no-dashboard');
+  const setupOverlay = isAgent && (agentStatus === 'setup' || (presentation === 'dashboard' && !dashboardAvailable));
+  const pageVisible = isAgent && presentation === 'page';
+  const overlay = setupOverlay || pageVisible;
   /**
    * Nothing to show yet — the state a surface is in when no page was asked for
    * (#232, where the old answer was to load the project's own GitHub repo).
@@ -909,12 +806,12 @@ export default function BrowserPane({
   else if (isBlank) barUrl = '';
 
   return (
-    <div className="browser-pane" ref={rootRef} onMouseDownCapture={claimCdp}>
+    <div className="browser-pane" onMouseDownCapture={claimCdp}>
       <AddressBar
         url={barUrl}
         isLoading={isLoading}
-        canGoBack={!isAgent && canGoBack}
-        canGoForward={!isAgent && canGoForward}
+        canGoBack={isAgent ? agentConnected : canGoBack}
+        canGoForward={isAgent ? agentConnected : canGoForward}
         engine={engine}
         onEngineChange={onEngineChange}
         onNavigate={navigate}
@@ -924,7 +821,24 @@ export default function BrowserPane({
         onStop={stop}
         onDevTools={openDevTools}
         onMoveToWorkspace={onMoveToWorkspace}
+        agentConnected={agentConnected}
+        presentation={presentation}
+        onToggleDashboard={() => presentation === 'page' ? showDashboard() : setPresentation('page')}
+        onNewTab={newAgentTab}
+        focusRequest={focusAddress}
       />
+      {isAgent && agentTabs.length >= 2 && <div className="browser-pane__chrome-tabs" aria-label={t('browser.agent.tabs', 'Browser tabs')}>
+        {agentTabs.map((tab) => <div key={tab.tabId} className={`browser-pane__chrome-tab${tab.active ? ' browser-pane__chrome-tab--active' : ''}`}>
+          <button type="button" className="browser-pane__chrome-tab-select" aria-pressed={tab.active} disabled={!agentConnected}
+            title={tab.url} onClick={() => { void agentAction({ type: 'tab-select', tabId: tab.tabId }).catch(() => {}); }}>
+            {tab.title || (tab.url === 'about:blank' ? t('browser.agent.newTab', 'New tab') : tab.url)}
+          </button>
+          <button type="button" className="browser-pane__chrome-tab-close" disabled={!agentConnected}
+            aria-label={t('browser.agent.closeTab', 'Close tab')} onClick={() => { void agentAction({ type: 'tab-close', tabId: tab.tabId }).catch(() => {}); }}>×</button>
+        </div>)}
+        <button type="button" className="browser-address-bar__btn" disabled={!agentConnected} onClick={newAgentTab}
+          aria-label={t('browser.agent.newTab', 'New tab')}>+</button>
+      </div>}
       <div className="browser-pane__body">
         {/* @ts-ignore — webview is an Electron-specific HTML element */}
         <webview
@@ -943,6 +857,21 @@ export default function BrowserPane({
           // agent drives keeps painting while hidden: see webviewHiding.
           {...webviewHiding({ overlay, isBlank, isAgent, visible, keepRendering })}
         />
+        {isAgent && agentStatus === 'starting' && pageVisible && <div className="browser-pane__blank" role="status">
+          {t('browser.agent.starting', 'Starting browser session…')}
+        </div>}
+        {isAgent && agentStatus === 'error' && pageVisible && <div className="browser-pane__blank" role="alert">
+          <p className="browser-pane__blank-title">{agentError}</p>
+          <button className="browser-pane__setup-btn" onClick={retryAgentMode}>{t('agentBrowser.retry', 'Try again')}</button>
+          <button className="browser-pane__setup-btn" onClick={() => void startNewAgentSession()}>
+            {t('browser.agent.startNew', 'Start new session')}
+          </button>
+        </div>}
+        {isAgent && agentStatus === 'live' && <AgentBrowserViewer ref={viewerRef}
+          surfaceId={surfaceId} visible={visible && pageVisible} focused={focused} onActivate={onActivate}
+          onPageState={(url, title) => { setAgentUrl(url); onUrlChange?.(url); if (title !== undefined) onTitleChangeRef.current?.(title); }}
+          onTabs={setAgentTabs} onConnection={onAgentConnection} onDashboard={showDashboard} onStartNew={() => void startNewAgentSession()}
+        />}
         {isBlank && !overlay && (
           <div className="browser-pane__blank">
             <p className="browser-pane__blank-title">
@@ -956,11 +885,11 @@ export default function BrowserPane({
             </p>
           </div>
         )}
-        {overlay && (
+        {setupOverlay && (
           <AgentBrowserSetup
             reason={agentStatus === 'setup' ? 'not-installed' : 'no-dashboard'}
-            onInstalled={() => void enterAgentMode(agentUrlRef.current)}
-            onRetry={() => void enterAgentMode(agentUrlRef.current)}
+            onInstalled={retryAgentMode}
+            onRetry={retryAgentMode}
             onCancel={() => onEngineChange?.('web')}
           />
         )}

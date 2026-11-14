@@ -12,11 +12,13 @@
  * The fix routes teardown through the store STATE TRANSITIONS (the single chokepoint
  * every close funnels through) instead of the UI. These helpers are those hooks.
  *
- * No-op for non-terminal surfaces (browser/markdown/diff have no PTY) and in
+ * Browser closes also release their Agent session, independently of React.
+ * PTY reaping remains a no-op for non-terminal surfaces and in
  * non-Electron contexts (unit tests, where `window` is undefined) so the store
  * stays testable in Node.
  */
 import { SplitNode, SurfaceRef } from '../../shared/types';
+import { beginAgentBrowserHandoff, clearAgentBrowserHandoff, closeAgentBrowserHandoff, invalidateAgentBrowserReadback } from './agent-browser-handoff';
 
 /**
  * Announced for every surface that is destructively closed.
@@ -36,8 +38,12 @@ export const SURFACE_CLOSED_EVENT = 'wmux:surface-closed';
 /** Kill the PTY backing a single terminal surface. Idempotent — the main-process
  *  `PtyManager.kill` no-ops on an unknown/already-dead id, so double-calls (e.g.
  *  a legacy UI kill + the store kill) are harmless. */
-export function killSurfacePty(surface: Pick<SurfaceRef, 'id' | 'type'>): void {
+export function killSurfacePty(surface: Pick<SurfaceRef, 'id' | 'type' | 'browserEngine'>): void {
   announceSurfaceClosed(surface.id);
+  if (surface.type === 'browser') {
+    if (surface.browserEngine === 'agent') beginAgentBrowserHandoff(surface.id);
+    closeAgentBrowserHandoff(surface.id);
+  }
   if (surface.type !== 'terminal') return;
   try {
     (globalThis as { window?: { wmux?: { pty?: { kill?: (id: string) => void } } } }).window
@@ -70,15 +76,14 @@ export function killTreeTerminalPtys(tree: SplitNode): void {
   killTreeTerminalPtys(tree.children[1]);
 }
 
-/** Every surface id in a split (sub)tree, all types. */
-function collectSurfaceIds(tree: SplitNode, into: Set<string>): Set<string> {
+/** Retained IDs keep resources only while their incoming engine still owns them. */
+function collectSurfaces(tree: SplitNode, into: Map<string, SurfaceRef>): void {
   if (tree.type === 'leaf') {
-    for (const surface of tree.surfaces) into.add(surface.id);
+    for (const surface of tree.surfaces) into.set(surface.id, surface);
   } else {
-    collectSurfaceIds(tree.children[0], into);
-    collectSurfaceIds(tree.children[1], into);
+    collectSurfaces(tree.children[0], into);
+    collectSurfaces(tree.children[1], into);
   }
-  return into;
 }
 
 /** Close every surface of `outgoing` that `incoming` does not also hold (#361).
@@ -86,15 +91,28 @@ function collectSurfaceIds(tree: SplitNode, into: Set<string>): Set<string> {
  *  incoming layout keeps is re-parented by the keep-alive host (#346) and must
  *  keep its shell, everything else is closed like any other close path. */
 export function killDroppedSurfaces(outgoing: SplitNode[], incoming: SplitNode[]): void {
-  const kept = new Set<string>();
-  for (const tree of incoming) collectSurfaceIds(tree, kept);
+  const kept = new Map<string, SurfaceRef>();
+  for (const tree of incoming) collectSurfaces(tree, kept);
   const visit = (tree: SplitNode): void => {
     if (tree.type === 'leaf') {
-      for (const surface of tree.surfaces) if (!kept.has(surface.id)) killSurfacePty(surface);
+      for (const surface of tree.surfaces) {
+        const next = kept.get(surface.id);
+        if (!next) killSurfacePty(surface);
+        else if (surface.type === 'browser' && surface.browserEngine === 'agent'
+          && (next.type !== 'browser' || next.browserEngine !== 'agent')) {
+          void beginAgentBrowserHandoff(surface.id);
+        }
+      }
       return;
     }
     visit(tree.children[0]);
     visit(tree.children[1]);
   };
   for (const tree of outgoing) visit(tree);
+  // A restored URL is explicit intent, not a destination for outgoing readback.
+  // Agent re-entry must not reuse a previous Web lifetime's close promise.
+  for (const surface of kept.values()) {
+    if (surface.type === 'browser' && surface.browserEngine === 'agent') clearAgentBrowserHandoff(surface.id);
+    else invalidateAgentBrowserReadback(surface.id, surface.type === 'browser' ? surface.url || '' : undefined);
+  }
 }

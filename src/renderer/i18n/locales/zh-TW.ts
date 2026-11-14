@@ -663,8 +663,6 @@ export const zhTW: Translation = {
   'addressBar.engineAgent': 'agent',
   'addressBar.engineWebTitle': '在這個面板中瀏覽。由 wmux 自己操作頁面——不需要額外安裝。',
   'addressBar.engineAgentTitle': '讓這個分頁改用 wmux 外部的完整 Chrome，並在這裡觀看 agent 的操作。首次使用需要安裝。',
-  'addressBar.backAgent': 'agent 操作瀏覽器時無法使用瀏覽紀錄',
-  'addressBar.reloadViewer': '重新載入活動檢視器（不會重新載入 agent 所在的頁面）',
   // 還沒有頁面的瀏覽器分頁 (#232)。wmux 以前會開啟自己的
   // GitHub repo，之後還把它當成使用者自己選的網址記住。
   'browser.blank.title': '沒有開啟任何頁面',

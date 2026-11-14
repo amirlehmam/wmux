@@ -104,6 +104,117 @@
   color: rgba(var(--ui-overlay-rgb),0.95);
 }
 
+.browser-address-bar__url {
+  min-width: 0;
+}
+
+.browser-address-bar__connection {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(var(--ui-overlay-rgb), 0.25);
+}
+
+.browser-address-bar__connection--live {
+  background: var(--ui-accent, rgba(var(--ui-overlay-rgb), 0.85));
+}
+
+.browser-address-bar__menu {
+  position: relative;
+}
+
+.browser-address-bar__menu-items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--ui-bg-3);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.browser-address-bar__menu-items button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  background: transparent;
+  color: rgba(var(--ui-overlay-rgb), 0.85);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.browser-address-bar__menu-items button:hover:not(:disabled) {
+  background: rgba(var(--ui-overlay-rgb), 0.08);
+}
+
+.browser-address-bar__menu-items button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.browser-pane__chrome-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  background: var(--ui-bg-3);
+  border-top: 1px solid var(--ui-border);
+}
+
+.browser-pane__chrome-tab {
+  display: flex;
+  align-items: center;
+  min-width: 90px;
+  max-width: 210px;
+  flex: 0 1 180px;
+  border-radius: 6px;
+}
+
+.browser-pane__chrome-tab--active {
+  background: rgba(var(--ui-overlay-rgb), 0.1);
+}
+
+.browser-pane__chrome-tab button {
+  border: none;
+  background: transparent;
+  color: rgba(var(--ui-overlay-rgb), 0.7);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.browser-pane__chrome-tab-select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.browser-pane__chrome-tab-close {
+  padding: 3px 7px;
+  border-radius: 4px;
+}
+
+.browser-pane__chrome-tab-close:hover {
+  background: rgba(var(--ui-overlay-rgb), 0.12);
+}
+
+.agent-browser-viewer__overlay {
+  color: rgba(var(--ui-overlay-rgb), 0.85);
+  overflow-wrap: anywhere;
+}
+
 /* The webview and anything laid over it. Positioned so the setup card can cover
    the viewport without unmounting the <webview> underneath it — unmounting
    would destroy the guest page and its CDP registration. */
