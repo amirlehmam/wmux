@@ -59,6 +59,7 @@ export const ko: Translation = {
   'palette.category.workspaces': '작업 공간',
   'palette.category.themes': '테마',
   'palette.openMarkdown': '마크다운 파일 열기…',
+  'palette.allPanesLocked': '모든 창이 잠겨 있습니다. 파일을 열려면 하나의 잠금을 해제하세요.',
   'palette.current': '현재',
   // 제목 표시줄
   'titlebar.help': '도움말 / 튜토리얼',

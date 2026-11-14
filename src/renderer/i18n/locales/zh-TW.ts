@@ -80,6 +80,7 @@ export const zhTW: Translation = {
   'palette.category.themes': '主題',
   'palette.category.layouts': '版面',
   'palette.openMarkdown': '開啟 Markdown 檔案…',
+  'palette.allPanesLocked': '所有窗格都已鎖定。請解鎖其中一個以開啟檔案。',
   'palette.saveCurrentLayout': '將目前版面存成新的預設集',
   'palette.saveCurrentLayoutFailed': '沒有作用中的工作區可以存成版面。',
   'palette.newWorkspaceWithLayout': '新工作區：{name}',

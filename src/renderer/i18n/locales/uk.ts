@@ -55,6 +55,7 @@ export const uk: Translation = {
   'palette.category.workspaces': 'Робочі простори',
   'palette.category.themes': 'Теми',
   'palette.openMarkdown': 'Відкрити файл Markdown…',
+  'palette.allPanesLocked': 'Усі панелі заблоковано. Розблокуйте одну, щоб відкрити файл.',
   'palette.current': 'поточна',
   // Заголовок вікна
   'titlebar.help': 'Довідка / Навчання',

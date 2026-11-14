@@ -55,6 +55,7 @@ export const ja: Translation = {
   'palette.category.workspaces': 'ワークスペース',
   'palette.category.themes': 'テーマ',
   'palette.openMarkdown': 'Markdown ファイルを開く…',
+  'palette.allPanesLocked': 'すべてのペインがロックされています。ファイルを開くには、いずれかのロックを解除してください。',
   'palette.current': '現在',
   // タイトルバー
   'titlebar.help': 'ヘルプ / チュートリアル',

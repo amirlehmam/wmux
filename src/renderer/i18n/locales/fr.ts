@@ -93,6 +93,7 @@ export const fr: Translation = {
   'palette.category.workspaces': 'Espaces de travail',
   'palette.category.themes': 'Thèmes',
   'palette.openMarkdown': 'Ouvrir un fichier Markdown…',
+  'palette.allPanesLocked': 'Tous les panneaux sont verrouillés. Déverrouillez-en un pour ouvrir un fichier.',
   'palette.openWorkspaceFile': 'Ouvrir un fichier de workspace… (wmux.workspace.json)',
   'palette.resetTerminalLeaveAlt': "Réinitialiser l'état du terminal (quitter l'écran alternatif)",
   'palette.current': 'actuel',

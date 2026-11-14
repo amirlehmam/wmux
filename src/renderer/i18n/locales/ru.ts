@@ -55,6 +55,7 @@ export const ru: Translation = {
   'palette.category.workspaces': 'Рабочие области',
   'palette.category.themes': 'Темы',
   'palette.openMarkdown': 'Открыть файл Markdown…',
+  'palette.allPanesLocked': 'Все панели заблокированы. Разблокируйте одну, чтобы открыть файл.',
   'palette.current': 'текущая',
   // Заголовок окна
   'titlebar.help': 'Справка / Обучение',

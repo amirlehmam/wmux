@@ -55,6 +55,7 @@ export const pl: Translation = {
   'palette.category.workspaces': 'Obszary robocze',
   'palette.category.themes': 'Motywy',
   'palette.openMarkdown': 'Otwórz plik Markdown…',
+  'palette.allPanesLocked': 'Wszystkie panele są zablokowane. Odblokuj jeden, aby otworzyć plik.',
   'palette.current': 'bieżący',
   // Pasek tytułu
   'titlebar.help': 'Pomoc / Samouczek',

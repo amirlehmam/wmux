@@ -20,7 +20,7 @@ import { uk } from '../../src/renderer/i18n/locales/uk';
 import { zh } from '../../src/renderer/i18n/locales/zh';
 import { zhTW } from '../../src/renderer/i18n/locales/zh-TW';
 
-const KEYS = ['surfaceTab.lockPane', 'surfaceTab.unlockPane', 'surfaceTab.lockedTooltip'] as const;
+const KEYS = ['surfaceTab.lockPane', 'surfaceTab.unlockPane', 'surfaceTab.lockedTooltip', 'palette.allPanesLocked'] as const;
 
 const LOCALES: Record<string, Partial<Record<string, string>>> = {
   cs, de, es, fr, hi, it: itLocale, ja, ko, nl, pl, pt, ru, sv, tr, uk, zh, 'zh-TW': zhTW,
@@ -42,6 +42,7 @@ describe('pane lock translations', () => {
     expect(en['surfaceTab.lockPane']).toBe('Lock pane');
     expect(en['surfaceTab.unlockPane']).toBe('Unlock pane');
     expect(en['surfaceTab.lockedTooltip'].length).toBeGreaterThan(0);
+    expect(en['palette.allPanesLocked']).toBe('All panes are locked. Unlock one to open a file.');
   });
 
   for (const [code, strings] of Object.entries(LOCALES)) {

@@ -48,6 +48,7 @@ export const es: Translation = {
   'palette.category.workspaces': 'Espacios de trabajo',
   'palette.category.themes': 'Temas',
   'palette.openMarkdown': 'Abrir un archivo Markdown…',
+  'palette.allPanesLocked': 'Todos los paneles están bloqueados. Desbloquea uno para abrir un archivo.',
   'palette.current': 'actual',
   'titlebar.help': 'Ayuda / Tutorial',
   'titlebar.devtools': 'Mostrar u ocultar las herramientas de desarrollo',

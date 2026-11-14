@@ -55,6 +55,7 @@ export const hi: Translation = {
   'palette.category.workspaces': 'वर्कस्पेस',
   'palette.category.themes': 'थीम',
   'palette.openMarkdown': 'Markdown फ़ाइल खोलें…',
+  'palette.allPanesLocked': 'सभी पैन लॉक हैं। फ़ाइल खोलने के लिए किसी एक को अनलॉक करें।',
   'palette.current': 'वर्तमान',
   // टाइटल बार
   'titlebar.help': 'सहायता / ट्यूटोरियल',

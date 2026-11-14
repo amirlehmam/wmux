@@ -45,6 +45,7 @@ export const zh: Translation = {
   'palette.category.workspaces': '工作区',
   'palette.category.themes': '主题',
   'palette.openMarkdown': '打开 Markdown 文件…',
+  'palette.allPanesLocked': '所有窗格均已锁定。请解锁其中一个以打开文件。',
   'palette.current': '当前',
   'titlebar.help': '帮助 / 教程',
   'titlebar.devtools': '切换开发者工具',

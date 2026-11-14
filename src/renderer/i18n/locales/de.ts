@@ -48,6 +48,7 @@ export const de: Translation = {
   'palette.category.workspaces': 'Arbeitsbereiche',
   'palette.category.themes': 'Designs',
   'palette.openMarkdown': 'Markdown-Datei öffnen…',
+  'palette.allPanesLocked': 'Alle Bereiche sind gesperrt. Entsperre einen, um eine Datei zu öffnen.',
   'palette.current': 'aktuell',
   'titlebar.help': 'Hilfe / Tutorial',
   'titlebar.devtools': 'Entwicklertools umschalten',

@@ -55,6 +55,7 @@ export const tr: Translation = {
   'palette.category.workspaces': 'Çalışma Alanları',
   'palette.category.themes': 'Temalar',
   'palette.openMarkdown': 'Markdown Dosyası Aç…',
+  'palette.allPanesLocked': 'Tüm paneller kilitli. Dosya açmak için birinin kilidini açın.',
   'palette.current': 'geçerli',
   // Pencere başlığı
   'titlebar.help': 'Yardım / Eğitim',

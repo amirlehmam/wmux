@@ -48,6 +48,7 @@ export const sv: Translation = {
   'palette.category.workspaces': 'Arbetsytor',
   'palette.category.themes': 'Teman',
   'palette.openMarkdown': 'Öppna Markdown-fil…',
+  'palette.allPanesLocked': 'Alla rutor är låsta. Lås upp en för att öppna en fil.',
   'palette.current': 'aktuell',
   'titlebar.help': 'Hjälp / genomgång',
   'titlebar.devtools': 'Växla utvecklarverktyg',

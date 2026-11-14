@@ -85,6 +85,7 @@ export const pt: Translation = {
   'palette.category.workspaces': 'Espaços de trabalho',
   'palette.category.themes': 'Temas',
   'palette.openMarkdown': 'Abrir arquivo Markdown…',
+  'palette.allPanesLocked': 'Todos os painéis estão bloqueados. Desbloqueie um para abrir um arquivo.',
   'palette.current': 'atual',
   'titlebar.help': 'Ajuda / Tutorial',
   'titlebar.devtools': 'Alternar ferramentas de desenvolvedor',

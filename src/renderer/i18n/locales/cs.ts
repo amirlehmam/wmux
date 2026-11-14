@@ -56,6 +56,7 @@ export const cs: Translation = {
   'palette.category.themes': 'Motivy',
   'palette.category.layouts': 'Rozložení',
   'palette.openMarkdown': 'Otevřít soubor Markdown…',
+  'palette.allPanesLocked': 'Všechny panely jsou uzamčené. Odemkněte jeden, abyste mohli otevřít soubor.',
   'palette.saveCurrentLayout': 'Uložit aktuální rozložení jako novou předvolbu',
   'palette.saveCurrentLayoutFailed': 'Není aktivní žádný pracovní prostor, jehož rozložení lze uložit.',
   'palette.newWorkspaceWithLayout': 'Nový pracovní prostor: {name}',
