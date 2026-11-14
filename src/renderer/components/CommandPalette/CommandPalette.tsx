@@ -95,10 +95,17 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
   const [notice, setNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const markdownPending = useRef(false);
+  const mounted = useRef(false);
 
   // Auto-focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
   }, []);
 
   // Build palette items from all categories
@@ -146,10 +153,17 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
       label: t('palette.openMarkdown'),
       category: t('palette.category.commands'),
       action: () => {
-        void openMarkdownFromPalette(t).then((notice) => {
-          if (notice) setNotice(notice);
-          else onClose();
-        });
+        // The palette stays mounted while the native dialog is pending, so a
+        // double click or held Enter would otherwise open a second dialog.
+        if (markdownPending.current) return;
+        markdownPending.current = true;
+        void openMarkdownFromPalette(t)
+          .then((message) => {
+            if (!mounted.current) return;
+            if (message) setNotice(message);
+            else onClose();
+          })
+          .finally(() => { markdownPending.current = false; });
       },
     });
 
@@ -306,7 +320,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
           onKeyDown={handleKeyDown}
           placeholder={t('palette.placeholder')}
         />
-        {notice && <div className="command-palette__empty" role="status">{notice}</div>}
+        <div className={notice ? 'command-palette__empty' : undefined} role="status">{notice}</div>
         <div className="command-palette__results" ref={listRef}>
           {visibleItems.length === 0 ? (
             <div className="command-palette__empty">{t('palette.empty')}</div>

@@ -76,7 +76,7 @@ afterEach(() => {
   delete (window as any).__wmux_createSurface;
 });
 
-async function pickOpenMarkdown(tree: SplitNode) {
+function renderPalette(tree: SplitNode) {
   store.setState({ workspaces: [workspace(tree)], activeWorkspaceId: 'ws-1' as WorkspaceId });
   act(() => {
     root.render(React.createElement(CommandPalette, { onClose, onAction: () => {} }));
@@ -85,9 +85,16 @@ async function pickOpenMarkdown(tree: SplitNode) {
     (el) => el.querySelector('.command-palette__item-label')?.textContent === en['palette.openMarkdown'],
   );
   expect(item, 'Open Markdown File item is listed').toBeDefined();
-  await act(async () => {
-    item!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  return item!;
+}
+
+const activate = (item: Element) =>
+  act(async () => {
+    item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
   });
+
+async function pickOpenMarkdown(tree: SplitNode) {
+  await activate(renderPalette(tree));
 }
 
 describe('palette "Open Markdown File…" with locked panes', () => {
@@ -110,7 +117,7 @@ describe('palette "Open Markdown File…" with locked panes', () => {
       filePath: 'C:\\docs\\note.md',
       mtimeMs: 7,
     });
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -129,7 +136,51 @@ describe('palette "Open Markdown File…" with locked panes', () => {
     await pickOpenMarkdown(leaf('pane-1'));
 
     expect(createSurface).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('');
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a second activation while the file dialog is pending', async () => {
+    let resolveDialog!: (v: unknown) => void;
+    openFile.mockReturnValue(new Promise((r) => { resolveDialog = r; }) as never);
+    const item = renderPalette(leaf('pane-1'));
+
+    await activate(item);
+    await activate(item);
+    expect(openFile).toHaveBeenCalledTimes(1);
+
+    await act(async () => { resolveDialog({ canceled: true }); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    await activate(item);
+    expect(openFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not close or message a palette that was unmounted while the dialog was pending', async () => {
+    let resolveDialog!: (v: unknown) => void;
+    openFile.mockReturnValue(new Promise((r) => { resolveDialog = r; }) as never);
+    const item = renderPalette(leaf('pane-1'));
+    await activate(item);
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await act(async () => { resolveDialog({ canceled: true }); });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('keeps the status region mounted and empty until there is something to say', () => {
+    renderPalette(leaf('pane-1'));
+    const status = container.querySelector('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toBe('');
+  });
+
+  it('writes the message into the same status element that was already mounted', async () => {
+    const item = renderPalette(split(leaf('pane-1', true), leaf('pane-2', true)));
+    const before = container.querySelector('[role="status"]');
+    await activate(item);
+    expect(container.querySelector('[role="status"]')).toBe(before);
+    expect(before!.textContent).toBe(ALL_LOCKED_MESSAGE);
   });
 });
