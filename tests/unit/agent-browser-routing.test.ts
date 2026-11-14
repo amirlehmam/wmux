@@ -17,6 +17,9 @@ const env = vi.hoisted(() => ({
   acquired: [] as string[],
   /** Swappable so a test can make the dashboard hang or fail. */
   acquireImpl: async (_surfaceId: string): Promise<void> => {},
+  startImpl: undefined as ((surfaceId: string) => Promise<any>) | undefined,
+  nativeCalls: [] as Array<{ argv: string[]; timeoutMs: number }>,
+  nativeImpl: async (_argv: string[], _timeoutMs: number): Promise<any> => ({ ok: true, data: null, stdout: '', stderr: '' }),
 }));
 
 vi.mock('electron', () => ({
@@ -29,19 +32,30 @@ vi.mock('../../src/main/ipc-handlers', () => ({
     get attachedWebContentsId() { return [...env.wcIdBySurface.values()][0] ?? null; },
   },
 }));
-vi.mock('../../src/main/agent-browser-runtime', () => ({
+vi.mock('../../src/main/agent-browser-cli', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/main/agent-browser-cli')>()),
+  agentBrowserPath: () => 'native.exe',
+  runAgentBrowser: (_binary: string, argv: string[], timeoutMs: number) => {
+    env.nativeCalls.push({ argv, timeoutMs });
+    return env.nativeImpl(argv, timeoutMs);
+  },
+}));
+vi.mock('../../src/main/agent-browser-runtime', async (importOriginal) => ({
+  withDeadline: (await importOriginal<typeof import('../../src/main/agent-browser-runtime')>()).withDeadline,
+  runAgentBrowserForSession: (argv: string[], timeoutMs: number) => {
+    env.nativeCalls.push({ argv, timeoutMs });
+    return env.nativeImpl(argv, timeoutMs);
+  },
   acquireDashboardFor: (surfaceId: string) => {
     env.acquired.push(surfaceId);
     return env.acquireImpl(surfaceId);
   },
-  sessionRegistry: {
-    ensure: (surfaceId: string) => ({
-      surfaceId,
-      sessionName: `wmux-${surfaceId}`,
-      streamPort: 9300,
-      dashboardUrl: `http://127.0.0.1:4848/?port=9300`,
-    }),
-  },
+  ensureStartedSession: async (surfaceId: string) => env.startImpl ? env.startImpl(surfaceId) : ({
+    surfaceId,
+    sessionName: `wmux-${surfaceId}`,
+    streamPort: 9300,
+    dashboardUrl: `http://127.0.0.1:4848/?port=9300`,
+  }),
 }));
 
 import {
@@ -194,8 +208,9 @@ describe('runBrowserCommandForTarget — engine dispatch', () => {
     for (const ms of budgets) expect(ms).toBeGreaterThan(0);
     // navigate is a page load; a click is not. They must not share a budget.
     expect(budgets[0]).toBeGreaterThan(budgets[1]);
-    // An explicit caller timeout is honoured rather than replaced by a default.
-    expect(budgets[2]).toBe(777);
+    // An explicit caller timeout is honoured rather than replaced by a default,
+    // plus the fixed allowance for the session's identity checks.
+    expect(budgets[2]).toBe(777 + 3000);
   });
 
   it('never spawns a process for a verb the agent engine cannot express', async () => {
@@ -517,6 +532,9 @@ function resetEnv(): void {
   env.wcIdBySurface = new Map();
   env.acquired = [];
   env.acquireImpl = async () => {};
+  env.startImpl = undefined;
+  env.nativeCalls = [];
+  env.nativeImpl = async () => ok(null);
 }
 
 describe('resolveBrowserTarget — which engine a command lands on', () => {
@@ -751,6 +769,58 @@ describe('the dashboard reference an agent command takes', () => {
 
     const target = await resolveBrowserTarget(caller);
     expect(target?.kind).toBe('agent');
+  });
+});
+
+describe('complete agent command readiness budget', () => {
+  beforeEach(resetEnv);
+
+  it.each(['browser.snapshot', 'browser.navigate'])('times out %s readiness including prior resolution, with no later requested verb dispatch', async (method) => {
+    vi.useFakeTimers();
+    try {
+      const caller = nextCaller();
+      const surfaceId = `surf-budget-${caller}`;
+      const win = fakeWindow({ workspaceOf: { [caller]: 'ws-budget' }, browsersIn: { 'ws-budget': [surfaceId] }, engines: { [surfaceId]: 'agent' } });
+      const execute = win.webContents.executeJavaScript;
+      win.webContents.executeJavaScript = async (js) => {
+        if (js.includes('__wmux_getWorkspaceIdForSurface')) await new Promise((resolve) => setTimeout(resolve, 3000));
+        return execute(js);
+      };
+      env.windows = [win];
+      const startup = vi.fn(async () => { await new Promise((resolve) => setTimeout(resolve, 3000)); return SESSION; });
+      env.startImpl = startup;
+      const respond = vi.fn(), error = vi.fn();
+      handleBrowserV2(method, { caller, url: 'https://fixture.test/' }, respond, error);
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(startup).toHaveBeenCalledOnce();
+      expect(error).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(error).toHaveBeenCalledWith(-32000, expect.stringContaining('retry the command'));
+      expect(respond).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(65000);
+      expect(env.nativeCalls).toEqual([]);
+      expect(respond).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each([['browser.snapshot', 10000], ['browser.navigate', 40000]] as const)('%s readiness plus native command still fits its public deadline', async (method, deadline) => {
+    vi.useFakeTimers();
+    try {
+      const caller = nextCaller();
+      const surfaceId = `surf-budget-${caller}`;
+      env.windows = [fakeWindow({ workspaceOf: { [caller]: 'ws-budget' }, browsersIn: { 'ws-budget': [surfaceId] }, engines: { [surfaceId]: 'agent' } })];
+      env.startImpl = async () => { await new Promise((resolve) => setTimeout(resolve, 4000)); return SESSION; };
+      env.nativeImpl = async (_argv, timeoutMs) => { await new Promise((resolve) => setTimeout(resolve, timeoutMs)); return ok(null); };
+      const respond = vi.fn(), error = vi.fn();
+      const start = Date.now();
+      handleBrowserV2(method, { caller, url: 'https://fixture.test/' }, respond, error);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(env.nativeCalls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(env.nativeCalls[0].timeoutMs);
+      expect(Date.now() - start).toBeLessThan(deadline);
+      expect(respond).toHaveBeenCalledOnce();
+      expect(error).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
   });
 });
 

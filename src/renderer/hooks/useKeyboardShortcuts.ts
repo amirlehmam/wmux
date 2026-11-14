@@ -515,6 +515,7 @@ export function useKeyboardShortcuts(
       if (overTerminal && !isSafeToIntercept(e)) return;
 
       const inEditor = isEditableTarget(e.target as HTMLElement | null);
+      const inPage = !!(e.target as HTMLElement | null)?.closest?.('.agent-browser-viewer');
       const shortcutEntries = Object.entries(shortcuts) as [ShortcutAction, ShortcutBinding][];
 
       for (const [action, binding] of shortcutEntries) {
@@ -522,7 +523,7 @@ export function useKeyboardShortcuts(
 
         // Typing in a text field wins over all but a few global actions, and we
         // must return *without* preventDefault so the field still gets the key.
-        if (inEditor && !GLOBAL_IN_EDITOR.has(action)) return;
+        if (inPage ? !GLOBAL_IN_PAGE.has(action) : inEditor && !GLOBAL_IN_EDITOR.has(action)) return;
 
         // find and copyMode are handled at PaneWrapper level — don't block them
         if (action === 'find' || action === 'copyMode') return;
@@ -533,7 +534,7 @@ export function useKeyboardShortcuts(
         // Found a matching action — prevent default and handle it. A repeat of
         // a run-once action is still claimed, so the held chord reaches nothing.
         e.preventDefault();
-        if (e.repeat && IGNORES_KEY_REPEAT.has(action)) return;
+        if (e.repeat && (inPage || IGNORES_KEY_REPEAT.has(action))) return;
         handler();
         return;
       }

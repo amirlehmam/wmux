@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, KeyboardEvent, ChangeEvent } from 'react';
+import { useState, useRef, useCallback, useEffect, KeyboardEvent, ChangeEvent } from 'react';
 import { useT } from '../../i18n';
 import type { BrowserEngine } from '../../../shared/types';
 
@@ -21,6 +21,11 @@ interface AddressBarProps {
   onStop: () => void;
   onDevTools?: () => void;
   onMoveToWorkspace?: () => void;
+  agentConnected?: boolean;
+  presentation?: 'page' | 'dashboard';
+  onToggleDashboard?: () => void;
+  onNewTab?: () => void;
+  focusRequest?: number;
 }
 
 export default function AddressBar({
@@ -37,10 +42,35 @@ export default function AddressBar({
   onStop,
   onDevTools,
   onMoveToWorkspace,
+  agentConnected = false,
+  presentation = 'page',
+  onToggleDashboard,
+  onNewTab,
+  focusRequest = 0,
 }: AddressBarProps) {
   const t = useT();
   const [editingUrl, setEditingUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    inputRef.current?.focus();
+    setEditingUrl('');
+  }, [focusRequest]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const outside = (e: PointerEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false); };
+    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [menuOpen]);
 
   const displayUrl = editingUrl !== null ? editingUrl : url;
 
@@ -77,19 +107,9 @@ export default function AddressBar({
   );
 
   const isAgent = engine === 'agent';
-  // In agent mode the remote page's history lives in a Chrome this pane cannot
-  // reach, so back/forward arrive disabled (BrowserPane forces the flags) and
-  // say why rather than looking broken. Reload addresses the viewer, which is
-  // the only thing in the webview at that point.
-  const backTitle = isAgent
-    ? t('addressBar.backAgent', 'History is not available while the agent drives the browser')
-    : t('addressBar.back', 'Back');
-  const forwardTitle = isAgent
-    ? t('addressBar.backAgent', 'History is not available while the agent drives the browser')
-    : t('addressBar.forward', 'Forward');
-  const reloadTitle = isAgent
-    ? t('addressBar.reloadViewer', 'Reload the activity viewer (does not reload the page the agent is on)')
-    : t('addressBar.reload', 'Reload');
+  const backTitle = t('addressBar.back', 'Back');
+  const forwardTitle = t('addressBar.forward', 'Forward');
+  const reloadTitle = t('addressBar.reload', 'Reload');
 
   return (
     <div className="browser-address-bar">
@@ -115,11 +135,12 @@ export default function AddressBar({
       </button>
       <button
         className="browser-address-bar__btn"
-        onClick={isLoading ? onStop : onReload}
-        title={isLoading ? t('addressBar.stop', 'Stop') : reloadTitle}
-        aria-label={isLoading ? t('addressBar.stop', 'Stop') : t('addressBar.reload', 'Reload')}
+        disabled={isAgent && !agentConnected}
+        onClick={!isAgent && isLoading ? onStop : onReload}
+        title={!isAgent && isLoading ? t('addressBar.stop', 'Stop') : reloadTitle}
+        aria-label={!isAgent && isLoading ? t('addressBar.stop', 'Stop') : t('addressBar.reload', 'Reload')}
       >
-        {isLoading ? '\u2715' : '\u21BB'}
+        {!isAgent && isLoading ? '\u2715' : '\u21BB'}
       </button>
       {onEngineChange && (
         <div
@@ -147,7 +168,7 @@ export default function AddressBar({
           </button>
         </div>
       )}
-      {onDevTools && (
+      {onDevTools && !isAgent && (
         <button
           className="browser-address-bar__btn"
           onClick={onDevTools}
@@ -157,6 +178,9 @@ export default function AddressBar({
           &#9881;
         </button>
       )}
+      {isAgent && <span className={`browser-address-bar__connection${agentConnected ? ' browser-address-bar__connection--live' : ''}`}
+        role="status" aria-label={agentConnected ? t('browser.agent.connected', 'Page connected') : t('browser.agent.disconnected', 'Page disconnected')}
+        title={agentConnected ? t('browser.agent.connected', 'Page connected') : t('browser.agent.disconnected', 'Page disconnected')} />}
       <input
         ref={inputRef}
         className="browser-address-bar__url"
@@ -170,6 +194,18 @@ export default function AddressBar({
         autoCorrect="off"
         autoCapitalize="off"
       />
+      {isAgent && <div className="browser-address-bar__menu" ref={menuRef}>
+        <button type="button" className="browser-address-bar__btn" aria-label={t('browser.agent.menu', 'Browser menu')}
+          aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>…</button>
+        {menuOpen && <div className="browser-address-bar__menu-items">
+          <button type="button" disabled={!agentConnected} onClick={() => { setMenuOpen(false); onNewTab?.(); }}>
+            {t('browser.agent.newTab', 'New tab')}
+          </button>
+          <button type="button" onClick={() => { setMenuOpen(false); onToggleDashboard?.(); }}>
+            {presentation === 'page' ? t('browser.agent.showDashboard', 'Show dashboard') : t('browser.agent.returnToPage', 'Return to page')}
+          </button>
+        </div>}
+      </div>}
     </div>
   );
 }

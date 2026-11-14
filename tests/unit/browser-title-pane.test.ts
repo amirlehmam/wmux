@@ -3,8 +3,9 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { create } from 'zustand';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PaneId, SplitNode, SurfaceId, SurfaceRef } from '../../src/shared/types';
+import type { AgentViewerBridge, AgentViewerEvent, PaneId, SplitNode, SurfaceId, SurfaceRef } from '../../src/shared/types';
 import BrowserPane from '../../src/renderer/components/Browser/BrowserPane';
+import { beginAgentBrowserHandoff, clearAgentBrowserHandoff } from '../../src/renderer/store/agent-browser-handoff';
 import SplitPreviewOverlay from '../../src/renderer/components/SplitPane/SplitPreviewOverlay';
 import SurfaceTabBar from '../../src/renderer/components/SplitPane/SurfaceTabBar';
 
@@ -46,6 +47,7 @@ let root: ReturnType<typeof createRoot>;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   Object.assign(HTMLElement.prototype, webviewApi);
   container = document.createElement('div');
   document.body.append(container);
@@ -53,10 +55,12 @@ beforeEach(() => {
 });
 afterEach(() => {
   act(() => root.unmount());
+  clearAgentBrowserHandoff('surf-b');
   container.remove();
   for (const key of Object.keys(webviewApi)) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[key];
   delete (window as unknown as { wmux?: unknown }).wmux;
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 type PaneProps = React.ComponentProps<typeof BrowserPane>;
@@ -120,22 +124,32 @@ describe('BrowserPane reports the page title', () => {
 
 describe('BrowserPane in agent mode', () => {
   function agentBridge(disableResult: { url?: string } | null = { url: PAGE }) {
+    let listener: (event: AgentViewerEvent) => void;
+    const viewer: AgentViewerBridge = {
+      attach: vi.fn(async () => {}), detach: vi.fn(), ack: vi.fn(), input: vi.fn(), action: vi.fn(async () => {}),
+      onEvent: (callback) => { listener = callback; return vi.fn(); },
+    };
     (window as unknown as { wmux: unknown }).wmux = {
+      agentViewer: viewer,
       agentBrowser: {
         enable: vi.fn(async () => ({ installed: true, dashboardUrl: 'http://127.0.0.1:4848/?port=9300' })),
         status: vi.fn(async () => ({ dashboardAvailable: true })),
         disable: vi.fn(async () => disableResult),
-        currentUrl: vi.fn(async () => ({ url: PAGE })),
       },
+    };
+    return (message: AgentViewerEvent['message']) => {
+      const token = vi.mocked(viewer.attach).mock.calls.at(-1)![1];
+      act(() => listener({ surfaceId: 'surf-b', token, revision: 1, message }));
     };
   }
   const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 
-  it('labels the tab from the page the agent was sent to', async () => {
-    agentBridge();
+  it('labels the tab from the authoritative streamed active tab', async () => {
+    const emit = agentBridge();
     const onTitleChange = renderPane({ engine: 'agent' });
     await settle();
-    expect(onTitleChange).toHaveBeenLastCalledWith('127.0.0.1:5208');
+    emit({ type: 'tabs', tabs: [{ tabId: 't1', active: true, title: 'Agent Page A', url: PAGE }] });
+    expect(onTitleChange).toHaveBeenLastCalledWith('Agent Page A');
   });
 
   it("never publishes the dashboard's own title or clears on its navigation", async () => {
@@ -148,21 +162,29 @@ describe('BrowserPane in agent mode', () => {
     expect(onTitleChange).not.toHaveBeenCalled();
   });
 
-  it('moves the label when the agent navigates', async () => {
-    agentBridge();
-    const onTitleChange = renderPane({ engine: 'agent' });
+  it('follows streamed URL/title changes and ignores inactive tab titles', async () => {
+    const emit = agentBridge();
+    const onUrlChange = vi.fn();
+    const onTitleChange = renderPane({ engine: 'agent', onUrlChange });
     await settle();
-    act(() => { window.dispatchEvent(new CustomEvent('wmux:browser-navigate', { detail: { surfaceId: 'surf-b', url: 'https://example.com/x' } })); });
-    await settle();
-    expect(onTitleChange).toHaveBeenCalledWith('example.com');
+    emit({ type: 'url', url: 'https://example.com/x' });
+    emit({ type: 'tabs', tabs: [
+      { tabId: 't1', active: false, title: 'Inactive', url: PAGE },
+      { tabId: 't2', active: true, title: 'Agent Page B', url: 'https://example.com/x' },
+    ] });
+    expect(onTitleChange).toHaveBeenLastCalledWith('Agent Page B');
+    expect(onTitleChange).not.toHaveBeenCalledWith('Inactive');
+    expect(onUrlChange).toHaveBeenLastCalledWith('https://example.com/x');
   });
 
   it('restores the title when leaving needs no navigation, as after cancelling setup', async () => {
     agentBridge();
+    vi.mocked(window.wmux.agentBrowser.enable).mockResolvedValue({ installed: false });
     const onTitleChange = vi.fn();
     const render = (engine: 'agent' | 'web') => act(() => root.render(React.createElement(BrowserPane, { surfaceId: 'surf-b', initialUrl: PAGE, engine, onTitleChange })));
     render('agent');
     await settle();
+    beginAgentBrowserHandoff('surf-b');
     render('web');
     await settle();
     expect(onTitleChange).toHaveBeenLastCalledWith('Page A');
@@ -175,6 +197,7 @@ describe('BrowserPane in agent mode', () => {
     const render = (engine: 'agent' | 'web') => act(() => root.render(React.createElement(BrowserPane, { surfaceId: 'surf-b', initialUrl: PAGE, engine, onTitleChange })));
     render('agent');
     await settle();
+    beginAgentBrowserHandoff('surf-b');
     render('web');
     await settle();
     expect(onTitleChange).toHaveBeenLastCalledWith('');

@@ -70,7 +70,7 @@ function constMs(src: string, name: string): number {
 /** How long v2-browser lets ONE agent-browser invocation run, per verb. */
 function agentVerbBudget(verb: string): number {
   if (verb === 'open') return constMs(v2Browser, 'AGENT_NAVIGATE_MS');
-  if (verb === 'wait') return constMs(v2Browser, 'AGENT_WAIT_MS');
+  if (verb === 'wait') return constMs(v2Browser, 'AGENT_WAIT_MS') + constMs(v2Browser, 'AGENT_WAIT_GUARD_MS');
   return constMs(v2Browser, 'AGENT_VERB_MS');
 }
 

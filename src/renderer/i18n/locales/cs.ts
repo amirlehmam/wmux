@@ -943,8 +943,6 @@ export const cs: Translation = {
   'addressBar.engineWebTitle': 'Procházejte web v tomto panelu. wmux ovládá stránku přímo — nic dalšího se neinstaluje.',
   'addressBar.engineAgentTitle':
     'Předejte tuto kartu skutečnému Chromu mimo wmux a zde sledujte, co v něm agent dělá. Vyžaduje jednorázovou instalaci.',
-  'addressBar.backAgent': 'Historie není dostupná, když prohlížeč ovládá agent',
-  'addressBar.reloadViewer': 'Znovu načíst přehled aktivity (neobnoví stránku, kterou používá agent)',
   'browser.blank.title': 'Není otevřená žádná stránka',
   'browser.blank.hint': 'Zadejte adresu URL nahoře nebo nastavte úvodní stránku v Nastavení → Prohlížeč.',
   'agentBrowser.setupTitle': 'Nechte agenta ovládat skutečný Chrome',

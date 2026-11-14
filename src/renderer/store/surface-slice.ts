@@ -5,6 +5,7 @@ import { findLeaf, removeLeaf, splitNode, getAllPaneIds } from './split-utils';
 import { killSurfacePty } from './pty-teardown';
 import { forceResumeOnSpawn } from '../hooks/claude-resume-command';
 import { WorkspaceSlice } from './workspace-slice';
+import { beginAgentBrowserHandoff, canApplyAgentBrowserReadback, clearAgentBrowserHandoff, invalidateAgentBrowserReadback } from './agent-browser-handoff';
 
 // ─── PR badge teardown (issue #4, continued) ──────────────────────────────────
 //
@@ -822,6 +823,35 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     const leaf = findLeaf(ws.splitTree, paneId);
     if (!leaf) return;
 
+    const surface = leaf.surfaces.find((s) => s.id === surfaceId);
+    if (surface?.type === 'browser' && 'browserEngine' in patch && patch.browserEngine !== surface.browserEngine) {
+      if (patch.browserEngine === 'agent') clearAgentBrowserHandoff(surfaceId);
+      else if (surface.browserEngine === 'agent') {
+        const handoff = beginAgentBrowserHandoff(surfaceId);
+        void handoff.then((result) => {
+          if (!result?.url || !canApplyAgentBrowserReadback(surfaceId, handoff)) return;
+          // The view may be absent, or the surface may have moved while Chrome
+          // closed. Persist readback only into this still-Web surface, wherever
+          // it now lives; a later engine switch/real close invalidates it.
+          for (const currentWs of get().workspaces) {
+            for (const currentPaneId of getAllPaneIds(currentWs.splitTree)) {
+              const currentLeaf = findLeaf(currentWs.splitTree, currentPaneId);
+              const current = currentLeaf?.surfaces.find((s) => s.id === surfaceId);
+              if (currentLeaf && current?.type === 'browser' && current.browserEngine !== 'agent') {
+                // Apply readback directly: routing this through updateSurface's
+                // navigation fence would invalidate the view's matching answer.
+                get().updateSplitTree(currentWs.id, patchLeaf(currentWs.splitTree, currentPaneId, {
+                  surfaces: currentLeaf.surfaces.map((s) => s.id === surfaceId ? { ...s, url: result.url } : s),
+                }));
+                return;
+              }
+            }
+          }
+        });
+      }
+    }
+    if (surface?.type === 'browser' && surface.browserEngine !== 'agent'
+      && 'url' in patch && patch.url !== surface.url) invalidateAgentBrowserReadback(surfaceId);
     const newSurfaces = leaf.surfaces.map((s) => (s.id === surfaceId ? { ...s, ...patch } : s));
     const updatedTree = patchLeaf(ws.splitTree, paneId, { surfaces: newSurfaces });
     updateSplitTree(workspaceId, updatedTree);

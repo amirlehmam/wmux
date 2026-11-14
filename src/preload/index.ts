@@ -3,6 +3,7 @@ import * as os from 'os';
 import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, type UpdateTriggerResult,
   type KeepAwakeMode, type KeepAwakeState, type SessionSaveRequest,
   type WorktreeCloseMode, type WorktreeInspectResult, type WorktreeRemoveResult,
+  type AgentViewerBridge, type AgentViewerEvent,
 } from '../shared/types';
 import type { BrowserHistory } from '../shared/browser-history';
 import type { BrowserMenuAction, BrowserMenuItem } from '../shared/browser-context-menu';
@@ -529,6 +530,20 @@ contextBridge.exposeInMainWorld('wmux', {
   // Which engine backs a browser surface, and the setup flow for the one that
   // needs an external binary. Separate from `cdp` above: those verbs act on a
   // surface's engine, these change it.
+  agentViewer: {
+    attach: (surfaceId, token) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_VIEWER_ATTACH, surfaceId, token),
+    reconnect: (surfaceId, previousToken, token) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_VIEWER_RECONNECT, surfaceId, previousToken, token),
+    reportFailure: (surfaceId, token, revision, failure) => ipcRenderer.send(IPC_CHANNELS.AGENT_VIEWER_FAILURE, surfaceId, token, revision, failure),
+    detach: (surfaceId, token) => ipcRenderer.send(IPC_CHANNELS.AGENT_VIEWER_DETACH, surfaceId, token),
+    ack: (surfaceId, token, id, drawn) => ipcRenderer.send(IPC_CHANNELS.AGENT_VIEWER_ACK, surfaceId, token, id, drawn),
+    input: (surfaceId, token, revision, input) => ipcRenderer.send(IPC_CHANNELS.AGENT_VIEWER_INPUT, surfaceId, token, revision, input),
+    action: (surfaceId, token, revision, action) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_VIEWER_ACTION, surfaceId, token, revision, action),
+    onEvent: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, event: AgentViewerEvent) => callback(event);
+      ipcRenderer.on(IPC_CHANNELS.AGENT_VIEWER_EVENT, handler);
+      return () => { ipcRenderer.removeListener(IPC_CHANNELS.AGENT_VIEWER_EVENT, handler); };
+    },
+  } satisfies AgentViewerBridge,
   agentBrowser: {
     /** `{ installed, dashboardAvailable }` — asked whenever a pane enters agent mode. */
     status: (): Promise<{ installed: boolean; dashboardAvailable: boolean }> =>
@@ -544,25 +559,9 @@ contextBridge.exposeInMainWorld('wmux', {
       currentUrl?: string,
     ): Promise<{ installed: boolean; dashboardUrl?: string; sessionName?: string }> =>
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_ENABLE, surfaceId, currentUrl),
-    /** Close the session, returning where it was so `web` can pick up there. Safe to call twice. */
-    disable: (surfaceId: string): Promise<{ url?: string }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_DISABLE, surfaceId),
-    /**
-     * Where the session's Chrome actually is. `{}` when it cannot be read.
-     *
-     * The pane polls this in agent mode because the agent navigates the real
-     * browser on its own, so the last URL the PANE asked for stops being true
-     * the moment it does — and the address bar would go on showing it.
-     */
-    currentUrl: (surfaceId: string): Promise<{ url?: string }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_CURRENT_URL, surfaceId),
-    /**
-     * Navigate an already-live session. Not `enable`: this neither re-acquires
-     * the dashboard nor re-binds the stream, both of which `enable` does and
-     * neither of which navigation needs.
-     */
-    open: (surfaceId: string, url: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_OPEN, surfaceId, url),
+    /** Web teardown returns the URL; explicit restart skips readback and rejects a failed close so it can be retried. */
+    disable: (surfaceId: string, forRestart?: boolean): Promise<{ url?: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_DISABLE, surfaceId, forRestart),
     /** Open a terminal pane running the install, so its output is readable. */
     install: (): Promise<{ started: boolean }> =>
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_BROWSER_INSTALL),

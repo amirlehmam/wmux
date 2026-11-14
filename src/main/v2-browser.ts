@@ -22,8 +22,8 @@
 import * as fs from 'fs';
 import { BrowserWindow } from 'electron';
 import { cdpBridge } from './ipc-handlers';
-import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
-import { acquireDashboardFor, sessionRegistry } from './agent-browser-runtime';
+import { unwrapAgentData, type RunResult } from './agent-browser-cli';
+import { acquireDashboardFor, ensureStartedSession, runAgentBrowserForSession, withDeadline } from './agent-browser-runtime';
 import type { AgentSession } from './agent-browser-session';
 import { toAgentBrowserArgv } from './agent-browser-verbs';
 import { keepRenderingLeases } from './browser-keep-rendering';
@@ -222,13 +222,13 @@ async function engineForSurface(surfaceId: string): Promise<BrowserEngine> {
  * calling `loadURL` and shows a distinct no-dashboard card, so the interstitial
  * is never painted. This log is the main-side half of the same story.
  */
-function agentTargetFor(surfaceId: string): BrowserTarget {
+async function agentTargetFor(surfaceId: string): Promise<BrowserTarget> {
   // Deliberately NOT awaited — see above. `.catch` is what keeps an unawaited
   // rejection from surfacing as an unhandled promise rejection.
   acquireDashboardFor(surfaceId).catch((err: Error) => {
     console.warn('[wmux] agent-browser dashboard did not start:', err?.message);
   });
-  return { kind: 'agent', session: sessionRegistry.ensure(surfaceId as SurfaceId) };
+  return { kind: 'agent', session: await ensureStartedSession(surfaceId as SurfaceId) };
 }
 
 /**
@@ -251,6 +251,18 @@ function agentTargetFor(surfaceId: string): BrowserTarget {
  * missing wcId as "my browser died" and dropping a live #62 binding.
  */
 export async function resolveBrowserTarget(caller?: string): Promise<BrowserTarget | null> {
+  // The public CLI budgets already reserve 5s for readiness. Shared UI startup
+  // may continue after this request gives up, but its requested verb must not.
+  const outcome = await withDeadline<{ target: BrowserTarget | null } | { error: unknown }>(
+    resolveBrowserTargetWithinBudget(caller).then((target) => ({ target }), (error: unknown) => ({ error })),
+    5000,
+    { error: new Error('Browser readiness timed out after 5s. The session may still be starting; retry the command once the page is ready.') },
+  );
+  if ('error' in outcome) throw outcome.error;
+  return outcome.target;
+}
+
+async function resolveBrowserTargetWithinBudget(caller?: string): Promise<BrowserTarget | null> {
   const bound = caller ? callerBrowserSurface.get(caller) : undefined;
   if (bound && (await engineForSurface(bound)) === 'agent') return agentTargetFor(bound);
 
@@ -410,51 +422,6 @@ function agentFailure(method: string, res: RunResult): Error {
 }
 
 /**
- * The one sentence describing a `browser.wait` whose per-call timeout cannot
- * survive into agent-browser's argv — or null when nothing is being dropped.
- *
- * Pure, and returns the message rather than printing it, because the diagnostic
- * has TWO destinations and they are not interchangeable. `console.warn` reaches
- * main's log, which is what a maintainer reads after the fact (`wmux
- * crash-report` tails it); the V2 reply reaches the caller, which is the only
- * place the person who actually typed the timeout is looking. `wmux browser
- * wait e1 5000` is a separate process that prints the JSON reply and nothing
- * else, so a console-only warning is invisible in every packaged build — it
- * only ever showed up under `npm run dev`.
- *
- * This lives in the impure dispatch layer, NOT in `toAgentBrowserArgv`, on
- * purpose. The verb translator is pure and its tests deliberately PIN that the
- * timeout is dropped from the argv (there is no `--timeout` flag on
- * agent-browser's `wait <selector>` — only the global
- * AGENT_BROWSER_DEFAULT_TIMEOUT); adding a diagnostic there would either couple
- * a pure function to its callers' output or force the tests to relax that pin.
- * Here the resolved engine and the original params are both in hand, so the
- * warning is produced exactly once, only for the agent engine, and the argv the
- * translator returns is unchanged. `timeout: 0` is a real value a direct V2
- * caller can send, so the finite check keeps it in scope (`Number.isFinite(0)`
- * is true) rather than reading it as absent. The ref-only and timeout-only
- * forms stay quiet: ref-only carries no timeout to lose, and timeout-only is
- * represented as `wait <ms>`, so nothing is dropped.
- */
-export function unrepresentableWaitTimeout(method: string, params: any): string | null {
-  if (
-    method === 'browser.wait' &&
-    typeof params?.ref === 'string' &&
-    params.ref.length > 0 &&
-    typeof params?.timeout === 'number' &&
-    Number.isFinite(params.timeout)
-  ) {
-    return (
-      `browser.wait was given a ${params.timeout}ms per-call timeout alongside ref ` +
-      `"${params.ref}", but agent-browser's \`wait\` CLI has no per-call timeout flag — ` +
-      `the timeout is dropped and the ref is still awaited under agent-browser's global ` +
-      `default (AGENT_BROWSER_DEFAULT_TIMEOUT).`
-    );
-  }
-  return null;
-}
-
-/**
  * Run one browser verb against an already-resolved target. Shared by the
  * single-command and batch paths so there's one source of truth (and no deeply
  * nested handler maps).
@@ -466,8 +433,6 @@ export async function runBrowserCommandForTarget(
   deps: BrowserDeps,
 ): Promise<any> {
   if (target.kind === 'agent') {
-    const warning = unrepresentableWaitTimeout(method, params);
-    if (warning) console.warn(`[wmux] agent-browser: ${warning}`);
     // Built FIRST, before anything is spawned: an unsupported verb must cost a
     // rejected message, not a Chrome round-trip. `toAgentBrowserArgv` throws
     // the identical -32601 the web switch below does, which is what makes the
@@ -475,12 +440,7 @@ export async function runBrowserCommandForTarget(
     const argv = toAgentBrowserArgv(method, params, target.session.sessionName);
     const res = await deps.runAgent(argv, agentTimeoutFor(method, params));
     if (!res.ok) throw agentFailure(method, res);
-    const shaped = await agentResultShape(method, res);
-    // Rides back on the reply, not only into main's log: the caller is another
-    // process whose whole view of this command is the JSON it prints. Attached
-    // only in the case that is ALREADY divergent between the engines, so the
-    // two engines still answer byte-identically everywhere they agree.
-    return warning ? { ...shaped, warning } : shaped;
+    return agentResultShape(method, res);
   }
 
   const { wcId } = target;
@@ -544,18 +504,24 @@ export async function runBrowserCommandForTarget(
  *   navigate — 30000, matching cdp-bridge's own navigate budget; CLI allows 40000.
  *   wait     — the caller's own timeout when given, else 10000, matching
  *              cdp-bridge's wait(); the CLI scales its deadline the same way.
+ *              Plus AGENT_WAIT_GUARD_MS for the session's identity checks,
+ *              which spawn native processes around every command: without it
+ *              `wait e3 1000` times out on the checks alone. Only wait gets
+ *              it, because only wait has slack to spare (the others are
+ *              already sized to include the checks).
  *   the rest — 4000. The CLI allows 10000 total for them, and readiness can
  *              legitimately eat 5000 of it (`pollSurfaceWcId`), so anything
  *              larger could not be reported.
  */
 const AGENT_NAVIGATE_MS = 30000;
 const AGENT_WAIT_MS = 10000;
+const AGENT_WAIT_GUARD_MS = 3000;
 const AGENT_VERB_MS = 4000;
 
 function agentTimeoutFor(method: string, params: any): number {
   if (method === 'browser.navigate') return AGENT_NAVIGATE_MS;
   if (method === 'browser.wait') {
-    return typeof params?.timeout === 'number' ? params.timeout : AGENT_WAIT_MS;
+    return (typeof params?.timeout === 'number' ? params.timeout : AGENT_WAIT_MS) + AGENT_WAIT_GUARD_MS;
   }
   return AGENT_VERB_MS;
 }
@@ -563,13 +529,7 @@ function agentTimeoutFor(method: string, params: any): number {
 /** The real machine behind `BrowserDeps`. Every production call uses this. */
 const defaultDeps: BrowserDeps = {
   bridge: cdpBridge,
-  runAgent: async (argv, timeoutMs) => {
-    const binary = agentBrowserPath();
-    if (!binary) {
-      throw new Error('agent-browser is not installed — open a browser tab in agent mode to install it');
-    }
-    return runAgentBrowser(binary, argv, timeoutMs);
-  },
+  runAgent: runAgentBrowserForSession,
   keepRendering: async (wcId) => keepRenderingLeases.touch(wcId, cdpBridge.surfaceIdFor(wcId)),
 };
 

@@ -74,7 +74,7 @@ import {
 import { grantFilePath, isFilePathGranted } from './file-grants';
 import { readMarkdownImage } from './markdown-image';
 import { getAwakeManager, isKeepAwakeMode } from './awake-manager';
-import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
+import { agentBrowserPath, unwrapAgentData, observedBrowserReplacement, type RunResult } from './agent-browser-cli';
 // The process-wide singletons. Constructing a second SessionRegistry or
 // DashboardDaemon here would hand the same stream port to two surfaces and let
 // either daemon stop the dashboard out from under the other — see the header of
@@ -85,10 +85,16 @@ import {
   closeSessionFor,
   dashboardDaemon,
   ensureBindableSession,
+  ensureStartedSession,
+  initializeAgentBrowserControl,
+  runManagedAgentBrowser,
+  withAgentSessionTeardown,
+  SESSION_CLOSE_TIMEOUT_MS,
   releaseDashboardFor,
   sessionRegistry,
 } from './agent-browser-runtime';
-import type { AgentSession } from './agent-browser-session';
+import { SURFACE_ID_RE, type AgentSession } from './agent-browser-session';
+import { createAgentBrowserViewer } from './agent-browser-viewer';
 import { resolveSurfaceEnv } from './surface-env';
 import { readGuestHistory } from './browser-history-restore';
 
@@ -228,6 +234,8 @@ function ownSurface(surfaceId: SurfaceId, webContents: Electron.WebContents): vo
  * on Windows it does not die with wmux either (issue #139).
  */
 export function closeAgentBrowserSession(surfaceId: SurfaceId): void {
+  agentViewer.forget(surfaceId);
+  void releaseDashboardFor(surfaceId).catch(() => {});
   closeSessionFor(surfaceId, agentBrowserTeardownDeps).catch(() => {
     /* teardown is best-effort by construction; see closeSessionByName */
   });
@@ -254,6 +262,10 @@ function forgetSurface(surfaceId: SurfaceId): void {
  * renderer-side `disable`) does not get to run. `webContents 'destroyed'` is
  * the only teardown signal main receives for that case.
  */
+const agentViewer = createAgentBrowserViewer({
+  readClipboard: () => clipboard.readText(),
+  writeClipboard: (text) => clipboard.writeText(text),
+});
 const agentBrowserOwners = new Map<SurfaceId, number>();
 const observedAgentWebContents = new Set<number>();
 
@@ -336,52 +348,6 @@ export function reapOrphanedPtys(): void {
 // close, release) is the part most likely to be wrong, and it must be testable
 // with no Chrome, no dashboard and no ports.
 
-/**
- * Open the session's pinned tab, optionally at `currentUrl`.
- *
- * `--pin-tab` binds the session to its own CDP target. Without it a second
- * pane's session can attach to the tab this one is driving, and two agents
- * silently share one page.
- *
- * `about:blank` is dropped rather than passed through: it is what a browser
- * surface reports when it has never navigated anywhere, and handing it to
- * agent-browser would spend a page load arriving at the same nothing.
- */
-export function agentBrowserOpenArgv(sessionName: string, currentUrl?: string): string[] {
-  const target = currentUrl && currentUrl !== 'about:blank' ? [currentUrl] : [];
-  return ['--session', sessionName, '--pin-tab', 'open', ...target];
-}
-
-/**
- * The environment that pins a session's stream to the port wmux allocated.
- *
- * Load-bearing for the pane, not optional telemetry: the dashboard deep-link in
- * `AgentSession.dashboardUrl` is `?port=<streamPort>`, so a session streaming
- * anywhere else renders an empty dashboard.
- *
- * This has to be an ENV VAR on the launching `open`, and there is no second
- * option. Streaming is already enabled by the time a session opens, on an
- * OS-assigned port, so the obvious `stream enable --port` is rejected outright
- * — measured against 0.35.0:
- *
- *     stream enable --port 9300 → exit 1, "✗ Streaming is already enabled"
- *     stream status             → "Streaming enabled on ws://127.0.0.1:61379"
- *
- * whereas launching the session with the documented variable set gives
- * "Streaming enabled on ws://127.0.0.1:9300, Connected: true", and the
- * dashboard's own /api/sessions then reports `{"port":9300,...}` for it. The
- * variable is only read when the session's browser is LAUNCHED, which is why it
- * belongs on the `open` call and not on any later invocation.
- */
-export function agentBrowserStreamEnv(streamPort: number): NodeJS.ProcessEnv {
-  return { AGENT_BROWSER_STREAM_PORT: String(streamPort) };
-}
-
-/** Read the page back before closing, so flipping to `web` lands where the agent was. */
-export function agentBrowserGetUrlArgv(sessionName: string): string[] {
-  return ['--session', sessionName, 'get', 'url'];
-}
-
 export function agentBrowserCloseArgv(sessionName: string): string[] {
   return ['--session', sessionName, 'close'];
 }
@@ -447,80 +413,7 @@ export interface AgentBrowserDeps {
   ensureSession: (surfaceId: SurfaceId) => AgentSession | Promise<AgentSession>;
   getSession: (surfaceId: SurfaceId) => AgentSession | undefined;
   releaseSession: (surfaceId: SurfaceId) => AgentSession | undefined;
-}
-
-/**
- * Schemes `agentBrowserOpen` will put on a command line.
- *
- * Deliberately the same set `READBACK_SCHEMES` accepts, so a URL read back out
- * of a session can always be handed straight back to it. The check is a
- * boundary, not politeness: this value arrives from the renderer and becomes a
- * positional argument to agent-browser, so anything not anchored to a known
- * scheme — a bare `--flag`, a `-x`, an empty string — would be parsed as part
- * of the command rather than as a target.
- */
-const OPEN_SCHEMES = /^(https?|file|about):/i;
-
-/**
- * Where the session's Chrome actually is right now.
- *
- * The pane cannot answer this itself: in agent mode its webview shows the
- * dashboard, while the page lives in a Chrome outside wmux that the AGENT
- * drives. Without this the address bar can only show the last URL the pane
- * asked for, which stops being true the moment the agent clicks a link.
- *
- * Every failure answers `{}` rather than throwing. This is polled, and a
- * transient CLI failure must degrade to "the bar keeps its last value", not to
- * a rejected IPC call once every few seconds.
- */
-export async function agentBrowserCurrentUrl(
-  surfaceId: SurfaceId,
-  deps: AgentBrowserDeps,
-): Promise<{ url?: string }> {
-  // No session ⇒ the surface is not in agent mode (or never got that far).
-  // Deliberately `getSession`, never `ensureSession`: a read must not create.
-  const session = deps.getSession(surfaceId);
-  if (!session) return {};
-  const binary = deps.binary();
-  if (!binary) return {};
-  try {
-    const url = readBackUrl(await deps.run(binary, agentBrowserGetUrlArgv(session.sessionName)));
-    return url ? { url } : {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Navigate the session. The address bar's Enter key, in agent mode.
- *
- * Separate from `enableAgentBrowser` because the pane used to reuse `enable`
- * for this, and `enable` does two things navigation does not need: it acquires
- * a dashboard reference and it relaunches the open with the stream env. Neither
- * has any effect on a session that is already live (the stream port is read at
- * browser LAUNCH and cannot move afterwards — see `agentBrowserStreamEnv`), so
- * both were pure cost on every keystroke-committed URL.
- *
- * Requires an EXISTING session: "navigate" is meaningless for a surface that is
- * not in agent mode, and creating one here would let a stray renderer call
- * start a Chrome for a pane the user never flipped.
- */
-export async function agentBrowserOpen(
-  surfaceId: SurfaceId,
-  url: string,
-  deps: AgentBrowserDeps,
-): Promise<{ ok: boolean }> {
-  const session = deps.getSession(surfaceId);
-  if (!session) return { ok: false };
-  if (typeof url !== 'string' || !OPEN_SCHEMES.test(url)) return { ok: false };
-  const binary = deps.binary();
-  if (!binary) return { ok: false };
-  try {
-    const res = await deps.run(binary, agentBrowserOpenArgv(session.sessionName, url));
-    return { ok: res.ok };
-  } catch {
-    return { ok: false };
-  }
+  initializeControl?: (session: AgentSession, binary: string) => Promise<void>;
 }
 
 export async function enableAgentBrowser(
@@ -533,59 +426,62 @@ export async function enableAgentBrowser(
   // and throwing here would turn an offer to install into a broken pane.
   if (!binary) return { installed: false };
 
-  try {
-    await deps.acquireDashboard(surfaceId);
-  } catch (err) {
-    // The dashboard is OBSERVABILITY. agent-browser drives Chrome perfectly
-    // well without its viewer, so refusing to enable because the viewer did
-    // not start would trade a degraded feature for a broken one. Same call as
-    // v2-browser.ts's `agentTargetFor` makes, for the same reason.
-    console.warn('[wmux] agent-browser dashboard did not start:', (err as Error)?.message);
-  }
-
-  const session = await deps.ensureSession(surfaceId);
-  // ONE invocation, carrying the stream port in its environment. There is
-  // deliberately no follow-up `stream enable --port`: streaming is already on
-  // by the time this returns, so that call fails outright, and the port it
-  // would have tried to set is decided when the browser LAUNCHES — i.e. here.
-  // See `agentBrowserStreamEnv`.
-  await deps.run(
-    binary,
-    agentBrowserOpenArgv(session.sessionName, currentUrl),
-    agentBrowserStreamEnv(session.streamPort),
-  );
+  void deps.acquireDashboard(surfaceId).catch((err: Error) => {
+    console.warn('[wmux] agent-browser dashboard did not start:', err?.message);
+  });
+  const session = await ensureStartedSession(surfaceId, currentUrl, deps);
   return { installed: true, dashboardUrl: session.dashboardUrl, sessionName: session.sessionName };
 }
 
 export async function disableAgentBrowser(
   surfaceId: SurfaceId,
   deps: AgentBrowserDeps,
+  forRestart = false,
+  skipReadback = false,
 ): Promise<AgentBrowserDisableResult> {
-  // Idempotent by design: the renderer calls this on unmount, which fires for
-  // panes that never entered agent mode at all. No session means there is
-  // nothing to close and — since `enableAgentBrowser` only ever acquires the
-  // dashboard on the path that also creates one — nothing to release either.
-  const session = deps.getSession(surfaceId);
-  if (!session) return {};
+  return withAgentSessionTeardown(surfaceId, async (startup) => {
+    if (forRestart && startup?.closeError) throw new Error(startup.closeError);
+    // Explicit fresh-start retries must not lose the close target on failure.
+    const session = forRestart ? deps.getSession(surfaceId) : deps.releaseSession(surfaceId);
+    if (!session) {
+      if (startup) await deps.releaseDashboard(surfaceId);
+      return {};
+    }
 
-  const binary = deps.binary();
-  let url: string | undefined;
-  if (binary) {
-    // Read BEFORE close; the page is gone afterwards. Failure here is
-    // tolerated rather than propagated: not knowing where the agent was is a
-    // worse handoff, but refusing to tear the session down over it would
-    // strand a Chrome and a dashboard reference for the rest of the session.
-    try {
-      url = readBackUrl(await deps.run(binary, agentBrowserGetUrlArgv(session.sessionName)));
-    } catch { /* see above */ }
-    try {
-      await deps.run(binary, agentBrowserCloseArgv(session.sessionName));
-    } catch { /* see above */ }
-  }
+    const binary = deps.binary();
+    if (forRestart) {
+      if (!binary) throw new Error('agent-browser is not installed; the existing session could not be closed.');
+      if (!startup?.closed) {
+        const result = await deps.run(binary, agentBrowserCloseArgv(session.sessionName));
+        if (!result.ok) throw new Error(result.stderr.trim() || 'Could not close the existing browser session. Retry Start new session.');
+      }
+      deps.releaseSession(surfaceId);
+      await deps.releaseDashboard(surfaceId);
+      return {};
+    }
+    let url: string | undefined;
+    // A cancelled startup already closed Chrome. Reading its URL now can
+    // launch another browser; the renderer's known URL is the safe fallback.
+    if (binary && !startup?.closed) {
+      let replaced = false;
+      if (!startup && !skipReadback) {
+        try {
+          const result = await deps.run(binary, ['--session', session.sessionName, '--json', 'get', 'url']);
+          replaced = observedBrowserReplacement(result);
+          url = readBackUrl(result);
+        } catch { /* Readback must not prevent the close. */ }
+      }
+      // A read may itself relaunch Chrome. Never chain a close of that replacement.
+      if (!replaced) {
+        try {
+          await deps.run(binary, agentBrowserCloseArgv(session.sessionName));
+        } catch { /* Teardown remains best-effort. */ }
+      }
+    }
 
-  deps.releaseSession(surfaceId);
-  await deps.releaseDashboard(surfaceId);
-  return url ? { url } : {};
+    await deps.releaseDashboard(surfaceId);
+    return url ? { url } : {};
+  });
 }
 
 /**
@@ -600,16 +496,38 @@ export async function disableAgentBrowser(
  */
 const agentBrowserDeps: AgentBrowserDeps = {
   binary: () => agentBrowserPath(),
-  run: (binary, argv, env) => runAgentBrowser(binary, argv, undefined, env),
+  run: (binary, argv, env) => runManagedAgentBrowser(binary, argv, argv.at(-1) === 'close' ? SESSION_CLOSE_TIMEOUT_MS : undefined, env),
+  initializeControl: initializeAgentBrowserControl,
   acquireDashboard: (surfaceId) => acquireDashboardFor(surfaceId),
   releaseDashboard: (surfaceId) => releaseDashboardFor(surfaceId),
-  // The bindable variant, not the bare `ensure()`. This is the one path that
-  // launches a browser with `AGENT_BROWSER_STREAM_PORT` set, so it is the one
-  // path where the port has to be a port the OS will actually let us have.
+  // UI enable joins the same bindable startup as CLI-first routing.
   ensureSession: (surfaceId) => ensureBindableSession(surfaceId),
   getSession: (surfaceId) => sessionRegistry.get(surfaceId),
   releaseSession: (surfaceId) => sessionRegistry.release(surfaceId),
 };
+
+export function isAgentDesktopSender(
+  event: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
+  manager: WindowManager,
+): boolean {
+  const id = manager.idForWebContents(event.sender);
+  const win = id ? manager.getWindow(id) : null;
+  return !!win && !win.isDestroyed() && win.webContents === event.sender
+    && event.senderFrame === event.sender.mainFrame && !event.sender.isDestroyed();
+}
+
+/** The renderer owns the split tree; an affirmative engine lookup also proves surface ownership. */
+export async function authorizeAgentBrowserSurface(
+  event: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
+  manager: WindowManager,
+  id: unknown,
+): Promise<void> {
+  if (!isAgentDesktopSender(event, manager) || typeof id !== 'string' || !SURFACE_ID_RE.test(id)) {
+    throw new Error('Unauthorized browser owner');
+  }
+  const engine = await event.sender.executeJavaScript(`window.__wmux_getBrowserEngine?.(${JSON.stringify(id)}) ?? 'web'`);
+  if (engine !== 'agent' || !isAgentDesktopSender(event, manager)) throw new Error('Unauthorized browser owner');
+}
 
 export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstance?: CDPProxy): void {
   registerDictationIpc({
@@ -1060,18 +978,86 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
 
   ipcMain.handle(
     IPC_CHANNELS.AGENT_BROWSER_ENABLE,
-    (event, surfaceId: string, currentUrl?: string) => {
-      // Record the owner BEFORE the session exists. A window destroyed while
-      // `enable` is still in flight would otherwise sweep nothing and leak the
-      // Chrome that call is in the middle of starting.
+    async (event, surfaceId: string, currentUrl?: string) => {
+      await authorizeAgentBrowserSurface(event, windowManager, surfaceId);
+      if (!agentViewer.canEnable(surfaceId as SurfaceId)) {
+        throw new Error('Browser session is paused. Retry Start new session before enabling it.');
+      }
       ownAgentBrowserSurface(surfaceId as SurfaceId, event.sender);
-      return enableAgentBrowser(surfaceId as SurfaceId, currentUrl, agentBrowserDeps);
+      const result = await enableAgentBrowser(surfaceId as SurfaceId, currentUrl, agentBrowserDeps);
+      try { await authorizeAgentBrowserSurface(event, windowManager, surfaceId); }
+      catch (err) { closeAgentBrowserSession(surfaceId as SurfaceId); throw err; }
+      return result;
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_DISABLE, (_event, surfaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_DISABLE, async (event, surfaceId: string, forRestart?: boolean) => {
+    if (!isAgentDesktopSender(event, windowManager) || agentBrowserOwners.get(surfaceId as SurfaceId) !== event.sender.id) {
+      throw new Error('Unauthorized browser owner');
+    }
+    if (forRestart !== undefined && typeof forRestart !== 'boolean') throw new Error('Invalid restart request');
+    if (forRestart) {
+      const session = sessionRegistry.get(surfaceId as SurfaceId);
+      await authorizeAgentBrowserSurface(event, windowManager, surfaceId);
+      if (agentBrowserOwners.get(surfaceId as SurfaceId) !== event.sender.id || sessionRegistry.get(surfaceId as SurfaceId) !== session) {
+        throw new Error('Browser session changed before restart. Retry Start new session.');
+      }
+    }
+    // Loss evidence must survive forgetting the viewer: native URL reads can launch Chrome.
+    const skipReadback = !agentViewer.canAct(surfaceId as SurfaceId);
+    if (forRestart) {
+      const completeRestart = agentViewer.pauseForRestart(surfaceId as SurfaceId);
+      const result = await disableAgentBrowser(surfaceId as SurfaceId, agentBrowserDeps, true, skipReadback);
+      completeRestart();
+      return result;
+    }
+    agentViewer.forget(surfaceId as SurfaceId);
     agentBrowserOwners.delete(surfaceId as SurfaceId);
-    return disableAgentBrowser(surfaceId as SurfaceId, agentBrowserDeps);
+    return disableAgentBrowser(surfaceId as SurfaceId, agentBrowserDeps, false, skipReadback);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_VIEWER_ATTACH, async (event, id: string, token: string) => {
+    if (!isAgentDesktopSender(event, windowManager) || typeof id !== 'string' || !SURFACE_ID_RE.test(id)) {
+      throw new Error('Unauthorized browser owner');
+    }
+    await agentViewer.attachAuthorized(id as SurfaceId, event.sender.id, token, async () => {
+      await authorizeAgentBrowserSurface(event, windowManager, id);
+      ownAgentBrowserSurface(id as SurfaceId, event.sender);
+    }, (message) => {
+      if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.AGENT_VIEWER_EVENT, message);
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.AGENT_VIEWER_RECONNECT, async (event, id: SurfaceId, previousToken: string, token: string) => {
+    if (!isAgentDesktopSender(event, windowManager) || agentBrowserOwners.get(id) !== event.sender.id) {
+      throw new Error('Unauthorized browser owner');
+    }
+    if (typeof previousToken !== 'string') throw new Error('Invalid viewer recovery');
+    await agentViewer.attachAuthorized(id, event.sender.id, token, async () => {
+      await authorizeAgentBrowserSurface(event, windowManager, id);
+      if (agentBrowserOwners.get(id) !== event.sender.id) throw new Error('Unauthorized browser owner');
+    }, (message) => {
+      if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.AGENT_VIEWER_EVENT, message);
+    }, previousToken);
+  });
+  const viewerSender = (event: Pick<Electron.IpcMainEvent, 'sender' | 'senderFrame'>, id: SurfaceId): boolean =>
+    isAgentDesktopSender(event, windowManager) && agentBrowserOwners.get(id) === event.sender.id;
+  ipcMain.on(IPC_CHANNELS.AGENT_VIEWER_DETACH, (event, id: SurfaceId, token: string) => {
+    if (isAgentDesktopSender(event, windowManager)) agentViewer.detach(id, event.sender.id, token);
+  });
+  ipcMain.on(IPC_CHANNELS.AGENT_VIEWER_FAILURE, (event, id: SurfaceId, token: string, revision: number, failure: unknown) => {
+    if (viewerSender(event, id)) agentViewer.reportFailure(id, event.sender.id, token, revision, failure);
+  });
+  ipcMain.on(IPC_CHANNELS.AGENT_VIEWER_ACK, (event, id: SurfaceId, token: string, frame: number, drawn: boolean) => {
+    if (viewerSender(event, id)) agentViewer.ack(id, event.sender.id, token, frame, drawn);
+  });
+  ipcMain.on(IPC_CHANNELS.AGENT_VIEWER_INPUT, (event, id: SurfaceId, token: string, revision: number, input: unknown) => {
+    if (viewerSender(event, id)) agentViewer.input(id, event.sender.id, token, revision, input);
+  });
+  ipcMain.handle(IPC_CHANNELS.AGENT_VIEWER_ACTION, (event, id: SurfaceId, token: string, revision: number, action: unknown) => {
+    // Attach already verified the live surface. Keep actions in the same IPC
+    // receive order as input, then recheck subscription/session at dispatch.
+    if (!viewerSender(event, id)) throw new Error('Unauthorized browser owner');
+    return agentViewer.action(id, event.sender.id, token, revision, action);
   });
 
   /**
@@ -1105,13 +1091,6 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       return false;
     }
   });
-
-  /** Where the agent actually is — see the channel's note in types.ts. */
-  ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_CURRENT_URL, (_event, surfaceId: string) =>
-    agentBrowserCurrentUrl(surfaceId as SurfaceId, agentBrowserDeps));
-
-  ipcMain.handle(IPC_CHANNELS.AGENT_BROWSER_OPEN, (_event, surfaceId: string, url: string) =>
-    agentBrowserOpen(surfaceId as SurfaceId, url, agentBrowserDeps));
 
   /**
    * Install agent-browser in a REAL terminal pane, not a hidden child process.
