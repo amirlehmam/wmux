@@ -55,6 +55,7 @@ export const hi: Translation = {
   'palette.category.workspaces': 'वर्कस्पेस',
   'palette.category.themes': 'थीम',
   'palette.openMarkdown': 'Markdown फ़ाइल खोलें…',
+  'palette.allPanesLocked': 'सभी पैन लॉक हैं। फ़ाइल खोलने के लिए किसी एक को अनलॉक करें।',
   'palette.current': 'वर्तमान',
   // टाइटल बार
   'titlebar.help': 'सहायता / ट्यूटोरियल',
@@ -168,6 +169,9 @@ export const hi: Translation = {
   'surfaceTab.close': 'बंद करें',
   'surfaceTab.closeOthers': 'अन्य बंद करें',
   'surfaceTab.closeToRight': 'दाईं ओर के सभी बंद करें',
+  'surfaceTab.lockPane': 'पैन लॉक करें',
+  'surfaceTab.unlockPane': 'पैन अनलॉक करें',
+  'surfaceTab.lockedTooltip': 'पैन लॉक है: एजेंट और खींचे गए टैब इसमें नहीं आ सकते। अनलॉक करने के लिए क्लिक करें।',
   // ट्यूटोरियल ओवरले
   'tutorial.skip': 'छोड़ें',
   'tutorial.previous': 'पिछला',

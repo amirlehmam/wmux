@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { getAllWindows, getFocusedWindow } = vi.hoisted(() => ({
   getAllWindows: vi.fn(() => [] as unknown[]),
@@ -86,6 +86,64 @@ describe('layout.agents over the bridge', () => {
     const reply = await call({ count: 2, caller: 'surf-1' });
     expect(getAllWindows).toHaveBeenCalled();
     expect(reply.error?.code).toBe(-32000);
+  });
+});
+
+describe('layout.grid renderer errors over the bridge (AC18)', () => {
+  const callGrid = (result: unknown) => {
+    getAllWindows.mockReturnValue([{ webContents: { executeJavaScript: vi.fn(async () => result) }, isDestroyed: () => false }]);
+    getFocusedWindow.mockReturnValue(null);
+    return new Promise<{ ok?: unknown; error?: { code: number; message: string } }>((resolve) => {
+      handleBridgeV2('layout.grid', { count: 4 }, (ok) => resolve({ ok }), (code, message) => resolve({ error: { code, message } }));
+    });
+  };
+
+  afterEach(() => {
+    getAllWindows.mockReset();
+    getAllWindows.mockReturnValue([]);
+    getFocusedWindow.mockReset();
+    getFocusedWindow.mockReturnValue(null);
+  });
+
+  it('turns an { error } result into -32000 with that message', async () => {
+    const reply = await callGrid({ error: 'Workspace has locked panes; unlock them or use layout agents' });
+    expect(reply.error).toEqual({ code: -32000, message: 'Workspace has locked panes; unlock them or use layout agents' });
+  });
+
+  it('passes a normal result through', async () => {
+    const result = { newPaneIds: ['pane-x'], newPanes: [] };
+    expect((await callGrid(result)).ok).toEqual(result);
+  });
+});
+
+describe('surface.create renderer errors over the bridge (AC25)', () => {
+  const callCreate = (result: unknown) => {
+    getAllWindows.mockReturnValue([{ webContents: { executeJavaScript: vi.fn(async () => result) }, isDestroyed: () => false }]);
+    getFocusedWindow.mockReturnValue(null);
+    return new Promise<{ ok?: unknown; error?: { code: number; message: string } }>((resolve) => {
+      handleBridgeV2('surface.create', {}, (ok) => resolve({ ok }), (code, message) => resolve({ error: { code, message } }));
+    });
+  };
+
+  afterEach(() => {
+    getAllWindows.mockReset();
+    getAllWindows.mockReturnValue([]);
+    getFocusedWindow.mockReset();
+    getFocusedWindow.mockReturnValue(null);
+  });
+
+  it('turns an { error } result into -32000 with that message', async () => {
+    const reply = await callCreate({ error: 'No unlocked panes in workspace ws-1' });
+    expect(reply.error).toEqual({ code: -32000, message: 'No unlocked panes in workspace ws-1' });
+  });
+
+  it('passes a created surface through', async () => {
+    const result = { surfaceId: 'surf-x', paneId: 'pane-x' };
+    expect((await callCreate(result)).ok).toEqual(result);
+  });
+
+  it('still reports a null result as the generic missing-workspace error', async () => {
+    expect((await callCreate(null)).error).toEqual({ code: -32000, message: 'No active workspace or panes' });
   });
 });
 

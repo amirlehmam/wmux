@@ -103,6 +103,18 @@ have acted on the answer, exactly as you would if the user had typed it:
 wmux report-agent --unblocked
 ```
 
+## Locked panes
+
+The user can lock a pane to keep its tabs as they are. `wmux list-panes` and
+`wmux tree` show `"locked": true` on it. `wmux agent spawn --pane <locked>` is
+refused (`Pane <id> is locked`), and without `--pane` an agent, `agent spawn-batch`
+and `wmux new-surface` all land in an unlocked pane, failing with `No unlocked
+panes in workspace <id>` when every pane is locked. `wmux layout grid` refuses a
+workspace that has a locked pane: use `wmux layout agents`, which leaves the
+anchor and its lock alone. `wmux markdown <file>`, like any other placement you
+don't aim at a pane, skips locked panes too. Don't try to work around a lock; ask
+the user.
+
 ## Subagents and background tasks
 
 Subagents that wmux already tracks through your agent's integration appear

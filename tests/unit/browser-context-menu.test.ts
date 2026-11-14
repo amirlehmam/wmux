@@ -280,4 +280,22 @@ describe('newBrowserTabPane (#439)', () => {
       children: [leaf('pane-a', ['terminal']), leaf('pane-b', ['markdown'])] };
     expect(newBrowserTabPane(tree as any)).toBe('pane-a');
   });
+
+  it('skips a locked pane that holds a browser tab', () => {
+    const tree = { type: 'branch', direction: 'horizontal', ratio: 0.5,
+      children: [leaf('pane-a', ['terminal']), { ...leaf('pane-b', ['browser']), locked: true }] };
+    expect(newBrowserTabPane(tree as any)).toBe('pane-a');
+  });
+
+  it('prefers an unlocked pane with a browser tab over a locked first pane', () => {
+    const tree = { type: 'branch', direction: 'horizontal', ratio: 0.5,
+      children: [{ ...leaf('pane-a', ['terminal']), locked: true }, leaf('pane-b', ['browser'])] };
+    expect(newBrowserTabPane(tree as any)).toBe('pane-b');
+  });
+
+  it('returns null when every pane is locked', () => {
+    const tree = { type: 'branch', direction: 'horizontal', ratio: 0.5,
+      children: [{ ...leaf('pane-a', ['terminal']), locked: true }, { ...leaf('pane-b', ['browser']), locked: true }] };
+    expect(newBrowserTabPane(tree as any)).toBeNull();
+  });
 });

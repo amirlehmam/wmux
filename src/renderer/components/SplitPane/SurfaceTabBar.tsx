@@ -5,7 +5,7 @@ import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { surfaceAgentState } from '../../store/agent-rollup';
-import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret, IconSurface, IconDuplicate } from './icons';
+import { IconAdd, IconSplit, IconSplitDown, IconClose, IconCaret, IconSurface, IconDuplicate, IconLock } from './icons';
 import type { SurfaceDragPayload, SurfaceDragPreviewTarget } from './drag-preview-types';
 import { parseSurfaceDragData } from './surface-drag-preview';
 import { getSurfaceLabel } from './surface-label';
@@ -45,6 +45,8 @@ interface SurfaceTabBarProps {
   onSurfaceDragEnd?: () => void;
   isDragActive?: boolean;
   isFocused?: boolean;
+  locked?: boolean;
+  onToggleLock?: () => void;
 }
 
 function surfaceIcon(type: string, isAgent: boolean): React.ReactNode {
@@ -79,6 +81,8 @@ export default function SurfaceTabBar({
   onSurfaceDragEnd,
   isDragActive,
   isFocused,
+  locked,
+  onToggleLock,
 }: SurfaceTabBarProps) {
   const t = useT();
   const [draggingSurfaceId, setDraggingSurfaceId] = useState<SurfaceId | null>(null);
@@ -311,6 +315,9 @@ export default function SurfaceTabBar({
     }
   }, [onSurfaceDragPreviewTarget, paneId, surfaceDrag]);
 
+  // Read from the prop: dataTransfer.getData is empty during dragover.
+  const refusesMoveIn = locked === true && surfaceDrag?.sourcePaneId !== paneId;
+
   // Always show tab bar (even for 1 surface — like browser tabs)
   return (
     <div
@@ -324,6 +331,10 @@ export default function SurfaceTabBar({
       }}
       onDragOver={(e) => {
         e.preventDefault();
+        if (refusesMoveIn) {
+          e.dataTransfer.dropEffect = 'none';
+          return;
+        }
         e.dataTransfer.dropEffect = 'move';
         requestCenterPreview();
       }}
@@ -431,6 +442,10 @@ export default function SurfaceTabBar({
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                if (refusesMoveIn) {
+                  e.dataTransfer.dropEffect = 'none';
+                  return;
+                }
                 const rect = e.currentTarget.getBoundingClientRect();
                 const midpoint = rect.left + rect.width / 2;
                 const newInsertIndex = e.clientX < midpoint ? index : index + 1;
@@ -484,6 +499,17 @@ export default function SurfaceTabBar({
       </div>
 
       <div className="surface-tab-bar__cluster">
+        {locked && (
+          <button
+            className="surface-tab-bar__ctl surface-tab-bar__ctl--lock"
+            onClick={onToggleLock}
+            tabIndex={-1}
+            aria-label={t('surfaceTab.unlockPane', 'Unlock pane')}
+            title={t('surfaceTab.lockedTooltip', 'Pane locked: agents and moved tabs can’t enter. Click to unlock.')}
+          >
+            <IconLock />
+          </button>
+        )}
         {/* New (split-button): main click = default terminal, caret = type/shell/profile menu */}
         <div className="surface-tab-bar__group">
           <button
@@ -656,7 +682,7 @@ export default function SurfaceTabBar({
           role="menu"
           style={{
             left: Math.min(ctxMenu.x, window.innerWidth - 200),
-            top: Math.min(ctxMenu.y, window.innerHeight - 120),
+            top: Math.min(ctxMenu.y, window.innerHeight - 150),
           }}
         >
           <div
@@ -693,6 +719,15 @@ export default function SurfaceTabBar({
               onClick={() => { setStartupFor(ctxMenu.surfaceId); setCtxMenu(null); }}
             >
               {t('surfaceTab.startupCommand', 'Startup command…')}
+            </div>
+          )}
+          {onToggleLock && (
+            <div
+              className="ctx-menu__item"
+              role="menuitem"
+              onClick={() => { onToggleLock(); setCtxMenu(null); }}
+            >
+              {locked ? t('surfaceTab.unlockPane', 'Unlock pane') : t('surfaceTab.lockPane', 'Lock pane')}
             </div>
           )}
           <div className="ctx-menu__separator" />

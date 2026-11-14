@@ -8,6 +8,7 @@
  */
 import type { PaneId, SplitNode, WorkspaceInfo } from '../../shared/types';
 import { isFileEditTool } from '../../shared/agent-tools';
+import { isPaneLocked, unlockedPaneIds } from '../store/pane-lock';
 
 /** The bottom-most pane in the split tree (follows the last child of vertical splits). */
 export function findBottomPane(node: SplitNode): PaneId {
@@ -37,9 +38,11 @@ export interface AutoOpenDiffContext {
  */
 export function autoOpenDiffPane(tool: unknown, ws: WorkspaceInfo, ctx: AutoOpenDiffContext): PaneId | null {
   if (!ctx.enabled || ctx.dismissed || !isFileEditTool(tool)) return null;
-  const paneId = findBottomPane(ws.splitTree);
-  const leaf = findLeaf(ws.splitTree, paneId);
-  // One diff tab per bottom pane: a second edit refreshes the one already open.
-  if (!leaf || leaf.surfaces.some((s) => s.type === 'diff')) return null;
-  return paneId;
+  const hasDiff = (id: PaneId) => findLeaf(ws.splitTree, id)?.surfaces.some((s) => s.type === 'diff') ?? false;
+  const bottom = findBottomPane(ws.splitTree);
+  // One diff tab per target pane: a second edit refreshes the one already open.
+  if (!findLeaf(ws.splitTree, bottom) || hasDiff(bottom)) return null;
+  if (!isPaneLocked(ws.splitTree, bottom)) return bottom;
+  const fallback = unlockedPaneIds(ws.splitTree).at(-1);
+  return fallback && !hasDiff(fallback) ? fallback : null;
 }

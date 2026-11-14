@@ -1,4 +1,5 @@
 import type { PaneId, SurfaceId, WorkspaceId, WorkspaceInfo } from '../../../shared/types';
+import { isPaneLocked } from '../../store/pane-lock';
 import { previewMoveSurface, previewSplitAndMoveSurface } from '../../store/split-preview-utils';
 import type {
   SurfaceDragCommitOptions,
@@ -38,6 +39,9 @@ export function buildSurfaceDragPreview({
 
   const workspace = workspaces.find((candidate) => candidate.id === drag.workspaceId);
   if (!workspace || workspace.id !== activeWorkspaceId) return null;
+  if (pendingTarget.target === 'center' && isPaneLocked(workspace.splitTree, pendingTarget.targetPaneId)) {
+    return null;
+  }
 
   const result = pendingTarget.target === 'center'
     ? previewMoveSurface(workspace.splitTree, drag.sourcePaneId, drag.surfaceId, pendingTarget.targetPaneId)
@@ -66,11 +70,13 @@ export function getSurfaceDragDropDecision({
   sourcePaneId,
   targetPaneId,
   sourceSurfaceCount,
+  targetLocked = false,
 }: {
   target: 'edge' | 'center';
   sourcePaneId: PaneId;
   targetPaneId: PaneId;
   sourceSurfaceCount: number;
+  targetLocked?: boolean;
 }): SurfaceDragDropDecision {
   if (target === 'edge') {
     if (sourcePaneId === targetPaneId && sourceSurfaceCount === 1) {
@@ -80,7 +86,7 @@ export function getSurfaceDragDropDecision({
     return { action: 'commit', commitOptions: { clearZoom: true } };
   }
 
-  if (sourcePaneId === targetPaneId) {
+  if (sourcePaneId === targetPaneId || targetLocked) {
     return { action: 'cancel' };
   }
 

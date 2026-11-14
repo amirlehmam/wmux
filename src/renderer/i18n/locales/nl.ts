@@ -48,6 +48,7 @@ export const nl: Translation = {
   'palette.category.workspaces': 'Werkruimtes',
   'palette.category.themes': 'Thema\'s',
   'palette.openMarkdown': 'Markdown-bestand openen…',
+  'palette.allPanesLocked': 'Alle panelen zijn vergrendeld. Ontgrendel er één om een bestand te openen.',
   'palette.current': 'huidig',
   'titlebar.help': 'Help / Rondleiding',
   'titlebar.devtools': 'Ontwikkelaarstools in-/uitschakelen',
@@ -157,6 +158,9 @@ export const nl: Translation = {
   'surfaceTab.close': 'Sluiten',
   'surfaceTab.closeOthers': 'Overige sluiten',
   'surfaceTab.closeToRight': 'Rechts sluiten',
+  'surfaceTab.lockPane': 'Paneel vergrendelen',
+  'surfaceTab.unlockPane': 'Paneel ontgrendelen',
+  'surfaceTab.lockedTooltip': 'Paneel vergrendeld: agents en verplaatste tabbladen kunnen er niet in. Klik om te ontgrendelen.',
   // Introductierondleiding
   'tutorial.skip': 'Overslaan',
   'tutorial.previous': 'Vorige',

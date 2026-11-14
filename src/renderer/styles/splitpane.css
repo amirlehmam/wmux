@@ -292,6 +292,8 @@ html.wmux-transparent .split-divider--horizontal {
 .surface-tab-bar__ctl--new:hover { color: #5fb85f; background: rgba(95,184,95,0.12); }
 .surface-tab-bar__ctl--layout:hover { color: var(--ui-accent); background: rgba(var(--ui-accent-rgb), 0.12); }
 .surface-tab-bar__ctl--close:hover { color: #ff6b6b; background: rgba(255,100,100,0.14); }
+.surface-tab-bar__ctl--lock { color: var(--ui-accent); }
+.surface-tab-bar__ctl--lock:hover { background: rgba(var(--ui-accent-rgb), 0.12); }
 
 /* Use a compact dropdown instead of the split buttons in narrow panes. */
 @container (max-width: 300px) {

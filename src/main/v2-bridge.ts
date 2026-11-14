@@ -20,6 +20,9 @@ interface BridgeSpec {
   emptyOnNoWindow?: any;
   // Error message when the renderer returns a falsy result (creation methods).
   requireResult?: string;
+  // A renderer result of the shape `{ error: string }` becomes -32000 with that
+  // message. Checked before `requireResult` and `shape`, so it is never mistaken for success.
+  errorFromResult?: boolean;
   /**
    * Methods that act on "a workspace" with no id of their own to go by. They
    * fall back to the *active* workspace of whatever window they land on, which
@@ -251,6 +254,7 @@ const SPECS: Record<string, BridgeSpec> = {
   'layout.grid': {
     js: (p) => `window.__wmux_layoutGrid?.(${S(p || {})})`,
     requireResult: 'No active workspace or invalid anchor',
+    errorFromResult: true,
     callerScoped: true,
   },
   // `validate` runs first, so the renderer can assume `params` is an object.
@@ -269,6 +273,7 @@ const SPECS: Record<string, BridgeSpec> = {
   'surface.create': {
     js: (p) => `window.__wmux_createSurface?.(${S(p || {})})`,
     requireResult: 'No active workspace or panes',
+    errorFromResult: true,
     callerScoped: true,
   },
   'surface.close': {
@@ -328,6 +333,7 @@ function runBridge(spec: BridgeSpec, params: any, respond: Respond, respondError
         ? { ...params, workspaceId: target.workspaceId }
         : params;
       const result = await target.win.webContents.executeJavaScript(spec.js(scoped));
+      if (spec.errorFromResult && typeof result?.error === 'string') { respondError(-32000, result.error); return; }
       if (spec.requireResult && !result) { respondError(-32000, spec.requireResult); return; }
       respond(spec.shape ? spec.shape(result) : (result ?? { ok: true }));
     } catch (err: any) {

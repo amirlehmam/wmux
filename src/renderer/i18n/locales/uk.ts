@@ -55,6 +55,7 @@ export const uk: Translation = {
   'palette.category.workspaces': 'Робочі простори',
   'palette.category.themes': 'Теми',
   'palette.openMarkdown': 'Відкрити файл Markdown…',
+  'palette.allPanesLocked': 'Усі панелі заблоковано. Розблокуйте одну, щоб відкрити файл.',
   'palette.current': 'поточна',
   // Заголовок вікна
   'titlebar.help': 'Довідка / Навчання',
@@ -168,6 +169,9 @@ export const uk: Translation = {
   'surfaceTab.close': 'Закрити',
   'surfaceTab.closeOthers': 'Закрити інші',
   'surfaceTab.closeToRight': 'Закрити праворуч',
+  'surfaceTab.lockPane': 'Заблокувати панель',
+  'surfaceTab.unlockPane': 'Розблокувати панель',
+  'surfaceTab.lockedTooltip': 'Панель заблоковано: агенти й перенесені вкладки сюди не потраплять. Натисніть, щоб розблокувати.',
   // Оверлей навчання
   'tutorial.skip': 'Пропустити',
   'tutorial.previous': 'Назад',

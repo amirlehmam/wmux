@@ -41,6 +41,72 @@ describe('surface-slice', () => {
     return leafOf(ws.splitTree, paneId)!;
   }
 
+  describe('moveSurface into a locked pane', () => {
+    const secondPaneId = 'pane-test-2' as PaneId;
+
+    function splitIntoTwo() {
+      useStore.getState().addSurface(workspaceId, paneId, 'terminal');
+      const ws = useStore.getState().workspaces.find((w) => w.id === workspaceId)!;
+      useStore.getState().updateSplitTree(
+        workspaceId,
+        splitNode(ws.splitTree, paneId, secondPaneId, 'terminal', 'horizontal'),
+      );
+    }
+
+    const tree = () => useStore.getState().workspaces.find((w) => w.id === workspaceId)!.splitTree;
+
+    it('leaves the tree untouched (same reference) when the target is locked', () => {
+      splitIntoTwo();
+      useStore.getState().setPaneLocked(workspaceId, secondPaneId, true);
+      const before = tree();
+      const moved = leafOf(before, paneId)!.surfaces[0].id;
+
+      useStore.getState().moveSurface(workspaceId, paneId, moved, secondPaneId);
+
+      expect(tree()).toBe(before);
+      expect(leafOf(tree(), paneId)!.surfaces.some((s) => s.id === moved)).toBe(true);
+      expect(leafOf(tree(), secondPaneId)!.locked).toBe(true);
+    });
+
+    it('moves the tab once the target is unlocked again', () => {
+      splitIntoTwo();
+      useStore.getState().setPaneLocked(workspaceId, secondPaneId, true);
+      useStore.getState().setPaneLocked(workspaceId, secondPaneId, false);
+      const moved = leafOf(tree(), paneId)!.surfaces[0].id;
+
+      useStore.getState().moveSurface(workspaceId, paneId, moved, secondPaneId);
+
+      expect(leafOf(tree(), secondPaneId)!.surfaces.some((s) => s.id === moved)).toBe(true);
+    });
+
+    it('still lets a locked pane be the source of a move', () => {
+      splitIntoTwo();
+      useStore.getState().setPaneLocked(workspaceId, paneId, true);
+      const moved = leafOf(tree(), paneId)!.surfaces[0].id;
+
+      useStore.getState().moveSurface(workspaceId, paneId, moved, secondPaneId);
+
+      expect(leafOf(tree(), secondPaneId)!.surfaces.some((s) => s.id === moved)).toBe(true);
+      expect(leafOf(tree(), paneId)!.locked).toBe(true);
+    });
+
+    it('splitAndMoveSurface onto a locked pane edge makes a new unlocked pane and keeps the lock', () => {
+      splitIntoTwo();
+      useStore.getState().setPaneLocked(workspaceId, secondPaneId, true);
+      const lockedBefore = leafOf(tree(), secondPaneId)!.surfaces.map((s) => s.id);
+      const moved = leafOf(tree(), paneId)!.surfaces[0].id;
+
+      useStore.getState().splitAndMoveSurface(workspaceId, secondPaneId, paneId, moved, 'right');
+
+      const panes = getAllPaneIds(tree());
+      const created = panes.find((p) => p !== paneId && p !== secondPaneId)!;
+      expect(leafOf(tree(), created)!.surfaces.map((s) => s.id)).toContain(moved);
+      expect(leafOf(tree(), created)!.locked).toBeUndefined();
+      expect(leafOf(tree(), secondPaneId)!.locked).toBe(true);
+      expect(leafOf(tree(), secondPaneId)!.surfaces.map((s) => s.id)).toEqual(lockedBefore);
+    });
+  });
+
   describe('renameSurface', () => {
     it('sets customTitle on the target surface', () => {
       const id = currentLeaf().surfaces[0].id;

@@ -93,6 +93,7 @@ export const fr: Translation = {
   'palette.category.workspaces': 'Espaces de travail',
   'palette.category.themes': 'Thèmes',
   'palette.openMarkdown': 'Ouvrir un fichier Markdown…',
+  'palette.allPanesLocked': 'Tous les panneaux sont verrouillés. Déverrouillez-en un pour ouvrir un fichier.',
   'palette.openWorkspaceFile': 'Ouvrir un fichier de workspace… (wmux.workspace.json)',
   'palette.resetTerminalLeaveAlt': "Réinitialiser l'état du terminal (quitter l'écran alternatif)",
   'palette.current': 'actuel',
@@ -217,6 +218,9 @@ export const fr: Translation = {
   'surfaceTab.close': 'Fermer',
   'surfaceTab.closeOthers': 'Fermer les autres',
   'surfaceTab.closeToRight': 'Fermer ceux de droite',
+  'surfaceTab.lockPane': 'Verrouiller le panneau',
+  'surfaceTab.unlockPane': 'Déverrouiller le panneau',
+  'surfaceTab.lockedTooltip': 'Panneau verrouillé : les agents et les onglets déplacés ne peuvent pas y entrer. Cliquez pour déverrouiller.',
   // Tutoriel d'accueil
   'tutorial.skip': 'Passer',
   'tutorial.previous': 'Précédent',

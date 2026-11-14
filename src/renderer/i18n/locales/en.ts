@@ -133,6 +133,7 @@ export const en = {
   'palette.category.themes': 'Themes',
   'palette.category.layouts': 'Layouts',
   'palette.openMarkdown': 'Open Markdown File…',
+  'palette.allPanesLocked': 'All panes are locked. Unlock one to open a file.',
   'palette.openWorkspaceFile': 'Open workspace file… (wmux.workspace.json)',
   'palette.resetTerminalLeaveAlt': 'Reset terminal state (leave alternate screen)',
   'palette.saveCurrentLayout': 'Save current layout as new preset',
@@ -278,6 +279,9 @@ export const en = {
   'surfaceTab.close': 'Close',
   'surfaceTab.closeOthers': 'Close others',
   'surfaceTab.closeToRight': 'Close to the right',
+  'surfaceTab.lockPane': 'Lock pane',
+  'surfaceTab.unlockPane': 'Unlock pane',
+  'surfaceTab.lockedTooltip': 'Pane locked: agents and moved tabs can’t enter. Click to unlock.',
   // Tutorial overlay
   'tutorial.skip': 'Skip',
   'tutorial.previous': 'Previous',

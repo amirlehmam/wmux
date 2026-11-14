@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { PaneId, SplitNode, SurfaceId, WorkspaceId, QuickLaunchProfile, ShellInfo, engineOf } from '../../../shared/types';
 import { workspaceFallbackCwd } from '../../../shared/paths';
 import { activeTerminalShell, findLeaf, splitNode } from '../../store/split-utils';
+import { isPaneLocked } from '../../store/pane-lock';
 import KeptAliveTerminal from '../Terminal/KeptAliveTerminal';
 import BrowserPane from '../Browser/BrowserPane';
 import { ExplorerPanel } from '../Explorer/ExplorerPanel';
@@ -79,6 +80,7 @@ export default function PaneWrapper({
   const moveSurface = useStore((s) => s.moveSurface);
   const splitAndMoveSurface = useStore((s) => s.splitAndMoveSurface);
   const reorderSurface = useStore((s) => s.reorderSurface);
+  const setPaneLocked = useStore((s) => s.setPaneLocked);
   const shortcuts = useStore((s) => s.shortcuts);
   const workspace = useStore((s) => s.workspaces.find(w => w.id === workspaceId));
   const globalProfiles = useStore((s) => s.quickLaunchProfiles);
@@ -503,8 +505,15 @@ export default function PaneWrapper({
     }
   };
 
+  const locked = workspace ? isPaneLocked(workspace.splitTree, paneId) : false;
+
+  const handleToggleLock = () => {
+    if (activeWorkspaceId) setPaneLocked(activeWorkspaceId, paneId, !locked);
+  };
+
   const handleDropSurface = (sourcePaneId: PaneId, surfaceId: SurfaceId, targetPaneId: PaneId) => {
-    if (!activeWorkspaceId || targetPaneId !== paneId || sourcePaneId === targetPaneId) {
+    // Checked before onSurfaceDragCommit, which would clear zoom for a move that never happens.
+    if (!activeWorkspaceId || targetPaneId !== paneId || sourcePaneId === targetPaneId || locked) {
       onSurfaceDragEnd();
       return;
     }
@@ -667,6 +676,7 @@ export default function PaneWrapper({
         sourcePaneId,
         targetPaneId: paneId,
         sourceSurfaceCount: sourceLeaf.surfaces.length,
+        targetLocked: locked,
       });
 
       if (decision.action === 'cancel') {
@@ -684,6 +694,14 @@ export default function PaneWrapper({
   const handleDropZoneDragOver = (e: React.DragEvent, target: SurfaceDragPreviewTarget) => {
     e.preventDefault();
     e.stopPropagation();
+
+    if (target === 'center' && locked && surfaceDrag?.sourcePaneId !== paneId) {
+      e.dataTransfer.dropEffect = 'none';
+      // Still reported: buildSurfaceDragPreview turns it into null, which wipes a
+      // split preview left by an edge zone of this same pane.
+      if (surfaceDrag) onSurfaceDragPreviewTarget(paneId, target);
+      return;
+    }
     e.dataTransfer.dropEffect = 'move';
 
     if (!surfaceDrag) return;
@@ -745,6 +763,8 @@ export default function PaneWrapper({
         onSurfaceDragEnd={onSurfaceDragEnd}
         isDragActive={dragActive}
         isFocused={isFocused}
+        locked={locked}
+        onToggleLock={handleToggleLock}
       />
       <div className="pane-wrapper__content">
         {renderAllSurfaces()}
