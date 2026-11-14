@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, nativeImage, screen } from 'electron';
 import { v4 as uuid } from 'uuid';
 import os from 'os';
 import path from 'path';
-import type { WindowId } from '../shared/types';
+import { IPC_CHANNELS, type WindowId } from '../shared/types';
 import { loadSettings } from './settings-store';
 import { closeDialogCopy, decideClose } from './close-guard';
 import { rendererRecoveryCopy, isRecoverableGone, type RendererTrouble } from './renderer-recovery';
@@ -324,6 +324,14 @@ export class WindowManager {
       this.onVisibilityChanged?.();
     });
     win.on('show', () => this.onVisibilityChanged?.());
+    // A window losing focus as it closes can outlive its webContents.
+    const sendFocus = (focused: boolean) => {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.WINDOW_FOCUS_CHANGED, focused);
+      }
+    };
+    win.on('focus', () => sendFocus(true));
+    win.on('blur', () => sendFocus(false));
 
     const entry: WindowEntry = {
       id, window: win, transparent,

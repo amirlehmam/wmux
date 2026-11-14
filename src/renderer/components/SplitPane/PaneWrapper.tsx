@@ -749,10 +749,7 @@ export default function PaneWrapper({
       <div className="pane-wrapper__content">
         {renderAllSurfaces()}
         <NotificationRing visible={hasUnread} flashing={justFired} />
-        <div
-          className="pane-wrapper__unfocused-overlay"
-          style={{ opacity: isFocused ? 0 : 1 }}
-        />
+        <div className="pane-wrapper__unfocused-overlay" />
         <div className="pane-wrapper__drop-zones" onDragLeave={handleDropZonesDragLeave}>
           <div className="pane-drop-zone pane-drop-zone--left" onDragOver={(e) => handleDropZoneDragOver(e, 'left')} onDrop={(e) => handleEdgeDrop(e, 'left')} />
           <div className="pane-drop-zone pane-drop-zone--right" onDragOver={(e) => handleDropZoneDragOver(e, 'right')} onDrop={(e) => handleEdgeDrop(e, 'right')} />

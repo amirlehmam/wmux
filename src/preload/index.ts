@@ -575,6 +575,12 @@ contextBridge.exposeInMainWorld('wmux', {
     minimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
     maximize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
     isMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
+    isFocused: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_FOCUSED),
+    onFocusChange: (callback: (focused: boolean) => void) => {
+      const handler = (_event: any, focused: boolean) => callback(focused);
+      ipcRenderer.on(IPC_CHANNELS.WINDOW_FOCUS_CHANGED, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_FOCUS_CHANGED, handler);
+    },
     // Windows taskbar progress (OSC 9;4 aggregate). value 0-1, or -1 to remove.
     setProgress: (value: number, mode?: string) =>
       ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_PROGRESS, value, mode),

@@ -639,6 +639,21 @@ export default function App() {
     document.documentElement.classList.toggle('wmux-focus-mode', focusMode);
     try { localStorage.setItem('wmux-focus-mode', focusMode ? '1' : '0'); } catch { /* storage unavailable: keep the in-memory state */ }
   }, [focusMode]);
+  // A window without OS focus shows no focused pane, so two windows side by
+  // side do not both claim the keyboard. A class for the same reason as focus
+  // mode: no pane re-renders, and which pane is focused does not change.
+  useEffect(() => {
+    const api = window.wmux?.window;
+    if (!api?.onFocusChange) return;
+    const apply = (focused: boolean) =>
+      document.documentElement.classList.toggle('wmux-window-inactive', !focused);
+    const off = api.onFocusChange(apply);
+    api.isFocused?.().then(apply, () => { /* keep the default: active */ });
+    return () => {
+      off?.();
+      document.documentElement.classList.remove('wmux-window-inactive');
+    };
+  }, []);
   // The everyday strength of that same overlay, as a custom property for the
   // same reason: dragging the Settings slider re-renders no pane.
   const inactivePaneDim = useStore((s) => s.appearancePrefs.inactivePaneDim);
