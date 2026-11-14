@@ -111,7 +111,9 @@ refused (`Pane <id> is locked`), and without `--pane` an agent, `agent spawn-bat
 and `wmux new-surface` all land in an unlocked pane, failing with `No unlocked
 panes in workspace <id>` when every pane is locked. `wmux layout grid` refuses a
 workspace that has a locked pane: use `wmux layout agents`, which leaves the
-anchor and its lock alone. Don't try to work around a lock; ask the user.
+anchor and its lock alone. `wmux markdown <file>`, like any other placement you
+don't aim at a pane, skips locked panes too. Don't try to work around a lock; ask
+the user.
 
 ## Subagents and background tasks
 
