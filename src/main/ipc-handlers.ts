@@ -926,7 +926,9 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       notificationManager.showToast(data.title || 'wmux', data.text, () => {
         if (window && !window.isDestroyed()) {
           // Hidden to the tray (#442): a click on its toast brings it back.
+          if (window.isMinimized()) window.restore();
           if (!window.isVisible()) window.show();
+          window.moveTop();
           window.focus();
           window.webContents.send('notification:focus-surface', data.surfaceId);
         }
