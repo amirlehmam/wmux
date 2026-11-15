@@ -804,6 +804,14 @@ export const IPC_CHANNELS = {
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
+  /** Seed for WINDOW_FOCUS_CHANGED, which only reports changes. */
+  WINDOW_IS_FOCUSED: 'window:isFocused',
+  /**
+   * Main → renderer: the OS window gained or lost focus. From main because the
+   * renderer's own `blur` also fires when focus moves into a browser pane's
+   * `<webview>`, which is still this window.
+   */
+  WINDOW_FOCUS_CHANGED: 'window:focusChanged',
   WINDOW_SET_PROGRESS: 'window:setProgress',
   /** Flash this window's taskbar button — an agent started waiting on the user. */
   WINDOW_FLASH: 'window:flash',

@@ -75,6 +75,15 @@ html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
 html.wmux-transparent .pane-wrapper--focused {
   border-color: var(--wmux-pane-ring, rgba(var(--ui-accent-rgb), 0.3));
 }
+/* A window without OS focus (App.tsx sets the class) keeps its focused pane
+   but stops showing it: the ring and the active-tab accent fall back to what an
+   unfocused pane has, so only the window with the keyboard shows one. */
+html.wmux-window-inactive .pane-wrapper--focused {
+  border-color: var(--ui-border);
+}
+html.wmux-transparent.wmux-window-inactive .pane-wrapper--focused {
+  border-color: var(--wmux-pane-gutter, var(--ui-bg-2));
+}
 html.wmux-transparent .split-divider {
   background: var(--wmux-pane-gutter, var(--ui-bg-2));
 }
@@ -121,6 +130,11 @@ html.wmux-transparent .split-divider--horizontal {
   position: absolute; inset: 0; background: rgba(0, 0, 0, var(--wmux-inactive-pane-dim, 0.2));
   pointer-events: none; z-index: 5; transition: opacity 0.15s ease, background-color 0.2s ease;
 }
+/* In a window without OS focus the focused pane dims like the rest, since the
+   keyboard is in another window. A stylesheet rule rather than an inline
+   style so the window class can override it. */
+.pane-wrapper--focused .pane-wrapper__unfocused-overlay { opacity: 0; }
+html.wmux-window-inactive .pane-wrapper--focused .pane-wrapper__unfocused-overlay { opacity: 1; }
 /* Focus mode (titlebar button): the same overlay, much darker, and the
    unfocused panes' tab bars fade with it. Still pointer-events: none, so a
    click on a dimmed pane focuses it and the spotlight follows. */
@@ -216,6 +230,10 @@ html.wmux-transparent .split-divider--horizontal {
 .pane-wrapper--focused .surface-tab--active {
   background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-bg-3));
   border-color: color-mix(in srgb, var(--ui-accent) 38%, var(--ui-border));
+}
+html.wmux-window-inactive .pane-wrapper--focused .surface-tab--active {
+  background: var(--ui-bg-4);
+  border-color: transparent;
 }
 .surface-tab__label { pointer-events: none; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 .surface-tab__icon { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--ui-text-muted); }

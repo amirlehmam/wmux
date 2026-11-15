@@ -959,6 +959,9 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, (e) =>
     BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false
   );
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_FOCUSED, (e) =>
+    BrowserWindow.fromWebContents(e.sender)?.isFocused() ?? true
+  );
   // Window transparency (Win11 backdrop material). Applied to every window, not
   // just the sender: the pref is global, and a second window left opaque while
   // the first turned translucent reads as a bug.
