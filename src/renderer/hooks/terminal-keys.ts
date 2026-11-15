@@ -30,10 +30,34 @@ export interface TerminalKeyEvent {
  * event.key is still checked first: on Dvorak / Colemak the user presses the
  * key that *shows* C, which is a different physical key, and matching code
  * alone would break them.
+ *
+ * The compare ignores case, and says nothing about Shift. Case is not Shift:
+ * Caps Lock uppercases event.key with no Shift held (Ctrl+V arrives as 'V'),
+ * and Caps Lock + Shift lowercases it again (Ctrl+Shift+V arrives as 'v').
+ * Reading Shift off the case made Ctrl+V type a raw ^V and Ctrl+Shift+V paste
+ * twice whenever Caps Lock was on (#453). Callers that care about Shift ask
+ * `isBareCtrlLetter`, which reads the modifier flags.
  */
 export function isLetterKey(event: TerminalKeyEvent, letter: string, code: string): boolean {
-  if (event.key === letter) return true;
+  if (event.key.toLowerCase() === letter) return true;
   return event.code === code && !/^[a-z]$/i.test(event.key);
+}
+
+/**
+ * A keydown of Ctrl+`letter` and nothing else: no Shift, Alt or Meta.
+ *
+ * The terminal's own Ctrl+C (copy) and Ctrl+V (paste) branches use this, so
+ * the modified combos stay with whoever owns them: Ctrl+Shift+V is the
+ * configurable `paste` shortcut, and claiming it here as well pasted twice
+ * (#453); Ctrl+Alt is AltGr on Windows and produces characters.
+ */
+export function isBareCtrlLetter(event: TerminalKeyEvent, letter: string, code: string): boolean {
+  return event.type === 'keydown'
+    && event.ctrlKey
+    && !event.shiftKey
+    && !event.altKey
+    && !event.metaKey
+    && isLetterKey(event, letter, code);
 }
 
 /**
