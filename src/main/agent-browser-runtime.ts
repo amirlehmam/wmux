@@ -101,6 +101,7 @@ export function withAgentSessionWork<T>(
   session: AgentSession,
   work: (run: NativeCommandRunner) => T | Promise<T>,
   timeoutMs?: number,
+  viewer = false,
 ): Promise<T> {
   const entry = sessionControls.get(session.surfaceId);
   const checkSession = (): void => {
@@ -115,7 +116,7 @@ export function withAgentSessionWork<T>(
       await check?.();
       checkSession();
     }));
-  }, timeoutMs);
+  }, timeoutMs, viewer);
 }
 
 export function runAgentSessionCommand(session: AgentSession, argv: string[], timeoutMs: number): Promise<RunResult> {

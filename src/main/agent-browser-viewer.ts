@@ -52,11 +52,29 @@ interface Subscription {
   latest?: Extract<AgentViewerMessage, { type: 'frame' }>;
   nextFrame: number;
   queue: Promise<void>;
-  queued: number;
+  /** The newest queued move or wheel event, while later ones of the same kind can merge into it. */
+  mergeable?: QueuedInput;
+  /** Admitted presses whose release must be admitted too, or a key or button stays down. */
+  held: Set<string>;
 }
 
-// Bounds queued pointer/key data while a native operation is in flight.
-const MAX_QUEUED_WORK = 256;
+interface QueuedInput { input: AgentViewerInput; revision: number; workRevision: number }
+
+// Viewer work per session, well below the control queue's agent budget.
+// Counted per session because a detached subscription's jobs still wait there.
+const MAX_VIEWER_WORK = 64;
+const BUSY = 'The page is busy. Try again when the current page action is complete.';
+
+/** The press/release pair an input belongs to; moves, wheel and chars have none. */
+function gesture(input: AgentViewerInput): string | undefined {
+  if (input.type === 'input_mouse') {
+    return input.eventType === 'mousePressed' || input.eventType === 'mouseReleased' ? `mouse:${input.button}` : undefined;
+  }
+  return input.eventType === 'char' ? undefined : `key:${input.code || input.key || input.windowsVirtualKeyCode}`;
+}
+
+const releases = (input: AgentViewerInput): boolean =>
+  input.type === 'input_mouse' ? input.eventType === 'mouseReleased' : input.eventType === 'keyUp';
 // Windows quoting may double the encoded script; leave room for binary/session flags.
 const MAX_INSERT_SCRIPT_LENGTH = 12000;
 
@@ -113,6 +131,7 @@ export class AgentBrowserViewer {
   private attaching = new Map<string, { surfaceId: SurfaceId; owner: number; token: string }>();
   // A paused subscription has no socket, but recovery must still prove its owner/token.
   private leases = new Map<SurfaceId, { owner: number; token: string }>();
+  private viewerWork = new Map<AgentSession, number>();
 
   constructor(private deps: ViewerDeps) {}
 
@@ -177,7 +196,7 @@ export class AgentBrowserViewer {
       throw err;
     }
     const sub: Subscription = { surfaceId, owner, token, session, socket, emit, revision: 0,
-      ready: false, tabs: [], visible: true, workRevision: 0, nextFrame: 0, queue: Promise.resolve(), queued: 0 };
+      ready: false, tabs: [], visible: true, workRevision: 0, nextFrame: 0, queue: Promise.resolve(), held: new Set() };
     this.subscriptions.set(surfaceId, sub);
     socket.on('message', (data) => {
       if (!this.current(sub)) return;
@@ -313,13 +332,21 @@ export class AgentBrowserViewer {
     }
   }
 
-  /** Native mutations and stream input share receive order and stale-work fences. */
-  private enqueue(sub: Subscription, revision: number, requireFrame: boolean, work: (run: ViewerNativeRun) => void | Promise<void>): Promise<void> {
-    if (sub.queued >= MAX_QUEUED_WORK) {
-      if (this.current(sub) && sub.revision === revision) this.fail(sub, 'Page input queue is full. Input has been paused.');
-      return Promise.reject(new Error('Page input queue is full'));
-    }
-    sub.queued++;
+  private admits(sub: Subscription): boolean {
+    return (this.viewerWork.get(sub.session) ?? 0) < MAX_VIEWER_WORK;
+  }
+
+  /**
+   * Native mutations and stream input share receive order and stale-work fences.
+   * A full viewer budget refuses new work but never pauses the viewer: capacity
+   * is not a fault. `force` admits a release whose press was already admitted.
+   */
+  private enqueue(sub: Subscription, revision: number, requireFrame: boolean, work: (run: ViewerNativeRun) => void | Promise<void>, force = false): Promise<void> {
+    if (!force && !this.admits(sub)) return Promise.reject(new Error(BUSY));
+    const session = sub.session;
+    this.viewerWork.set(session, (this.viewerWork.get(session) ?? 0) + 1);
+    // Any other work is a barrier: later moves must not merge across it.
+    sub.mergeable = undefined;
     const workRevision = sub.workRevision;
     const execute = (native: ViewerNativeRun) => {
       if (!this.current(sub) || !sub.ready || sub.revision !== revision || sub.workRevision !== workRevision) throw new Error('Stale page action');
@@ -329,7 +356,11 @@ export class AgentBrowserViewer {
     const pending = this.deps.schedule
       ? this.deps.schedule(sub.session, execute)
       : sub.queue.then(() => execute(async (argv, check) => { check?.(); return this.deps.run(sub.session, argv); }));
-    const run = pending.finally(() => { sub.queued--; });
+    const run = pending.finally(() => {
+      const left = (this.viewerWork.get(session) ?? 1) - 1;
+      if (left > 0) this.viewerWork.set(session, left);
+      else this.viewerWork.delete(session);
+    });
     sub.queue = run.catch(() => {});
     return run;
   }
@@ -339,13 +370,35 @@ export class AgentBrowserViewer {
     const input = validatedViewerInput(raw);
     if (!sub?.ready || !sub.visible || sub.tabOperation || sub.revision !== revision || sub.presentedRevision !== revision
       || !input || sub.socket.readyState !== WebSocket.OPEN) return;
-    return this.enqueue(sub, revision, true, () => {
+    // Moves keep only the newest position; wheel steps add up. Both carry no
+    // press state, so merging changes no outcome, only how many steps arrive.
+    const merge = input.type === 'input_mouse' && (input.eventType === 'mouseMoved' || input.eventType === 'mouseWheel');
+    const tail = sub.mergeable;
+    if (merge && tail && tail.revision === revision && tail.workRevision === sub.workRevision && tail.input.type === 'input_mouse'
+      && tail.input.eventType === input.eventType && tail.input.modifiers === input.modifiers) {
+      tail.input = input.eventType === 'mouseWheel'
+        ? { ...input, deltaX: (tail.input.deltaX ?? 0) + (input.deltaX ?? 0), deltaY: (tail.input.deltaY ?? 0) + (input.deltaY ?? 0) }
+        : input;
+      return;
+    }
+    const pair = gesture(input);
+    const release = pair !== undefined && releases(input) && sub.held.has(pair);
+    if (!release && !this.admits(sub)) return;
+    if (pair) {
+      if (releases(input)) sub.held.delete(pair);
+      else sub.held.add(pair);
+    }
+    const queued: QueuedInput = { input, revision, workRevision: sub.workRevision };
+    const job = this.enqueue(sub, revision, true, () => {
+      if (sub.mergeable === queued) sub.mergeable = undefined;
       if (sub.socket.readyState !== WebSocket.OPEN || sub.socket.bufferedAmount > 65536) {
         this.fail(sub, 'Page input connection is stalled.');
         return;
       }
-      sub.socket.send(JSON.stringify(input));
-    }).catch(() => {});
+      sub.socket.send(JSON.stringify(queued.input));
+    }, true).catch(() => {}).finally(() => { if (sub.mergeable === queued) sub.mergeable = undefined; });
+    if (merge) sub.mergeable = queued;
+    return job;
   }
 
   async action(id: SurfaceId, owner: number, token: string, revision: number, raw: unknown): Promise<void> {
@@ -563,7 +616,7 @@ export function createAgentBrowserViewer(clipboard: Pick<ViewerDeps, 'readClipbo
     session: getStartedSession,
     connect: (url) => new WebSocket(url, { maxPayload: 12 * 1024 * 1024, handshakeTimeout: 5000 }),
     run: (session, argv) => runAgentSessionCommand(session, argv, 10000),
-    schedule: (session, work) => withAgentSessionWork(session, (run) => work((argv, check) => run(argv, 10000, check))),
+    schedule: (session, work) => withAgentSessionWork(session, (run) => work((argv, check) => run(argv, 10000, check)), undefined, true),
     resume: resumeAgentSessionCommands,
   });
   setAgentControlPauseReporter((id, message) => viewer.pauseCommands(id, message));

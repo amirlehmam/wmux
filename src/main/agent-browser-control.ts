@@ -49,6 +49,8 @@ interface Job {
   reject: (reason: Error) => void;
   timer?: ReturnType<typeof setTimeout>;
   dispatchTimeoutMs?: number;
+  /** Viewer work is bounded by the viewer, so it never takes an agent slot. */
+  viewer?: boolean;
 }
 
 class Cancelled extends Error {}
@@ -231,15 +233,17 @@ export class AgentBrowserControl {
     try { this.deps.onPause?.(this.message); } catch { /* Reporting must not undo the fence. */ }
   }
 
-  private schedule<T>(work: (scope: Scope) => Promise<T>, timeoutMs?: number, closing: false | 'readback' | 'close' = false): Promise<T> {
+  private schedule<T>(work: (scope: Scope) => Promise<T>, timeoutMs?: number, closing: false | 'readback' | 'close' = false, viewer = false): Promise<T> {
     if (this.disposed || this.retired || (!closing && this.cancelled)) return Promise.reject(new Error('Browser control is unavailable'));
     if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) return Promise.reject(new Error('Invalid browser control timeout'));
-    if (this.jobs.length + Number(!!this.running) >= MAX_QUEUE) return Promise.reject(new Error('Browser control queue is full'));
+    if (!viewer && [...this.jobs, this.running].filter((job) => job && !job.viewer).length >= MAX_QUEUE) {
+      return Promise.reject(new Error('Browser control queue is full'));
+    }
     const scope: Scope = { epoch: this.epoch, deadline: timeoutMs === undefined || closing === 'close' ? Infinity : Date.now() + timeoutMs,
       active: true, closing: !!closing, nativeInFlight: false };
     return new Promise<T>((resolve, reject) => {
       const job: Job = { scope, execute: () => work(scope), resolve: (v) => resolve(v as T), reject,
-        dispatchTimeoutMs: closing === 'close' ? timeoutMs : undefined };
+        dispatchTimeoutMs: closing === 'close' ? timeoutMs : undefined, viewer };
       if (timeoutMs !== undefined && closing !== 'close') job.timer = setTimeout(() => {
         scope.active = false;
         this.jobs = this.jobs.filter((queued) => queued !== job);
@@ -394,7 +398,7 @@ export class AgentBrowserControl {
     return this.initialization;
   }
 
-  enqueue<T>(work: (run: NativeCommandRunner) => T | Promise<T>, timeoutMs?: number): Promise<T> {
+  enqueue<T>(work: (run: NativeCommandRunner) => T | Promise<T>, timeoutMs?: number, viewer = false): Promise<T> {
     if (!this.initialized || this.message) return Promise.reject(new Error(this.message ?? 'Browser control is not initialized'));
     return this.schedule(async (scope) => {
       let running = false;
@@ -412,7 +416,7 @@ export class AgentBrowserControl {
       const result = await work(run);
       this.assert(scope);
       return result;
-    }, timeoutMs);
+    }, timeoutMs, false, viewer);
   }
 
   private async command(scope: Scope, argv: string[], check?: NativeCommandCheck): Promise<RunResult> {

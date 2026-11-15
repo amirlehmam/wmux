@@ -547,21 +547,51 @@ describe('finite native actions and input', () => {
     expect(h.run).toHaveBeenCalledOnce();
   });
 
-  it('bounds input queued behind native work and pauses instead of accumulating indefinitely', async () => {
+  /** Holds the queue behind a native resize until `finish` is called. */
+  async function blocked() {
     const h = harness();
     h.present();
     let finish!: (result: typeof ok) => void;
     h.run.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     const resize = h.viewer.action(ID, 10, 'token-a', 1, { type: 'viewport', width: 900, height: 640 }).catch(() => {});
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
-    const input = Array.from({ length: 500 }, () => h.viewer.input(ID, 10, 'token-a', 1, key));
-    expect(h.events.filter((event) => event.message.type === 'error')).toHaveLength(1);
-    expect(h.events.at(-1)?.message).toMatchObject({ type: 'error', message: expect.stringContaining('queue is full') });
-    finish(ok);
-    await Promise.all([resize, ...input]);
-    expect(h.run).toHaveBeenCalledOnce();
-    expect(h.sockets[0].send).not.toHaveBeenCalled();
-    expect(h.viewer.canAct(ID)).toBe(false);
+    const input = (value: unknown) => h.viewer.input(ID, 10, 'token-a', 1, value);
+    const sent = () => h.sockets[0].send.mock.calls.map((call) => JSON.parse(call[0] as string));
+    return { h, input, sent, finish: async () => { finish(ok); await resize; await vi.waitFor(() => expect(h.viewer['viewerWork'].size).toBe(0)); } };
+  }
+  const move = (x: number) => ({ type: 'input_mouse', eventType: 'mouseMoved', x, y: x, button: 'none', clickCount: 0, modifiers: 0 });
+  const wheel = (deltaY: number) => ({ type: 'input_mouse', eventType: 'mouseWheel', x: 5, y: 5, button: 'none', clickCount: 0, modifiers: 0, deltaX: 0, deltaY });
+  const keyEvent = (eventType: string, code: string) => ({ type: 'input_keyboard', eventType, code, key: code, windowsVirtualKeyCode: 65, modifiers: 0 });
+
+  it('bounds input queued behind native work without pausing the viewer', async () => {
+    const b = await blocked();
+    for (let i = 0; i < 500; i++) b.input(key);
+    await expect(b.h.viewer.action(ID, 10, 'token-a', 1, { type: 'reload' })).rejects.toThrow('busy');
+    expect(b.h.events.filter((event) => event.message.type === 'error')).toHaveLength(0);
+    await b.finish();
+    // The resize holds one of the 64 viewer slots.
+    expect(b.sent()).toHaveLength(63);
+    expect(b.h.viewer.canAct(ID)).toBe(true);
+    await b.h.viewer.action(ID, 10, 'token-a', 1, { type: 'reload' });
+  });
+
+  it('merges queued moves and wheel steps, but never across other input', async () => {
+    const b = await blocked();
+    for (const value of [move(1), move(2), wheel(10), wheel(5), key, move(3), move(4)]) b.input(value);
+    await b.finish();
+    expect(b.sent()).toEqual([move(2), wheel(15), key, move(4)]);
+  });
+
+  it('admits the release of an admitted press when the viewer budget is full', async () => {
+    const b = await blocked();
+    b.input(keyEvent('keyDown', 'KeyA'));
+    for (let i = 0; i < 70; i++) b.input(key);
+    b.input(keyEvent('keyDown', 'KeyB'));
+    b.input(keyEvent('keyUp', 'KeyB'));
+    b.input(keyEvent('keyUp', 'KeyA'));
+    await b.finish();
+    const keys = b.sent().filter((sent) => sent.code);
+    expect(keys).toEqual([keyEvent('keyDown', 'KeyA'), keyEvent('keyUp', 'KeyA')]);
   });
 
   it('copies only the actual selection, blocks password values, and preserves clipboard on empty selection', async () => {

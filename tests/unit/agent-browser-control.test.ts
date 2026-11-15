@@ -116,6 +116,20 @@ describe('AgentBrowserControl', () => {
     await Promise.all([active, ...pending]);
   });
 
+  it('never lets viewer work take a slot an agent command needs', async () => {
+    const h = harness();
+    await h.control.initialize();
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const active = h.control.enqueue(async () => { entered.resolve(); await release.promise; });
+    await entered.promise;
+    const viewer = Array.from({ length: 300 }, () => h.control.enqueue(() => undefined, undefined, true));
+    const agents = Array.from({ length: 255 }, () => h.control.enqueue(() => undefined));
+    await expect(h.control.enqueue(() => undefined)).rejects.toThrow(/queue is full/);
+    release.resolve();
+    await Promise.all([active, ...viewer, ...agents]);
+  });
+
   it('rejects escaped runner capabilities, including a run not awaited by its owning work', async () => {
     const h = harness();
     await h.control.initialize();
