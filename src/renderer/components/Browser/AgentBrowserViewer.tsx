@@ -186,8 +186,13 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
       });
     };
     const off = api.onEvent((event: AgentViewerEvent) => {
-      if (disposed || failed || event.surfaceId !== surfaceId || event.token !== token || event.revision < state.current.revision) return;
+      if (disposed || failed || event.surfaceId !== surfaceId || event.token !== token) return;
       const { message } = event;
+      if (event.revision < state.current.revision) {
+        // A dropped old-tab frame still occupies main's single delivery slot.
+        if (message.type === 'frame') api.ack(surfaceId, token, message.id, false);
+        return;
+      }
       if (state.current.revision !== event.revision) {
         state.current.drawnRevision = -1;
         setHasFrame(false);

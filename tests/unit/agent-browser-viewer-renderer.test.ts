@@ -92,6 +92,20 @@ describe('renderer stream/input bridge', () => {
     expect(api.ack).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 3, false);
   });
 
+  it('acknowledges stale frames without decoding or making the current tab interactive', async () => {
+    await render();
+    await event({ type: 'status', connected: true, width: 900, height: 640 });
+    await event({ type: 'tabs', tabs: [{ tabId: 't2', title: 'Other', url: 'https://other.test/', active: true }] }, 2);
+    await event({ type: 'frame', id: 1, data: 'AAAA', width: 900, height: 640 }, 1);
+    expect(decode).toHaveLength(0);
+    expect(api.ack).toHaveBeenCalledExactlyOnceWith('surf-renderer', expect.any(String), 1, false);
+    await dispatchKey('keydown', 'a', 'KeyA', 65);
+    expect(api.input).not.toHaveBeenCalled();
+    await present(2);
+    await dispatchKey('keydown', 'a', 'KeyA', 65);
+    expect(api.input).toHaveBeenCalledOnce();
+  });
+
   it('keeps single-codepoint Unicode on the stream and inserts long composition exactly once', async () => {
     await render();
     await event({ type: 'status', connected: true, width: 900, height: 640 });
@@ -327,6 +341,26 @@ describe('renderer stream/input bridge', () => {
     expect(onTabs).toHaveBeenCalledWith(tabs);
     expect(onConnection).toHaveBeenLastCalledWith(true);
     expect(api.attach).toHaveBeenCalledOnce();
+  });
+
+  it('suspends a hidden document and reports late decoded frames as dropped until a fresh visible draw', async () => {
+    let hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    await render();
+    await event({ type: 'status', connected: true, width: 900, height: 640 });
+    await event({ type: 'frame', id: 1, data: 'AAAA', width: 900, height: 640 });
+    hidden = true;
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(api.action).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 1, { type: 'visibility', visible: false });
+    await act(async () => decode[0].onload?.(new Event('load')));
+    expect(draw).not.toHaveBeenCalled();
+    expect(api.ack).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 1, false);
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(api.action).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 1, { type: 'visibility', visible: true });
+    await present();
+    expect(draw).toHaveBeenCalledOnce();
+    expect(api.ack).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 2, true);
   });
 
   it('draws the bridge cache and restores paste on repeated static-page returns without viewport repaint', async () => {

@@ -2,6 +2,7 @@
  * A surface-scoped stream subscription, not a Chrome owner. Detach never closes
  * the native session. Tokens and tab revisions fence late decodes and commands;
  * only one frame crosses IPC until the renderer acknowledges drawing/dropping it.
+ * Native ACKs wait for that delivery to drain, and stop while the view is hidden.
  */
 import WebSocket from 'ws';
 import { AGENT_BROWSER_CAPTURE_SCALE } from './agent-browser-capture';
@@ -47,6 +48,8 @@ interface Subscription {
   ready: boolean;
   inFlight?: number;
   inFlightRevision?: number;
+  /** The native stream's cumulative ACK waits for visible renderer consumption. */
+  nativeSeq?: number;
   presentedRevision?: number;
   pending?: Extract<AgentViewerMessage, { type: 'frame' }>;
   latest?: Extract<AgentViewerMessage, { type: 'frame' }>;
@@ -261,14 +264,10 @@ export class AgentBrowserViewer {
           || !dimension(v.metadata?.deviceWidth) || !dimension(v.metadata?.deviceHeight)) throw new Error('Invalid frame');
         const frame: Extract<AgentViewerMessage, { type: 'frame' }> = { type: 'frame', id: ++sub.nextFrame,
           data: v.data, width: v.metadata.deviceWidth, height: v.metadata.deviceHeight };
+        if (Number.isSafeInteger(v.seq) && v.seq >= 0) sub.nativeSeq = v.seq;
         sub.latest = frame;
-        if (sub.visible && sub.inFlight === undefined) {
-          sub.inFlight = frame.id;
-          sub.inFlightRevision = sub.revision;
-          this.send(sub, frame);
-        }
-        else sub.pending = frame;
-        if (Number.isSafeInteger(v.seq) && v.seq >= 0) sub.socket.send(JSON.stringify({ type: 'ack', seq: v.seq }));
+        sub.pending = frame;
+        this.flushFrames(sub);
         return;
       }
       case 'tabs': {
@@ -279,7 +278,8 @@ export class AgentBrowserViewer {
           return { tabId: tab.tabId, title: tab.title, url: tab.url, active: tab.active };
         });
         if (new Set(tabs.map((tab) => tab.tabId)).size !== tabs.length || tabs.filter((tab) => tab.active).length > 1) throw new Error('Invalid tabs');
-        const active = tabs.find((tab) => tab.active)?.tabId;
+        const activeTab = tabs.find((tab) => tab.active);
+        const active = activeTab?.tabId;
         const op = sub.tabOperation;
         if (op) {
           const ids = tabs.map((tab) => tab.tabId);
@@ -292,19 +292,21 @@ export class AgentBrowserViewer {
           if (!unchanged && !activated && !closed) op.unexpected = true;
           if (!unchanged) op.changed = true;
         }
+        if (!sub.visible && activeTab?.url !== sub.tabs.find((tab) => tab.active)?.url) this.invalidateFrameCache(sub);
         sub.tabs = tabs;
         if (sub.activeTab !== active) {
           sub.revision++;
-          sub.presentedRevision = undefined;
-          sub.pending = undefined;
-          sub.latest = undefined;
+          this.invalidateFrameCache(sub);
           sub.activeTab = active;
         }
         this.send(sub, { type: 'tabs', tabs });
+        this.flushFrames(sub);
         return;
       }
       case 'url':
         if (!text(v.url, 65536)) throw new Error('Invalid URL');
+        // Navigation metadata keeps flowing while native frame delivery is stopped.
+        if (!sub.visible) this.invalidateFrameCache(sub);
         this.send(sub, { type: 'url', url: v.url });
         return;
       case 'error': this.fail(sub, text(v.message) ? v.message : 'Page stream error.'); return;
@@ -323,12 +325,30 @@ export class AgentBrowserViewer {
     if (drawn === true && sub.visible && sub.inFlightRevision === sub.revision) sub.presentedRevision = sub.revision;
     sub.inFlight = undefined;
     sub.inFlightRevision = undefined;
-    if (sub.visible && sub.pending) {
+    this.flushFrames(sub);
+  }
+
+  /** An obsolete image cannot authorize input, but its decoder still occupies the delivery slot. */
+  private invalidateFrameCache(sub: Subscription): void {
+    sub.presentedRevision = undefined;
+    sub.inFlightRevision = undefined;
+    sub.pending = undefined;
+    sub.latest = undefined;
+  }
+
+  /** Drain renderer work before releasing native backpressure, including discarded old-tab frames. */
+  private flushFrames(sub: Subscription): void {
+    if (!sub.visible || sub.inFlight !== undefined) return;
+    if (sub.pending) {
       const frame = sub.pending;
       sub.pending = undefined;
       sub.inFlight = frame.id;
       sub.inFlightRevision = sub.revision;
       this.send(sub, frame);
+    } else if (sub.nativeSeq !== undefined && sub.socket.readyState === WebSocket.OPEN) {
+      const seq = sub.nativeSeq;
+      sub.nativeSeq = undefined;
+      sub.socket.send(JSON.stringify({ type: 'ack', seq }));
     }
   }
 
@@ -414,13 +434,7 @@ export class AgentBrowserViewer {
       // Static pages need not emit another frame after an unchanged viewport.
       // Replay only the current-tab cache, with a fresh draw acknowledgment.
       if (sub.visible && sub.latest) sub.pending = { ...sub.latest, id: ++sub.nextFrame };
-      if (sub.visible && sub.inFlight === undefined && sub.pending) {
-        const frame = sub.pending;
-        sub.pending = undefined;
-        sub.inFlight = frame.id;
-        sub.inFlightRevision = sub.revision;
-        this.send(sub, frame);
-      }
+      this.flushFrames(sub);
       return;
     }
     if (!sub.ready || sub.revision !== revision) throw new Error('Page is not interactive');
@@ -539,10 +553,8 @@ export class AgentBrowserViewer {
         // Observed tab changes already fence old frames by revision. Do not
         // discard a new target's drawn frame, or the original after a refusal.
         if (switched && sub.revision === revision) {
-          sub.presentedRevision = undefined;
-          sub.inFlightRevision = undefined;
-          sub.pending = undefined;
-          sub.latest = undefined;
+          this.invalidateFrameCache(sub);
+          this.flushFrames(sub);
         }
       }
     }

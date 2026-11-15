@@ -102,10 +102,11 @@ describe('surface stream subscriptions', () => {
     expect(JSON.parse(h.sockets[0].send.mock.calls[0][0])).toEqual(key);
   });
 
-  it('bounds IPC to one outstanding frame and the newest pending frame', () => {
+  it('bounds IPC to one outstanding frame and the newest pending frame, withholding native ACK until both drain', () => {
     const h = harness();
     for (let seq = 1; seq <= 100; seq++) h.receive({ ...protocol.frame, seq });
     expect(h.events.filter((event) => event.message.type === 'frame')).toHaveLength(1);
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
     h.viewer.ack(ID, 99, 'token-a', 1, false);
     h.viewer.ack(ID, 10, 'stale', 1, false);
     h.viewer.ack(ID, 10, 'token-a', 2, false);
@@ -115,7 +116,23 @@ describe('surface stream subscriptions', () => {
       { type: 'frame', id: 1, data: protocol.frame.data, width: 900, height: 640 },
       { type: 'frame', id: 100, data: protocol.frame.data, width: 900, height: 640 },
     ]);
-    expect(h.sockets[0].send).toHaveBeenLastCalledWith(JSON.stringify({ type: 'ack', seq: 100 }));
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
+    h.viewer.ack(ID, 10, 'token-a', 100, true);
+    expect(h.sockets[0].send).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ type: 'ack', seq: 100 }));
+    h.viewer.ack(ID, 10, 'token-a', 100, true);
+    expect(h.sockets[0].send).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('releases native pacing only after the renderer acknowledges a frame (drawn: %s)', (drawn) => {
+    const h = harness();
+    h.receive(protocol.frame);
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
+    h.viewer.ack(ID, 99, 'token-a', 1, drawn);
+    h.viewer.ack(ID, 10, 'old-token', 1, drawn);
+    h.viewer.ack(ID, 10, 'token-a', 99, drawn);
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
+    h.viewer.ack(ID, 10, 'token-a', 1, drawn);
+    expect(h.sockets[0].send).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ type: 'ack', seq: protocol.frame.seq }));
   });
 
   it('isolates wrong owners, replaced tokens, and late socket callbacks', async () => {
@@ -646,18 +663,80 @@ describe('finite native actions and input', () => {
     expect(h.run).not.toHaveBeenCalled();
     h.viewer.input(ID, 10, 'token-a', 1, key);
     h.events.length = 0;
-    for (let seq = 1; seq <= 100; seq++) h.receive({ ...protocol.frame, seq });
-    expect(h.events).toHaveLength(0);
     h.receive(protocol.url);
+    for (let seq = 1; seq <= 100; seq++) h.receive({ ...protocol.frame, seq });
+    expect(h.events).toHaveLength(1);
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
     expect(h.events.at(-1)?.message.type).toBe('url');
     await h.viewer.action(ID, 10, 'token-a', 1, { type: 'reload' });
     expect(h.run).toHaveBeenCalledOnce();
     await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: true });
     expect(h.events.at(-1)?.message).toMatchObject({ type: 'frame', id: 102 });
     await expect(h.viewer.action(ID, 10, 'token-a', 1, { type: 'paste' })).rejects.toThrow('frame');
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
     h.viewer.ack(ID, 10, 'token-a', 102, true);
+    expect(h.sockets[0].send).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ type: 'ack', seq: 100 }));
     await h.viewer.input(ID, 10, 'token-a', 1, key);
     expect(JSON.parse(h.sockets[0].send.mock.calls.at(-1)![0])).toEqual(key);
+  });
+
+  it('holds a decode ACK received while hidden until a fresh visible draw, without duplicate native ACKs', async () => {
+    const h = harness();
+    h.receive(protocol.frame);
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: false });
+    h.viewer.ack(ID, 10, 'token-a', 1, false);
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: true });
+    expect(h.events.at(-1)?.message).toMatchObject({ type: 'frame', id: 2 });
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
+    h.viewer.ack(ID, 10, 'token-a', 2, true);
+    expect(h.sockets[0].send).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ type: 'ack', seq: protocol.frame.seq }));
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: false });
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: true });
+    h.viewer.ack(ID, 10, 'token-a', 3, true);
+    expect(h.sockets[0].send).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('releases discarded old-tab native frames without granting new-tab input (hidden: %s)', async (hidden) => {
+    const h = harness();
+    if (hidden) await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: false });
+    h.receive(protocol.frame);
+    h.receive({ type: 'tabs', tabs: [{ ...protocol.tabs.tabs[0], tabId: 't9' }] });
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
+    if (hidden) await h.viewer.action(ID, 10, 'token-a', 2, { type: 'visibility', visible: true });
+    else h.viewer.ack(ID, 10, 'token-a', 1, true);
+    expect(h.sockets[0].send).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ type: 'ack', seq: protocol.frame.seq }));
+    await expect(h.viewer.action(ID, 10, 'token-a', 2, { type: 'paste' })).rejects.toThrow('frame');
+    h.present();
+    await h.viewer.action(ID, 10, 'token-a', 2, { type: 'paste' });
+  });
+
+  it.each(['url', 'tabs'])('requires a new native frame after same-tab navigation reported through %s while hidden', async (source) => {
+    const h = harness();
+    h.present();
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: false });
+    h.receive({ ...protocol.frame, seq: 4 });
+    h.receive(source === 'url' ? protocol.url
+      : { type: 'tabs', tabs: [{ ...protocol.tabs.tabs[0], url: protocol.url.url }] });
+    const delivered = h.events.filter((event) => event.message.type === 'frame').length;
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: true });
+    expect(h.events.filter((event) => event.message.type === 'frame')).toHaveLength(delivered);
+    expect(h.sockets[0].send).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ type: 'ack', seq: 4 }));
+    await expect(h.viewer.action(ID, 10, 'token-a', 1, { type: 'paste' })).rejects.toThrow('frame');
+    h.present();
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'paste' });
+  });
+
+  it('does not authorize an old in-flight decode after a hidden same-URL navigation', async () => {
+    const h = harness();
+    h.receive(protocol.frame);
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: false });
+    h.receive({ type: 'url', url: protocol.tabs.tabs[0].url });
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: true });
+    h.viewer.ack(ID, 10, 'token-a', 1, true);
+    expect(h.events.filter((event) => event.message.type === 'frame')).toHaveLength(1);
+    await expect(h.viewer.action(ID, 10, 'token-a', 1, { type: 'paste' })).rejects.toThrow('frame');
+    expect(h.sockets[0].send).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ type: 'ack', seq: protocol.frame.seq }));
   });
 
   it('redelivers an acknowledged static current-tab frame on repeated returns without native repaint', async () => {
