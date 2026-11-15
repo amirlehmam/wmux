@@ -508,7 +508,7 @@ export default function PaneWrapper({
   const locked = workspace ? isPaneLocked(workspace.splitTree, paneId) : false;
 
   const handleToggleLock = () => {
-    if (activeWorkspaceId) setPaneLocked(activeWorkspaceId, paneId, !locked);
+    setPaneLocked(workspaceId, paneId, !locked);
   };
 
   const handleDropSurface = (sourcePaneId: PaneId, surfaceId: SurfaceId, targetPaneId: PaneId) => {
