@@ -467,6 +467,7 @@ describe('browser sender ownership', () => {
       await handler(IPC_CHANNELS.AGENT_BROWSER_ENABLE)(h.event, id, 'about:blank');
       expect(native.mock.calls.map((call) => call[1])).toEqual([
         ['--session', original!.sessionName, 'close'], ['--session', original!.sessionName, 'close'],
+        ['--version'], ['--session', original!.sessionName, 'session', 'info', '--json'],
         ['--session', original!.sessionName, '--pin-tab', '--args', '--force-device-scale-factor=2', 'open'],
       ]);
       expect(runtime.getStartedSession(id)).toBeDefined();

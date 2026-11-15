@@ -87,6 +87,7 @@ import {
   ensureBindableSession,
   ensureStartedSession,
   initializeAgentBrowserControl,
+  prepareAgentBrowserLaunch,
   runManagedAgentBrowser,
   withAgentSessionTeardown,
   SESSION_CLOSE_TIMEOUT_MS,
@@ -414,6 +415,7 @@ export interface AgentBrowserDeps {
   getSession: (surfaceId: SurfaceId) => AgentSession | undefined;
   releaseSession: (surfaceId: SurfaceId) => AgentSession | undefined;
   initializeControl?: (session: AgentSession, binary: string) => Promise<void>;
+  prepareLaunch?: (binary: string, sessionName: string) => Promise<void>;
 }
 
 export async function enableAgentBrowser(
@@ -498,6 +500,7 @@ const agentBrowserDeps: AgentBrowserDeps = {
   binary: () => agentBrowserPath(),
   run: (binary, argv, env) => runManagedAgentBrowser(binary, argv, argv.at(-1) === 'close' ? SESSION_CLOSE_TIMEOUT_MS : undefined, env),
   initializeControl: initializeAgentBrowserControl,
+  prepareLaunch: (binary, sessionName) => prepareAgentBrowserLaunch(binary, sessionName),
   acquireDashboard: (surfaceId) => acquireDashboardFor(surfaceId),
   releaseDashboard: (surfaceId) => releaseDashboardFor(surfaceId),
   // UI enable joins the same bindable startup as CLI-first routing.

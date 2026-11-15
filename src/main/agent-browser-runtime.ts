@@ -19,7 +19,7 @@ import * as net from 'net';
 import { AGENT_BROWSER_STREAM_DEFAULTS, nativeCaptureArgs } from './agent-browser-capture';
 import { agentBrowserPath, runAgentBrowser, unwrapAgentData, type RunResult } from './agent-browser-cli';
 import { DashboardDaemon } from './agent-browser-daemon';
-import { AgentBrowserControl, uncertainNativeOutcome, type AgentBrowserControlDeps, type NativeCommandCheck, type NativeCommandRunner } from './agent-browser-control';
+import { AgentBrowserControl, parseAgentBrowserVersion, uncertainNativeOutcome, type AgentBrowserControlDeps, type NativeCommandCheck, type NativeCommandRunner } from './agent-browser-control';
 import {
   DASHBOARD_PORT,
   isWmuxSessionName,
@@ -659,9 +659,16 @@ export function parseSessionList(res: Pick<RunResult, 'data' | 'stdout'>): strin
  * registry immediately before each close is what keeps reconciliation from
  * closing a session this run just created.
  */
-export async function reconcileOrphanSessions(
-  deps: AgentBrowserTeardownDeps,
-): Promise<string[]> {
+export function reconcileOrphanSessions(deps: AgentBrowserTeardownDeps): Promise<string[]> {
+  const run = reconcile(deps);
+  reconciling = run.catch(() => {});
+  return run;
+}
+
+/** Settled once startup reconciliation has finished; launches wait for it. */
+let reconciling: Promise<unknown> = Promise.resolve();
+
+async function reconcile(deps: AgentBrowserTeardownDeps): Promise<string[]> {
   const binary = deps.binary();
   // Nothing installed ⇒ nothing could have been started ⇒ nothing to reconcile.
   // Checked first so a machine without agent-browser pays literally nothing.
@@ -733,7 +740,63 @@ export interface AgentBrowserStartupDeps {
   releaseSession?: (id: SurfaceId) => AgentSession | undefined;
   captureArgs?: () => string[];
   initializeControl?: (session: AgentSession, binary: string) => Promise<void>;
+  prepareLaunch?: (binary: string, sessionName: string) => Promise<void>;
   run: (binary: string, argv: string[], env?: NodeJS.ProcessEnv) => Promise<RunResult>;
+}
+
+/** The first release with `--pin-tab`, which every launch passes. */
+export const MIN_AGENT_BROWSER_VERSION = '0.34.0';
+const PREPARE_TIMEOUT_MS = 5_000;
+const supportedBinaries = new Set<string>();
+
+function versionBelow(found: string, min: string): boolean {
+  const a = found.split(/[.+-]/).slice(0, 3).map(Number);
+  const b = min.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
+}
+
+/**
+ * Checks made before every launch.
+ *
+ * The version floor turns an old install's `Unknown command: --pin-tab` into an
+ * update hint. A version that cannot be read is not blocked.
+ *
+ * A daemon still holding this session name was left by an earlier run: names
+ * are unique per instance and surface, and this process has not started the
+ * session yet. Reusing that daemon keeps its old stream port, which control
+ * initialization rejects, and 0.35 also drops the launch args. Closing it while
+ * `open` runs makes that open fail on 0.35. So startup reconciliation finishes
+ * first, then the leftover is closed and confirmed gone before the launch.
+ */
+export async function prepareAgentBrowserLaunch(
+  binary: string,
+  sessionName: string,
+  run: typeof runAgentBrowser = runAgentBrowser,
+  close: typeof runManagedAgentBrowser = runManagedAgentBrowser,
+): Promise<void> {
+  if (!supportedBinaries.has(binary)) {
+    const res = await run(binary, ['--version'], PREPARE_TIMEOUT_MS);
+    const found = res.ok ? parseAgentBrowserVersion(res.stdout) : undefined;
+    if (found && versionBelow(found, MIN_AGENT_BROWSER_VERSION)) {
+      throw new Error(`agent-browser ${found} is too old; wmux needs ${MIN_AGENT_BROWSER_VERSION} or newer. Update it with: npm i -g agent-browser@latest`);
+    }
+    if (found) supportedBinaries.add(binary);
+  }
+  await reconciling;
+  const active = async (): Promise<boolean> => {
+    const res = await run(binary, ['--session', sessionName, 'session', 'info', '--json'], PREPARE_TIMEOUT_MS);
+    return res.ok && (unwrapAgentData(res) as { active?: unknown } | null)?.active === true;
+  };
+  if (!await active()) return;
+  const failed = new Error('Could not close a browser session left by an earlier wmux run. Retry Start new session.');
+  if (!(await close(binary, ['--session', sessionName, 'close'], SESSION_CLOSE_TIMEOUT_MS)).ok) throw failed;
+  // The daemon exits shortly after `close` answers (about 130ms on 0.35.2).
+  const deadline = Date.now() + SESSION_CLOSE_TIMEOUT_MS;
+  while (await active()) {
+    if (Date.now() >= deadline) throw failed;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 const starting = new Map<SurfaceId, { promise: Promise<AgentSession>; cancelled: boolean; closed: boolean; closeError?: string }>();
@@ -748,6 +811,7 @@ const startupDeps: AgentBrowserStartupDeps = {
   releaseSession: (id) => sessionRegistry.release(id),
   run: (binary, argv, env) => runManagedAgentBrowser(binary, argv, undefined, env),
   initializeControl: initializeAgentBrowserControl,
+  prepareLaunch: (binary, sessionName) => prepareAgentBrowserLaunch(binary, sessionName),
 };
 
 /** A registry record allocates a name, not readiness; UI and CLI join this launch. */
@@ -776,6 +840,7 @@ export function ensureStartedSession(
     const binary = deps.binary();
     if (!binary) throw new Error('agent-browser is not installed');
     const session = await deps.ensureSession(id);
+    if (!launch.cancelled) await deps.prepareLaunch?.(binary, session.sessionName);
     if (launch.cancelled) {
       if (deps.getSession(id) === session) deps.releaseSession?.(id);
       throw new Error('Browser startup cancelled');

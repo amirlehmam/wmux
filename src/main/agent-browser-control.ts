@@ -59,7 +59,7 @@ const MAX_QUEUE = 256;
 const object = (v: unknown): ObjectValue | undefined => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as ObjectValue : undefined;
 const portNumber = (v: unknown): v is number => Number.isInteger(v) && Number(v) > 0 && Number(v) <= 65535;
 const error = (v: unknown): Error => v instanceof Error ? v : new Error(String(v));
-const version = (v: unknown): string | undefined => typeof v === 'string'
+export const parseAgentBrowserVersion = (v: unknown): string | undefined => typeof v === 'string'
   ? /^(?:agent-browser\s+)?v?(\d+\.\d+\.\d+(?:[-+][\w.-]+)?)\s*$/i.exec(v.trim())?.[1] : undefined;
 
 async function fingerprint(binary: string): Promise<NativeBinaryFingerprint> {
@@ -311,7 +311,7 @@ export class AgentBrowserControl {
       || !path.isAbsolute(data.socketDir) || typeof data.active !== 'boolean') throw new Error('Cannot establish native daemon identity');
     if (!data.active) return undefined;
     const runtime = object(data.runtime);
-    const parsedVersion = version(data.version);
+    const parsedVersion = parseAgentBrowserVersion(data.version);
     if (!Number.isSafeInteger(data.pid) || Number(data.pid) <= 0 || !parsedVersion || data.runtimeError !== null
       || !runtime || runtime.session !== data.session || runtime.namespace !== data.namespace
       || runtime.socketDir !== data.socketDir || runtime.backgroundPid !== data.pid || typeof runtime.browserLaunched !== 'boolean') {
@@ -377,7 +377,7 @@ export class AgentBrowserControl {
     this.initialization = this.schedule(async (scope) => {
       this.binaryBaseline = await this.bounded(scope, () => this.deps.fingerprint(this.binary, this.remaining(scope)));
       const result = await this.native(scope, ['--version']);
-      const localVersion = result.ok ? version(result.stdout) : undefined;
+      const localVersion = result.ok ? parseAgentBrowserVersion(result.stdout) : undefined;
       const info = await this.info(scope);
       if (!info) throw new Error('Started daemon is unavailable');
       // Retain coherent daemon ownership even if subsequent Chrome capture fails.

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ensureStartedSession, releaseAgentSession, type AgentBrowserStartupDeps } from '../../src/main/agent-browser-runtime';
+import { ensureStartedSession, prepareAgentBrowserLaunch, reconcileOrphanSessions, releaseAgentSession, type AgentBrowserStartupDeps } from '../../src/main/agent-browser-runtime';
 import { SessionRegistry } from '../../src/main/agent-browser-session';
 import type { SurfaceId } from '../../src/shared/types';
 import type { RunResult } from '../../src/main/agent-browser-cli';
@@ -165,10 +165,88 @@ describe('shared UI/CLI startup', () => {
     expect(h.run.mock.calls[2][1]).toContain('open');
   });
 
+  it('prepares before opening, and a failed preparation launches nothing', async () => {
+    const h = harness();
+    const order: string[] = [];
+    h.run.mockImplementation(async () => { order.push('open'); return ok; });
+    h.deps.prepareLaunch = vi.fn(async (_binary, name) => { order.push(`prepare ${name}`); });
+    const session = await ensureStartedSession(ID, undefined, h.deps);
+    expect(order).toEqual([`prepare ${session.sessionName}`, 'open']);
+
+    const other = harness();
+    other.deps.prepareLaunch = async () => { throw new Error('agent-browser 0.33.0 is too old'); };
+    await expect(ensureStartedSession('surf-old' as SurfaceId, undefined, other.deps)).rejects.toThrow('too old');
+    expect(other.run).not.toHaveBeenCalled();
+  });
+
   it('keeps separate surfaces separate', async () => {
     const h = harness();
     const [a, b] = await Promise.all([ensureStartedSession(ID, undefined, h.deps), ensureStartedSession('surf-other' as SurfaceId, undefined, h.deps)]);
     expect(a.sessionName).not.toBe(b.sessionName);
     expect(a.streamPort).not.toBe(b.streamPort);
+  });
+});
+
+describe('launch preparation', () => {
+  const NAME = 'wmux-surf-prepare';
+  function native(version: string, active: boolean[]) {
+    const run = vi.fn(async (_binary: string, argv: string[]): Promise<RunResult> => argv[0] === '--version'
+      ? { ...ok, stdout: `agent-browser ${version}
+` }
+      : { ...ok, data: { success: true, data: { active: active.shift() ?? false } } });
+    const close = vi.fn(async (): Promise<RunResult> => ok);
+    return { run, close };
+  }
+
+  it('refuses an install older than the first release with --pin-tab', async () => {
+    const n = native('0.33.0', []);
+    await expect(prepareAgentBrowserLaunch('old.exe', NAME, n.run, n.close)).rejects.toThrow('agent-browser 0.33.0 is too old; wmux needs 0.34.0 or newer');
+    expect(n.run).toHaveBeenCalledOnce();
+  });
+
+  it('launches without a close when no earlier daemon holds the session', async () => {
+    const n = native('0.34.0', [false]);
+    await prepareAgentBrowserLaunch('fresh.exe', NAME, n.run, n.close);
+    expect(n.close).not.toHaveBeenCalled();
+  });
+
+  it('closes a daemon left by an earlier run and confirms it is gone', async () => {
+    const n = native('0.35.2', [true, false]);
+    await prepareAgentBrowserLaunch('leftover.exe', NAME, n.run, n.close);
+    expect(n.close).toHaveBeenCalledWith('leftover.exe', ['--session', NAME, 'close'], expect.any(Number));
+    expect(n.run.mock.calls.map((c) => c[1])).toEqual([['--version'],
+      ['--session', NAME, 'session', 'info', '--json'], ['--session', NAME, 'session', 'info', '--json']]);
+  });
+
+  it('refuses to launch while the earlier daemon survives its close', async () => {
+    vi.useFakeTimers();
+    try {
+      const n = native('0.43.0', Array(100).fill(true));
+      const refused = expect(prepareAgentBrowserLaunch('stuck.exe', NAME, n.run, n.close)).rejects.toThrow('Could not close a browser session left by an earlier wmux run');
+      await vi.advanceTimersByTimeAsync(5000);
+      await refused;
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('refuses to launch when closing the earlier daemon fails', async () => {
+    const n = native('0.43.0', [true]);
+    n.close.mockResolvedValueOnce({ ...ok, ok: false, stderr: 'refused' });
+    await expect(prepareAgentBrowserLaunch('refused.exe', NAME, n.run, n.close)).rejects.toThrow('Could not close a browser session left by an earlier wmux run');
+  });
+
+  it('waits for startup reconciliation so its close cannot overlap the launch', async () => {
+    let finishList!: (value: RunResult) => void;
+    const reconciling = reconcileOrphanSessions({ binary: () => 'reconcile.exe', listSessions: () => [], forgetSession: () => undefined,
+      hasSession: () => false, shutdownDashboard: async () => {},
+      run: () => new Promise((resolve) => { finishList = resolve; }) });
+    const n = native('0.41.2', [false]);
+    const prepared = prepareAgentBrowserLaunch('waits.exe', NAME, n.run, n.close);
+    await vi.waitFor(() => expect(n.run).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(n.run).toHaveBeenCalledOnce();
+    finishList({ ...ok, ok: false });
+    await reconciling;
+    await prepared;
+    expect(n.run).toHaveBeenCalledTimes(2);
   });
 });
