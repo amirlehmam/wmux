@@ -11,6 +11,7 @@ import OrchestrationPanel from './OrchestrationPanel';
 import AgentRosterBanner from './AgentRosterBanner';
 import type { AgentRosterEntry } from '../../store/agent-rollup';
 import { DropEdge, edgeForListPointer, edgeForPointer, reorderByDrop } from './reorder';
+import { keepPaneFocus } from './keep-pane-focus';
 import ErrorBoundary from '../ErrorBoundary';
 import { useStore } from '../../store';
 import { sidebarTextScale } from '../../store/settings-slice';
@@ -326,6 +327,7 @@ export default function Sidebar({
       // The custom property, not a `zoom`: zoom would scale the resizable
       // width and every icon too, while #319 asks for the TEXT only.
       style={{ width: sidebarWidth, '--sidebar-text-scale': textScale } as React.CSSProperties}
+      onMouseDown={keepPaneFocus}
     >
       <ErrorBoundary label="agent-roster" silent>
         <AgentRosterBanner onFocusAgent={onFocusAgent} onOpenNavigator={onOpenAgentNavigator} />
@@ -407,7 +409,7 @@ export default function Sidebar({
         <SplitDivider direction="vertical" onRatioChange={(delta) => {
           useStore.getState().setWorkspacePrefs({ explorerSidebarRatio: Math.max(0.15, Math.min(0.75, panelRatio - delta)) });
         }} />
-        <div style={{ height: `${panelRatio * 100}%`, flexShrink: 0, minHeight: 0, overflow: 'hidden' }}>
+        <div className="sidebar__docked" style={{ height: `${panelRatio * 100}%`, flexShrink: 0, minHeight: 0, overflow: 'hidden' }}>
           {dockedPanel}
         </div>
       </>}
