@@ -963,6 +963,32 @@ async function workspaceSave(rest: string[]): Promise<void> {
   console.log(`Wrote ${file}. Commit it; anyone opening it is shown every command before anything runs.`);
 }
 
+/**
+ * Relative paths resolve against the caller's cwd, which differs from the main
+ * process's. The Windows host reads the file even when the CLI runs in WSL, so
+ * preserve Windows paths before POSIX resolution can turn them into relative
+ * names, and let wslpath handle both distro files and Windows-mounted drives.
+ * Remote requests retain their existing path semantics.
+ */
+export function resolveMarkdownFilePath(filePath: string, {
+  cwd = process.cwd(),
+  platform = process.platform,
+  env = process.env,
+  remote = !!remoteTarget,
+}: { cwd?: string; platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; remote?: boolean } = {}): string {
+  const paths = platform === 'win32' ? path.win32 : path.posix;
+  if (remote || !isWslHost(env, platform)) return paths.resolve(cwd, filePath);
+  if (/^(?:[a-z]:[\\/]|[\\/]{2})/i.test(filePath)) return filePath;
+
+  const resolved = paths.resolve(cwd, filePath);
+  const converted = spawnSync('/usr/bin/wslpath', ['-w', resolved], { encoding: 'utf-8', timeout: 5000 });
+  if (converted.error || converted.status !== 0 || !converted.stdout.trim()) {
+    const reason = converted.error?.message || converted.stderr.trim() || 'wslpath returned no path';
+    throw new Error(`Cannot convert WSL Markdown path '${resolved}': ${reason}`);
+  }
+  return converted.stdout.replace(/\r?\n$/, '');
+}
+
 async function cmdMarkdown(args: string[]): Promise<void> {
   const sub = args[1];
   if (sub === 'set') {
@@ -979,8 +1005,7 @@ async function cmdMarkdown(args: string[]): Promise<void> {
         surfaceId, markdown: args.slice(contentFlag + 1, end).join(' '), title,
       }));
     } else if (fileFlag !== -1) {
-      // Resolve against the terminal's cwd — the main-process cwd differs.
-      const filePath = path.resolve(process.cwd(), args[fileFlag + 1] || '');
+      const filePath = resolveMarkdownFilePath(args[fileFlag + 1] || '');
       print(await sendV2('markdown.load_file', { surfaceId, filePath }));
     } else {
       console.error('Usage: wmux markdown set <id> --content <text> [--title T] | --file <path>'); process.exit(1);
@@ -991,7 +1016,7 @@ async function cmdMarkdown(args: string[]): Promise<void> {
   } else if (sub) {
     // One-shot: `wmux markdown <file>` — create a markdown surface and load the
     // file into it. Relative paths resolve against the caller's cwd.
-    const filePath = path.resolve(process.cwd(), sub);
+    const filePath = resolveMarkdownFilePath(sub);
     const created = await sendV2('surface.create', { type: 'markdown' });
     const surfaceId = created?.surfaceId;
     if (!surfaceId) { console.error('Failed to create markdown surface'); process.exit(1); }
