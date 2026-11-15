@@ -4,8 +4,10 @@ import { SurfaceId } from '../../../shared/types';
 import { ShortcutAction, ShortcutBinding } from '../../store/settings-slice';
 import { actionLabel } from '../Settings/KeyboardSettings';
 import { useT } from '../../i18n';
+import type { Translator } from '../../i18n/core';
 import { RESET_TERMINAL_LEAVE_ALT_ACTION } from '../../utils/alt-screen-owner';
 import { useWorkspaceLabels } from '../SplitPane/use-osc-title';
+import { unlockedPaneIds } from '../../store/pane-lock';
 import '../../styles/command-palette.css';
 
 interface CommandPaletteProps {
@@ -49,6 +51,35 @@ function fuzzyMatch(needle: string, haystack: string): boolean {
   return ni === n.length;
 }
 
+// Returns the message to show when nothing was opened because no pane can take
+// the file, null otherwise. The lock check runs before the dialog so the user
+// is not asked to pick a file that has nowhere to go.
+export async function openMarkdownFromPalette(t: Translator): Promise<string | null> {
+  const state = useStore.getState();
+  const ws = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+  const allLocked = t('palette.allPanesLocked', 'All panes are locked. Unlock one to open a file.');
+  if (ws && unlockedPaneIds(ws.splitTree).length === 0) return allLocked;
+  try {
+    const res = await (window as any).wmux?.markdown?.openFile?.();
+    if (!res || res.canceled || res.error || !res.content) return null;
+    const created = (window as any).__wmux_createSurface?.({ type: 'markdown' });
+    if (created?.error) return allLocked;
+    const surfaceId = created?.surfaceId as string | undefined;
+    if (surfaceId) {
+      // Derive the basename for the tab label (renderer has no `path`),
+      // and keep the full path so the surface is path-aware (issue #116).
+      // A file picked from a native dialog is exactly the case where the
+      // user may not know where it lives.
+      const filePath = String(res.filePath || '') || undefined;
+      const fileName = (filePath || '').replace(/\\/g, '/').split('/').pop() || undefined;
+      useStore.getState().setMarkdownContent(surfaceId as SurfaceId, res.content, { fileName, filePath, mtimeMs: res.mtimeMs });
+    }
+  } catch {
+    // Dialog/read failures are surfaced via the returned { error }; ignore here.
+  }
+  return null;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CommandPalette({ onClose, onAction }: CommandPaletteProps) {
@@ -61,12 +92,20 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const markdownPending = useRef(false);
+  const mounted = useRef(false);
 
   // Auto-focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
   }, []);
 
   // Build palette items from all categories
@@ -114,26 +153,17 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
       label: t('palette.openMarkdown'),
       category: t('palette.category.commands'),
       action: () => {
-        onClose();
-        void (async () => {
-          try {
-            const res = await (window as any).wmux?.markdown?.openFile?.();
-            if (!res || res.canceled || res.error || !res.content) return;
-            const created = (window as any).__wmux_createSurface?.({ type: 'markdown' });
-            const surfaceId = created?.surfaceId as string | undefined;
-            if (surfaceId) {
-              // Derive the basename for the tab label (renderer has no `path`),
-              // and keep the full path so the surface is path-aware (issue #116).
-              // A file picked from a native dialog is exactly the case where the
-              // user may not know where it lives.
-              const filePath = String(res.filePath || '') || undefined;
-              const fileName = (filePath || '').replace(/\\/g, '/').split('/').pop() || undefined;
-              useStore.getState().setMarkdownContent(surfaceId as SurfaceId, res.content, { fileName, filePath, mtimeMs: res.mtimeMs });
-            }
-          } catch {
-            // Dialog/read failures are surfaced via the returned { error }; ignore here.
-          }
-        })();
+        // The palette stays mounted while the native dialog is pending, so a
+        // double click or held Enter would otherwise open a second dialog.
+        if (markdownPending.current) return;
+        markdownPending.current = true;
+        void openMarkdownFromPalette(t)
+          .then((message) => {
+            if (!mounted.current) return;
+            if (message) setNotice(message);
+            else onClose();
+          })
+          .finally(() => { markdownPending.current = false; });
       },
     });
 
@@ -237,6 +267,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
   // Reset selection when filter changes
   useEffect(() => {
     setSelectedIndex(0);
+    setNotice(null);
   }, [query]);
 
   // Scroll selected item into view
@@ -289,6 +320,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
           onKeyDown={handleKeyDown}
           placeholder={t('palette.placeholder')}
         />
+        <div className={notice ? 'command-palette__empty' : undefined} role="status">{notice}</div>
         <div className="command-palette__results" ref={listRef}>
           {visibleItems.length === 0 ? (
             <div className="command-palette__empty">{t('palette.empty')}</div>

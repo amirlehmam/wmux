@@ -2126,7 +2126,8 @@ exports.COMMAND_SPECS = {
     whoami: { usage: 'wmux whoami [--surface <id>]   (alias of current-workspace)', value: ['--surface'] },
     // Surface
     'new-surface': {
-        usage: 'wmux new-surface [--type terminal|browser|markdown|prompts|git] [--color-scheme NAME]',
+        usage: 'wmux new-surface [--type terminal|browser|markdown|prompts|git] [--color-scheme NAME]\n'
+            + '  Opens in the first unlocked pane; fails if every pane in the workspace is locked.',
         value: ['--type', '--color-scheme'],
     },
     'close-surface': { usage: 'wmux close-surface [surfaceId]' },
@@ -2169,7 +2170,8 @@ exports.COMMAND_SPECS = {
     // Layout
     layout: {
         usage: 'wmux layout grid --count <N> [--type T] [--anchor-surface <id>] [--anchor-pane <id>] [--workspace <id>]\n'
-            + 'wmux layout agents --count <N> [--type T] [--coordinator-ratio R] [--anchor-surface <id>] [--anchor-pane <id>] [--workspace <id>]',
+            + 'wmux layout agents --count <N> [--type T] [--coordinator-ratio R] [--anchor-surface <id>] [--anchor-pane <id>] [--workspace <id>]\n'
+            + '  layout grid fails on a workspace with a locked pane; use layout agents, which keeps the anchor\'s lock.',
         value: ['--count', '--type', '--coordinator-ratio', '--anchor-surface', '--anchor-pane', '--workspace'],
     },
     // Terminal interaction
@@ -2219,6 +2221,7 @@ exports.COMMAND_SPECS = {
             'wmux agent spawn --cmd <C> [--label L] [--cwd D] [--pane P] [--workspace W] [--replace-tab]',
             'wmux agent spawn-batch --json \'[...]\' [--strategy distribute|stack|split] [--workspace W]',
             'wmux agent status <agentId> | list [--workspace <id>] | kill <agentId>',
+            '  Locked panes: --pane <locked> fails; without --pane, agents go to unlocked panes only (error if none).',
         ].join('\n'),
         value: ['--cmd', '--label', '--cwd', '--pane', '--workspace', '--json', '--strategy'],
         bool: ['--replace-tab'],

@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { WorkspaceId, PaneId, SurfaceId, SurfaceRef, SurfaceType } from '../../shared/types';
 import { findLeaf, removeLeaf, splitNode, getAllPaneIds } from './split-utils';
+import { setLeafLocked } from './pane-lock';
 import { killSurfacePty } from './pty-teardown';
 import { forceResumeOnSpawn } from '../hooks/claude-resume-command';
 import { WorkspaceSlice } from './workspace-slice';
@@ -175,6 +176,9 @@ export interface SurfaceSlice {
 
   /** Move a surface from one pane to another (drag-and-drop) */
   moveSurface: (workspaceId: WorkspaceId, sourcePaneId: PaneId, surfaceId: SurfaceId, targetPaneId: PaneId) => void;
+
+  /** Lock or unlock a pane: agent spawns and tabs moved in from other panes are refused while locked. */
+  setPaneLocked: (workspaceId: WorkspaceId, paneId: PaneId, locked: boolean) => void;
 
   /** Reorder a surface within the same pane (drag to new tab position) */
   reorderSurface: (workspaceId: WorkspaceId, paneId: PaneId, surfaceId: SurfaceId, newIndex: number) => void;
@@ -672,6 +676,7 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
     const sourceLeaf = findLeaf(ws.splitTree, sourcePaneId);
     const targetLeaf = findLeaf(ws.splitTree, targetPaneId);
     if (!sourceLeaf || !targetLeaf) return;
+    if (targetLeaf.locked === true) return;
 
     // Find the surface in the source
     const surfaceIndex = sourceLeaf.surfaces.findIndex((s) => s.id === surfaceId);
@@ -702,6 +707,16 @@ export const createSurfaceSlice: StateCreator<SliceState, [], [], SurfaceSlice> 
       });
     }
 
+    updateSplitTree(workspaceId, tree);
+  },
+
+  setPaneLocked(workspaceId, paneId, locked) {
+    const { workspaces, updateSplitTree } = get();
+    const ws = workspaces.find((w) => w.id === workspaceId);
+    if (!ws) return;
+
+    const tree = setLeafLocked(ws.splitTree, paneId, locked);
+    if (tree === ws.splitTree) return;
     updateSplitTree(workspaceId, tree);
   },
 

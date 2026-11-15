@@ -120,8 +120,10 @@ export const SKILL_OWNER_MARKER = '<!-- wmux-skill — AUTO-MANAGED BY wmux. Do 
 const SKILL_DESCRIPTION =
   'Use when wmux is running (`wmux ping` answers pong) and you are about to browse the web, '
   + 'show the user a markdown document (a plan, a spec, a README), stop to ask the user a question or '
-  + 'confirmation, or run background work or subagents of your own. Covers `wmux browser`, '
-  + '`wmux markdown`, `wmux report-agent` and `wmux report-subagent`.';
+  + 'confirmation, or run background work or subagents of your own. Also when you spawn agents or '
+  + 'open tabs (`wmux agent spawn`, `wmux new-surface`, `wmux layout grid`), where a pane the user '
+  + 'locked changes the outcome. Covers `wmux browser`, `wmux markdown`, `wmux report-agent`, '
+  + '`wmux report-subagent` and locked panes.';
 
 /**
  * The rendered block as a Claude Code skill (issue #386): the same text, minus
@@ -163,8 +165,9 @@ export function buildContextStub(cliBinDir: string, skillPath: string): string {
     '',
     'wmux is a terminal multiplexer with a browser panel the user watches. This file is',
     'global, so this session may not be running inside it. Before you browse the web,',
-    'show the user a markdown document, stop to ask them something, or run work in the',
-    'background, check once per session:',
+    'show the user a markdown document, stop to ask them something, run work in the',
+    'background, or spawn agents or open tabs (a pane the user locked changes where they',
+    'land), check once per session:',
     '',
     '```bash',
     'wmux ping                     # "pong" → wmux is here',

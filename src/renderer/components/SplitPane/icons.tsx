@@ -57,6 +57,16 @@ export function IconClose({ className, size = 16 }: IconProps) {
   );
 }
 
+/** Locked pane — closed padlock. */
+export function IconLock({ className, size = 14 }: IconProps) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true" focusable="false" {...base}>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
 /** Dropdown caret — chevron down. */
 export function IconCaret({ className, size = 9 }: IconProps) {
   return (

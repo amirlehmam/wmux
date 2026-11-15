@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron';
 import { agentManager, setupAgentPtyForwarding } from './ipc-handlers';
-import { SpawnTargetError } from './agent-spawn-target';
+import { SpawnTargetError, lockedAssignedPane } from './agent-spawn-target';
 
 /**
  * Resolve the target's renderer before creating any PTYs. Both spawn routes
@@ -15,6 +15,8 @@ export async function prepareAgentSpawn(workspaceId: string, paneIds: readonly s
       .catch(() => []);
     if (win.isDestroyed() || win.webContents.isDestroyed() || !Array.isArray(loads) || loads.length === 0
       || !paneIds.every((paneId) => loads.some((load) => load?.paneId === paneId))) continue;
+    const locked = lockedAssignedPane(loads, paneIds);
+    if (locked) throw new SpawnTargetError(-32000, `Pane ${locked} is locked`);
     return (params) => {
       if (win.isDestroyed() || win.webContents.isDestroyed()) {
         throw new SpawnTargetError(-32000, 'Target window is no longer available');

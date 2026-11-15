@@ -5,6 +5,7 @@
 import { useStore } from './store';
 import { splitNode, getAllPaneIds, findLeaf, buildGridLayout, buildAgentLayout, leafFraction, buildWorkspaceTree } from './store/split-utils';
 import { resolveAnchorPane, resolveLayoutSize } from './store/agent-layout-target';
+import { treeHasLockedPane, unlockedPaneIds } from './store/pane-lock';
 import { surfaceTerminalRegistry, showPaneNotice } from './hooks/useTerminal';
 import { rollupAgents } from './store/agent-rollup';
 import { toRemoteRosterSource } from './utils/remote-roster';
@@ -361,6 +362,10 @@ export function initPipeBridge(): void {
     if (!anchorPaneId) anchorPaneId = paneIds[0];
     if (!anchorPaneId) return null;
 
+    if (treeHasLockedPane(ws.splitTree)) {
+      return { error: 'Workspace has locked panes; unlock them or use layout agents' };
+    }
+
     const surfaceType = (params.type || 'terminal') as SurfaceType;
     const { tree: newTree, newPaneIds } = buildGridLayout(ws.splitTree, anchorPaneId, count, surfaceType);
     store.updateSplitTree(wsId, newTree);
@@ -425,6 +430,7 @@ export function initPipeBridge(): void {
         surfaces: leaf?.surfaces?.map(s => ({ id: s.id, type: s.type })) || [],
         tabCount: leaf?.surfaces?.length || 0,
         activeSurfaceIndex: leaf?.activeSurfaceIndex ?? 0,
+        ...(leaf?.locked === true ? { locked: true } : {}),
       };
     });
   };
@@ -440,10 +446,10 @@ export function initPipeBridge(): void {
     if (!paneId) {
       const ws = store.workspaces.find(w => w.id === wsId);
       if (!ws) return null;
-      const paneIds = getAllPaneIds(ws.splitTree);
-      paneId = paneIds[0];
+      if (getAllPaneIds(ws.splitTree).length === 0) return null;
+      paneId = unlockedPaneIds(ws.splitTree)[0];
+      if (!paneId) return { error: `No unlocked panes in workspace ${wsId}` };
     }
-    if (!paneId) return null;
 
     const type = (params?.type || 'terminal') as SurfaceType;
     const surfaceId = store.addSurface(wsId, paneId, type, { colorScheme: params?.colorScheme });

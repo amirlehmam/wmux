@@ -117,7 +117,22 @@ export async function resolveSpawnPaneLoads(
 ): Promise<PaneLoadInfo[]> {
   const loads = await lookups.paneLoads(workspaceId);
   if (loads.length === 0) throw new SpawnTargetError(-32000, 'No panes available');
-  return loads;
+  const unlocked = loads.filter((load) => !load.locked);
+  if (unlocked.length === 0) {
+    throw new SpawnTargetError(-32000, `No unlocked panes in workspace ${workspaceId}`);
+  }
+  return unlocked;
+}
+
+/** First assigned pane that is locked in `loads`, or null. */
+export function lockedAssignedPane(
+  loads: readonly PaneLoadInfo[],
+  paneIds: readonly string[],
+): string | null {
+  for (const paneId of paneIds) {
+    if (loads.some((load) => load?.paneId === paneId && load.locked)) return paneId;
+  }
+  return null;
 }
 
 /**
@@ -156,6 +171,10 @@ export async function resolveSpawnTarget(
         -32602,
         `Pane ${params.paneId} belongs to workspace ${owner}, not ${params.workspaceId}`,
       );
+    }
+    const ownerLoads = await lookups.paneLoads(owner);
+    if (lockedAssignedPane(ownerLoads, [params.paneId])) {
+      throw new SpawnTargetError(-32000, `Pane ${params.paneId} is locked`);
     }
     return { paneId: params.paneId, workspaceId: owner };
   }

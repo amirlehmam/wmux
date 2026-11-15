@@ -80,6 +80,7 @@ export const zhTW: Translation = {
   'palette.category.themes': '主題',
   'palette.category.layouts': '版面',
   'palette.openMarkdown': '開啟 Markdown 檔案…',
+  'palette.allPanesLocked': '所有窗格都已鎖定。請解鎖其中一個以開啟檔案。',
   'palette.saveCurrentLayout': '將目前版面存成新的預設集',
   'palette.saveCurrentLayoutFailed': '沒有作用中的工作區可以存成版面。',
   'palette.newWorkspaceWithLayout': '新工作區：{name}',
@@ -209,6 +210,9 @@ export const zhTW: Translation = {
   'surfaceTab.close': '關閉',
   'surfaceTab.closeOthers': '關閉其他分頁',
   'surfaceTab.closeToRight': '關閉右側所有分頁',
+  'surfaceTab.lockPane': '鎖定窗格',
+  'surfaceTab.unlockPane': '解鎖窗格',
+  'surfaceTab.lockedTooltip': '窗格已鎖定：代理與移入的分頁無法進入。點擊即可解鎖。',
   // 導覽覆蓋層
   'tutorial.skip': '略過',
   'tutorial.previous': '上一步',

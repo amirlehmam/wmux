@@ -56,6 +56,7 @@ export const cs: Translation = {
   'palette.category.themes': 'Motivy',
   'palette.category.layouts': 'Rozložení',
   'palette.openMarkdown': 'Otevřít soubor Markdown…',
+  'palette.allPanesLocked': 'Všechny panely jsou uzamčené. Odemkněte jeden, abyste mohli otevřít soubor.',
   'palette.saveCurrentLayout': 'Uložit aktuální rozložení jako novou předvolbu',
   'palette.saveCurrentLayoutFailed': 'Není aktivní žádný pracovní prostor, jehož rozložení lze uložit.',
   'palette.newWorkspaceWithLayout': 'Nový pracovní prostor: {name}',
@@ -177,6 +178,9 @@ export const cs: Translation = {
   'surfaceTab.close': 'Zavřít',
   'surfaceTab.closeOthers': 'Zavřít ostatní',
   'surfaceTab.closeToRight': 'Zavřít vpravo',
+  'surfaceTab.lockPane': 'Zamknout panel',
+  'surfaceTab.unlockPane': 'Odemknout panel',
+  'surfaceTab.lockedTooltip': 'Panel je zamčený: nelze do něj spouštět agenty ani přesouvat karty. Kliknutím odemknete.',
   // Úvodní příručka (overlay)
   'tutorial.skip': 'Přeskočit',
   'tutorial.previous': 'Zpět',

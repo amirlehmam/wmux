@@ -85,6 +85,7 @@ export const pt: Translation = {
   'palette.category.workspaces': 'Espaços de trabalho',
   'palette.category.themes': 'Temas',
   'palette.openMarkdown': 'Abrir arquivo Markdown…',
+  'palette.allPanesLocked': 'Todos os painéis estão bloqueados. Desbloqueie um para abrir um arquivo.',
   'palette.current': 'atual',
   'titlebar.help': 'Ajuda / Tutorial',
   'titlebar.devtools': 'Alternar ferramentas de desenvolvedor',
@@ -194,6 +195,9 @@ export const pt: Translation = {
   'surfaceTab.close': 'Fechar',
   'surfaceTab.closeOthers': 'Fechar outras',
   'surfaceTab.closeToRight': 'Fechar as da direita',
+  'surfaceTab.lockPane': 'Bloquear painel',
+  'surfaceTab.unlockPane': 'Desbloquear painel',
+  'surfaceTab.lockedTooltip': 'Painel bloqueado: agentes e abas movidas não podem entrar. Clique para desbloquear.',
   // Tutorial de boas-vindas
   'tutorial.skip': 'Pular',
   'tutorial.previous': 'Anterior',

@@ -7,7 +7,7 @@ export type WindowId = `win-${string}`;
 
 // Split tree
 export type SplitNode =
-  | { type: 'leaf'; paneId: PaneId; surfaces: SurfaceRef[]; activeSurfaceIndex: number }
+  | { type: 'leaf'; paneId: PaneId; surfaces: SurfaceRef[]; activeSurfaceIndex: number; locked?: boolean }
   | { type: 'branch'; direction: 'horizontal' | 'vertical'; ratio: number; children: [SplitNode, SplitNode] };
 
 /**

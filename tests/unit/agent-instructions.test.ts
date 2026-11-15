@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import {
   CLI_BIN_PLACEHOLDER,
+  buildContextStub,
+  buildSkillFile,
   getInstructionsPath,
   renderInstructions,
 } from '../../src/main/agent-instructions';
@@ -61,5 +63,43 @@ describe('agent instruction block (issue #158)', () => {
     // absolute probe also fails, the reader is told plainly to use normal tools.
     expect(raw).toMatch(/If it too does not answer `pong`, wmux is not\s+running for this\s+session/);
     expect(raw).toMatch(/Nothing here is a\s+restriction on what you may otherwise do/);
+  });
+});
+
+describe('locked panes in the always-loaded instruction text', () => {
+  const raw = fs.readFileSync(getInstructionsPath(), 'utf-8');
+
+  const skillDescription = (): string => {
+    const skill = buildSkillFile(renderInstructions(raw, '/cli-bin'));
+    const line = skill.split('\n').find((l) => l.startsWith('description: '));
+    expect(line).toBeDefined();
+    return JSON.parse(line!.slice('description: '.length)) as string;
+  };
+
+  it('names the spawn and placement verbs where a lock changes the outcome in the skill description', () => {
+    const description = skillDescription();
+    for (const verb of ['wmux agent spawn', 'wmux new-surface', 'wmux layout grid']) {
+      expect(description).toContain(verb);
+    }
+    expect(description).toMatch(/locked/i);
+  });
+
+  it('keeps the description as the existing triggers plus the lock, not a replacement', () => {
+    const description = skillDescription();
+    for (const kept of ['wmux ping', 'wmux browser', 'wmux markdown', 'wmux report-agent', 'wmux report-subagent']) {
+      expect(description).toContain(kept);
+    }
+  });
+
+  it('lists spawning and opening tabs among the moments to look in the stub', () => {
+    const stub = buildContextStub('/cli-bin', '/skills/wmux/SKILL.md');
+    expect(stub).toMatch(/spawn agents or open tabs/);
+    expect(stub).toMatch(/locked/i);
+  });
+
+  it('says in the Locked panes section that wmux markdown skips locked panes too', () => {
+    const section = raw.split(/^## /m).find((s) => s.startsWith('Locked panes'));
+    expect(section).toBeDefined();
+    expect(section).toMatch(/`wmux markdown <file>`[^]*skips locked panes/);
   });
 });

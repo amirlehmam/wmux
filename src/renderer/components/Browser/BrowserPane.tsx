@@ -608,7 +608,7 @@ export default function BrowserPane({
           webview: wv,
           openInNewTab: (url) => {
             if (onOpenInNewTabRef.current) onOpenInNewTabRef.current(url);
-            else openInNewBrowserTab(url);
+            else if (!openInNewBrowserTab(url)) wv?.loadURL?.(url)?.catch?.(() => {});
           },
           openExternal: (url) => window.wmux?.system?.openExternal?.(url),
           copyText: (text) => { window.wmux?.clipboard?.writeText?.(text)?.catch?.(() => {}); },

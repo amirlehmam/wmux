@@ -55,6 +55,7 @@ export const pl: Translation = {
   'palette.category.workspaces': 'Obszary robocze',
   'palette.category.themes': 'Motywy',
   'palette.openMarkdown': 'Otwórz plik Markdown…',
+  'palette.allPanesLocked': 'Wszystkie panele są zablokowane. Odblokuj jeden, aby otworzyć plik.',
   'palette.current': 'bieżący',
   // Pasek tytułu
   'titlebar.help': 'Pomoc / Samouczek',
@@ -168,6 +169,9 @@ export const pl: Translation = {
   'surfaceTab.close': 'Zamknij',
   'surfaceTab.closeOthers': 'Zamknij pozostałe',
   'surfaceTab.closeToRight': 'Zamknij po prawej',
+  'surfaceTab.lockPane': 'Zablokuj panel',
+  'surfaceTab.unlockPane': 'Odblokuj panel',
+  'surfaceTab.lockedTooltip': 'Panel zablokowany: agenci i przeniesione karty nie mogą do niego trafić. Kliknij, aby odblokować.',
   // Nakładka samouczka
   'tutorial.skip': 'Pomiń',
   'tutorial.previous': 'Wstecz',
