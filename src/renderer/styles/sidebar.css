@@ -1546,6 +1546,17 @@
   user-select: none;
 }
 
+.workspace-row__badge--indicator {
+  --indicator-color: var(--ui-accent);
+  max-width: 9em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--indicator-color);
+  background: color-mix(in srgb, var(--indicator-color) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--indicator-color) 40%, transparent);
+}
+
 .workspace-row__badge--worktree {
   color: var(--ui-accent);
   background: color-mix(in srgb, var(--ui-accent) 15%, transparent);

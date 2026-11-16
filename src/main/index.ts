@@ -2302,6 +2302,25 @@ app.whenReady().then(async () => {
         break;
       }
 
+      // ─── Workspace indicator handler ──────────────────────────────────────
+      case 'workspace.set_indicator': {
+        // Show (or, with empty text, clear) a small pill on a workspace without
+        // touching its title. Keyed on workspaceId, falling back to the
+        // caller's own workspace, so it works from a pane and from outside one.
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) {
+            w.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
+              command: 'set_workspace_indicator',
+              workspaceId: request.params?.workspaceId,
+              caller: request.params?.caller,
+              args: [request.params?.text || '', request.params?.color || ''],
+            });
+          }
+        });
+        respond({ ok: true });
+        break;
+      }
+
       // ─── Sidebar V2 handlers ──────────────────────────────────────────────
       case 'sidebar.set_status': {
         // Forward as metadata update to renderer

@@ -2221,6 +2221,16 @@ export const COMMAND_SPECS = {
   'close-workspace': { usage: 'wmux close-workspace [workspaceId]' },
   'select-workspace': { usage: 'wmux select-workspace <workspaceId>' },
   'rename-workspace': { usage: 'wmux rename-workspace <workspaceId> <title>', passthrough: true },
+  'set-indicator': {
+    usage: 'wmux set-indicator [--workspace <id>] --text <text> [--color <#rrggbb|name>]\n'
+      + '  A small pill on the workspace; the title is not changed. Defaults to this pane\'s workspace.\n'
+      + '  Text is cut at 16 characters; an unusable colour falls back to the accent.',
+    value: ['--workspace', '--text', '--color'],
+  },
+  'clear-indicator': {
+    usage: 'wmux clear-indicator [--workspace <id>]',
+    value: ['--workspace'],
+  },
   'list-workspaces': { usage: 'wmux list-workspaces' },
   'current-workspace': { usage: 'wmux current-workspace [--surface <id>]', value: ['--surface'] },
   whoami: { usage: 'wmux whoami [--surface <id>]   (alias of current-workspace)', value: ['--surface'] },
@@ -2515,6 +2525,24 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
   'close-workspace': async (args) => print(await sendV2('workspace.close', { id: args[1] })),
   'select-workspace': async (args) => print(await sendV2('workspace.select', { id: args[1] })),
   'rename-workspace': async (args) => print(await sendV2('workspace.rename', { id: args[1], title: args[2] })),
+  'set-indicator': async (args) => {
+    const text = getFlag(args, '--text');
+    if (!text || !text.trim()) {
+      console.error('set-indicator requires --text <text> (use clear-indicator to remove it)');
+      process.exit(1);
+    }
+    const workspaceId = getFlag(args, '--workspace');
+    const color = getFlag(args, '--color');
+    print(await sendV2('workspace.set_indicator', {
+      text,
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(color ? { color } : {}),
+    }));
+  },
+  'clear-indicator': async (args) => {
+    const workspaceId = getFlag(args, '--workspace');
+    print(await sendV2('workspace.set_indicator', { text: '', ...(workspaceId ? { workspaceId } : {}) }));
+  },
   'list-workspaces': async () => print(await sendV2('workspace.list')),
   'current-workspace': cmdCurrentWorkspace,
   whoami: cmdCurrentWorkspace,
@@ -2693,6 +2721,7 @@ Usage: wmux <command> [options]
 System:     ping, identify, capabilities, list-windows, focus-window <id>, new-window
 Links:      open <url>   (open it in the wmux browser panel, per Settings → Browser → Links)
 Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, list-workspaces
+            set-indicator --text T [--color C] [--workspace id] | clear-indicator [--workspace id]
             current-workspace | whoami [--surface <id>]   (the workspace THIS pane is in)
 Remote:     ssh [ssh options] <user@host> [--title T]   (remote terminal in a new workspace)
             bridge [--port P] [--host H] [--wsl]   (expose this wmux's pipe over TCP, default 127.0.0.1:9787)

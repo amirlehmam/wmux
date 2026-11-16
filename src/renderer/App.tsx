@@ -8,6 +8,7 @@ import { fireNotification } from './utils/notifications';
 import { getStoredWorkspaceLabel, useWorkspaceLabels } from './components/SplitPane/use-osc-title';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode, type SessionSaveRequest } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
+import { normalizeIndicator } from '../shared/workspace-indicator';
 import { classifyClaudeNotification } from '../shared/claude-notification';
 import SplitContainer from './components/SplitPane/SplitContainer';
 import { TerminalHost } from './components/Terminal/KeptAliveTerminal';
@@ -1055,6 +1056,17 @@ export default function App() {
             updateWorkspaceMetadata(target.id, { shellState: state, notificationText: text || undefined });
           }
         }
+        return;
+      }
+
+      // set_workspace_indicator names a workspace by id, or else by the caller's
+      // surface; neither is the `surfaceId` the guard below requires.
+      if (cmd.command === 'set_workspace_indicator') {
+        const [text, color] = cmd.args || [];
+        const target = cmd.workspaceId
+          ? useStore.getState().workspaces.find((w) => w.id === cmd.workspaceId)
+          : cmd.caller ? workspaceForSurface(cmd.caller) : undefined;
+        if (target) updateWorkspaceMetadata(target.id, { indicator: normalizeIndicator(text, color) });
         return;
       }
 
