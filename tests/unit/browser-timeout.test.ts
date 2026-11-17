@@ -30,6 +30,7 @@ const SRC = path.join(__dirname, '..', '..', 'src', 'main');
 const cdpBridge = fs.readFileSync(path.join(SRC, 'cdp-bridge.ts'), 'utf-8');
 const v2Browser = fs.readFileSync(path.join(SRC, 'v2-browser.ts'), 'utf-8');
 const agentRuntime = fs.readFileSync(path.join(SRC, 'agent-browser-runtime.ts'), 'utf-8');
+const agentControl = fs.readFileSync(path.join(SRC, 'agent-browser-control.ts'), 'utf-8');
 
 /**
  * Every main-process file that can spend time before a browser command replies.
@@ -69,9 +70,8 @@ function constMs(src: string, name: string): number {
 
 /** How long v2-browser lets ONE agent-browser invocation run, per verb. */
 function agentVerbBudget(verb: string): number {
-  if (verb === 'open') return constMs(v2Browser, 'AGENT_NAVIGATE_MS');
-  if (verb === 'wait') return constMs(v2Browser, 'AGENT_WAIT_MS') + constMs(v2Browser, 'AGENT_WAIT_GUARD_MS');
-  return constMs(v2Browser, 'AGENT_VERB_MS');
+  const wait = verb === 'wait' ? constMs(v2Browser, 'AGENT_WAIT_MS') + constMs(v2Browser, 'AGENT_WAIT_GUARD_MS') : 0;
+  return Math.max(constMs(agentControl, 'AGENT_BROWSER_COMMAND_TIMEOUT_MS'), wait);
 }
 
 const deadlineOf = (argv: string[]): number => {
@@ -183,17 +183,21 @@ describe('the agent engine fits inside the same client deadlines', () => {
   });
 
   it('does not put the dashboard start on the readiness path', () => {
-    // A cold `dashboard start` is 30s — longer than the CLI's whole deadline
-    // for most verbs. The dashboard is a viewer, so the verb must not wait for
-    // it; awaiting the acquire here would reintroduce the timeout this file
-    // exists to prevent, and no arithmetic could rescue it.
+    // The optional viewer must not consume the command's readiness budget.
     expect(constMs(agentRuntime, 'DASHBOARD_START_TIMEOUT_MS')).toBeGreaterThan(browserReadyBudget());
     expect(v2Browser).toMatch(/acquireDashboardFor\(/);
     expect(v2Browser).not.toMatch(/await\s+acquireDashboardFor\(/);
   });
 
-  it('gives a page load a bigger budget than a click', () => {
-    expect(agentVerbBudget('open')).toBeGreaterThan(agentVerbBudget('click'));
+  it('uses the hard watchdog for every native verb instead of cutting off normal native timeouts', () => {
+    for (const verb of ['open', 'click', 'eval', 'wait']) expect(agentVerbBudget(verb)).toBe(35_000);
+    for (const argv of VERBS) expect(deadlineOf(argv)).toBe(45_000);
+  });
+
+  it('outwaits an explicit long wait and its identity-check allowance', () => {
+    const explicit = 90_000;
+    expect(deadlineOf(['browser', 'wait', 'e5', String(explicit)]))
+      .toBeGreaterThan(browserReadyBudget() + explicit + constMs(v2Browser, 'AGENT_WAIT_GUARD_MS'));
   });
 });
 

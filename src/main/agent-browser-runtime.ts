@@ -69,10 +69,10 @@ export const sessionRegistry = new SessionRegistry();
 
 // Controls outlive viewer subscriptions and remain available for a failed-close retry.
 const sessionControls = new Map<SurfaceId, { session: AgentSession; control: AgentBrowserControl }>();
-let reportControlPause: ((id: SurfaceId, message: string) => void) | undefined;
+let reportControlPause: ((id: SurfaceId, message: string, keepStream: boolean) => void) | undefined;
 
 /** The single viewer bridge observes failures from either UI or pipe commands. */
-export function setAgentControlPauseReporter(reporter: (id: SurfaceId, message: string) => void): void {
+export function setAgentControlPauseReporter(reporter: (id: SurfaceId, message: string, keepStream: boolean) => void): void {
   reportControlPause = reporter;
 }
 
@@ -85,11 +85,11 @@ export async function initializeAgentBrowserControl(
   if (sessionControls.has(session.surfaceId)) throw new Error('The previous browser session has not been closed. Retry Start new session.');
   const control = new AgentBrowserControl(session, binary, {
     ...deps,
-    onPause: (message) => {
+    onPause: (message, keepStream) => {
       if (sessionRegistry.get(session.surfaceId) === session && sessionControls.get(session.surfaceId)?.control === control) {
-        reportControlPause?.(session.surfaceId, message);
+        reportControlPause?.(session.surfaceId, message, keepStream);
       }
-      deps?.onPause?.(message);
+      deps?.onPause?.(message, keepStream);
     },
   });
   sessionControls.set(session.surfaceId, { session, control });

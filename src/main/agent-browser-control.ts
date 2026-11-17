@@ -29,7 +29,7 @@ export interface AgentBrowserControlDeps {
   fingerprint?: (binary: string, timeoutMs: number) => Promise<NativeBinaryFingerprint>;
   probeBrowser?: (cdpUrl: string, timeoutMs: number) => Promise<boolean>;
   readPort?: (file: string, timeoutMs: number) => Promise<number>;
-  onPause?: (message: string) => void;
+  onPause?: (message: string, keepStream: boolean) => void;
 }
 
 type ObjectValue = Record<string, unknown>;
@@ -54,8 +54,10 @@ interface Job {
 }
 
 class Cancelled extends Error {}
+class UnknownNativeOutcome extends Error {}
 
-const COMMAND_MS = 60_000;
+/** Leave margin beyond native's 30-second transport timeout before the hard watchdog fires. */
+export const AGENT_BROWSER_COMMAND_TIMEOUT_MS = 35_000;
 const RECOVERY_MS = 10_000;
 const MAX_QUEUE = 256;
 const object = (v: unknown): ObjectValue | undefined => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as ObjectValue : undefined;
@@ -89,14 +91,15 @@ function probeBrowser(cdpUrl: string, timeoutMs: number): Promise<boolean> {
     && portNumber(Number(url.port)) && !url.username && !url.password && !url.search && !url.hash
     && /^\/devtools\/browser\/[A-Za-z0-9-]+$/.test(url.pathname);
   if (!standard) return Promise.resolve(true);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
-    const done = (live: boolean): void => {
+    const done = (live: boolean, reason?: Error): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       request.destroy();
-      resolve(live);
+      if (reason) reject(reason);
+      else resolve(live);
     };
     const request = http.get({ hostname: url.hostname.replace(/^\[|\]$/g, ''), port: url.port,
       path: '/json/version', agent: false }, (response) => {
@@ -112,7 +115,7 @@ function probeBrowser(cdpUrl: string, timeoutMs: number): Promise<boolean> {
         catch { done(false); }
       });
     });
-    const timer = setTimeout(() => done(false), timeoutMs);
+    const timer = setTimeout(() => done(false, new UnknownNativeOutcome('Browser endpoint probe timed out')), timeoutMs);
     request.on('error', () => done(false));
   });
 }
@@ -120,7 +123,7 @@ function probeBrowser(cdpUrl: string, timeoutMs: number): Promise<boolean> {
 function envelope(result: RunResult): ObjectValue {
   const value = object(result.data);
   if (!value || typeof value.success !== 'boolean' || (value.success ? !('data' in value) : !('error' in value))) {
-    throw new Error('Malformed native result; command outcome is unknown');
+    throw new UnknownNativeOutcome('Malformed native result; command outcome is unknown');
   }
   return value;
 }
@@ -135,9 +138,12 @@ function hasStatus(value: ObjectValue, status: string): boolean {
 
 /** Bootstrap and controlled commands must fence the same uncertain native results. */
 export function uncertainNativeOutcome(result: RunResult): string | undefined {
-  if (result.timedOut || /timed out/i.test(result.stderr)) return 'Native command timed out; outcome is unknown';
+  if (result.timedOut) return 'Native command timed out; outcome is unknown';
   const value = object(result.data);
   if (!result.spawnFailed && value && hasStatus(value, 'outcome_unknown')) return 'Native command outcome is unknown';
+  // A completed native error can itself say "timed out" without losing the response.
+  const completed = value && (value.success === true ? 'data' in value : value.success === false && 'error' in value);
+  if (!completed && /timed out/i.test(result.stderr)) return 'Native command timed out; outcome is unknown';
   return undefined;
 }
 
@@ -173,6 +179,7 @@ export class AgentBrowserControl {
   private disposed = false;
   private retired = false;
   private message?: string;
+  private keepStreamOnPause = false;
   private binaryBaseline?: NativeBinaryFingerprint;
   private daemon?: DaemonIdentity;
   private ports?: Ports;
@@ -196,7 +203,7 @@ export class AgentBrowserControl {
       || (!scope.closing && (this.cancelled || scope.epoch !== this.epoch))) {
       throw new Cancelled('Browser control work was cancelled or became stale');
     }
-    if (Date.now() >= scope.deadline) throw new Error('Browser control deadline expired');
+    if (Date.now() >= scope.deadline) throw new UnknownNativeOutcome('Browser control deadline expired');
   }
 
   private remaining(scope: Scope): number {
@@ -209,7 +216,7 @@ export class AgentBrowserControl {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = await Promise.race([Promise.resolve().then(() => { this.assert(scope); return work(); }),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Browser control deadline expired')), ms); })]);
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new UnknownNativeOutcome('Browser control deadline expired')), ms); })]);
       this.assert(scope);
       return result;
     } finally { clearTimeout(timer); }
@@ -226,11 +233,12 @@ export class AgentBrowserControl {
     }
   }
 
-  private pause(reason: unknown): void {
-    if (this.disposed || this.retired || this.message) return;
+  private pause(reason: unknown, keepStream = false): void {
+    if (this.disposed || this.retired || (this.message && (!this.keepStreamOnPause || keepStream))) return;
+    this.keepStreamOnPause = keepStream;
     this.message = `${error(reason).message}. Browser control paused; explicitly reconnect or start a new session. The action was not retried.`;
     this.invalidate();
-    try { this.deps.onPause?.(this.message); } catch { /* Reporting must not undo the fence. */ }
+    try { this.deps.onPause?.(this.message, keepStream); } catch { /* Reporting must not undo the fence. */ }
   }
 
   private schedule<T>(work: (scope: Scope) => Promise<T>, timeoutMs?: number, closing: false | 'readback' | 'close' = false, viewer = false): Promise<T> {
@@ -247,7 +255,7 @@ export class AgentBrowserControl {
       if (timeoutMs !== undefined && closing !== 'close') job.timer = setTimeout(() => {
         scope.active = false;
         this.jobs = this.jobs.filter((queued) => queued !== job);
-        if (scope.nativeInFlight) this.pause(new Error('Native command deadline expired; outcome is unknown'));
+        if (scope.nativeInFlight) this.pause(new Error('Native command deadline expired; outcome is unknown'), this.initialized);
         reject(new Error('Browser control deadline expired'));
       }, timeoutMs);
       this.jobs.push(job);
@@ -260,7 +268,7 @@ export class AgentBrowserControl {
     const job = this.jobs.shift();
     if (!job) return;
     this.running = job;
-    if (!Number.isFinite(job.scope.deadline)) job.scope.deadline = Date.now() + (job.dispatchTimeoutMs ?? COMMAND_MS);
+    if (!Number.isFinite(job.scope.deadline)) job.scope.deadline = Date.now() + (job.dispatchTimeoutMs ?? AGENT_BROWSER_COMMAND_TIMEOUT_MS);
     try { job.resolve(await this.bounded(job.scope, job.execute)); }
     catch (reason) { job.reject(error(reason)); }
     finally {
@@ -287,7 +295,7 @@ export class AgentBrowserControl {
         // fence the final handoff. Results arriving after our deadline are inert.
         if (!this.disposed && scope.active && scope.owner?.active !== false && Date.now() < scope.deadline) {
           const uncertainty = uncertainNativeOutcome(result);
-          if (uncertainty) throw new Error(uncertainty);
+          if (uncertainty) throw new UnknownNativeOutcome(uncertainty);
           if (!result.spawnFailed && argv[0] !== '--version') {
             const value = envelope(result);
             replaced = result.ok && value.success === true && observedBrowserReplacement(result);
@@ -298,7 +306,7 @@ export class AgentBrowserControl {
       });
       return result;
     } catch (reason) {
-      if (dispatched && !(reason instanceof Cancelled) && (effectful || replaced)) this.pause(reason);
+      if (dispatched && !(reason instanceof Cancelled) && (effectful || replaced)) this.pause(reason, this.initialized && !replaced);
       throw reason;
     } finally {
       scope.nativeInFlight = false;
@@ -364,7 +372,10 @@ export class AgentBrowserControl {
 
   private async health(scope: Scope, closing = false): Promise<boolean> {
     try { return await this.verify(scope, closing); }
-    catch (reason) { if (!(reason instanceof Cancelled)) this.pause(reason); throw reason; }
+    catch (reason) {
+      if (!(reason instanceof Cancelled)) this.pause(reason, this.initialized && reason instanceof UnknownNativeOutcome);
+      throw reason;
+    }
   }
 
   private async cdp(scope: Scope, check?: NativeCommandCheck): Promise<string> {
@@ -402,7 +413,7 @@ export class AgentBrowserControl {
     if (!this.initialized || this.message) return Promise.reject(new Error(this.message ?? 'Browser control is not initialized'));
     return this.schedule(async (scope) => {
       let running = false;
-      const run: NativeCommandRunner = async (argv, budget = COMMAND_MS, check) => {
+      const run: NativeCommandRunner = async (argv, budget = AGENT_BROWSER_COMMAND_TIMEOUT_MS, check) => {
         this.assert(scope);
         if (running) throw new Error('Native commands within one work item must be awaited sequentially');
         if (!Number.isFinite(budget) || budget <= 0) throw new Error('Invalid native command timeout');
@@ -446,7 +457,11 @@ export class AgentBrowserControl {
       if (check) await this.bounded(scope, check);
       await this.health(scope);
       const url = await this.cdp(scope, check);
-      if (url !== this.cdpUrl) throw new Error('Native browser endpoint changed');
+      if (url !== this.cdpUrl) {
+        const reason = new Error('Native browser endpoint changed');
+        this.pause(reason);
+        throw reason;
+      }
       await this.health(scope);
       if (check) await this.bounded(scope, check);
       this.assert(scope);

@@ -39,7 +39,7 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
   const area = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const keyboard = useRef<HTMLTextAreaElement>(null);
-  const state = useRef({ token: '', revision: 0, ready: false, drawnRevision: -1, width: 1, height: 1 });
+  const state = useRef({ token: '', revision: 0, ready: false, inputBlocked: false, drawnRevision: -1, width: 1, height: 1 });
   const callbacks = useRef({ onPageState, onActivate, onTabs, onConnection, t });
   callbacks.current = { onPageState, onActivate, onTabs, onConnection, t };
   const isVisible = useRef(visible);
@@ -47,6 +47,7 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
   const visibilityChanged = useRef<() => void>(() => {});
   const visibilityGeneration = useRef(0);
   const [error, setError] = useState('');
+  const [inputBlocked, setInputBlocked] = useState(false);
   const [connected, setConnected] = useState(false);
   const [hasFrame, setHasFrame] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -73,11 +74,12 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
     action: async (value) => {
       const { token, revision, ready } = state.current;
       if (!ready) throw new Error('Page is not connected');
+      if (state.current.inputBlocked) throw new Error('Page input is paused');
       try {
         await (window.wmux.agentViewer as AgentViewerBridge).action(surfaceId, token, revision, value);
-        if (state.current.token === token && state.current.ready) setError('');
+        if (state.current.token === token && state.current.ready && !state.current.inputBlocked) setError('');
       } catch (err) {
-        if (state.current.token === token && state.current.ready) setError(String(err));
+        if (state.current.token === token && state.current.ready && !state.current.inputBlocked) setError(String(err));
         throw err;
       }
     },
@@ -86,7 +88,8 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
   useEffect(() => {
     const api = window.wmux.agentViewer as AgentViewerBridge;
     let token = crypto.randomUUID();
-    state.current = { token, revision: 0, ready: false, drawnRevision: -1, width: 1, height: 1 };
+    state.current = { token, revision: 0, ready: false, inputBlocked: false, drawnRevision: -1, width: 1, height: 1 };
+    setInputBlocked(false);
     setError('');
     setConnected(false);
     callbacks.current.onConnection?.(false);
@@ -106,10 +109,10 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
       activeUrl = url;
     };
     const resize = async () => {
-      if (resizing || !state.current.ready || disposed || !isVisible.current || document.hidden) return;
+      if (resizing || !state.current.ready || state.current.inputBlocked || disposed || !isVisible.current || document.hidden) return;
       resizing = true;
       try {
-        while (pendingSize && !disposed && state.current.ready && isVisible.current && !document.hidden) {
+        while (pendingSize && !disposed && state.current.ready && !state.current.inputBlocked && isVisible.current && !document.hidden) {
           const { width, height, revision } = pendingSize;
           pendingSize = undefined;
           if (revision !== state.current.revision) continue;
@@ -120,7 +123,7 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
             await api.action(surfaceId, token, revision, { type: 'viewport', width, height });
             if (!disposed && revision === state.current.revision && generation === visibilityGeneration.current) lastSize = key;
           } catch (err) {
-            if (!disposed && revision === state.current.revision && generation === visibilityGeneration.current) {
+            if (!disposed && !state.current.inputBlocked && revision === state.current.revision && generation === visibilityGeneration.current) {
               setError(String(err));
               pendingSize = undefined;
               break;
@@ -132,7 +135,7 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
     };
     const measure = () => {
       const el = area.current;
-      if (!el || disposed || document.hidden || !isVisible.current) return;
+      if (!el || disposed || state.current.inputBlocked || document.hidden || !isVisible.current) return;
       const rect = el.getBoundingClientRect();
       const width = Math.floor(rect.width), height = Math.floor(rect.height);
       if (width < 1 || height < 1) return;
@@ -159,7 +162,8 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
       recoveryFrom = token;
       const previousToken = token;
       token = crypto.randomUUID();
-      state.current = { token, revision: 0, ready: false, drawnRevision: -1, width: 1, height: 1 };
+      state.current = { token, revision: 0, ready: false, inputBlocked: false, drawnRevision: -1, width: 1, height: 1 };
+      setInputBlocked(false);
       failed = false;
       visibilityGeneration.current++;
       pendingSize = undefined;
@@ -199,6 +203,14 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
       }
       state.current.revision = event.revision;
       switch (message.type) {
+        case 'control-paused':
+          state.current.inputBlocked = true;
+          setInputBlocked(true);
+          if (composing.current) composing.current.interactive = false;
+          pendingSize = undefined;
+          clearTimeout(resizeTimer);
+          setError(message.message);
+          break;
         case 'error':
           failed = true;
           state.current.ready = false;
@@ -283,7 +295,7 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
       }
     });
     void api.attach(surfaceId, token).then(() => { if (!disposed && (!isVisible.current || document.hidden)) syncVisibility(); })
-      .catch((err) => { if (!disposed) setError(String(err)); });
+      .catch((err) => { if (!disposed && !state.current.inputBlocked) setError(String(err)); });
     const observer = new ResizeObserver(measure);
     if (area.current) observer.observe(area.current);
     document.addEventListener('visibilitychange', syncVisibility);
@@ -304,15 +316,15 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
 
   const input = (value: AgentViewerInput) => {
     const s = state.current;
-    if (visible && !document.hidden && s.ready && s.drawnRevision === s.revision) window.wmux.agentViewer.input(surfaceId, s.token, s.revision, value);
+    if (visible && !document.hidden && s.ready && !s.inputBlocked && s.drawnRevision === s.revision) window.wmux.agentViewer.input(surfaceId, s.token, s.revision, value);
   };
   const action = (value: AgentViewerAction) => {
     const s = state.current;
-    if (visible && !document.hidden && s.ready && s.drawnRevision === s.revision) {
+    if (visible && !document.hidden && s.ready && !s.inputBlocked && s.drawnRevision === s.revision) {
       const { token, revision } = s;
       const generation = visibilityGeneration.current;
       void (window.wmux.agentViewer as AgentViewerBridge).action(surfaceId, token, revision, value).catch((err) => {
-        if (state.current.token === token && state.current.ready && state.current.revision === revision && generation === visibilityGeneration.current) setError(String(err));
+        if (state.current.token === token && state.current.ready && !state.current.inputBlocked && state.current.revision === revision && generation === visibilityGeneration.current) setError(String(err));
       });
     }
   };
@@ -388,7 +400,7 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
       onCompositionStart={() => {
         const { token, revision, ready, drawnRevision } = state.current;
         composing.current = { token, revision, generation: visibilityGeneration.current,
-          interactive: visible && !document.hidden && ready && drawnRevision === revision };
+          interactive: visible && !document.hidden && ready && !state.current.inputBlocked && drawnRevision === revision };
         committedComposition.current = null;
       }}
       onCompositionEnd={(e) => {
@@ -414,20 +426,20 @@ export default function AgentBrowserViewer({ surfaceId, visible, focused, onActi
       }}
       onPaste={(e) => { e.preventDefault(); action({ type: 'paste' }); }}
       onCopy={(e) => { e.preventDefault(); action({ type: 'copy' }); }} />
-    {(!connected || !hasFrame || error) && <div className="browser-pane__blank agent-browser-viewer__overlay" role="status">
+    {(!connected || !hasFrame || error) && <div className={`agent-browser-viewer__overlay ${connected && hasFrame ? 'agent-browser-viewer__notice' : 'browser-pane__blank'}`} role="status">
       <p className="browser-pane__blank-title">{error || (connected
         ? t('browser.agent.waitingFrame', 'Waiting for page frame…')
         : t('browser.agent.connecting', 'Connecting to page…'))}</p>
-      {error && !connected && <button className="browser-pane__setup-btn" disabled={recovering} onClick={() => reconnect.current()}>
+      {error && (!connected || inputBlocked) && <button className="browser-pane__setup-btn" disabled={recovering} onClick={() => reconnect.current()}>
         {t('browser.agent.reconnect', 'Reconnect / Continue')}
       </button>}
-      {error && !connected && onStartNew && <button className="browser-pane__setup-btn" disabled={recovering} onClick={onStartNew}>
+      {error && (!connected || inputBlocked) && onStartNew && <button className="browser-pane__setup-btn" disabled={recovering} onClick={onStartNew}>
         {t('browser.agent.startNew', 'Start new session')}
       </button>}
       {error && onDashboard && <button className="browser-pane__setup-btn" onClick={onDashboard}>
         {t('browser.agent.showDashboard', 'Show dashboard')}
       </button>}
-      {error && connected && <button className="browser-pane__setup-btn" onClick={() => setError('')}>
+      {error && connected && !inputBlocked && <button className="browser-pane__setup-btn" onClick={() => setError('')}>
         {t('browser.agent.dismissError', 'Dismiss')}
       </button>}
     </div>}

@@ -23,6 +23,7 @@ import * as fs from 'fs';
 import { BrowserWindow } from 'electron';
 import { cdpBridge } from './ipc-handlers';
 import { unwrapAgentData, type RunResult } from './agent-browser-cli';
+import { AGENT_BROWSER_COMMAND_TIMEOUT_MS } from './agent-browser-control';
 import { acquireDashboardFor, ensureStartedSession, runAgentBrowserForSession, withDeadline } from './agent-browser-runtime';
 import type { AgentSession } from './agent-browser-session';
 import { toAgentBrowserArgv } from './agent-browser-verbs';
@@ -488,42 +489,17 @@ export async function runBrowserCommandForTarget(
 }
 
 /**
- * ── Agent-engine budgets ───────────────────────────────────────────────────
- *
- * How long one agent-browser invocation may run. These are NOT free-floating:
- * the CLI hangs up on its own deadline (`browserDeadline()` in
- * `src/cli/wmux.ts` = BROWSER_READY_MS + verb + BROWSER_SLACK_MS), and a server
- * budget larger than that deadline is not a longer budget — it is an
- * UNREPORTABLE one. The client is already gone, so a command that overruns
- * prints a bare `timed out` and the server's real diagnosis
- * ('agent-browser … failed: …') never reaches the user. That is exactly the
- * regression `tests/unit/browser-timeout.test.ts` was written to prevent, and
- * it now checks these numbers against the CLI's directly.
- *
- * Sizing, against a CLI that allows READY(5000) + verb + SLACK(5000):
- *   navigate — 30000, matching cdp-bridge's own navigate budget; CLI allows 40000.
- *   wait     — the caller's own timeout when given, else 10000, matching
- *              cdp-bridge's wait(); the CLI scales its deadline the same way.
- *              Plus AGENT_WAIT_GUARD_MS for the session's identity checks,
- *              which spawn native processes around every command: without it
- *              `wait e3 1000` times out on the checks alone. Only wait gets
- *              it, because only wait has slack to spare (the others are
- *              already sized to include the checks).
- *   the rest — 4000. The CLI allows 10000 total for them, and readiness can
- *              legitimately eat 5000 of it (`pollSurfaceWcId`), so anything
- *              larger could not be reported.
+ * Native action deadlines should return their own result before wmux's hard
+ * watchdog fires. The public CLI outwaits readiness plus this budget. Explicit
+ * longer waits still reserve room for the session's pre/post identity checks.
  */
-const AGENT_NAVIGATE_MS = 30000;
 const AGENT_WAIT_MS = 10000;
 const AGENT_WAIT_GUARD_MS = 3000;
-const AGENT_VERB_MS = 4000;
 
 function agentTimeoutFor(method: string, params: any): number {
-  if (method === 'browser.navigate') return AGENT_NAVIGATE_MS;
-  if (method === 'browser.wait') {
-    return (typeof params?.timeout === 'number' ? params.timeout : AGENT_WAIT_MS) + AGENT_WAIT_GUARD_MS;
-  }
-  return AGENT_VERB_MS;
+  const wait = method === 'browser.wait'
+    ? (typeof params?.timeout === 'number' ? params.timeout : AGENT_WAIT_MS) + AGENT_WAIT_GUARD_MS : 0;
+  return Math.max(AGENT_BROWSER_COMMAND_TIMEOUT_MS, wait);
 }
 
 /** The real machine behind `BrowserDeps`. Every production call uses this. */

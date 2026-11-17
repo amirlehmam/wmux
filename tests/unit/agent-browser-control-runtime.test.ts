@@ -116,7 +116,7 @@ describe('shared CLI control integration', () => {
     });
     try {
       await expect(runAgentBrowserForSession(['--session', h.session.sessionName, 'click', '@e1'], 2000)).rejects.toThrow(/timed out/);
-      expect(report).toHaveBeenCalledWith(h.id, expect.stringContaining('paused'));
+      expect(report).toHaveBeenCalledWith(h.id, expect.stringContaining('paused'), true);
       const calls = h.calls.length;
       await expect(withAgentSessionWork(h.session, (run) => run(['reload'], 2000))).rejects.toThrow(/paused/);
       expect(h.calls).toHaveLength(calls);

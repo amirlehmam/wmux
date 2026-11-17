@@ -215,6 +215,25 @@
   overflow-wrap: anywhere;
 }
 
+.agent-browser-viewer__notice {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--ui-bg-3);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+}
+
+.agent-browser-viewer__notice .browser-pane__blank-title {
+  flex: 1 1 180px;
+}
+
 /* The webview and anything laid over it. Positioned so the setup card can cover
    the viewport without unmounting the <webview> underneath it — unmounting
    would destroy the guest page and its CDP registration. */

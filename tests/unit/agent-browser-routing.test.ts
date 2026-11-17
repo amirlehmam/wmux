@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { engineOf } from '../../src/shared/types';
+import { browserRequest } from '../../src/cli/wmux';
 import type { SurfaceRef } from '../../src/shared/types';
 
 /**
@@ -197,20 +198,16 @@ describe('runBrowserCommandForTarget — engine dispatch', () => {
   // `timed out`, so the server's real diagnosis never reaches the user.
   // browser-timeout.test.ts pins the actual numbers against src/cli/wmux.ts;
   // this pins that a budget is passed at all, per verb.
-  it('bounds every agent invocation with a per-verb timeout', async () => {
+  it('lets native actions finish inside a hard watchdog and accommodates explicit longer waits', async () => {
     const runAgent = vi.fn(async () => ok({}));
     const d = deps(makeBridge(), runAgent);
     await runBrowserCommandForTarget('browser.navigate', { url: 'u' }, agent(), d);
     await runBrowserCommandForTarget('browser.snapshot', {}, agent(), d);
     await runBrowserCommandForTarget('browser.wait', { timeout: 777 }, agent(), d);
 
-    const budgets = runAgent.mock.calls.map((c: any[]) => c[1]);
-    for (const ms of budgets) expect(ms).toBeGreaterThan(0);
-    // navigate is a page load; a click is not. They must not share a budget.
-    expect(budgets[0]).toBeGreaterThan(budgets[1]);
-    // An explicit caller timeout is honoured rather than replaced by a default,
-    // plus the fixed allowance for the session's identity checks.
-    expect(budgets[2]).toBe(777 + 3000);
+    await runBrowserCommandForTarget('browser.wait', { timeout: 90_000 }, agent(), d);
+    expect(runAgent.mock.calls.map((c: any[]) => c[1])).toEqual([35_000, 35_000, 35_000, 93_000]);
+    expect(runAgent).toHaveBeenCalledWith(['--session', 'wmux-surf-a', 'wait', '777'], 35_000);
   });
 
   it('never spawns a process for a verb the agent engine cannot express', async () => {
@@ -803,7 +800,8 @@ describe('complete agent command readiness budget', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it.each([['browser.snapshot', 10000], ['browser.navigate', 40000]] as const)('%s readiness plus native command still fits its public deadline', async (method, deadline) => {
+  it.each([['browser.snapshot', 'snapshot'], ['browser.navigate', 'open']] as const)('%s readiness plus native command still fits its public deadline', async (method, verb) => {
+    const deadline = browserRequest(['browser', verb, 'https://fixture.test/'])!.timeoutMs;
     vi.useFakeTimers();
     try {
       const caller = nextCaller();

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import AgentBrowserViewer, { viewerCoordinates } from '../../src/renderer/components/Browser/AgentBrowserViewer';
+import AgentBrowserViewer, { viewerCoordinates, type AgentViewerHandle } from '../../src/renderer/components/Browser/AgentBrowserViewer';
 import type { AgentViewerBridge, AgentViewerEvent } from '../../src/shared/types';
 import { useStore } from '../../src/renderer/store';
 import * as i18n from '../../src/renderer/i18n';
@@ -500,18 +500,102 @@ describe('renderer stream/input bridge', () => {
     expect(api.ack).toHaveBeenLastCalledWith('surf-renderer', oldToken, 1, false);
   });
 
-  it('keeps ordinary command errors dismissible without reconnect or restarting', async () => {
+  it('keeps ordinary command errors compact and dismissible while drawing and accepting input', async () => {
+    vi.useFakeTimers();
     await render();
     await event({ type: 'status', connected: true, width: 900, height: 640 });
     await present();
     vi.mocked(api.action).mockRejectedValueOnce(new Error('Selection failed'));
     await dispatchKey('keydown', 'c', 'KeyC', 67, true);
     expect(container.textContent).toContain('Selection failed');
+    expect(container.querySelector('.agent-browser-viewer__notice')).not.toBeNull();
+    expect(container.querySelector('.browser-pane__blank')).toBeNull();
+    await present();
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(api.ack).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 2, true);
+    await dispatchKey('keydown', 'a', 'KeyA', 65);
+    await dispatchText('still usable');
+    expect(api.input).toHaveBeenCalledOnce();
+    expect(api.action).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 1, { type: 'insert-text', text: 'still usable' });
     const dismiss = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Dismiss')!;
     await act(async () => dismiss.click());
     expect(container.textContent).not.toContain('Selection failed');
     expect(api.reportFailure).not.toHaveBeenCalled();
     expect(api.reconnect).not.toHaveBeenCalled();
+  });
+
+  it('keeps paused control streaming while fencing input, actions and resize until explicit reconnect', async () => {
+    vi.useFakeTimers();
+    const handle = createRef<AgentViewerHandle>();
+    const onConnection = vi.fn(), onStartNew = vi.fn();
+    const redraw = async (visible = true) => {
+      await act(async () => root.render(createElement(AgentBrowserViewer, {
+        surfaceId: 'surf-renderer', visible, onPageState: vi.fn(), onConnection, onStartNew, ref: handle,
+      })));
+    };
+    await redraw();
+    await event({ type: 'status', connected: true, width: 900, height: 640 });
+    await present();
+    let finishAction!: () => void;
+    vi.mocked(api.action).mockImplementationOnce(() => new Promise<void>((resolve) => { finishAction = resolve; }));
+    const pendingAction = handle.current!.action({ type: 'reload' });
+    await event({ type: 'frame', id: 2, data: 'AAAA', width: 900, height: 640 });
+    await event({ type: 'control-paused', message: 'Action outcome uncertain' });
+    expect(container.querySelector('.agent-browser-viewer__notice')).not.toBeNull();
+    expect(container.querySelector('.browser-pane__blank')).toBeNull();
+    expect(onConnection).toHaveBeenLastCalledWith(true);
+    expect(container.textContent).not.toContain('Dismiss');
+    expect(container.textContent).toContain('Start new session');
+    await act(async () => { finishAction(); await pendingAction; });
+    expect(container.textContent).toContain('Action outcome uncertain');
+    await act(async () => decode[1].onload?.(new Event('load')));
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(api.ack).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 2, true);
+    vi.mocked(api.action).mockClear();
+    await event({ type: 'status', connected: true, width: 900, height: 640 });
+    await event({ type: 'tabs', tabs: [{ tabId: 't2', title: 'New tab', url: 'https://b.test/', active: true }] }, 2);
+    await present(2);
+    width = 750; measure();
+    await act(async () => vi.advanceTimersByTimeAsync(150));
+    await dispatchKey('keydown', 'a', 'KeyA', 65);
+    await dispatchKey('keydown', 'v', 'KeyV', 86, true);
+    await dispatchText('bulk input');
+    const canvas = container.querySelector('canvas')!;
+    await act(async () => {
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 40, clientY: 50 }));
+      canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 10 }));
+      textarea().dispatchEvent(new Event('paste', { bubbles: true, cancelable: true }));
+      textarea().dispatchEvent(new Event('copy', { bubbles: true, cancelable: true }));
+    });
+    await expect(handle.current!.action({ type: 'reload' })).rejects.toThrow('Page input is paused');
+    expect(api.input).not.toHaveBeenCalled();
+    expect(api.action).not.toHaveBeenCalled();
+    await redraw(false);
+    await event({ type: 'frame', id: 4, data: 'AAAA', width: 900, height: 640 }, 2);
+    expect(api.ack).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 4, false);
+    await redraw(true);
+    await present(2);
+    await act(async () => vi.advanceTimersByTimeAsync(150));
+    expect(vi.mocked(api.action).mock.calls.map((call) => call[3])).toEqual([
+      { type: 'visibility', visible: false }, { type: 'visibility', visible: true },
+    ]);
+    expect(container.textContent).toContain('Action outcome uncertain');
+    const oldToken = vi.mocked(api.attach).mock.calls[0][1];
+    const reconnect = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Reconnect / Continue')!;
+    await act(async () => reconnect.click());
+    expect(api.reconnect).toHaveBeenCalledExactlyOnceWith('surf-renderer', oldToken, expect.not.stringMatching(oldToken));
+    expect(api.attach).toHaveBeenCalledOnce();
+    await event({ type: 'status', connected: true, width: 900, height: 640 }, 0);
+    await present(0);
+    await dispatchKey('keydown', 'a', 'KeyA', 65);
+    await dispatchText('continued');
+    expect(api.input).toHaveBeenCalledOnce();
+    expect(api.action).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 0, { type: 'insert-text', text: 'continued' });
+    await act(async () => handle.current!.action({ type: 'reload' }));
+    expect(api.action).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 0, { type: 'reload' });
+    await act(async () => vi.advanceTimersByTimeAsync(150));
+    expect(api.action).toHaveBeenLastCalledWith('surf-renderer', expect.any(String), 0, { type: 'viewport', width: 750, height: 640 });
+    expect(api.reportFailure).not.toHaveBeenCalled();
   });
 
   it('keeps failed recovery retryable and fences a pending recovery on unmount', async () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as path from 'path';
-import { AgentBrowserControl, type NativeCommandRunner } from '../../src/main/agent-browser-control';
+import { AgentBrowserControl, uncertainNativeOutcome, type NativeCommandRunner } from '../../src/main/agent-browser-control';
 import type { RunResult } from '../../src/main/agent-browser-cli';
 import { sessionNameFor, type AgentSession } from '../../src/main/agent-browser-session';
 import type { SurfaceId } from '../../src/shared/types';
@@ -195,6 +195,59 @@ describe('AgentBrowserControl', () => {
     expect(h.actions()).toEqual([['wait', '@e3'], ['snapshot'], ['click', '@e3']]);
   });
 
+  it.each(['wait', 'click'])('returns a completed native %s timeout without pausing or retrying', async (verb) => {
+    const h = harness();
+    await h.control.initialize();
+    const failure = { ...result('Action timed out after 2000ms', false), ok: false, stderr: 'Action timed out after 2000ms' };
+    h.setHook((argv) => argv[0] === verb ? failure : undefined);
+    expect(await h.control.enqueue((run) => run([verb, '@e3']))).toEqual(failure);
+    expect(h.control.pauseMessage).toBeUndefined();
+    expect(h.onPause).not.toHaveBeenCalled();
+    await h.control.enqueue((run) => run(['snapshot']));
+    expect(h.actions()).toEqual([[verb, '@e3'], ['snapshot']]);
+  });
+
+  it.each([null, {}, { success: true }])('keeps an incomplete timeout response uncertain: %j', (data) => {
+    expect(uncertainNativeOutcome({ ...result({}), data, stderr: 'Native command timed out' })).toMatch(/unknown/);
+  });
+
+  it.each(['preflight', 'postflight'])('keeps a healthy stream viewable when %s checks exceed the watchdog', async (phase) => {
+    vi.useFakeTimers();
+    const h = harness();
+    await h.control.initialize();
+    if (phase === 'postflight') h.probeBrowser.mockResolvedValueOnce(true);
+    h.probeBrowser.mockImplementationOnce(() => new Promise(() => {}));
+    const action = h.control.enqueue((run) => run(['click'], 20));
+    const rejected = expect(action).rejects.toThrow(/deadline expired/);
+    await vi.advanceTimersByTimeAsync(21);
+    await rejected;
+    expect(h.onPause).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('deadline expired'), true);
+    expect(h.actions()).toEqual(phase === 'postflight' ? [['click']] : []);
+    await expect(h.control.enqueue((run) => run(['must-not-run']))).rejects.toThrow(/paused/);
+  });
+
+  it.each(['timeout', 'unknown', 'malformed'])('does not turn an uncertain %s health response into a stream failure', async (kind) => {
+    const h = harness();
+    await h.control.initialize();
+    h.setHook((argv) => argv.join(' ') !== 'session info' ? undefined
+      : kind === 'timeout' ? { ...result({}), timedOut: true }
+      : kind === 'unknown' ? result({ code: 'outcome_unknown' }, false) : { ...result({}), data: null });
+    await expect(h.control.enqueue((run) => run(['click']))).rejects.toThrow(/unknown/);
+    expect(h.onPause).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('unknown'), true);
+    expect(h.actions()).toEqual([]);
+  });
+
+  it('keeps an uncertain command viewable but stops viewing on a subsequent identity change', async () => {
+    const h = harness();
+    await h.control.initialize();
+    await paused(h);
+    expect(h.onPause).toHaveBeenLastCalledWith(expect.stringContaining('unknown'), true);
+    h.state.pid++;
+    await expect(h.control.resume()).rejects.toThrow(/identity changed/);
+    expect(h.onPause).toHaveBeenLastCalledWith(expect.stringContaining('identity changed'), false);
+    expect(h.actions()).toEqual([['click', '@e1']]);
+  });
+
   it.each(['timeout', 'malformed', 'unknown', 'replacement'] as const)(
     'pauses immediately on %s without postflight native calls or replay', async (kind) => {
       const h = harness();
@@ -299,6 +352,7 @@ describe('AgentBrowserControl', () => {
       ? result({ cdpUrl: 'ws://127.0.0.1:40000/devtools/browser/replacement' }) : undefined);
     await expect(h.control.resume()).rejects.toThrow(/endpoint changed/);
     expect(h.control.pauseMessage).toBeDefined();
+    expect(h.onPause).toHaveBeenLastCalledWith(expect.stringContaining('endpoint changed'), false);
     expect(h.calls.slice(count)).toEqual([['session', 'info'], ['get', 'cdp-url']]);
     h.setHook(undefined);
     await h.control.resume();

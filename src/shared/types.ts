@@ -63,6 +63,7 @@ export type AgentViewerMessage =
   | { type: 'status'; connected: boolean; width: number; height: number }
   | { type: 'tabs'; tabs: AgentBrowserTab[] }
   | { type: 'url'; url: string }
+  | { type: 'control-paused'; message: string }
   | { type: 'error'; message: string };
 
 export interface AgentViewerEvent {

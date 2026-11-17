@@ -205,6 +205,62 @@ describe('surface stream subscriptions', () => {
     await expect(h.viewer.action(ID, 10, 'recovered', 1, { type: 'paste' })).rejects.toThrow('frame');
   });
 
+  it('keeps frames and ACKs flowing while uncertain commands block input', async () => {
+    const h = harness();
+    h.present();
+    h.viewer.pauseCommands(ID, 'Command outcome is unknown', true);
+    expect(h.events.at(-1)?.message).toEqual({ type: 'control-paused', message: 'Command outcome is unknown' });
+    expect(h.sockets[0].terminate).not.toHaveBeenCalled();
+    expect(h.viewer.canAct(ID)).toBe(false);
+    await h.viewer.input(ID, 10, 'token-a', 1, key);
+    await expect(h.viewer.action(ID, 10, 'token-a', 1, { type: 'paste' })).rejects.toThrow('unknown');
+    expect(h.run).not.toHaveBeenCalled();
+    expect(h.sockets[0].send).not.toHaveBeenCalled();
+    h.receive({ ...protocol.frame, seq: 9 });
+    expect(h.events.at(-1)?.message).toMatchObject({ type: 'frame', id: 2 });
+    h.viewer.ack(ID, 10, 'token-a', 2, true);
+    expect(JSON.parse(h.sockets[0].send.mock.calls.at(-1)![0])).toEqual({ type: 'ack', seq: 9 });
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: false });
+    h.receive({ ...protocol.frame, seq: 10 });
+    expect(h.sockets[0].send).toHaveBeenCalledOnce();
+    await h.viewer.action(ID, 10, 'token-a', 1, { type: 'visibility', visible: true });
+    h.viewer.ack(ID, 10, 'token-a', 4, true);
+    expect(JSON.parse(h.sockets[0].send.mock.calls.at(-1)![0])).toEqual({ type: 'ack', seq: 10 });
+    expect(h.viewer.canAct(ID)).toBe(false);
+  });
+
+  it('retains view-only control state across remount and requires checked recovery before input', async () => {
+    const resume = vi.fn(async (_session, check: () => Promise<void>) => { await check(); });
+    const h = harness({ resume });
+    h.viewer.pauseCommands(ID, 'Command outcome is unknown', true);
+    h.viewer.detach(ID, 10, 'token-a');
+    h.viewer.attach(ID, 10, 'remount', (event) => h.events.push(event));
+    expect(h.events.at(-1)?.message.type).toBe('control-paused');
+    h.receive(protocol.status);
+    h.receive(protocol.tabs);
+    h.present('remount');
+    await h.viewer.input(ID, 10, 'remount', 1, key);
+    expect(h.sockets[1].send).not.toHaveBeenCalled();
+    expect(h.viewer.canAct(ID)).toBe(false);
+    await h.viewer.attachAuthorized(ID, 10, 'recovered', async () => {}, (event) => h.events.push(event), 'remount');
+    expect(resume).toHaveBeenCalledOnce();
+    h.receive(protocol.status);
+    h.receive(protocol.tabs);
+    h.present('recovered');
+    await h.viewer.input(ID, 10, 'recovered', 1, key);
+    expect(JSON.parse(h.sockets[2].send.mock.calls[0][0])).toEqual(key);
+  });
+
+  it('stops a view-only stream when identity is lost and never downgrades a stream failure', () => {
+    const h = harness();
+    h.viewer.pauseCommands(ID, 'Command outcome is unknown', true);
+    h.viewer.pauseCommands(ID, 'Browser identity changed', false);
+    expect(h.sockets[0].terminate).toHaveBeenCalledOnce();
+    h.viewer.pauseCommands(ID, 'Late command error', true);
+    expect(() => h.viewer.attach(ID, 10, 'remount', () => {})).toThrow('identity changed');
+    expect(h.events.at(-1)?.message).toEqual({ type: 'error', message: 'Browser identity changed' });
+  });
+
   it('waits for an explicit checked resume before reconnecting the stream', async () => {
     let complete!: () => void;
     const barrier = new Promise<void>((resolve) => { complete = resolve; });
@@ -629,16 +685,31 @@ describe('finite native actions and input', () => {
     expect(h.writeClipboard).not.toHaveBeenCalled();
   });
 
-  it('stops queued mutations when a native command fails', async () => {
+  it('reports a completed native timeout without stopping the stream or other actions', async () => {
     const h = harness();
-    h.run.mockResolvedValueOnce({ ...ok, ok: false, stderr: 'Browser unavailable' });
+    h.run.mockResolvedValueOnce({ ...ok, ok: false, stderr: 'Action timed out' });
     h.present();
     const first = h.viewer.action(ID, 10, 'token-a', 1, { type: 'viewport', width: 900, height: 640 });
     const second = h.viewer.action(ID, 10, 'token-a', 1, { type: 'paste' });
-    await expect(first).rejects.toThrow();
-    await expect(second).rejects.toThrow();
-    expect(h.run).toHaveBeenCalledOnce();
-    expect(h.viewer.canAct(ID)).toBe(false);
+    await expect(first).rejects.toThrow('timed out');
+    await second;
+    expect(h.run).toHaveBeenCalledTimes(2);
+    expect(h.viewer.canAct(ID)).toBe(true);
+    expect(h.sockets[0].terminate).not.toHaveBeenCalled();
+    h.present();
+  });
+
+  it.each([{ type: 'paste' }, { type: 'tab-new' }])('keeps streaming when a %j command rejects', async (action) => {
+    const h = harness();
+    h.present();
+    h.run.mockRejectedValueOnce(new Error('Command timed out'));
+    await expect(h.viewer.action(ID, 10, 'token-a', 1, action)).rejects.toThrow('timed out');
+    expect(h.viewer.canAct(ID)).toBe(true);
+    expect(h.sockets[0].terminate).not.toHaveBeenCalled();
+    expect(h.events.some((event) => event.message.type === 'error')).toBe(false);
+    h.present();
+    await h.viewer.input(ID, 10, 'token-a', 1, key);
+    expect(JSON.parse(h.sockets[0].send.mock.calls[0][0])).toEqual(key);
   });
 
   it('uses finite navigation commands without a drawn frame and does not pause at history boundaries', async () => {

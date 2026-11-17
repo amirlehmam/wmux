@@ -3,9 +3,12 @@
  * the native session. Tokens and tab revisions fence late decodes and commands;
  * only one frame crosses IPC until the renderer acknowledges drawing/dropping it.
  * Native ACKs wait for that delivery to drain, and stop while the view is hidden.
+ * Command errors do not tear down a healthy stream. Unknown command outcomes
+ * block input; stream failure or an observed identity change also stops viewing.
  */
 import WebSocket from 'ws';
 import { AGENT_BROWSER_CAPTURE_SCALE } from './agent-browser-capture';
+import { AGENT_BROWSER_COMMAND_TIMEOUT_MS } from './agent-browser-control';
 import type { AgentSession } from './agent-browser-session';
 import { unwrapAgentData, observedBrowserReplacement, type RunResult } from './agent-browser-cli';
 import { getStartedSession, resumeAgentSessionCommands, runAgentSessionCommand, setAgentControlPauseReporter, withAgentSessionWork } from './agent-browser-runtime';
@@ -130,9 +133,9 @@ function insertTextArgv(value: unknown): string[] | null {
 
 export class AgentBrowserViewer {
   private subscriptions = new Map<SurfaceId, Subscription>();
-  private paused = new Map<SurfaceId, { message: string; restart?: boolean }>();
+  private paused = new Map<SurfaceId, { message: string; restart?: boolean; keepStream?: boolean }>();
   private attaching = new Map<string, { surfaceId: SurfaceId; owner: number; token: string }>();
-  // A paused subscription has no socket, but recovery must still prove its owner/token.
+  // Recovery must prove its owner/token even when a stream failure removed the socket.
   private leases = new Map<SurfaceId, { owner: number; token: string }>();
   private viewerWork = new Map<AgentSession, number>();
 
@@ -191,7 +194,7 @@ export class AgentBrowserViewer {
     this.dispose(surfaceId);
     this.leases.set(surfaceId, { owner, token });
     const failure = this.paused.get(surfaceId);
-    if (failure) throw new Error(failure.message);
+    if (failure && !failure.keepStream) throw new Error(failure.message);
     let socket: WebSocket;
     try { socket = this.deps.connect(`ws://127.0.0.1:${session.streamPort}/?pacing=ack&maxFps=30`); }
     catch (err) {
@@ -201,6 +204,7 @@ export class AgentBrowserViewer {
     const sub: Subscription = { surfaceId, owner, token, session, socket, emit, revision: 0,
       ready: false, tabs: [], visible: true, workRevision: 0, nextFrame: 0, queue: Promise.resolve(), held: new Set() };
     this.subscriptions.set(surfaceId, sub);
+    if (failure) this.send(sub, { type: 'control-paused', message: failure.message });
     socket.on('message', (data) => {
       if (!this.current(sub)) return;
       try { this.receive(sub, JSON.parse(data.toString())); }
@@ -362,6 +366,8 @@ export class AgentBrowserViewer {
    * is not a fault. `force` admits a release whose press was already admitted.
    */
   private enqueue(sub: Subscription, revision: number, requireFrame: boolean, work: (run: ViewerNativeRun) => void | Promise<void>, force = false): Promise<void> {
+    const pause = this.paused.get(sub.surfaceId);
+    if (pause) return Promise.reject(new Error(pause.message));
     if (!force && !this.admits(sub)) return Promise.reject(new Error(BUSY));
     const session = sub.session;
     this.viewerWork.set(session, (this.viewerWork.get(session) ?? 0) + 1);
@@ -388,7 +394,7 @@ export class AgentBrowserViewer {
   input(id: SurfaceId, owner: number, token: string, revision: number, raw: unknown): void | Promise<void> {
     const sub = this.owned(id, owner, token);
     const input = validatedViewerInput(raw);
-    if (!sub?.ready || !sub.visible || sub.tabOperation || sub.revision !== revision || sub.presentedRevision !== revision
+    if (!sub?.ready || this.paused.has(id) || !sub.visible || sub.tabOperation || sub.revision !== revision || sub.presentedRevision !== revision
       || !input || sub.socket.readyState !== WebSocket.OPEN) return;
     // Moves keep only the newest position; wheel steps add up. Both carry no
     // press state, so merging changes no outcome, only how many steps arrive.
@@ -469,19 +475,11 @@ export class AgentBrowserViewer {
         if (requireFrame && (!sub.visible || sub.presentedRevision !== revision)) throw new Error('Page frame is not presented');
         if (action.type === 'viewport' && !sub.visible) throw new Error('Page is hidden');
       };
-      let res: RunResult;
-      try { res = await run(argv, check); }
-      catch (err) {
-        try { check(); } catch { throw err; }
-        this.fail(sub, err instanceof Error ? err.message : 'Native page action could not be launched.');
-        throw err;
-      }
+      const res = await run(argv, check);
       this.checkNativeResult(sub, res);
       if (sub.revision !== revision || sub.workRevision !== workRevision) throw new Error('Stale page action');
       if (!res.ok) {
         const message = res.stderr.trim() || 'Native page action failed.';
-        // A history boundary or rejected navigation is not evidence of browser loss.
-        if (action.type === 'viewport' || requireFrame) this.fail(sub, message);
         throw new Error(message);
       }
       if (action.type === 'copy') {
@@ -516,13 +514,7 @@ export class AgentBrowserViewer {
     };
     const run = async (argv: string[]) => {
       check();
-      let result: RunResult;
-      try { result = await native(argv, check); }
-      catch (err) {
-        try { check(); } catch { throw err; }
-        this.fail(sub, err instanceof Error ? err.message : 'Native tab action could not be launched.');
-        throw err;
-      }
+      const result = await native(argv, check);
       this.checkNativeResult(sub, result);
       check();
       if (!result.ok) throw new Error(result.stderr.trim() || 'Native tab action failed.');
@@ -572,11 +564,18 @@ export class AgentBrowserViewer {
     }
   }
 
-  /** Pipe-command failures must pause the same viewer, including while it is detached. */
-  pauseCommands(id: SurfaceId, message: string): void {
-    if (this.paused.get(id)?.restart) return;
+  /** Unknown outcomes fence input without hiding the still-live original browser. */
+  pauseCommands(id: SurfaceId, message: string, keepStream = false): void {
+    const previous = this.paused.get(id);
+    if (previous?.restart || (keepStream && previous && !previous.keepStream)) return;
     const sub = this.subscriptions.get(id);
-    if (sub) this.fail(sub, message);
+    if (keepStream) {
+      this.paused.set(id, { message, keepStream });
+      if (sub) {
+        sub.workRevision++;
+        this.send(sub, { type: 'control-paused', message });
+      }
+    } else if (sub) this.fail(sub, message);
     else this.paused.set(id, { message });
   }
 
@@ -627,10 +626,10 @@ export function createAgentBrowserViewer(clipboard: Pick<ViewerDeps, 'readClipbo
     ...clipboard,
     session: getStartedSession,
     connect: (url) => new WebSocket(url, { maxPayload: 12 * 1024 * 1024, handshakeTimeout: 5000 }),
-    run: (session, argv) => runAgentSessionCommand(session, argv, 10000),
-    schedule: (session, work) => withAgentSessionWork(session, (run) => work((argv, check) => run(argv, 10000, check)), undefined, true),
+    run: (session, argv) => runAgentSessionCommand(session, argv, AGENT_BROWSER_COMMAND_TIMEOUT_MS),
+    schedule: (session, work) => withAgentSessionWork(session, (run) => work((argv, check) => run(argv, AGENT_BROWSER_COMMAND_TIMEOUT_MS, check)), undefined, true),
     resume: resumeAgentSessionCommands,
   });
-  setAgentControlPauseReporter((id, message) => viewer.pauseCommands(id, message));
+  setAgentControlPauseReporter((id, message, keepStream) => viewer.pauseCommands(id, message, keepStream));
   return viewer;
 }
