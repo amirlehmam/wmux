@@ -76,6 +76,7 @@ describe('shared UI/CLI startup', () => {
   it.each([
     { ...ok, ok: false, timedOut: true },
     { ...ok, ok: false, stderr: 'Native command timed out' },
+    { ...ok, ok: false, stderr: '✗ Failed to read: A connection attempt failed (os error 10060)\n' },
     { ...ok, data: { success: false, error: { code: 'outcome_unknown' } } },
   ])('never replays an uncertain bootstrap ($stderr)', async (result) => {
     const h = harness();

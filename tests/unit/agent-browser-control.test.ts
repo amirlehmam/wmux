@@ -207,6 +207,17 @@ describe('AgentBrowserControl', () => {
     expect(h.actions()).toEqual([[verb, '@e3'], ['snapshot']]);
   });
 
+  it.each([
+    'Evaluation failed: Failed to read: application data',
+    'Failed to read the clipboard',
+  ])('does not mistake an action error for a lost response: %s', (message) => {
+    expect(uncertainNativeOutcome({ ...result(message, false), ok: false })).toBeUndefined();
+  });
+
+  it('does not fence a successful plain result because of a stderr diagnostic', () => {
+    expect(uncertainNativeOutcome({ ...result(null), data: null, stderr: '✗ Failed to read: diagnostic' })).toBeUndefined();
+  });
+
   it.each([null, {}, { success: true }])('keeps an incomplete timeout response uncertain: %j', (data) => {
     expect(uncertainNativeOutcome({ ...result({}), data, stderr: 'Native command timed out' })).toMatch(/unknown/);
   });
@@ -248,7 +259,7 @@ describe('AgentBrowserControl', () => {
     expect(h.actions()).toEqual([['click', '@e1']]);
   });
 
-  it.each(['timeout', 'malformed', 'unknown', 'replacement'] as const)(
+  it.each(['timeout', 'transport', 'malformed', 'unknown', 'replacement'] as const)(
     'pauses immediately on %s without postflight native calls or replay', async (kind) => {
       const h = harness();
       await h.control.initialize();
@@ -265,8 +276,11 @@ describe('AgentBrowserControl', () => {
       const queued = h.control.enqueue((run) => run(['must-not-run']));
       const queuedRejected = expect(queued).rejects.toThrow(/stale/);
       const count = h.calls.length;
+      const transportError = { success: false,
+        error: 'Failed to read: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond. (os error 10060)' };
       const outcomes: Record<typeof kind, RunResult> = {
         timeout: { ...result({}), ok: false, timedOut: true },
+        transport: { ok: false, spawnFailed: false, data: transportError, stdout: JSON.stringify(transportError), stderr: '' },
         malformed: { ...result({}), data: null },
         unknown: result({ code: 'outcome_unknown' }, false),
         replacement: result({ lifecycle: { relaunchedBrowser: true } }),
@@ -274,7 +288,8 @@ describe('AgentBrowserControl', () => {
       release.resolve(outcomes[kind]);
       await Promise.all([actionRejected, queuedRejected]);
       expect(h.calls).toHaveLength(count);
-      expect(h.onPause).toHaveBeenCalledTimes(1);
+      expect(h.onPause).toHaveBeenCalledExactlyOnceWith(expect.any(String), kind !== 'replacement');
+      await expect(h.control.enqueue((run) => run(['must-stay-blocked']))).rejects.toThrow(/paused/);
       h.setHook(undefined);
       await h.control.resume();
       await h.control.enqueue((run) => run(['fresh']));

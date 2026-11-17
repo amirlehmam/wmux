@@ -141,6 +141,10 @@ export function uncertainNativeOutcome(result: RunResult): string | undefined {
   if (result.timedOut) return 'Native command timed out; outcome is unknown';
   const value = object(result.data);
   if (!result.spawnFailed && value && hasStatus(value, 'outcome_unknown')) return 'Native command outcome is unknown';
+  // Legacy CLI versions wrap read failures in JSON without a daemon response; bootstrap uses plain stderr.
+  const nativeError = value?.success === false ? value.error : !result.ok && !value ? result.stderr.trim() : undefined;
+  if (!result.spawnFailed && typeof nativeError === 'string'
+    && /^(?:✗ )?Failed to read:/.test(nativeError)) return 'Native response could not be read; outcome is unknown';
   // A completed native error can itself say "timed out" without losing the response.
   const completed = value && (value.success === true ? 'data' in value : value.success === false && 'error' in value);
   if (!completed && /timed out/i.test(result.stderr)) return 'Native command timed out; outcome is unknown';
