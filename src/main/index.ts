@@ -28,6 +28,7 @@ import {
 } from './agent-browser-runtime';
 import { verifyRestoredWorktrees } from './git-worktree';
 import { handleBridgeV2 } from './v2-bridge';
+import { handleSetIndicator } from './workspace-indicator-rpc';
 import { distributeAgents, PaneLoadInfo } from './agent-manager';
 import {
   resolveSpawnTarget,
@@ -326,6 +327,12 @@ function routeSpecialV2(
   // that owns the other workspace.* methods. None of them can grant trust.
   if (WORKSPACE_MANIFEST_METHODS.has(request.method)) {
     handleWorkspaceManifestV2(request.method, request.params, respond, respondError, manifestHost);
+    return true;
+  }
+  // Asks every window, not the bridge's one, and errors on a miss: see workspace-indicator-rpc.ts.
+  if (request.method === 'workspace.set_indicator') {
+    handleSetIndicator(request.params, BrowserWindow.getAllWindows(), respond, respondError)
+      .catch((err: Error) => respondError(-32000, err.message));
     return true;
   }
   // get_engine/set_engine must be caught BEFORE the generic browser.*

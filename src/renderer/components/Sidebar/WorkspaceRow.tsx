@@ -86,6 +86,17 @@ function WorktreeBadge({ worktree }: { worktree?: WorkspaceInfo['worktree'] }) {
   );
 }
 
+/** The pill `wmux set-indicator` put on this workspace; colour is the theme accent unless given. */
+function IndicatorBadge({ indicator }: { indicator?: WorkspaceInfo['indicator'] }) {
+  if (!indicator) return null;
+  const style = indicator.color ? ({ '--indicator-color': indicator.color } as React.CSSProperties) : undefined;
+  return (
+    <span className="workspace-row__badge workspace-row__badge--indicator" style={style} title={indicator.text}>
+      {indicator.text}
+    </span>
+  );
+}
+
 interface WorkspaceRowProps {
   workspace: WorkspaceInfo;
   isActive: boolean;
@@ -392,6 +403,7 @@ export default function WorkspaceRow({
   const rowBadges = (
     <>
       <WorktreeBadge worktree={workspace.worktree} />
+      <IndicatorBadge indicator={workspace.indicator} />
 
 
       {/* Work odometer: total tool calls this workspace's sessions have made.

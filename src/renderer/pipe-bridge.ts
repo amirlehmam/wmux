@@ -19,6 +19,7 @@ import { v4 as uuid } from 'uuid';
 import { buildManifestTree, describeWorkspaceTree, type ManifestWorkspaceSpec } from './store/manifest-tree';
 import { translate, type TranslationKey } from './i18n/core';
 import { isPosixPath } from '../shared/paths';
+import { normalizeIndicator } from '../shared/workspace-indicator';
 
 /** Non-hook context (bridges the main process to the store) — reads the current language directly. */
 const bridgeT = (key: TranslationKey, fallback?: string): string =>
@@ -586,6 +587,19 @@ export function initPipeBridge(): void {
       }
     }
     return null;
+  };
+
+  // `wmux set-indicator` / `clear-indicator`: the pill beside a workspace's
+  // name. Named by id, or else by the caller's surface. Null when this window
+  // holds neither, so main asks the next window and reports a miss
+  // (src/main/workspace-indicator-rpc.ts).
+  w.__wmux_setWorkspaceIndicator = (workspaceId: string, caller: string, text: string, color: string) => {
+    const id = workspaceId || w.__wmux_locateSurface(caller)?.workspaceId;
+    const store = useStore.getState();
+    if (!id || !store.workspaces.some(x => x.id === id)) return null;
+    const indicator = normalizeIndicator(text, color);
+    store.updateWorkspaceMetadata(id as WorkspaceId, { indicator });
+    return { workspaceId: id, indicator: indicator ?? null };
   };
 
   /**

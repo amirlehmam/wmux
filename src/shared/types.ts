@@ -1,4 +1,5 @@
 import type { BrowserHistory } from './browser-history';
+import type { WorkspaceIndicator } from './workspace-indicator';
 // ID types
 export type WorkspaceId = `ws-${string}`;
 export type PaneId = `pane-${string}`;
@@ -466,6 +467,11 @@ export interface WorkspaceInfo {
    */
   titleIsDefault?: boolean;
   customColor?: string;
+  /**
+   * A pill set from outside via `wmux set-indicator`. In memory only: whoever
+   * sets it sets it again on every launch, so a saved copy could only go stale.
+   */
+  indicator?: WorkspaceIndicator;
   pinned: boolean;
   shell: string;
   splitTree: SplitNode;

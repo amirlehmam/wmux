@@ -6,7 +6,7 @@ Linux devcontainer on top of WSL2 + Docker. Nothing in that container can open
 integration all fail silently — panes show no cwd or git branch, the sidebar
 never leaves "Running", and `wmux agent spawn` cannot reach the app at all.
 
-This guide sets up a path from the container to that pipe. It needs no Bosch
+This guide sets up a path from the container to that pipe. It needs no extra
 feature, no vendor tooling and no code you have to write: one binary, one
 long-running command, and two environment variables.
 
@@ -201,6 +201,12 @@ Everything routes through the same transport, with no per-tool configuration:
 | `wmux-hook.js` (Claude Code hooks) | its own TCP branch on `WMUX_REMOTE` — this is what unsticks the sidebar |
 | `wmux-bash-integration.sh` | `wmux raw-v1 <line>`, instead of the WSL temp-file drop it cannot write to |
 | wmux-orchestrator | the `wmux` shim above; the plugin itself is unaware of any of this |
+
+A tool in the container can also flag its workspace without renaming it:
+`wmux set-indicator --text SSH --color '#f59e0b'` shows a small pill beside the
+workspace name, and `wmux clear-indicator` removes it. The title stays under
+wmux's own control. An older wmux rejects both commands as unknown, so callers
+should treat a failure as "not supported" and carry on.
 
 With `WMUX_REMOTE` unset, every one of these falls back to the local named
 pipe exactly as before. The transport is additive.
