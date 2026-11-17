@@ -82,6 +82,19 @@ describe('wmux set-indicator', () => {
     expect(result.requests).toEqual([]);
   });
 
+  it('refuses a --workspace that lost its value instead of sending the next flag as the id (#247)', async () => {
+    const result = await run(['set-indicator', '--workspace', '--text', 'SSH']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Flag '--workspace' needs a value");
+    expect(result.requests).toEqual([]);
+  });
+
+  it('refuses a stray argument', async () => {
+    const result = await run(['set-indicator', '--text', 'dev', 'box']);
+    expect(result.code).toBe(1);
+    expect(result.requests).toEqual([]);
+  });
+
   it('refuses a --text with no value without calling wmux', async () => {
     const result = await run(['set-indicator', '--text']);
     expect(result.code).toBe(1);

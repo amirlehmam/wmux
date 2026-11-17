@@ -28,6 +28,7 @@ import {
 } from './agent-browser-runtime';
 import { verifyRestoredWorktrees } from './git-worktree';
 import { handleBridgeV2 } from './v2-bridge';
+import { handleSetIndicator } from './workspace-indicator-rpc';
 import { distributeAgents, PaneLoadInfo } from './agent-manager';
 import {
   resolveSpawnTarget,
@@ -326,6 +327,12 @@ function routeSpecialV2(
   // that owns the other workspace.* methods. None of them can grant trust.
   if (WORKSPACE_MANIFEST_METHODS.has(request.method)) {
     handleWorkspaceManifestV2(request.method, request.params, respond, respondError, manifestHost);
+    return true;
+  }
+  // Asks every window, not the bridge's one, and errors on a miss: see workspace-indicator-rpc.ts.
+  if (request.method === 'workspace.set_indicator') {
+    handleSetIndicator(request.params, BrowserWindow.getAllWindows(), respond, respondError)
+      .catch((err: Error) => respondError(-32000, err.message));
     return true;
   }
   // get_engine/set_engine must be caught BEFORE the generic browser.*
@@ -2295,25 +2302,6 @@ app.whenReady().then(async () => {
               command: 'set_workspace_status',
               workspaceId: request.params?.workspaceId,
               args: [request.params?.state || '', request.params?.text || ''],
-            });
-          }
-        });
-        respond({ ok: true });
-        break;
-      }
-
-      // ─── Workspace indicator handler ──────────────────────────────────────
-      case 'workspace.set_indicator': {
-        // Show (or, with empty text, clear) a small pill on a workspace without
-        // touching its title. Keyed on workspaceId, falling back to the
-        // caller's own workspace, so it works from a pane and from outside one.
-        BrowserWindow.getAllWindows().forEach(w => {
-          if (!w.isDestroyed()) {
-            w.webContents.send(IPC_CHANNELS.METADATA_UPDATE, {
-              command: 'set_workspace_indicator',
-              workspaceId: request.params?.workspaceId,
-              caller: request.params?.caller,
-              args: [request.params?.text || '', request.params?.color || ''],
             });
           }
         });

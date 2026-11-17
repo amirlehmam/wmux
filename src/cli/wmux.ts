@@ -2526,13 +2526,15 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
   'select-workspace': async (args) => print(await sendV2('workspace.select', { id: args[1] })),
   'rename-workspace': async (args) => print(await sendV2('workspace.rename', { id: args[1], title: args[2] })),
   'set-indicator': async (args) => {
-    const text = getFlag(args, '--text');
-    if (!text || !text.trim()) {
-      console.error('set-indicator requires --text <text> (use clear-indicator to remove it)');
-      process.exit(1);
+    // Scanned, not paired (#247): `--workspace --text SSH` must be refused, not
+    // sent with workspaceId "--text".
+    const { values } = flagsOrFail('set-indicator', args.slice(1), { value: ['--workspace', '--text', '--color'] });
+    const text = values['--text'];
+    if (!text?.trim()) {
+      fail('set-indicator', COMMAND_SPECS['set-indicator'], 'set-indicator requires --text <text> (use clear-indicator to remove it)');
     }
-    const workspaceId = getFlag(args, '--workspace');
-    const color = getFlag(args, '--color');
+    const workspaceId = values['--workspace'];
+    const color = values['--color'];
     print(await sendV2('workspace.set_indicator', {
       text,
       ...(workspaceId ? { workspaceId } : {}),
@@ -2540,7 +2542,7 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
     }));
   },
   'clear-indicator': async (args) => {
-    const workspaceId = getFlag(args, '--workspace');
+    const workspaceId = flagsOrFail('clear-indicator', args.slice(1), { value: ['--workspace'] }).values['--workspace'];
     print(await sendV2('workspace.set_indicator', { text: '', ...(workspaceId ? { workspaceId } : {}) }));
   },
   'list-workspaces': async () => print(await sendV2('workspace.list')),
