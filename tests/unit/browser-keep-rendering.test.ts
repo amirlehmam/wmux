@@ -243,6 +243,9 @@ describe('every parent that hides a browser pane says so', () => {
     expect(panel).not.toMatch(/display:/);
     expect(panel).toMatch(/visibility: ws\.id === activeWorkspaceId \? 'visible' : 'hidden'/);
     expect(panel).toMatch(/visible=\{ws\.id === activeWorkspaceId\}/);
+    expect(app).toContain('openBrowserWorkspaces = workspaces.filter((ws) => ws.browserOpen && !ws.browserPanelDocked)');
+    expect(app).toContain('openBrowserWorkspaces.map((ws)');
+    expect(app).toContain("position: sideBrowserVisible ? 'relative' : 'absolute'");
   });
 
   it('the webview takes its hiding from webviewHiding, not a hand-written style', () => {

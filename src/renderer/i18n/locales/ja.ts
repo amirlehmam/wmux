@@ -247,7 +247,7 @@ export const ja: Translation = {
   'settings.browser.searchSection': '検索',
   'settings.browser.defaultSearchEngine': '既定の検索エンジン',
   'settings.browser.startupSection': '起動',
-  'settings.browser.openOnStartup': '起動時にブラウザーパネルを開く',
+  'settings.browser.openOnStartup': '新しいワークスペースでブラウザーパネルを開く',
   'settings.browser.linksSection': 'リンク',
   'settings.browser.openLinksExternally': 'リンクをシステムのブラウザーで開く',
   'settings.browser.openLinksExternallyHint': 'ターミナルや Markdown でクリックしたリンクを wmux パネルではなく既定のブラウザーで開きます。Ctrl+クリックは常に逆の動作になります。',

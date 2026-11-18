@@ -237,7 +237,7 @@ export const es: Translation = {
   'settings.browser.searchSection': 'Búsqueda',
   'settings.browser.defaultSearchEngine': 'Motor de búsqueda predeterminado',
   'settings.browser.startupSection': 'Inicio',
-  'settings.browser.openOnStartup': 'Abrir el panel del navegador al iniciar',
+  'settings.browser.openOnStartup': 'Abrir el panel del navegador en los espacios de trabajo nuevos',
   'settings.browser.linksSection': 'Enlaces',
   'settings.browser.openLinksExternally': 'Abrir enlaces en el navegador del sistema',
   'settings.browser.openLinksExternallyHint': 'Los enlaces pulsados en terminales y markdown se abren en tu navegador predeterminado en lugar del panel de wmux. Ctrl+clic siempre hace lo contrario.',

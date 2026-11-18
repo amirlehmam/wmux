@@ -297,7 +297,7 @@ export const fr: Translation = {
   'settings.browser.searchSection': 'Recherche',
   'settings.browser.defaultSearchEngine': 'Moteur de recherche par défaut',
   'settings.browser.startupSection': 'Démarrage',
-  'settings.browser.openOnStartup': 'Ouvrir le panneau navigateur au démarrage',
+  'settings.browser.openOnStartup': 'Ouvrir le panneau du navigateur dans les nouveaux espaces de travail',
   'settings.browser.linksSection': 'Liens',
   'settings.browser.openLinksExternally': 'Ouvrir les liens dans le navigateur système',
   'settings.browser.openLinksExternallyHint': 'Les liens cliqués dans les terminaux et le markdown s’ouvrent dans votre navigateur par défaut plutôt que dans le panneau wmux. Ctrl+clic fait toujours l’inverse.',

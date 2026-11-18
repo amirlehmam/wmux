@@ -232,7 +232,7 @@ export const zh: Translation = {
   'settings.browser.searchSection': '搜索',
   'settings.browser.defaultSearchEngine': '默认搜索引擎',
   'settings.browser.startupSection': '启动',
-  'settings.browser.openOnStartup': '启动时打开浏览器面板',
+  'settings.browser.openOnStartup': '在新工作区中打开浏览器面板',
   'settings.browser.linksSection': '链接',
   'settings.browser.openLinksExternally': '在系统浏览器中打开链接',
   'settings.browser.openLinksExternallyHint': '在终端和 Markdown 中点击的链接将在默认浏览器中打开，而不是 wmux 面板。Ctrl+点击始终执行相反操作。',

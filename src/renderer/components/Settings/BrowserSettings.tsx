@@ -31,7 +31,7 @@ export default function BrowserSettings() {
       <h3 className="settings-section-title">{t('settings.browser.startupSection', 'Startup')}</h3>
 
       <div className="settings-row">
-        <label className="settings-label">{t('settings.browser.openOnStartup', 'Open browser panel on startup')}</label>
+        <label className="settings-label">{t('settings.browser.openOnStartup', 'Open browser panel in new workspaces')}</label>
         <input
           type="checkbox"
           className="settings-toggle"
