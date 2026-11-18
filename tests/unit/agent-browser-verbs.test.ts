@@ -53,18 +53,13 @@ describe('toAgentBrowserArgv', () => {
   });
 
   it('maps wait with a ref, and with a bare timeout', () => {
-    expect(verb('browser.wait', { ref: 'e5' })).toEqual(['wait', '@e5']);
+    expect(verb('browser.wait', { ref: 'e5' })).toEqual(['wait', '@e5', '--timeout', '10000']);
     expect(verb('browser.wait', { timeout: 500 })).toEqual(['wait', '500']);
   });
 
-  it('wait with BOTH ref and timeout: ref wins, timeout is dropped', () => {
-    // Known engine divergence (see the comment on the `browser.wait` case):
-    // agent-browser's `wait <selector>` has no per-call --timeout flag (only
-    // a global AGENT_BROWSER_DEFAULT_TIMEOUT env var, confirmed against its
-    // README), so a caller-supplied timeout alongside a ref cannot be
-    // represented in argv. This test pins that the drop is deliberate, not
-    // an oversight.
-    expect(verb('browser.wait', { ref: 'e5', timeout: 9999 })).toEqual(['wait', '@e5']);
+  it('passes a ref wait its caller timeout, so the daemon is not held on its default', () => {
+    expect(verb('browser.wait', { ref: 'e5', timeout: 0 })).toEqual(['wait', '@e5', '--timeout', '0']);
+    expect(verb('browser.wait', { ref: 'e5', timeout: 9999 })).toEqual(['wait', '@e5', '--timeout', '9999']);
   });
 
   it('maps the history verbs', () => {

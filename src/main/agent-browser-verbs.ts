@@ -36,6 +36,9 @@ function requireRef(method: string, p: any): string {
   return normaliseRef(p.ref);
 }
 
+/** A ref wait's native timeout when the caller gave none: `AGENT_WAIT_MS` in v2-browser.ts. */
+const DEFAULT_REF_WAIT_MS = 10000;
+
 export function toAgentBrowserArgv(method: string, params: any, session: string): string[] {
   const p = params ?? {};
   const head = ['--session', session];
@@ -62,19 +65,13 @@ export function toAgentBrowserArgv(method: string, params: any, session: string)
       // and `timeout: 0` is a legitimate ("don't wait") value that must not
       // be treated as falsy.
       //
-      // KNOWN ENGINE DIVERGENCE: `wmux browser wait <ref> [ms]` (see
-      // src/cli/wmux.ts) sends ref AND timeout together — the ms bounds how
-      // long to wait for that element. In `web` mode both reach
-      // cdpBridge.wait(ref, timeout) and the timeout is honoured. agent-browser's
-      // CLI has no equivalent: `wait <selector>` takes no per-call --timeout
-      // (checked against its README — only a *global* env-var default,
-      // AGENT_BROWSER_DEFAULT_TIMEOUT, applies, with no per-invocation override).
-      // A caller-supplied timeout alongside a ref is therefore unrepresentable
-      // in argv and is deliberately dropped — ref wins. This is a real, visible
-      // behavioural gap between the two engines, and the ONE engine divergence:
-      // this is where it is recorded. It is not something this pure function
-      // can close.
-      if (ref) return [...head, 'wait', ref];
+      // KNOWN ENGINE DIVERGENCE: agent-browser's `wait` only matches CSS
+      // selectors, not snapshot refs (checked against 0.41.2: `wait @e1` times
+      // out on an element `is visible @e1` reports), so `wmux browser wait
+      // <ref>` fails in agent mode where the web engine succeeds. The timeout
+      // is always passed: the daemon runs one command at a time, and a wait
+      // left on its 25s default would block every command after it.
+      if (ref) return [...head, 'wait', ref, '--timeout', String(typeof p.timeout === 'number' ? p.timeout : DEFAULT_REF_WAIT_MS)];
       if (typeof p.timeout === 'number') return [...head, 'wait', String(p.timeout)];
       throw Object.assign(new Error(`${method} requires a "ref" or a "timeout" param`), { rpcCode: -32602 });
     case 'browser.back':      return [...head, 'back'];

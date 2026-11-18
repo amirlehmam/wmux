@@ -1,0 +1,6 @@
+{
+  "status": { "type": "status", "connected": true, "screencasting": true, "viewportWidth": 900, "viewportHeight": 640, "engine": "chrome", "recording": false },
+  "tabs": { "type": "tabs", "tabs": [{ "tabId": "t1", "targetId": "sanitized-target", "label": null, "title": "Fixture", "url": "https://fixture.test/", "type": "page", "active": true }], "timestamp": 1 },
+  "frame": { "type": "frame", "seq": 3, "data": "/9j/2Q==", "metadata": { "deviceWidth": 900, "deviceHeight": 640, "offsetTop": 0, "pageScaleFactor": 1, "scrollOffsetX": 0, "scrollOffsetY": 0, "timestamp": 1 } },
+  "url": { "type": "url", "url": "https://fixture.test/next", "timestamp": 2 }
+}

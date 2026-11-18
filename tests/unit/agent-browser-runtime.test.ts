@@ -153,6 +153,17 @@ describe('the per-surface dashboard reference has one owner', () => {
     expect(env.releases).toBe(0);
   });
 
+  it('releases a dashboard acquisition that completes after teardown begins', async () => {
+    let finish!: () => void;
+    vi.mocked(dashboardDaemon.acquire).mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const acquisition = acquireDashboardFor('surf-closing');
+    const release = releaseDashboardFor('surf-closing');
+    finish();
+    await acquisition;
+    await release;
+    expect(env.releases).toBe(1);
+  });
+
   it('lets a surface acquire again after it has released', async () => {
     await acquireDashboardFor('surf-cycle');
     await releaseDashboardFor('surf-cycle');

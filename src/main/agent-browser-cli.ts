@@ -380,6 +380,8 @@ export interface RunResult {
    * agent `stderr` (the CLI ran and has something to say).
    */
   spawnFailed: boolean;
+  /** Killing the CLI does not cancel work already accepted by its daemon. */
+  timedOut?: boolean;
   /** Parsed JSON when the CLI emitted it, else null. Callers must narrow before use. */
   data: unknown;
   /** Raw stdout, kept for verbs whose payload is not JSON. */
@@ -472,6 +474,7 @@ export function runAgentBrowser(
       finish({
         ok: false,
         spawnFailed: false,
+        timedOut: true,
         stdout,
         stderr: stderr || `agent-browser timed out after ${timeoutMs}ms`,
       });
@@ -515,4 +518,11 @@ export function unwrapAgentData(res: Pick<RunResult, 'data'>): unknown {
     return (d as { data: unknown }).data;
   }
   return d;
+}
+
+/** Operation flags prove a relaunch; effectiveLaunch only describes the current browser. */
+export function observedBrowserReplacement(res: Pick<RunResult, 'data'>): boolean {
+  const data = unwrapAgentData(res) as { lifecycle?: { launched?: unknown; relaunchedBrowser?: unknown; restartedBackground?: unknown } } | null;
+  const lifecycle = data?.lifecycle;
+  return lifecycle?.launched === true || lifecycle?.relaunchedBrowser === true || lifecycle?.restartedBackground === true;
 }

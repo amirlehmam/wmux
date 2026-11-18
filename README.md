@@ -91,6 +91,8 @@ Activity comes from agent integrations and, for supported tools, from reading th
 
 Open a local dev server or the docs in the browser panel with **Ctrl+Shift+I**. Agents drive it from the CLI: navigate, read the page, click elements and take screenshots, while you watch it happen. Links open in wmux or in your system browser, as set in **Settings → Browser**.
 
+In a browser tab, **Agent** mode shows the Chrome page your agent drives, and you can click and type in it too. The **…** menu opens a new tab or the agent-browser dashboard. If the page pauses, **Reconnect / Continue** checks the session before resuming, without replaying the interrupted command; **Start new session** replaces it with a blank page.
+
 ### Review without leaving the terminal
 
 Open the file explorer with **Ctrl+Shift+X** or the Git view with **Ctrl+Alt+G**. Browse working changes, compare a branch against its base and read the commit graph. The Git view stays on the repository you opened while you move between agent panes.
