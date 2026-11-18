@@ -460,13 +460,15 @@
   justify-content: center;
   cursor: pointer;
   color: rgba(var(--ui-overlay-rgb), 0.15);
-  transition: background 0.15s, color 0.15s, width 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
+/* Hover highlights the strip and never changes its width (#462). The strip is a
+   flow sibling of the pane area, so growing it on hover shrank every pane and
+   resized every terminal (a PTY reflow) each time the pointer crossed it. */
 .sidebar-expand-strip:hover {
-  width: 16px;
-  background: var(--ui-bg-1);
-  color: rgba(var(--ui-overlay-rgb), 0.6);
-  border-right-color: rgba(var(--ui-accent-rgb), 0.3);
+  background: rgba(var(--ui-accent-rgb), 0.18);
+  color: var(--ui-accent);
+  border-right-color: rgba(var(--ui-accent-rgb), 0.5);
 }
 
 /* Context menu */
