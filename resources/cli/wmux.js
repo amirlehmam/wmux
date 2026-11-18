@@ -422,10 +422,12 @@ const print = (v) => console.log(JSON.stringify(v, null, 2));
 const BROWSER_READY_MS = 5000;
 const CDP_NAVIGATE_MS = 30000;
 const CDP_WAIT_MS = 10000;
+/** Outwait the native engine's hard watchdog, not just web-engine action budgets. */
+const AGENT_BROWSER_COMMAND_TIMEOUT_MS = 35000;
 /** Pane split plus the executeJavaScript round-trips around it. */
 const BROWSER_SLACK_MS = 5000;
-/** The CLI deadline for a browser verb whose own server-side budget is `verbMs`. */
-const browserDeadline = (verbMs) => BROWSER_READY_MS + verbMs + BROWSER_SLACK_MS;
+/** The engine is resolved in main, so either engine must fit inside this deadline. */
+const browserDeadline = (verbMs) => BROWSER_READY_MS + Math.max(verbMs, AGENT_BROWSER_COMMAND_TIMEOUT_MS) + BROWSER_SLACK_MS;
 // Each browser subcommand maps to the V2 request it issues.
 const BROWSER_CMDS = {
     open: (args) => ({
