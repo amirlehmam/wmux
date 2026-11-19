@@ -40,6 +40,13 @@ export interface AgentActivity {
   /** Last time a declared subagent reported anything — the renderer's ghost guard. */
   touchedAt?: number;
   /**
+   * The line was created by a tool event from inside the subagent, and no
+   * SubagentStart has named it since (#464). Claude Code announces every
+   * subagent that can outlive its turn, so one it never announced is a
+   * foreground call that ended with the turn: the parent's `Stop` finishes it.
+   */
+  inferred?: boolean;
+  /**
    * `shell`: not a subagent at all but a shell the agent left running in the
    * background (issue #276). Drawn on the same line, counted apart — a pane
    * whose tests run on after the turn is not "Orchestrating" anything.
@@ -55,6 +62,11 @@ export interface SubagentReport {
   done?: boolean;
   /** Count one tool use (a hook fired from inside the subagent). */
   toolUse?: boolean;
+  /**
+   * `true` on a report that only saw the subagent work (a tool event), `false`
+   * on one that saw it start. See AgentActivity.inferred.
+   */
+  inferred?: boolean;
   /** See AgentActivity.kind. Set on the report that creates the line. */
   kind?: 'shell';
 }
@@ -367,7 +379,8 @@ export function markAllAgentsDone(surfaceId: SurfaceId): void {
   const activity = activities.get(surfaceId);
   if (!activity) return;
   // Declared subagents are left alone: the turn ending is not theirs (#272).
-  activity.agents.forEach(a => { if (!a.id) a.done = true; });
+  // Except one that was only ever seen working, never starting (#464).
+  activity.agents.forEach(a => { if (!a.id || a.inferred) a.done = true; });
   activity.isDone = true;
   activity.lastTool = null;
   activity.lastUpdate = Date.now();
@@ -423,6 +436,7 @@ export function reportSubagent(surfaceId: SurfaceId, report: SubagentReport): bo
   let agent = existing;
   if (!agent) {
     agent = { id, name: id, toolUses: 0, tokens: '', done: false };
+    if (report.inferred) agent.inferred = true;
     activity.agents.push(agent);
     if (activity.agents.length > MAX_TRACKED_AGENTS) activity.agents.shift();
   }
@@ -431,6 +445,10 @@ export function reportSubagent(surfaceId: SurfaceId, report: SubagentReport): bo
   if (report.detail !== undefined) agent.detail = sanitizeSubagentText(report.detail, MAX_SUBAGENT_DETAIL);
   if (report.toolUse) agent.toolUses++;
   if (report.kind) agent.kind = report.kind;
+  if (report.inferred === false) delete agent.inferred;
+  // A subagent continued after its call returned works again. Only for a line
+  // the parent's Stop can end, or a late tool event would revive one for good.
+  if (report.toolUse && agent.inferred) agent.done = false;
   if (report.done !== undefined) agent.done = report.done;
   const now = Date.now();
   agent.touchedAt = now;

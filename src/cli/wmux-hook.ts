@@ -259,6 +259,14 @@ interface HookPayloadFields {
    */
   toolUseId: string;
   /**
+   * A subagent the `Agent` tool has just returned from (#464): the
+   * `tool_response.agentId` of a PostToolUse whose status is `completed`. Some
+   * built-in subagents (`web-fetch`) fire no SubagentStart and no SubagentStop,
+   * so this is the only event that names their ending. A background launch
+   * answers with another status and is left running.
+   */
+  agentEnded: string;
+  /**
    * A shell Claude Code moved to the background (issue #276): the Bash or
    * PowerShell tool's `tool_response.backgroundTaskId`, set both for
    * `run_in_background` and for a command the user backgrounded with Ctrl+B.
@@ -399,8 +407,18 @@ function subagentEndedTaskIds(file: string): string[] {
   return [...recent];
 }
 
+/** The subagent a finished `Agent` call ran, when its response names one (#464). */
+function endedSubagentId(toolName: unknown, response: any): string {
+  // PostToolUse is the hook registered without --event.
+  if (event || (toolName !== 'Agent' && toolName !== 'Task')) return '';
+  if (!response || typeof response !== 'object' || response.status !== 'completed') return '';
+  const id = response.agentId;
+  return typeof id === 'string' && AGENT_IDENT_RE.test(id) ? id : '';
+}
+
 function readBackgroundTasks(data: Record<string, any>, toolInput: any, toolName: unknown, out: HookPayloadFields): void {
   const response = data.tool_response ?? data.toolResponse;
+  out.agentEnded = endedSubagentId(toolName, response);
   const bgId = response && typeof response === 'object' ? response.backgroundTaskId : undefined;
   if (!event && typeof bgId === 'string' && TASK_ID_RE.test(bgId)) {
     out.bgTask = bgId;
@@ -481,7 +499,7 @@ function adaptQwenFields(data: Record<string, any>, out: HookPayloadFields): voi
 function parsePayload(raw: string): HookPayloadFields {
   const out: HookPayloadFields = {
     file: '', message: '', sessionId: '', toolName: '', prompt: '', notificationType: '', subagent: false,
-    agentId: '', agentType: '', toolUseId: '', bgTask: '', bgTaskDetail: '', bgTasksEnded: '', freshSession: false,
+    agentId: '', agentType: '', toolUseId: '', agentEnded: '', bgTask: '', bgTaskDetail: '', bgTasksEnded: '', freshSession: false,
   };
   if (!raw.trim()) return out;
   let data: Record<string, any>;
@@ -594,10 +612,10 @@ function reportedEvent(fired: string, subagent: boolean): string | null {
 
 /** The `hook.event` params: only the fields that carry something. */
 function hookParams(fields: HookPayloadFields): Record<string, string | number> {
-  const { file, message, sessionId, prompt, notificationType, agentId, agentType, toolUseId, bgTask, bgTaskDetail, bgTasksEnded } = fields;
+  const { file, message, sessionId, prompt, notificationType, agentId, agentType, toolUseId, agentEnded, bgTask, bgTaskDetail, bgTasksEnded } = fields;
   const params: Record<string, string | number> = { at: firedAt };
   const optional: Record<string, string> = {
-    event, tool, file, message, notificationType, prompt, agentId, agentType, toolUseId, surfaceId,
+    event, tool, file, message, notificationType, prompt, agentId, agentType, toolUseId, agentEnded, surfaceId,
     bgTask, bgTaskDetail, bgTasksEnded, freshSession: fields.freshSession ? '1' : '',
     // Not under Grok (it sets GROK_HOOK_EVENT on every hook process). Grok
     // 1.0.44 sends `session_id` alongside `sessionId`, and an id recorded here

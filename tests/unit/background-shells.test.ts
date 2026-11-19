@@ -72,6 +72,36 @@ const NOTIFICATION = (id: string, status = 'completed') =>
   `<output-file>C:\\tmp\\${id}.output</output-file>\n<status>${status}</status>\n` +
   `<summary>Background command "Run tests" completed (exit code 0)</summary>\n</task-notification>`;
 
+describe('wmux-hook.js finished Agent calls (#464)', () => {
+  const agentCall = (tool_response: unknown, extra: Record<string, unknown> = {}) => hookParams(['Agent'], {
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Agent',
+    tool_input: { description: 'Fetch the page', prompt: 'SECRET-PROMPT', subagent_type: 'web-fetch' },
+    tool_response,
+    ...extra,
+  });
+
+  it('names the subagent a completed Agent call ran, and nothing else of the response', async () => {
+    const params = await agentCall({ status: 'completed', agentId: 'add58cc6d32dc989d', agentType: 'web-fetch', content: 'PAGE-TEXT' });
+    expect(params.agentEnded).toBe('add58cc6d32dc989d');
+    expect(JSON.stringify(params)).not.toMatch(/PAGE-TEXT|SECRET-PROMPT/);
+  });
+
+  it('leaves a background launch running', async () => {
+    const params = await agentCall({ status: 'async_launched', agentId: 'abg1' });
+    expect(params.agentEnded).toBeUndefined();
+  });
+
+  it('ignores an id that is not an identifier, and other tools', async () => {
+    expect((await agentCall({ status: 'completed', agentId: 'a b/../c' })).agentEnded).toBeUndefined();
+    const bash = await hookParams(['Bash'], {
+      hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: {},
+      tool_response: { status: 'completed', agentId: 'a1' },
+    });
+    expect(bash.agentEnded).toBeUndefined();
+  });
+});
+
 describe('wmux-hook.js background shells (#276)', () => {
   it('reports the task id of a Bash call moved to the background, with its description', async () => {
     const params = await hookParams(['Bash'], {

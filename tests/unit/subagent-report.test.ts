@@ -95,6 +95,53 @@ describe('declared subagents (#272)', () => {
   });
 });
 
+// Issue #464: Claude Code fires no SubagentStart and no SubagentStop for some
+// built-in subagents (`web-fetch`). Their line exists only because their tool
+// events carry an agent_id, and nothing ended it before the session did.
+describe('subagents that skip the lifecycle hooks (#464)', () => {
+  beforeEach(() => { sendMock.mockClear(); clearActivity(surf); });
+
+  it('the parent Stop ends a line that only tool events created', () => {
+    reportSubagent(surf, { id: 'w1', name: 'web-fetch', detail: 'WebFetch', toolUse: true, inferred: true });
+    expect(lines().running).toBe(1);
+    markAllAgentsDone(surf);
+    expect(lines().running).toBe(0);
+  });
+
+  it('a SubagentStart, even a late one, hands the line back to its own stop', () => {
+    reportSubagent(surf, { id: 'b1', name: 'planner', toolUse: true, inferred: true });
+    reportSubagent(surf, { id: 'b1', name: 'planner', done: false, inferred: false });
+    reportSubagent(surf, { id: 'b1', toolUse: true, inferred: true });
+    markAllAgentsDone(surf);
+    expect(lines().running).toBe(1);
+  });
+
+  it('a tool event on an announced subagent never makes it inferred', () => {
+    reportSubagent(surf, { id: 'b1', name: 'planner', done: false, inferred: false });
+    reportSubagent(surf, { id: 'b1', toolUse: true, inferred: true });
+    markAllAgentsDone(surf);
+    expect(lines().running).toBe(1);
+  });
+
+  it('a late tool event revives an inferred line, never an announced one', () => {
+    reportSubagent(surf, { id: 'w1', name: 'web-fetch', toolUse: true, inferred: true });
+    reportSubagent(surf, { id: 'w1', done: true });
+    reportSubagent(surf, { id: 'w1', toolUse: true, inferred: true });
+    expect(getActivity(surf)!.agents[0].done).toBe(false);
+
+    reportSubagent(surf, { id: 'b1', name: 'planner', done: false, inferred: false });
+    reportSubagent(surf, { id: 'b1', done: true });
+    reportSubagent(surf, { id: 'b1', toolUse: true, inferred: true });
+    expect(getActivity(surf)!.agents.find(a => a.id === 'b1')!.done).toBe(true);
+  });
+
+  it('a subagent declared over the pipe is not ended by the parent Stop', () => {
+    reportSubagent(surf, { id: 'p1', name: 'reviewer' });
+    markAllAgentsDone(surf);
+    expect(lines().running).toBe(1);
+  });
+});
+
 describe('sanitizeSubagentText', () => {
   it('strips controls and bidi overrides, collapses whitespace, caps length', () => {
     expect(sanitizeSubagentText('  a\x1b[31m\tb‮c  ', 64)).toBe('a [31m b c');
