@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, clipboard, shell, dialog, app, nativeTheme, webContents } from 'electron';
 import { nextZoomFactor } from './zoom-factor';
+import { syncTitleBarOverlay } from './titlebar-overlay';
 import { registerDictationIpc } from './chatgpt-dictation-ipc';
 import { focusBrowserDevTools } from './browser-tools';
 import { popupBrowserContextMenu } from './browser-context-menu-popup';
@@ -548,7 +549,9 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     if (typeof deltaY !== 'number' || !Number.isFinite(deltaY)) return;
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
-    event.sender.setZoomFactor(nextZoomFactor(event.sender.getZoomFactor(), deltaY));
+    const zoom = nextZoomFactor(event.sender.getZoomFactor(), deltaY);
+    event.sender.setZoomFactor(zoom);
+    syncTitleBarOverlay(win, zoom);
   });
 
   // Toggle DevTools for the renderer window

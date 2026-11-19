@@ -7,6 +7,7 @@ import { loadSettings } from './settings-store';
 import { closeDialogCopy, decideClose } from './close-guard';
 import { rendererRecoveryCopy, isRecoverableGone, type RendererTrouble } from './renderer-recovery';
 import { logDiagnostic } from './crash-diagnostics';
+import { syncTitleBarOverlay, TITLEBAR_CSS_HEIGHT } from './titlebar-overlay';
 
 /** The window backdrop when transparency is off — matches --ui-bg-1. */
 const OPAQUE_BG = '#1a1a1a';
@@ -277,7 +278,7 @@ export class WindowManager {
             titleBarOverlay: {
               color: '#1a1a1a',
               symbolColor: '#cccccc',
-              height: 38,
+              height: TITLEBAR_CSS_HEIGHT,
             },
           }),
       // #AARRGGBB — Electron reads the alpha FIRST here, not last as CSS does.
@@ -464,6 +465,9 @@ export class WindowManager {
       pending.abort();
     });
     win.webContents.on('did-finish-load', () => { reloading = false; });
+    // Chromium restores the zoom the user left this page at, so a window can
+    // open zoomed. The overlay is created for 100 % (#465).
+    win.webContents.on('did-finish-load', () => syncTitleBarOverlay(win));
     win.webContents.on('render-process-gone', (_event, details) => {
       if (reloading || !isRecoverableGone(details.reason)) return;
       logDiagnostic('renderer-gone', { reason: details.reason, code: details.exitCode });

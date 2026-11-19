@@ -61,7 +61,13 @@
 }
 
 .titlebar__right {
-  width: 140px;
+  /* What the native caption buttons cover, plus 3px. Their width is in window
+     pixels and does not follow the page zoom, so a fixed 140px was too narrow
+     once the UI was zoomed out and the settings button slid under them (#465).
+     `titlebar-area-width` is the part of the bar they leave free, already in
+     CSS pixels at the current zoom. A frameless window has no overlay and gets
+     the 140px its own buttons need. */
+  width: calc(100vw - env(titlebar-area-width, calc(100vw - 137px)) + 3px);
   flex-shrink: 0;
   /* Stretched, not centred like its siblings. The caption buttons inside are
      sized with height:100%, and a percentage height against a parent that has
@@ -76,7 +82,7 @@
 }
 
 /* Caption buttons for frameless (clear-transparency) windows. The reserved
-   140px above is what titleBarOverlay occupies on framed windows, so these land
+   width above is what titleBarOverlay occupies on framed windows, so these land
    in the same place and nothing else in the titlebar shifts between modes. */
 .titlebar__window-controls {
   display: flex;
