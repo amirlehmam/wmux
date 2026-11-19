@@ -116,8 +116,10 @@ function reportedEvent(event: ScreenEvent): ReportedScreenEvent {
 
 /**
  * Read `terminal`'s ACTIVE buffer — alternate included, so a fullscreen TUI
- * returns what is visible. `lines` counts back from the bottom of the buffer,
- * scrollback included; trailing blank lines are trimmed.
+ * returns what is visible. `lines` counts back from the last row that has
+ * content, scrollback included, so the blank rows under a prompt are skipped
+ * BEFORE counting (#466). Trimming after taking the bottom N rows answered
+ * nothing whenever those N rows were all blank, which is every fresh pane.
  */
 export function readScreenReport(
   terminal: Terminal,
@@ -126,12 +128,11 @@ export function readScreenReport(
 ): ScreenReport {
   const buf = terminal.buffer.active;
   const count = Math.min(Math.max(Math.floor(options.lines), 1), 10000);
-  const end = buf.length;
+  const rowText = (i: number): string => buf.getLine(i)?.translateToString(true) ?? '';
+  let end = buf.length;
+  while (end > 0 && rowText(end - 1) === '') end--;
   const out: string[] = [];
-  for (let i = Math.max(0, end - count); i < end; i++) {
-    out.push(buf.getLine(i)?.translateToString(true) ?? '');
-  }
-  while (out.length && out[out.length - 1] === '') out.pop();
+  for (let i = Math.max(0, end - count); i < end; i++) out.push(rowText(i));
   const report: ScreenReport = {
     text: out.join('\n'),
     lines: out.length,

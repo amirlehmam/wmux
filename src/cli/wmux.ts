@@ -2302,6 +2302,7 @@ export const COMMAND_SPECS = {
     usage: [
       `wmux read-screen [--lines N] [--surface <id>] [--events]   ${SURFACE_NOTE}`,
       '  Text of the active buffer, plus which buffer it is, its size and the cursor.',
+      '  --lines N (default 50) is the last N lines of content: blank rows under the prompt don\'t count.',
       '  --events adds the pane\'s recent buffer switches and resizes, oldest first.',
     ].join('\n'),
     value: ['--lines', '--surface'],

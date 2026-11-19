@@ -35,14 +35,39 @@ function clock(start = Date.UTC(2026, 9, 24, 19, 0, 0)): () => number {
 beforeEach(() => forgetAllScreenEvents());
 
 describe('readScreenReport', () => {
-  it('reads the bottom of the active buffer and trims trailing blank lines', async () => {
+  it('reads the last lines of content, not the last rows of the buffer (#466)', async () => {
     const t = makeTerminal(20, 4);
     await write(t, 'one\r\ntwo\r\nthree');
     expect(readScreenReport(t, 'surf-a', { lines: 3 })).toMatchObject({
-      text: 'two\nthree',
-      lines: 2,
+      text: 'one\ntwo\nthree',
+      lines: 3,
       surfaceId: 'surf-a',
     });
+  });
+
+  it('skips the blank rows under the prompt before counting (#466)', async () => {
+    // A fresh 24-row pane: a short command's output at the top, every row
+    // below the prompt empty. The bottom 12 rows are all blank, and asking for
+    // them used to answer nothing at all.
+    const t = makeTerminal(40, 24);
+    await write(t, 'PS C:\\> echo hi\r\nhi\r\nPS C:\\> ');
+    // The space after `>` was written by the shell, so xterm keeps it.
+    expect(readScreenReport(t, 'surf-a', { lines: 2 })).toMatchObject({ text: 'hi\nPS C:\\> ', lines: 2 });
+    expect(readScreenReport(t, 'surf-a', { lines: 12 })).toMatchObject({
+      text: 'PS C:\\> echo hi\nhi\nPS C:\\> ',
+      lines: 3,
+    });
+  });
+
+  it('keeps blank rows that sit between lines of content', async () => {
+    const t = makeTerminal(20, 8);
+    await write(t, 'a\r\n\r\nb');
+    expect(readScreenReport(t, 'surf-a', { lines: 2 })).toMatchObject({ text: '\nb', lines: 2 });
+  });
+
+  it('answers empty text for a buffer with nothing in it', () => {
+    const t = makeTerminal(20, 6);
+    expect(readScreenReport(t, 'surf-a', { lines: 5 })).toMatchObject({ text: '', lines: 0 });
   });
 
   it('says which buffer is active, its size, and where the cursor is', async () => {
