@@ -339,6 +339,7 @@ export const de: Translation = {
   'explorer.openInApp': 'In Standard-App öffnen',
   'explorer.error.no_root': 'Dieses Panel hat noch kein Arbeitsverzeichnis gemeldet',
   'explorer.error.remote': 'Dieses Panel befindet sich in einer SSH-Sitzung',
+  'explorer.error.ssh-unreachable': 'Der Remote-Host ist über SSH nicht erreichbar',
   'explorer.error.invalid_path': 'Dieser Pfad ist nicht zulässig',
   'explorer.error.outside_root': 'Dieser Pfad liegt außerhalb des Panel-Ordners',
   'explorer.error.not_found': 'Ordner nicht gefunden',

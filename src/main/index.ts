@@ -29,6 +29,11 @@ import {
 import { verifyRestoredWorktrees } from './git-worktree';
 import { handleBridgeV2 } from './v2-bridge';
 import { handleSetIndicator } from './workspace-indicator-rpc';
+import { handleSetSshTarget } from './ssh-targets';
+import { anyWindowShowsWorkspace, warmWorkspace } from './exec-warm';
+import { pushWorkspaceGit, remoteBranchStatus } from './ssh-branch';
+import { noteAgentEdit } from './exec-snapshot';
+import { shutdownExecWorkers } from './exec-worker';
 import { distributeAgents, PaneLoadInfo } from './agent-manager';
 import {
   resolveSpawnTarget,
@@ -332,6 +337,21 @@ function routeSpecialV2(
   // Asks every window, not the bridge's one, and errors on a miss: see workspace-indicator-rpc.ts.
   if (request.method === 'workspace.set_indicator') {
     handleSetIndicator(request.params, BrowserWindow.getAllWindows(), respond, respondError)
+      .catch((err: Error) => respondError(-32000, err.message));
+    return true;
+  }
+  // The remote host a workspace's session lives on. Same shape as the
+  // indicator: every window is asked, a miss is an error. See ssh-targets.ts.
+  if (request.method === 'workspace.set_ssh_target') {
+    // After a target is SET, the sidebar's branch and dirty marker are read from
+    // the remote host once (a failure leaves the sidebar as it was). No poller: the
+    // Git view refreshes them again whenever it refreshes.
+    handleSetSshTarget(request.params, BrowserWindow.getAllWindows(), respond, respondError,
+      async (workspaceId, target) => {
+        // And the worker is started ahead of the first click, if the workspace is on screen.
+        void warmWorkspace(workspaceId, undefined, () => anyWindowShowsWorkspace(BrowserWindow.getAllWindows(), workspaceId));
+        await pushWorkspaceGit(BrowserWindow.getAllWindows(), workspaceId, await remoteBranchStatus(target));
+      })
       .catch((err: Error) => respondError(-32000, err.message));
     return true;
   }
@@ -1315,6 +1335,8 @@ function handleSubagentReport(
 
 /** Edit/Write hooks refresh the diff view; delays let the DiffPane mount first. */
 function pushDiffUpdate(file: string): void {
+  // An agent edited a file: an ssh workspace's polls go back to full cadence (exec-snapshot.ts).
+  noteAgentEdit();
   // Stagger updates: 500ms for immediate feedback, 2s to catch slower writes.
   for (const delay of [500, 2000]) {
     setTimeout(() => {
@@ -2481,6 +2503,7 @@ app.whenReady().then(async () => {
 
       case 'diff.refresh': {
         // CLI can trigger a full diff refresh
+        noteAgentEdit();
         BrowserWindow.getAllWindows().forEach(w => {
           if (!w.isDestroyed()) w.webContents.send(IPC_CHANNELS.DIFF_UPDATE, { file: request.params?.file || '' });
         });
@@ -2654,6 +2677,8 @@ app.on('will-quit', (event) => {
   cdpProxy.stop();
   portScanner.stop();
   sshDetector.stop();
+  // The persistent ssh workers (wsl.exe -> ssh -> sh) must not outlive wmux: kill their trees now.
+  try { shutdownExecWorkers(); } catch { /* quit must go on */ }
 
   // Sessions are ephemeral (agent-browser-session.ts): quit is the moment every
   // one of them stops being legitimate. Not closing them here leaks a Chrome

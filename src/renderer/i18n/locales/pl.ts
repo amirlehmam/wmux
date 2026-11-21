@@ -350,6 +350,7 @@ export const pl: Translation = {
   'explorer.openInApp': 'Otwórz w domyślnej aplikacji',
   'explorer.error.no_root': 'Ten panel nie zgłosił jeszcze katalogu roboczego',
   'explorer.error.remote': 'Ten panel działa w sesji SSH',
+  'explorer.error.ssh-unreachable': 'Nie można połączyć się ze zdalnym hostem przez SSH',
   'explorer.error.invalid_path': 'Ta ścieżka jest niedozwolona',
   'explorer.error.outside_root': 'Ta ścieżka jest poza folderem panelu',
   'explorer.error.not_found': 'Nie znaleziono folderu',

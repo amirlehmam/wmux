@@ -114,6 +114,20 @@ so it keeps working when wmux moves or updates.
 If you added wmux's hooks to the distro by hand (the workaround from issue #428), wmux
 replaces those entries with its own. Your other hooks are not touched.
 
+## Git, the Diff tab and the +N/-N column on a WSL folder
+
+For a folder on a WSL share the Git pane, the Diff tab and the explorer's +N/-N column run git
+inside the distro, not Windows git over the share, through the same layer as an ssh workspace's: the
+commands of one request are one batched `wsl.exe` start, the three views share one cheap fingerprint per
+interval and are answered from the last result while nothing changed, a click goes before the polls, and
+one persistent `wsl.exe` per distro serves the calls after the first. Any problem in any of it falls back
+to a per-call `wsl.exe --exec git`, and a Windows folder is not touched. `remote-workspace-views.md` has
+the details, the switch (`WMUX_SSH_WORKER=0`) and the trace (`WMUX_SSH_TRACE=1`, `loc=wsl`).
+
+The explorer's own listing and reading of a WSL folder still go through the Windows file system over the
+share (`explorer-fs.ts`, `code-file.ts`), not through the worker. `tests/unit/explorer-script-equivalence.test.ts`
+shows that the ssh explorer's scripts would give the same entries, text and refusals if they were moved onto it.
+
 ## What wmux accepts
 
 OSC 7 travels in the terminal output, so anything printed in a pane can send one,

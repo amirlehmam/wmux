@@ -50,7 +50,7 @@ describe('DiffPane worktree baseRef', () => {
       );
     });
 
-    expect(mockGetFiles).toHaveBeenCalledWith('/repo/path', 'base-sha-12345');
+    expect(mockGetFiles).toHaveBeenCalledWith('/repo/path', 'base-sha-12345', 'surf-1');
   });
 
   it('omits baseRef when not provided', async () => {
@@ -63,6 +63,16 @@ describe('DiffPane worktree baseRef', () => {
       );
     });
 
-    expect(mockGetFiles).toHaveBeenCalledWith('/repo/path', undefined);
+    expect(mockGetFiles).toHaveBeenCalledWith('/repo/path', undefined, 'surf-2');
+  });
+
+  // An ssh workspace answers `{ error }` when its host cannot be reached; the
+  // pane must say so rather than look like a checkout with no changes.
+  it('shows an error from main, not an empty change list', async () => {
+    mockGetFiles.mockResolvedValue({ error: 'Could not reach the remote host over ssh', code: 'ssh-unreachable' });
+    await act(async () => {
+      root!.render(React.createElement(DiffPane, { surfaceId: 'surf-3', cwd: '/anywhere' }));
+    });
+    expect(container!.textContent).toContain('Could not reach the remote host over ssh');
   });
 });

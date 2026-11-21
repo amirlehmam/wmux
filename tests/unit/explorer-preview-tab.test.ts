@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useStore } from '../../src/renderer/store';
-import { openInPreviewTab } from '../../src/renderer/components/Explorer/open-preview';
+import { openInPreviewTab, takeOpenedMtime } from '../../src/renderer/components/Explorer/open-preview';
 import { splitNode, createLeaf } from '../../src/renderer/store/split-utils';
 
 // `readFile` is the JAILED markdown read (explorer.readMarkdown) — the one the
@@ -600,5 +600,39 @@ describe('reopenClosedSurface', () => {
     // A dead root id makes CodePane wait forever on a cwd that never comes.
     // Absent, it reports invalid_path instead of sitting blank.
     expect(reopened.codeRootSurfaceId).toBeUndefined();
+  });
+});
+
+
+describe('the mtime a code tab was opened at', () => {
+  it('is handed to the pane once, so the first save carries an expected mtime', async () => {
+    readCode.mockImplementation(async (_s: string, relPath: string) => ({
+      filePath: `C:\\repo\\${relPath}`, content: 'export {}', mtimeMs: 1234,
+    }));
+    const { ws, pane } = setup();
+    await openInPreviewTab(ws, pane, 'C:\\repo\\a.ts', 'a.ts', { keep: false, surfaceId: 'surf-term' as any, relPath: 'a.ts' });
+    const code = surfacesOf(ws).find((s) => s.type === 'code');
+    expect(takeOpenedMtime(code.id, 'C:\\repo\\a.ts')).toBe(1234);
+    expect(takeOpenedMtime(code.id, 'C:\\repo\\a.ts')).toBeUndefined();
+  });
+
+  it('is replaced when the preview tab is recycled for another file, and never applied to the wrong path', async () => {
+    readCode.mockImplementation(async (_s: string, relPath: string) => ({
+      filePath: `C:\\repo\\${relPath}`, content: 'x', mtimeMs: relPath === 'a.ts' ? 1 : 2,
+    }));
+    const { ws, pane } = setup();
+    await openInPreviewTab(ws, pane, 'C:\\repo\\a.ts', 'a.ts', { keep: false, surfaceId: 'surf-term' as any, relPath: 'a.ts' });
+    await openInPreviewTab(ws, pane, 'C:\\repo\\b.ts', 'b.ts', { keep: false, surfaceId: 'surf-term' as any, relPath: 'b.ts' });
+    const code = surfacesOf(ws).find((s) => s.type === 'code');
+    expect(takeOpenedMtime(code.id, 'C:\\repo\\a.ts')).toBeUndefined();
+    expect(takeOpenedMtime(code.id, 'C:\\repo\\b.ts')).toBe(2);
+  });
+
+  it('is not recorded for a markdown tab, which keeps its own markdownFileMtime', async () => {
+    const { ws, pane } = setup();
+    await openInPreviewTab(ws, pane, 'C:\\repo\\a.md', 'a.md', { keep: false, surfaceId: 'surf-term' as any, relPath: 'a.md' });
+    const md = surfacesOf(ws).find((s) => s.type === 'markdown');
+    expect(takeOpenedMtime(md.id, 'C:\\repo\\a.md')).toBeUndefined();
+    expect(md.markdownFileMtime).toBe(1);
   });
 });

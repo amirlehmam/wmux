@@ -335,6 +335,7 @@ export const zh: Translation = {
   'explorer.openInApp': '用默认应用打开',
   'explorer.error.no_root': '此窗格尚未报告工作目录',
   'explorer.error.remote': '此窗格位于 SSH 会话中',
+  'explorer.error.ssh-unreachable': '无法通过 SSH 连接到远程主机',
   'explorer.error.invalid_path': '不允许该路径',
   'explorer.error.outside_root': '该路径不在窗格文件夹内',
   'explorer.error.not_found': '未找到文件夹',

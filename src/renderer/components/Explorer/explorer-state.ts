@@ -159,6 +159,17 @@ export function toAbsolutePath(root: string, relPath: string): string {
 }
 
 /**
+ * A POSIX rel-path joined onto a remote root: both are already POSIX, so
+ * `toAbsolutePath`'s backslashes would produce `/home/me/repo\\src\\a.ts`, a
+ * path that exists nowhere. Display and clipboard only.
+ */
+export function toRemotePath(root: string, relPath: string): string {
+  const base = root.replace(/\/+$/, '');
+  const tail = relPath.replace(/^\/+/, '');
+  return tail ? `${base}/${tail}` : base || '/';
+}
+
+/**
  * Which surface in the focused pane the tree should be rooted at.
  *
  * NOT simply the active one. Clicking a file in the tree opens a markdown
@@ -242,6 +253,8 @@ export interface CachedTree {
   tree: ExplorerTreeState;
   /** The resolved root that came back with this tree, so a hit restores both. */
   resolvedRoot: string | null;
+  /** The root listing said it came from a remote host (`ExplorerListOk.remote`), restored with it. */
+  remote?: boolean;
 }
 
 export type ExplorerTreeCache = Record<string, CachedTree>;

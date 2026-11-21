@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   joinRel, sortEntries, toggleExpanded, pruneExpanded, flattenVisible, responseKey,
-  pathRoot, toAbsolutePath, pickRootSurface, usableSticky,
+  pathRoot, toAbsolutePath, toRemotePath, pickRootSurface, usableSticky,
   treeCacheKey, rememberTree, recallTree, forgetTree, nextRefillPaths,
 } from '../../src/renderer/components/Explorer/explorer-state';
 
@@ -421,5 +421,18 @@ describe('command palette wiring', () => {
   it('does not also carry a second, self-executing explorer item', () => {
     expect(palette).not.toContain('command:toggle-explorer');
     expect(palette).not.toContain('onToggleExplorer');
+  });
+});
+
+
+describe('toRemotePath', () => {
+  it('joins with forward slashes only, so a remote path is never a mixed-separator one', () => {
+    expect(toRemotePath('/home/dev/proj', 'docs/a.md')).toBe('/home/dev/proj/docs/a.md');
+    expect(toRemotePath('/home/dev/proj/', '/docs/a.md')).toBe('/home/dev/proj/docs/a.md');
+    expect(toRemotePath('/home/dev/proj', '')).toBe('/home/dev/proj');
+    expect(toRemotePath('/', 'etc')).toBe('/etc');
+    expect(toRemotePath('/', '')).toBe('/');
+    // What the local joiner would have produced for the same input.
+    expect(toAbsolutePath('/home/dev/proj', 'docs/a.md')).toBe(String.raw`/home/dev/proj\docs\a.md`);
   });
 });

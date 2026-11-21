@@ -36,6 +36,7 @@ import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { SOURCE_VIRTUALIZE_THRESHOLD } from '../Markdown/markdown-utils';
 import { codeErrorKey } from '../Explorer/explorer-errors';
+import { takeOpenedMtime } from '../Explorer/open-preview';
 import { findSurfaceOwner } from '../../store/split-utils';
 import type {
   ExplorerErrorCode, SplitNode, SurfaceId, SurfaceRef,
@@ -100,6 +101,14 @@ export function CodePane({ surfaceId }: { surfaceId: SurfaceId }): React.JSX.Ele
   const mtimeRef = useRef<number | undefined>(undefined);
 
   const dirty = draft !== null && draft !== content;
+
+  // The mtime the buffer the tree opened was read at (open-preview.ts). Without
+  // it the first save of a freshly opened file carries no expected mtime and
+  // cannot conflict. A restored tab has no entry, and its re-read records it.
+  useEffect(() => {
+    const opened = takeOpenedMtime(surfaceId, filePath);
+    if (opened !== undefined) mtimeRef.current = opened;
+  }, [surfaceId, filePath, content]);
 
   // Re-read on mount and whenever the backing file changes. The buffer is not
   // persisted (see SurfaceRef.codeContent), so a restored surface arrives here

@@ -11,6 +11,7 @@
 
 import { useStore } from '../../store';
 import { findLeaf, getAllPaneIds } from '../../store/split-utils';
+import { recordOpenedMtime } from './opened-mtimes';
 import type { ExplorerErrorCode, PaneId, SurfaceId, SurfaceRef, WorkspaceId } from '../../../shared/types';
 
 /**
@@ -34,6 +35,10 @@ const READ_ERROR_CODES: Record<string, ExplorerErrorCode> = {
   not_regular_file: 'invalid_path',
   too_large: 'too_large',
   read_failed: 'read_failed',
+  // Remote: main answers a remote markdown read in ExplorerErrorCode.
+  'ssh-unreachable': 'ssh-unreachable',
+  denied: 'denied',
+  outside_root: 'outside_root',
 };
 
 /**
@@ -431,6 +436,8 @@ function revalidatePreview(
   return null;
 }
 
+export { takeOpenedMtime } from './opened-mtimes';
+
 /** Step 5: put the file into the surface, by type. */
 function writeIntoSurface(
   workspaceId: WorkspaceId,
@@ -442,6 +449,9 @@ function writeIntoSurface(
   opts: { surfaceId?: SurfaceId; relPath?: string },
 ): void {
   if (targetType === 'code') {
+    if (read.mtimeMs !== undefined) {
+      recordOpenedMtime(targetSurfaceId, read.filePath, read.mtimeMs);
+    }
     useStore.getState().updateSurface(workspaceId, targetPane, targetSurfaceId, {
       codeContent: read.content,
       codeFilePath: read.filePath,
