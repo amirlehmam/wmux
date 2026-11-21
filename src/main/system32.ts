@@ -45,3 +45,18 @@ export function opensshPath(
   }
   return system32('OpenSSH', `${tool}.exe`);
 }
+
+/**
+ * The absolute `%SystemRoot%\\System32\\wsl.exe`. A bare `wsl.exe` would be looked
+ * up by the OS at every spawn, so a writable PATH entry would decide what runs
+ * (the same reason `gitExecutable` and `opensshPath` are absolute). Always a
+ * Windows path, whichever platform computes it, so a test can pin it.
+ */
+export function wslExecutable(env: NodeJS.ProcessEnv = process.env): string {
+  return path.win32.join(wslSystemRoot(env), 'System32', 'wsl.exe');
+}
+
+/** The Windows directory, for a `cwd` that exists and means nothing to the child. */
+export function wslSystemRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return env.SystemRoot ?? env.windir ?? 'C:\\Windows';
+}

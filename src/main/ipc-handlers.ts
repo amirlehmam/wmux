@@ -43,6 +43,27 @@ import { AgentManager } from './agent-manager';
 import { saveNamedSession, loadNamedSession, listNamedSessions, deleteNamedSession, loadSession } from './session-persistence';
 import { listDir, resolveInRoot, isExecutablePath } from './explorer-fs';
 import { readCodeFile, writeCodeFile } from './code-file';
+import { warmWorkspace, windowShowsWorkspace } from './exec-warm';
+import { forgetClosedWorkspace, listSshTargets, sshTargetForSurface, type SshTarget } from './ssh-targets';
+import { runWithSshGit } from './ssh-git';
+import { branchStatusFromRepo, pushWorkspaceGit } from './ssh-branch';
+import { diffTargetFor, remoteChangedFiles, remoteFileDiff } from './ssh-diff';
+import { runForPoll, splitPollFlag } from './exec-gate';
+import {
+  defaultRemoteMarkdownDeps,
+  isRemoteIdentity,
+  readRemoteMarkdown,
+  saveRemoteMarkdown,
+} from './ssh-markdown';
+import { remoteListDir } from './ssh-explorer';
+import {
+  ownedRemoteTarget,
+  readRemoteFile,
+  saveGrantedRemoteFile,
+  senderLocationFor,
+  serveRemoteFirst,
+  sshRunners,
+} from './ssh-access';
 import { resolveTerminalFileLink } from './terminal-file-link';
 import { getExplorerRoot, forgetExplorerRoot, reportExplorerCwd } from './explorer-roots';
 import { parseOsc7Cwd } from '../shared/osc7';
@@ -63,8 +84,8 @@ import type { RemoteConsoleRuntime } from './remote-console/contract';
 import type { RemoteModesResult, RemoteSnapshotResult } from '../shared/remote-console-config';
 import { getChangedFiles, getFileDiff, getChangedFilesWithBaseline } from './diff-provider';
 import { createWorktree, removeWorktree, probeRepo, inspectWorktree } from './git-worktree';
-import { handleGitView, isSafeRev } from './git-view';
-import type { GitViewRequest } from '../shared/git-view';
+import { handleGitView, isSafeRev, noteWslWrite } from './git-view';
+import type { GitRepoInfo, GitViewRequest } from '../shared/git-view';
 import {
   readMarkdownFile,
   isAllowedMarkdownPath,
@@ -1374,23 +1395,61 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // argv, so anything that is not one safe revision is dropped, not passed.
   const diffBaseRef = (baseRef: unknown): string | undefined =>
     isSafeRev(baseRef) ? baseRef : undefined;
-  ipcMain.handle(IPC_CHANNELS.DIFF_GET_FILES, async (_event, cwd: string, baseRef?: unknown) => {
-    const resolvedCwd = cwd || process.cwd();
+  // A request may name a `surfaceId` (the Diff tab's own). When that surface's
+  // workspace has an ssh target the request runs on the remote host against
+  // the TARGET's path and the renderer's `cwd` is ignored (ssh-diff.ts); an
+  // unreachable host answers `{ error, code }`, never an empty list. Without a
+  // target, or for a surface the sender's window does not hold, nothing changes.
+  // A `poll` flag (true, from the tab's own timer) makes the remote spawns
+  // background work, queued behind a person's clicks (exec-gate.ts).
+  ipcMain.handle(IPC_CHANNELS.DIFF_GET_FILES, async (event, cwd: string, baseRef?: unknown, surfaceId?: unknown, poll?: unknown) => {
     const ref = diffBaseRef(baseRef);
-    const files = await getChangedFiles(resolvedCwd, ref);
+    const target = await diffTargetFor(surfaceId, BrowserWindow.fromWebContents(event.sender));
+    if (target) return runForPoll(poll, () => remoteChangedFiles(target, ref));
+    const resolvedCwd = cwd || process.cwd();
+    // A poll of a folder on a WSL share is background work there too (exec-gate.ts); for any other folder the flag does nothing.
+    const files = await runForPoll(poll, () => getChangedFiles(resolvedCwd, ref));
     return { files };
   });
 
-  ipcMain.handle(IPC_CHANNELS.DIFF_GET_DIFF, async (_event, cwd: string, file: string, baseRef?: unknown) => {
-    const resolvedCwd = cwd || process.cwd();
-    const ref = diffBaseRef(baseRef);
-    const diff = await getFileDiff(resolvedCwd, file, ref);
-    return { diff };
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.DIFF_GET_DIFF,
+    async (event, cwd: string, file: string, baseRef?: unknown, surfaceId?: unknown, poll?: unknown) => {
+      const ref = diffBaseRef(baseRef);
+      const target = await diffTargetFor(surfaceId, BrowserWindow.fromWebContents(event.sender));
+      if (target) return runForPoll(poll, () => remoteFileDiff(target, file, ref));
+      const resolvedCwd = cwd || process.cwd();
+      const diff = await runForPoll(poll, () => getFileDiff(resolvedCwd, file, ref));
+      return { diff };
+    },
+  );
 
   // Project Git view (#362). Read-only; every argument is validated in
   // git-view.ts, which never throws across IPC.
-  ipcMain.handle(IPC_CHANNELS.GIT_VIEW, (_event, request: GitViewRequest) => handleGitView(request));
+  //
+  // A request may name a `surfaceId`. When that surface's workspace has an ssh
+  // target the request runs on the remote host against the TARGET's path and
+  // its `cwd` is ignored; the sidebar's branch and dirty marker are refreshed
+  // from the same `repo` answer, so a refreshing view costs no second query.
+  //
+  // `poll: true` (the pane's own timer) makes an ssh request background work,
+  // queued behind a person's clicks (exec-gate.ts). It is removed here, so a
+  // poll and a click for the same view still share one run.
+  ipcMain.handle(IPC_CHANNELS.GIT_VIEW, async (event, sent: GitViewRequest) => {
+    const { request, poll } = splitPollFlag(sent);
+    const surfaceId = (request as { surfaceId?: unknown } | null)?.surfaceId;
+    // The sender's own window only, as the Diff tab does (diffTargetFor).
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const windows = win ? [win] : [];
+    const located = await senderLocationFor(surfaceId, win);
+    // A poll of a folder on a WSL share is background work there too (exec-gate.ts); for any other folder the flag does nothing.
+    if (!located) return runForPoll(poll, () => handleGitView(request));
+    const result = await runForPoll(poll, () => handleGitView(request, { target: located.target }));
+    if (result.ok && request.op === 'repo') {
+      void pushWorkspaceGit(windows, located.workspaceId, branchStatusFromRepo(result.data as GitRepoInfo, located.target.path));
+    }
+    return result;
+  });
 
   // Markdown viewer (issue #54): manual "open markdown file" entry point.
   // Shows a native file picker filtered to the allowed extensions, then reads
@@ -1422,7 +1481,12 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Backs "Reload from disk" (agents rewrite files under the pane constantly)
   // and drag-and-drop of a file onto a markdown pane. Same guards as every
   // other read — the renderer supplies the path, so it is treated as untrusted.
-  ipcMain.handle(IPC_CHANNELS.MARKDOWN_READ_FILE, async (_event, filePath: string) => {
+  //
+  // A remote file's identity (`ssh://dest/abs/path`) is not a local path:
+  // it is re-read from the remote host, behind the same registered-target and grant
+  // gates as its save (ssh-markdown.ts), and NEVER handed to the local fs.
+  ipcMain.handle(IPC_CHANNELS.MARKDOWN_READ_FILE, async (event, filePath: string) => {
+    if (isRemoteIdentity(filePath)) return readRemoteMarkdown(filePath, remoteMarkdownDeps(event.sender.id));
     return readMarkdownFile(filePath);
   });
 
@@ -1430,13 +1494,17 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // file. Both are gated on the extension whitelist — without it, `openPath` on
   // a renderer-supplied path is an arbitrary-program launcher, which is a much
   // bigger capability than "open the doc I'm reading in Typora".
+  // Both refuse a remote file's identity: `openPath` on an `ssh://` string would
+  // hand it to the OS's protocol handler, and there is no local file to reveal.
   ipcMain.handle(IPC_CHANNELS.MARKDOWN_REVEAL, async (_event, filePath: string) => {
+    if (isRemoteIdentity(filePath)) return { error: 'Not available for a remote file', code: 'remote' };
     if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type', code: 'unsupported_type' };
     shell.showItemInFolder(filePath);
     return { ok: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.MARKDOWN_OPEN_IN_APP, async (_event, filePath: string) => {
+    if (isRemoteIdentity(filePath)) return { error: 'Not available for a remote file', code: 'remote' };
     if (!isAllowedMarkdownPath(filePath)) return { error: 'Unsupported file type', code: 'unsupported_type' };
     const err = await shell.openPath(filePath);
     return err ? { error: err, code: 'action_failed' } : { ok: true };
@@ -1445,6 +1513,8 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Markdown editing (issue #116, F3). Re-stat only — backs the on-focus
   // "changed on disk?" check, which needs the mtime and not the content.
   ipcMain.handle(IPC_CHANNELS.MARKDOWN_STAT_FILE, async (_event, filePath: string) => {
+    // No ssh round trip per window focus: a remote file's conflict is found by the save.
+    if (isRemoteIdentity(filePath)) return { error: 'Not available for a remote file', code: 'remote' };
     return statMarkdownFile(filePath);
   });
 
@@ -1514,14 +1584,64 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     return resolveInRoot(root.realRoot, typeof relPath === 'string' ? relPath : '', leaf);
   };
 
+  // A workspace whose session lives on a remote host (`wmux set-ssh-target`)
+  // has its explorer served over ssh by ssh-explorer.ts, and the handlers that
+  // can do that ask HERE first, before the local gate (`explorerRootFor`). The order is the
+  // point: an ssh pane reports no cwd, so the local gate would answer
+  // `no_root` (or `remote`) and the target would never be consulted.
+  //
+  // Everything that cannot be served remotely must refuse a remote surface
+  // rather than fall through to the local gate, which would act on a Windows
+  // path that merely shares its spelling with the remote host one.
+  const remoteTargetFor = (
+    surfaceId: unknown,
+    sender: Electron.WebContents,
+  ): Promise<SshTarget | undefined> => ownedRemoteTarget(surfaceId, {
+    ownsLiveSurface: (id) => ownsLiveSurface(id, sender),
+    targetForSurface: (id) => sshTargetForSurface(id, BrowserWindow.getAllWindows()),
+  });
+  // The remote half of the code and markdown reads and of `code:write-file`:
+  // THIS window's grants and the ssh runners (ssh-access.ts has the gates).
+  const remoteFileDeps = (webContentsId: number) => sshRunners(
+    (key) => isFilePathGranted(webContentsId, key),
+    (key) => grantFilePath(webContentsId, key),
+  );
+  // The +N/-N column for a remote host: the same provider, with its git run there
+  // (ssh-git.ts). An unreachable host is an error, never "no changes".
+  const remoteDiffStats = async (target: SshTarget, poll?: unknown) => {
+    try {
+      const { files, baseline } = await runForPoll(poll, () =>
+        runWithSshGit({ target }, () => getChangedFilesWithBaseline(target.path)));
+      return { root: target.path, files, baseline };
+    } catch (err: any) {
+      console.error('[explorer] remote diff stats failed:', err?.message ?? err);
+      return { error: 'Failed to read changes', code: 'read_failed' };
+    }
+  };
+  // The remote half of `markdown:read-file` and `markdown:save-file`:
+  // targets from the registry, the grant from THIS window's set, the ssh runners
+  // of the code editor (ssh-markdown.ts has the gates).
+  const remoteMarkdownDeps = (webContentsId: number) =>
+    defaultRemoteMarkdownDeps(listSshTargets, (key) => isFilePathGranted(webContentsId, key));
+  const REMOTE_NOT_SUPPORTED: ExplorerListError = {
+    error: 'Not available for a remote workspace',
+    code: 'remote',
+  };
+
   ipcMain.handle(
     IPC_CHANNELS.EXPLORER_LIST_DIR,
     async (event, surfaceId: unknown, relPath: unknown, opts?: { showHidden?: boolean }) => {
-      const root = explorerRootFor(surfaceId, event.sender);
-      if ('error' in root) return root;
-      return listDir(root.realRoot, typeof relPath === 'string' ? relPath : '', {
-        showHidden: !!opts?.showHidden,
-      });
+      return serveRemoteFirst(
+        () => remoteTargetFor(surfaceId, event.sender),
+        (target) => remoteListDir(target, relPath, { showHidden: !!opts?.showHidden }),
+        () => {
+          const root = explorerRootFor(surfaceId, event.sender);
+          if ('error' in root) return root;
+          return listDir(root.realRoot, typeof relPath === 'string' ? relPath : '', {
+            showHidden: !!opts?.showHidden,
+          });
+        },
+      );
     },
   );
 
@@ -1542,6 +1662,22 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     },
   );
 
+  // A workspace came on screen: start the worker of its ssh target, or of its WSL distro when its
+  // folder is on a WSL share, ahead of the first click (exec-warm.ts). A workspace id and, for a WSL
+  // folder, that folder; main checks that this window is shown and that the workspace is the one it shows.
+  ipcMain.on(IPC_CHANNELS.WORKSPACE_WARM, (event, workspaceId: unknown, folder?: unknown) => {
+    if (typeof workspaceId !== 'string' || !workspaceId) return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    void warmWorkspace(workspaceId, folder, () => windowShowsWorkspace(win, workspaceId));
+  });
+
+  // A workspace was closed in this window: drop its ssh target (ssh-targets.ts), which also ends the
+  // host's worker unless another workspace still uses the host.
+  ipcMain.on(IPC_CHANNELS.SSH_WORKSPACE_CLOSED, (_event, workspaceId: unknown) => {
+    forgetClosedWorkspace(workspaceId);
+  });
+
   // Code viewer. This handler is where the code viewer's security boundary
   // actually lives — code-file.ts's deny-list is a UX filter, and resolveInRoot
   // is what keeps a renderer-supplied path inside the pane's folder.
@@ -1554,11 +1690,18 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(
     IPC_CHANNELS.CODE_READ_FILE,
     async (event, surfaceId: unknown, relPath: unknown) => {
-      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
-      if ('error' in resolved) return resolved;
-      const read = readCodeFile(resolved.abs);
-      if (!('error' in read)) grantFilePath(event.sender.id, read.filePath);
-      return read;
+      // A remote read mints its grant under a key no local path can equal (ssh-access.ts).
+      return serveRemoteFirst(
+        () => remoteTargetFor(surfaceId, event.sender),
+        (target) => readRemoteFile(remoteFileDeps(event.sender.id), target, relPath, false),
+        async () => {
+          const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
+          if ('error' in resolved) return resolved;
+          const read = readCodeFile(resolved.abs);
+          if (!('error' in read)) grantFilePath(event.sender.id, read.filePath);
+          return read;
+        },
+      );
     },
   );
 
@@ -1575,15 +1718,20 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(
     IPC_CHANNELS.CODE_WRITE_FILE,
     async (event, surfaceId: unknown, relPath: unknown, content: unknown, expectedMtimeMs?: unknown) => {
-      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
-      if ('error' in resolved) return resolved;
-      if (!isFilePathGranted(event.sender.id, resolved.abs)) {
-        return { error: 'This file was not opened in a pane in this window', code: 'not_granted' };
-      }
-      return writeCodeFile(
-        resolved.abs,
-        typeof content === 'string' ? content : '',
-        Number.isFinite(expectedMtimeMs) ? Number(expectedMtimeMs) : undefined,
+      const expected = Number.isFinite(expectedMtimeMs) ? Number(expectedMtimeMs) : undefined;
+      return serveRemoteFirst(
+        () => remoteTargetFor(surfaceId, event.sender),
+        (target) => saveGrantedRemoteFile(remoteFileDeps(event.sender.id), target, relPath, content, expected),
+        async () => {
+          const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
+          if ('error' in resolved) return resolved;
+          if (!isFilePathGranted(event.sender.id, resolved.abs)) {
+            return { error: 'This file was not opened in a pane in this window', code: 'not_granted' };
+          }
+          const saved = writeCodeFile(resolved.abs, typeof content === 'string' ? content : '', expected);
+          noteWslWrite(resolved.abs); // a save into a WSL folder starts its polls' back-off over
+          return saved;
+        },
       );
     },
   );
@@ -1605,11 +1753,19 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(
     IPC_CHANNELS.EXPLORER_READ_MARKDOWN,
     async (event, surfaceId: unknown, relPath: unknown) => {
-      const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
-      if ('error' in resolved) return resolved;
-      const read = readMarkdownFile(resolved.abs);
-      if (!('error' in read)) grantFilePath(event.sender.id, read.filePath);
-      return read;
+      // Remote: the same extension whitelist and the same grant as `code:read-file`;
+      // `markdown:save-file` resolves the identity back to this target (ssh-access.ts).
+      return serveRemoteFirst(
+        () => remoteTargetFor(surfaceId, event.sender),
+        (target) => readRemoteFile(remoteFileDeps(event.sender.id), target, relPath, true),
+        async () => {
+          const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'file');
+          if ('error' in resolved) return resolved;
+          const read = readMarkdownFile(resolved.abs);
+          if (!('error' in read)) grantFilePath(event.sender.id, read.filePath);
+          return read;
+        },
+      );
     },
   );
 
@@ -1620,19 +1776,25 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // cannot disagree about what changed.
   ipcMain.handle(
     IPC_CHANNELS.EXPLORER_DIFF_STATS,
-    async (event, surfaceId: unknown) => {
-      const root = explorerRootFor(surfaceId, event.sender);
-      if ('error' in root) return root;
-      try {
-        const { files, baseline } = await getChangedFilesWithBaseline(root.realRoot);
-        return { root: root.realRoot, files, baseline };
-      } catch (err: any) {
-        // A git spawn can fail for reasons that are not the user's problem (no
-        // git on PATH, a repo mid-rebase). The tree simply shows no numbers
-        // rather than an error banner over a working file list.
-        console.error('[explorer] diff stats failed:', err?.message ?? err);
-        return { error: 'Failed to read changes', code: 'read_failed' };
-      }
+    async (event, surfaceId: unknown, poll?: unknown) => {
+      return serveRemoteFirst(
+        () => remoteTargetFor(surfaceId, event.sender),
+        (remote) => remoteDiffStats(remote, poll),
+        async () => {
+          const root = explorerRootFor(surfaceId, event.sender);
+          if ('error' in root) return root;
+          try {
+            const { files, baseline } = await runForPoll(poll, () => getChangedFilesWithBaseline(root.realRoot));
+            return { root: root.realRoot, files, baseline };
+          } catch (err: any) {
+            // A git spawn can fail for reasons that are not the user's problem (no
+            // git on PATH, a repo mid-rebase). The tree simply shows no numbers
+            // rather than an error banner over a working file list.
+            console.error('[explorer] diff stats failed:', err?.message ?? err);
+            return { error: 'Failed to read changes', code: 'read_failed' };
+          }
+        },
+      );
     },
   );
 
@@ -1643,6 +1805,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(
     IPC_CHANNELS.EXPLORER_REVEAL,
     async (event, surfaceId: unknown, relPath: unknown) => {
+      if (await remoteTargetFor(surfaceId, event.sender)) return REMOTE_NOT_SUPPORTED;
       const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'any');
       if ('error' in resolved) return resolved;
       shell.showItemInFolder(resolved.abs);
@@ -1656,6 +1819,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(
     IPC_CHANNELS.EXPLORER_OPEN_IN_APP,
     async (event, surfaceId: unknown, relPath: unknown) => {
+      if (await remoteTargetFor(surfaceId, event.sender)) return REMOTE_NOT_SUPPORTED;
       const resolved = await resolveExplorerPath(surfaceId, relPath, event.sender, 'any');
       if ('error' in resolved) return resolved;
       // FILES only. The deny-list reads an extension off a basename, and a
@@ -1699,6 +1863,9 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       if (sshDetector.detect(surfaceId as SurfaceId)) {
         return { error: 'This pane is inside an SSH session', code: 'remote' };
       }
+      // A remote workspace's terminal output names remote host paths: never probe
+      // them on this machine, whether or not the detector noticed the ssh.
+      if (await remoteTargetFor(surfaceId, event.sender)) return REMOTE_NOT_SUPPORTED;
       const root = explorerRootFor(surfaceId, event.sender);
       if ('error' in root && root.code !== 'no_root') return root;
       return resolveTerminalFileLink('error' in root ? null : root.realRoot, text);
@@ -1769,10 +1936,17 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   ipcMain.handle(
     IPC_CHANNELS.MARKDOWN_SAVE_FILE,
     async (event, filePath: string, content: string, expectedMtimeMs?: number) => {
+      // A remote file (`ssh://` identity) is written ON the remote host, behind
+      // the remote jail, grant and mtime gates; never to a local path.
+      if (isRemoteIdentity(filePath)) {
+        return saveRemoteMarkdown(filePath, content, expectedMtimeMs, remoteMarkdownDeps(event.sender.id));
+      }
       if (!isFilePathGranted(event.sender.id, filePath)) {
         return { error: 'This file was not opened in wmux — use Save As', code: 'not_granted' };
       }
-      return writeMarkdownFile(filePath, content, expectedMtimeMs);
+      const saved = writeMarkdownFile(filePath, content, expectedMtimeMs);
+      noteWslWrite(filePath); // a save into a WSL folder starts its polls' back-off over
+      return saved;
     },
   );
 
@@ -1791,6 +1965,7 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
       });
       if (result.canceled || !result.filePath) return { canceled: true };
       const written = writeMarkdownFile(result.filePath, content);
+      noteWslWrite(result.filePath);
       if ('ok' in written) {
         grantFilePath(event.sender.id, result.filePath);
         return { ...written, filePath: result.filePath };

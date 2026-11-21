@@ -73,9 +73,21 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
     setLoading(next);
   }, []);
 
-  const loadFiles = useCallback(async () => {
+  // `poll` is true only for the timer's own passes. Main then runs an ssh
+  // workspace's request behind a person's clicks; the argument is left off
+  // otherwise, so a click's call is the call it always was.
+  const loadFiles = useCallback(async (poll = false) => {
     try {
-      const result = await window.wmux?.diff?.getFiles(cwd || '', baseRef);
+      // The surface lets main answer from the remote host when this workspace has an
+      // ssh target; `cwd` is then ignored there.
+      const result = await (poll
+        ? window.wmux?.diff?.getFiles(cwd || '', baseRef, surfaceId, true)
+        : window.wmux?.diff?.getFiles(cwd || '', baseRef, surfaceId));
+      if (result?.error) {
+        // An unreachable remote host is said so, never shown as "no changes".
+        setErrorIfChanged(result.error);
+        return [];
+      }
       if (result?.files) {
         const newFiles = result.files as ChangedFile[];
         const newKey = newFiles.map(f => `${f.path}|${f.status}|${f.additions}|${f.deletions}`).join('\n');
@@ -94,11 +106,18 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
       setLoadingIfChanged(false);
     }
     return [];
-  }, [cwd, baseRef, setErrorIfChanged, setLoadingIfChanged]);
+  }, [cwd, baseRef, surfaceId, setErrorIfChanged, setLoadingIfChanged]);
 
-  const loadDiff = useCallback(async (file: string) => {
+  const loadDiff = useCallback(async (file: string, poll = false) => {
     try {
-      const result = await window.wmux?.diff?.getFileDiff(cwd || '', file, baseRef);
+      const result = await (poll
+        ? window.wmux?.diff?.getFileDiff(cwd || '', file, baseRef, surfaceId, true)
+        : window.wmux?.diff?.getFileDiff(cwd || '', file, baseRef, surfaceId));
+      if (result?.error) {
+        // Only an unreachable remote host gets here (git failures answer an empty diff).
+        setErrorIfChanged(result.error);
+        return;
+      }
       if (result?.diff !== undefined) {
         if (result.diff !== lastDiffRawRef.current) {
           lastDiffRawRef.current = result.diff;
@@ -109,7 +128,7 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
       lastDiffRawRef.current = '';
       setHunks([]);
     }
-  }, [cwd, baseRef]);
+  }, [cwd, baseRef, surfaceId, setErrorIfChanged]);
 
   // The poll reads its loaders through refs rather than closing over them.
   // They are stable today, but this effect must not be restartable by a
@@ -121,13 +140,13 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
   loadFilesRef.current = loadFiles;
   loadDiffRef.current = loadDiff;
 
-  const runPass = useCallback(async () => {
-    const loaded = await loadFilesRef.current();
+  const runPass = useCallback(async (poll = false) => {
+    const loaded = await loadFilesRef.current(poll);
     if (loaded.length > 0 && !selectedFileRef.current) {
       setSelectedFile(loaded[0].path);
     }
     if (selectedFileRef.current) {
-      await loadDiffRef.current(selectedFileRef.current);
+      await loadDiffRef.current(selectedFileRef.current, poll);
     }
   }, []);
 
@@ -144,13 +163,18 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
     const POLL_MS = 2000;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // The first pass, and the first one after the tab was hidden, is asked as a
+    // person would ask: a view that has just come back is read at once.
+    let wasVisible = false;
 
     const poll = async () => {
       const started = Date.now();
       // Hidden tabs and background windows keep this component mounted (panes
       // are hidden with `visibility`, never unmounted), so the surface has to
       // opt out of the work itself.
-      if (isSurfaceVisible(surfaceId)) await runPass();
+      const visible = isSurfaceVisible(surfaceId);
+      if (visible) await runPass(wasVisible);
+      wasVisible = visible;
       if (cancelled) return;
       const elapsed = Date.now() - started;
       timer = setTimeout(poll, Math.max(POLL_MS, elapsed));

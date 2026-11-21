@@ -490,6 +490,7 @@ export const en = {
   'explorer.openInApp': 'Open in default app',
   'explorer.error.no_root': 'This pane has not reported a working directory yet',
   'explorer.error.remote': 'This pane is inside an SSH session',
+  'explorer.error.ssh-unreachable': 'Could not reach the remote host over SSH',
   'explorer.error.invalid_path': 'That path is not allowed',
   'explorer.error.outside_root': 'That path is outside the pane folder',
   'explorer.error.not_found': 'Folder not found',

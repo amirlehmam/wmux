@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { WorkspaceId, WorkspaceInfo, SplitNode, SavedLayout } from '../../shared/types';
 import { isPosixPath } from '../../shared/paths';
 import { buildWorkspaceTree, WorkspaceLayout, instantiateLayout, freezeSurfaceCwds, dropEphemeralSurfaces, dropCodeContent, mergeStartupCommands } from './split-utils';
-import { killDroppedSurfaces, killTreeTerminalPtys } from './pty-teardown';
+import { killDroppedSurfaces, killTreeTerminalPtys, notifyWorkspaceClosed } from './pty-teardown';
 // The one module that owns every tab-label rule. It is pure (no React), so the
 // store importing it pulls in nothing but the label helpers.
 import { deriveWorkspaceTitle } from '../components/SplitPane/surface-label';
@@ -245,7 +245,10 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
     // to discard the entire split tree WITHOUT killing any of its PTYs, orphaning
     // every pane's wrapper shell for the life of the app.
     const closing = get().workspaces.find((w) => w.id === id);
-    if (closing) killTreeTerminalPtys(closing.splitTree);
+    if (closing) {
+      killTreeTerminalPtys(closing.splitTree);
+      notifyWorkspaceClosed(id);
+    }
 
     set((state) => {
       const idx = state.workspaces.findIndex((w) => w.id === id);

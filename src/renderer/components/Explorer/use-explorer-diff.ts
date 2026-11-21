@@ -76,12 +76,17 @@ export function useExplorerDiff(
   const keyRef = useRef('');
   keyRef.current = `${surfaceId ?? ''}|${absRoot}`;
 
-  const fetchStats = useCallback(async () => {
+  // `poll` is true only for the interval's own fetches: for an ssh workspace
+  // main then runs the call behind a person's clicks. Focus, a hook event, the
+  // first fetch and a root change are not polls, and neither is the argument.
+  const fetchStats = useCallback(async (poll = false) => {
     if (!surfaceId || !enabled) return;
     const key = keyRef.current;
     let res: any;
     try {
-      res = await window.wmux.explorer.diffStats(surfaceId);
+      res = await (poll
+        ? window.wmux.explorer.diffStats(surfaceId, true)
+        : window.wmux.explorer.diffStats(surfaceId));
     } catch {
       return;   // main is gone or the window is closing; leave the last numbers
     }
@@ -131,7 +136,7 @@ export function useExplorerDiff(
     let timer: number | null = null;
     const start = (): void => {
       if (timer !== null) return;
-      timer = window.setInterval(() => { void fetchStats(); }, POLL_MS);
+      timer = window.setInterval(() => { void fetchStats(true); }, POLL_MS);
     };
     const stop = (): void => {
       if (timer === null) return;

@@ -350,6 +350,7 @@ export const hi: Translation = {
   'explorer.openInApp': 'डिफ़ॉल्ट ऐप में खोलें',
   'explorer.error.no_root': 'इस पैन ने अभी तक कार्यशील डायरेक्टरी नहीं बताई है',
   'explorer.error.remote': 'यह पैन SSH सत्र में है',
+  'explorer.error.ssh-unreachable': 'SSH के माध्यम से दूरस्थ होस्ट तक नहीं पहुँचा जा सका',
   'explorer.error.invalid_path': 'वह पथ अनुमत नहीं है',
   'explorer.error.outside_root': 'वह पथ पैन के फ़ोल्डर के बाहर है',
   'explorer.error.not_found': 'फ़ोल्डर नहीं मिला',

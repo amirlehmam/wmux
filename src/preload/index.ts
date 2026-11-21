@@ -479,8 +479,10 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_OPEN_IN_APP, surfaceId, relPath),
     // Per-file change counts for the tree's +N/-N column. A surfaceId only —
     // main derives the root and calls the same diff provider the DiffPane uses.
-    diffStats: (surfaceId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_DIFF_STATS, surfaceId),
+    // `poll` marks the column's own timer: on an ssh workspace such a call
+    // queues behind a person's clicks (exec-gate.ts). Omitted, it is a click.
+    diffStats: (surfaceId: string, poll?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EXPLORER_DIFF_STATS, surfaceId, poll),
     // The jailed markdown read, which is the one that mints a write grant.
     // `markdown.readFile` below takes an absolute path and mints nothing.
     readMarkdown: (surfaceId: string, relPath: string) =>
@@ -509,13 +511,31 @@ contextBridge.exposeInMainWorld('wmux', {
       ipcRenderer.invoke(IPC_CHANNELS.CODE_WRITE_FILE, surfaceId, relPath, content, expectedMtimeMs),
   },
   diff: {
-    getFiles: (cwd: string, baseRef?: string) => ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_FILES, cwd, baseRef),
-    getFileDiff: (cwd: string, file: string, baseRef?: string) => ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_DIFF, cwd, file, baseRef),
+    // `surfaceId` is the Diff tab's own. When its workspace lives on a remote host
+    // main ignores `cwd` and runs git there against the registered
+    // checkout, and answers `{ error, code }` when it cannot be reached.
+    // `poll` marks the tab's own timer: on an ssh workspace such a call queues
+    // behind a person's clicks (exec-gate.ts). Omitted, it is a click.
+    getFiles: (cwd: string, baseRef?: string, surfaceId?: string, poll?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_FILES, cwd, baseRef, surfaceId, poll),
+    getFileDiff: (cwd: string, file: string, baseRef?: string, surfaceId?: string, poll?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIFF_GET_DIFF, cwd, file, baseRef, surfaceId, poll),
     onUpdate: (callback: (data: { file?: string }) => void) => {
       const handler = (_event: any, data: any) => callback(data);
       ipcRenderer.on(IPC_CHANNELS.DIFF_UPDATE, handler);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.DIFF_UPDATE, handler);
     },
+  },
+  ssh: {
+    // The window closed `workspaceId`: main forgets its ssh target (and ends that host's worker if no other
+    // workspace uses it). One-way.
+    workspaceClosed: (workspaceId: string): void => ipcRenderer.send(IPC_CHANNELS.SSH_WORKSPACE_CLOSED, workspaceId),
+  },
+  workspace: {
+    // The window shows `workspaceId` now (`folder`: its folder, when that is on a WSL share). Main starts
+    // the persistent worker of its ssh target, or of the folder's WSL distro, if the window is on screen,
+    // and does nothing otherwise (exec-warm.ts). One-way: there is no answer to wait for.
+    warm: (workspaceId: string, folder?: string): void => ipcRenderer.send(IPC_CHANNELS.WORKSPACE_WARM, workspaceId, folder),
   },
   // The project Git view (#362). One read-only request shape, validated in
   // main; the renderer never names a git sub-command or an argument.

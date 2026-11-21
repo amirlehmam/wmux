@@ -7,7 +7,7 @@
  * actually differs from the last one — a poll that finds nothing new must not
  * re-render the tree under it (#141).
  */
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { GitViewRequest, GitViewResult } from '../../../shared/git-view';
 
 export class GitViewError extends Error {
@@ -21,6 +21,26 @@ export async function gitView<T>(request: GitViewRequest): Promise<T> {
   return res.data;
 }
 
+/** What the Git pane tells every query under it. A context rather than props so the five views need no change. */
+export interface GitQueryScope {
+  /**
+   * The surface the pane belongs to. `useGitQuery` adds it to every request that names none,
+   * so main can run a workspace that lives on a remote host over ssh; with no ssh target main ignores it.
+   */
+  surfaceId?: string;
+  /**
+   * Whether the pane's last refresh was its own timer. A ref rather than state
+   * because it is read inside the effect that is already running for the tick it
+   * describes: the timer sets it just before it bumps the tick, and every other
+   * refresh (the button, an agent's edit, a click on a file) clears it. A request
+   * that carries `poll` is background work for main on an ssh workspace, queued
+   * behind clicks; without a scope nothing is ever a poll.
+   */
+  polled?: { current: boolean };
+}
+
+export const GitQueryContext = createContext<GitQueryScope | undefined>(undefined);
+
 export interface GitQuery<T> {
   data: T | null;
   error: GitViewError | null;
@@ -33,8 +53,15 @@ export interface GitQuery<T> {
  * replaced — is dropped rather than shown. `error` set beside a non-null
  * `data` means the latest refresh failed and `data` is the previous answer.
  */
-export function useGitQuery<T>(request: GitViewRequest | null, refresh: number | string = 0): GitQuery<T> {
-  const key = request ? JSON.stringify(request) : '';
+export function useGitQuery<T>(
+  request: GitViewRequest | null,
+  refresh: number | string = 0,
+  /** For the pane's own query, which sits above the provider and so cannot read the context. */
+  own?: GitQueryScope,
+): GitQuery<T> {
+  const inherited = useContext(GitQueryContext);
+  const { surfaceId, polled } = own ?? inherited ?? {};
+  const key = request ? JSON.stringify(surfaceId && !request.surfaceId ? { ...request, surfaceId } : request) : '';
   const [state, setState] = useState<GitQuery<T>>({ data: null, error: null, loading: !!request });
   const lastJson = useRef('');
   const lastKey = useRef('');
@@ -52,7 +79,9 @@ export function useGitQuery<T>(request: GitViewRequest | null, refresh: number |
       setState({ data: null, error: null, loading: true });
     }
     let cancelled = false;
-    gitView<T>(JSON.parse(key) as GitViewRequest).then(
+    // A request that is new (a different file, worktree or mode) is somebody's click, whatever woke the effect.
+    const poll = !keyChanged && polled?.current === true;
+    gitView<T>(poll ? { ...(JSON.parse(key) as GitViewRequest), poll: true } : JSON.parse(key) as GitViewRequest).then(
       (data) => {
         if (cancelled) return;
         const json = JSON.stringify(data);

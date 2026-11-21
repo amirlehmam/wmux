@@ -76,7 +76,8 @@ describe('grants are minted only by the jailed reads', () => {
 
 describe('the diff column asks main by surfaceId, never by cwd', () => {
   it('the preload exposes only a surfaceId', () => {
-    expect(preload).toContain('diffStats: (surfaceId: string) =>');
+    // Only a surfaceId, plus the flag that says the call is the column's own timer (exec-gate.ts).
+    expect(preload).toContain('diffStats: (surfaceId: string, poll?: boolean) =>');
     // A cwd parameter here would be the pre-#210 pattern the jail exists to
     // reject — the renderer does not get to say which folder to read.
     expect(preload).not.toContain('diffStats: (cwd');

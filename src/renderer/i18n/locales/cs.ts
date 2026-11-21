@@ -363,6 +363,7 @@ export const cs: Translation = {
   'explorer.openInApp': 'Otevřít ve výchozí aplikaci',
   'explorer.error.no_root': 'Tento panel zatím nenahlásil pracovní adresář',
   'explorer.error.remote': 'Tento panel je v relaci SSH',
+  'explorer.error.ssh-unreachable': 'Vzdálený hostitel není přes SSH dostupný',
   'explorer.error.invalid_path': 'Tato cesta není povolena',
   'explorer.error.outside_root': 'Tato cesta je mimo složku panelu',
   'explorer.error.not_found': 'Složka nenalezena',

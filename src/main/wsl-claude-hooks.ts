@@ -283,7 +283,7 @@ function armPaneSyncs(): void {
     const firstAt = pending?.firstAt ?? now;
     const due = Math.min(now + delay, firstAt + delay * PANE_SYNC_MAX_WAIT_FACTOR);
     const timer = setTimeout(() => { armed.delete(delay); requestSync(); }, Math.max(0, due - now));
-    timer.unref?.();
+    timer.unref();
     armed.set(delay, { timer, firstAt });
   }
 }

@@ -32,6 +32,7 @@ const EXPLORER_ERROR_KEY: Record<ExplorerErrorCode, TranslationKey> = {
   not_granted: 'code.error.not_granted',
   conflict: 'code.error.conflict',
   write_failed: 'code.error.write_failed',
+  'ssh-unreachable': 'explorer.error.ssh-unreachable',
 };
 
 /** Codes whose explorer wording says "folder" where the code pane means a file. */

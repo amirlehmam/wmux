@@ -354,7 +354,7 @@ export class SshDetector {
     const detached = (): void => { this.sweep().catch(() => undefined); };
     detached();
     this.timer = setInterval(detached, SWEEP_INTERVAL_MS);
-    this.timer.unref?.();
+    this.timer.unref();
   }
 
   /** Park the probe. Called on app shutdown and when nothing remote is running. */

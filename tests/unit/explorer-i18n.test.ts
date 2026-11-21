@@ -19,6 +19,8 @@ const CODES: ExplorerErrorCode[] = [
   // Write-side codes. A save failure the user cannot read is worse than a read
   // failure they cannot read: they are holding edits at the time.
   'not_granted', 'conflict', 'write_failed',
+  // Remote (ssh) explorer.
+  'ssh-unreachable',
 ];
 
 describe('explorer error keys', () => {
