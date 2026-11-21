@@ -285,7 +285,7 @@ export const zhTW: Translation = {
   'settings.browser.searchSection': '搜尋',
   'settings.browser.defaultSearchEngine': '預設搜尋引擎',
   'settings.browser.startupSection': '啟動',
-  'settings.browser.openOnStartup': '在新的工作區中開啟瀏覽器面板',
+  'settings.browser.openOnStartup': '在新工作區中開啟瀏覽器面板',
   // 起始頁面 (issue #212)
   'settings.browser.defaultUrl': '起始頁面',
   'settings.browser.defaultUrlHint': '工作區的瀏覽器面板還沒開過任何頁面時，預設開啟的網址。必須包含通訊協定（http:// 或 https://）。留空則使用 wmux 自己的頁面。也可以在 ~/.wmux/config.toml 的 [browser] default-url 設定。',

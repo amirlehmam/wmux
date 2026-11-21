@@ -247,7 +247,7 @@ export const hi: Translation = {
   'settings.browser.searchSection': 'खोज',
   'settings.browser.defaultSearchEngine': 'डिफ़ॉल्ट खोज इंजन',
   'settings.browser.startupSection': 'आरंभ',
-  'settings.browser.openOnStartup': 'नए कार्यस्थानों में ब्राउज़र पैनल खोलें',
+  'settings.browser.openOnStartup': 'नए वर्कस्पेस में ब्राउज़र पैनल खोलें',
   'settings.browser.linksSection': 'लिंक',
   'settings.browser.openLinksExternally': 'लिंक सिस्टम ब्राउज़र में खोलें',
   'settings.browser.openLinksExternallyHint': 'टर्मिनल और मार्कडाउन में क्लिक किए गए लिंक wmux पैनल के बजाय आपके डिफ़ॉल्ट ब्राउज़र में खुलते हैं। Ctrl+क्लिक हमेशा इसका उल्टा करता है।',

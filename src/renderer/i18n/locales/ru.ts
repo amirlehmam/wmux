@@ -247,7 +247,7 @@ export const ru: Translation = {
   'settings.browser.searchSection': 'Поиск',
   'settings.browser.defaultSearchEngine': 'Поисковая система по умолчанию',
   'settings.browser.startupSection': 'Запуск',
-  'settings.browser.openOnStartup': 'Открывать панель браузера в новых рабочих пространствах',
+  'settings.browser.openOnStartup': 'Открывать панель браузера в новых рабочих областях',
   'settings.browser.linksSection': 'Ссылки',
   'settings.browser.openLinksExternally': 'Открывать ссылки в системном браузере',
   'settings.browser.openLinksExternallyHint': 'Ссылки, нажатые в терминалах и markdown, открываются в браузере по умолчанию вместо панели wmux. Ctrl+щелчок всегда делает наоборот.',
