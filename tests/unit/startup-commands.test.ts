@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   classifyStartupChunk,
+  ctrlUDiscardsLine,
   deliverStartupCommandsWhenReady,
   DEFAULT_STARTUP_GATE_TIMING,
   hasPromptMark,
@@ -176,6 +177,44 @@ describe('deliverStartupCommandsWhenReady', () => {
 
   it('sends several commands in order, in one write', () => {
     expect(startupKeystrokes(['cd C:\\proj', 'claude --resume abcdefgh'])).toBe('cd C:\\proj\rclaude --resume abcdefgh\r');
+  });
+
+  // wmux answers a DA1 probe by writing `ESC[?62;4;9;22c` to the PTY's stdin. A
+  // bash/zsh line editor that nobody asked drops `ESC[?` and inserts
+  // `62;4;9;22c` on the command line, so the typed command arrives as
+  // `62;4;9;22ccd '…' && …` and bash runs `62`, `4`, `9`, `22ccd` instead.
+  // Ctrl-U (readline unix-line-discard) empties the line before the command.
+  it('discards whatever is already on the line before typing, when asked', () => {
+    expect(startupKeystrokes(['cd /w && ./launch.sh'], { discardLine: true })).toBe('\x15cd /w && ./launch.sh\r');
+    expect(startupKeystrokes(['a', 'b'], { discardLine: true })).toBe('\x15a\rb\r');
+    expect(startupKeystrokes(['a'], { discardLine: false })).toBe('a\r');
+  });
+
+  it('only prefixes Ctrl-U for shells whose line editor reads it as kill-line', () => {
+    expect(ctrlUDiscardsLine('wsl')).toBe(true); // bash/zsh inside the distro
+    expect(ctrlUDiscardsLine('unknown')).toBe(true); // Git Bash, fish, nu
+    expect(ctrlUDiscardsLine('cmd')).toBe(false);
+    expect(ctrlUDiscardsLine('powershell')).toBe(false);
+  });
+
+  it('asks discardLine at SEND time, so a reply that lands during the settle window still counts', () => {
+    vi.useFakeTimers();
+    const h = harness();
+    let replied = false;
+    deliverStartupCommandsWhenReady({ ...h.deps, discardLine: () => replied }, ['echo hi']);
+    h.feed(`${ESC}]133;A${BEL}$ `); // prompt mark: arms the settle timer
+    replied = true; // wmux answered a DA1 probe after the mark, before the send
+    vi.advanceTimersByTime(DEFAULT_STARTUP_GATE_TIMING.settleMs);
+    expect(h.write).toHaveBeenCalledWith('\x15echo hi\r');
+  });
+
+  it('types the plain commands when no reply was written', () => {
+    vi.useFakeTimers();
+    const h = harness();
+    deliverStartupCommandsWhenReady({ ...h.deps, discardLine: () => false }, ['echo hi']);
+    h.feed(`${ESC}]133;A${BEL}$ `);
+    vi.advanceTimersByTime(DEFAULT_STARTUP_GATE_TIMING.settleMs);
+    expect(h.write).toHaveBeenCalledWith('echo hi\r');
   });
 
   it('a shell that never goes quiet still gets its command at the ceiling', () => {

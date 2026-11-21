@@ -21,7 +21,7 @@ import { loadSettings } from './settings-store';
 import { getNodeRuntime } from './node-runtime';
 import { system32, opensshPath } from './system32';
 import { bashAlias, gitBashCandidates, isWslBashLauncher, isGitBashLauncher, gitBashIntegrationArgs, GIT_BASH_LOGIN_ARGS } from './git-bash';
-import { deliverStartupCommandsWhenReady } from './startup-commands';
+import { ctrlUDiscardsLine, deliverStartupCommandsWhenReady } from './startup-commands';
 import { browserEnvFor, WSL_ENV_PASSTHROUGH } from './pane-browser-env';
 import { noteWslPaneOpened } from './wsl-claude-hooks';
 
@@ -650,6 +650,10 @@ interface PtyEntry {
   alive: boolean;
   awaitingInheritedCursor: boolean;
   deferredDA1: boolean;
+  // True once this class has written a DA1 reply to the PTY's stdin. A shell
+  // that never asked for it (bash, zsh) keeps it as type-ahead, so typed
+  // startup commands go in behind a Ctrl-U (startup-commands.ts).
+  da1Replied: boolean;
   // Last applied size. Used to drop redundant same-size resizes, which would
   // otherwise make the shell (PSReadLine/oh-my-posh) redraw the prompt for no
   // reason — a cause of the doubled prompt on startup.
@@ -926,6 +930,7 @@ export class PtyManager {
       alive: true,
       awaitingInheritedCursor: spawnOptions.conptyInheritCursor === true,
       deferredDA1: false,
+      da1Replied: false,
       cols: spawnOptions.cols ?? 80,
       rows: spawnOptions.rows ?? 24,
       shell,
@@ -940,7 +945,7 @@ export class PtyManager {
       if (entry.alive && data.indexOf('\x1b[') !== -1 && DA1_QUERY.test(data)) {
         if (entry.awaitingInheritedCursor) entry.deferredDA1 = true;
         else {
-          try { ptyProcess.write(DA1_REPLY); } catch { /* pty disposed between events */ }
+          try { ptyProcess.write(DA1_REPLY); entry.da1Replied = true; } catch { /* pty disposed between events */ }
         }
       }
       for (const listener of entry.dataListeners) {
@@ -987,11 +992,13 @@ export class PtyManager {
 
   /** Keystroke delivery for shells with no init seam — see startup-commands.ts. */
   private typeStartupCommands(id: SurfaceId, entry: PtyEntry, commands: string[]): void {
+    const discardable = ctrlUDiscardsLine(getShellType(entry.shell));
     const cancel = deliverStartupCommandsWhenReady(
       {
         onData: (cb) => this.onData(id, cb),
         write: (data) => this.write(id, data),
         isAlive: () => entry.alive,
+        discardLine: () => discardable && entry.da1Replied,
         setTimeout: (fn, ms) => setTimeout(fn, ms),
         clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
         log: (message) => console.log(`[wmux] pty ${id}: ${message}`),
@@ -1010,6 +1017,7 @@ export class PtyManager {
       // for startup. Submit CPR before allowing any DA1 to complete the probe.
       try {
         entry.pty.write(data + (entry.deferredDA1 ? DA1_REPLY : ''));
+        if (entry.deferredDA1) entry.da1Replied = true;
         entry.awaitingInheritedCursor = false;
         entry.deferredDA1 = false;
       } catch { /* pty disposed between lookup and reply */ }
