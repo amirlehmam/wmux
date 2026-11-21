@@ -211,6 +211,33 @@ should treat a failure as "not supported" and carry on.
 With `WMUX_REMOTE` unset, every one of these falls back to the local named
 pipe exactly as before. The transport is additive.
 
+## Telling wmux where the files really are: `set-ssh-target`
+
+A pane that runs `ssh` shows a session whose files are on another machine. A script or integration that
+starts or attaches such a session can tell wmux where it runs:
+
+```
+wmux set-ssh-target [--workspace <id>] --argv-json <json-array> --path <abs-path> [--wsl-distro <name>]
+wmux clear-ssh-target [--workspace <id>]
+```
+
+- `--argv-json` is the ssh command as a JSON array of arguments (never a shell string), for example
+  `'["ssh","-p","2222","dev@host"]'`, and `--path` the absolute checkout path on that host. `--workspace`
+  defaults to the pane's own workspace.
+- wmux then serves that workspace's folder view, code and markdown viewers, Diff tab, Git view and the
+  sidebar's branch marker from the remote host, over ssh, and never from a local path of the same
+  spelling. An unreachable host is reported as an error, not as "no changes".
+- `clear-ssh-target`, or a set with an empty argv, forgets it. The target is held in memory only: it is not
+  written to `session.json` or settings, so the caller sets it again after every launch, attach or wmux
+  restart. A call that names an unknown workspace fails with a non-zero exit.
+- The ssh keys and the `known_hosts` the argv names must live where the ssh runs. By default that is the
+  host's own `ssh`; with `--wsl-distro <name>` it runs inside that WSL distro
+  (`wsl.exe -d <name> --exec ssh`), for keys and a pinned `known_hosts` that live in WSL.
+  `-F`, `-J`, `-i` and `-o UserKnownHostsFile=` in the argv are used as given, never translated. wmux runs
+  ssh non-interactively, so a host that needs a password or a prompt is reported as unreachable.
+
+Where the calls go and how their cost is kept down is in `remote-workspace-views.md`.
+
 ## Latency and the warm relay pool
 
 Spawning `npiperelay.exe` is not free. On a corporate-managed host where AV/EDR
