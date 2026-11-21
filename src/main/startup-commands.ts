@@ -55,6 +55,15 @@
 //
 // The decision is pure (`startupGateStep`) so every branch is testable without
 // a PTY; `deliverStartupCommandsWhenReady` is the thin impure driver.
+//
+// A typed command can land BEHIND junk. PtyManager answers a Device Attributes
+// probe by writing `ESC[?62;4;9;22c` to the PTY's stdin whether or not anything
+// is reading it. PowerShell's PSReadLine consumes it; a WSL pane's bash or zsh
+// does not, so readline drops the unbound `ESC[?`, inserts `62;4;9;22c` on the
+// line, and the restore command arrives as `62;4;9;22ccd '…' && …`. Bash then
+// runs `62`, `4`, `9` and `22ccd`, the `&&` chain is never entered, and the
+// container is not re-entered. When PtyManager has written a reply, delivery
+// types Ctrl-U first (readline `unix-line-discard`), see `discardLine`.
 
 const ESC = String.fromCharCode(0x1b);
 const BEL = String.fromCharCode(0x07);
@@ -194,9 +203,25 @@ export function startupGateStep(
   return { state: { pending: signal, sent: false }, action: { kind: 'arm', delayMs, signal } };
 }
 
-/** What a typed delivery writes: each command followed by Enter, in order. */
-export function startupKeystrokes(commands: readonly string[]): string {
-  return commands.map((c) => `${c}\r`).join('');
+/** Ctrl-U: readline's `unix-line-discard`, fish's `backward-kill-line`. */
+const DISCARD_LINE = String.fromCharCode(0x15);
+
+/**
+ * Does Ctrl-U empty the line in this shell's editor? cmd and PowerShell without
+ * the integration do not read it as kill-line, so typing it there would be a
+ * stray keystroke rather than a cleanup. `shellType` is PtyManager's
+ * `getShellType` result.
+ */
+export function ctrlUDiscardsLine(shellType: string): boolean {
+  return shellType !== 'cmd' && shellType !== 'powershell';
+}
+
+/**
+ * What a typed delivery writes: each command followed by Enter, in order.
+ * `discardLine` puts a Ctrl-U first, to drop anything already typed ahead.
+ */
+export function startupKeystrokes(commands: readonly string[], opts: { discardLine?: boolean } = {}): string {
+  return (opts.discardLine ? DISCARD_LINE : '') + commands.map((c) => `${c}\r`).join('');
 }
 
 export interface StartupDeliveryDeps {
@@ -204,6 +229,12 @@ export interface StartupDeliveryDeps {
   write(data: string): void;
   /** False once the PTY has exited — a dead shell gets nothing. */
   isAlive(): boolean;
+  /**
+   * Asked at send time, not at spawn: true when something is already waiting on
+   * the shell's input line (a DA1 reply wmux wrote), so the commands go in
+   * behind a Ctrl-U. Absent means false.
+   */
+  discardLine?(): boolean;
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
   log?(message: string): void;
@@ -249,7 +280,7 @@ export function deliverStartupCommandsWhenReady(
     stop();
     if (!deps.isAlive()) return;
     deps.log?.(`startup commands sent after ${Date.now() - t0} ms (${action.reason})`);
-    deps.write(startupKeystrokes(commands));
+    deps.write(startupKeystrokes(commands, { discardLine: deps.discardLine?.() === true }));
   };
 
   unsubscribe = deps.onData((data) => feed({ kind: 'data', data }));
