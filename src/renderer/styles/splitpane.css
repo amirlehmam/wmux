@@ -46,7 +46,9 @@
   transition: border-color 0.15s ease;
 }
 .pane-wrapper--focused {
-  border-color: color-mix(in srgb, var(--ui-accent) 55%, var(--ui-border));
+  /* --wmux-focus-ring is Settings -> General -> "Focused pane border" (#471):
+     0% is the border every other pane has. App.tsx publishes it. */
+  border-color: color-mix(in srgb, var(--ui-accent) var(--wmux-focus-ring, 55%), var(--ui-border));
 }
 /* Over a translucent window the gutters between panes must render at the same
    opacity the panes do, or a split shows as bright seams through the terminal.
@@ -74,6 +76,11 @@ html.wmux-transparent .pane-wrapper:not(.pane-wrapper--focused) {
    the fill is transparent because that layer is the surface. */
 html.wmux-transparent .pane-wrapper--focused {
   border-color: var(--wmux-pane-ring, rgba(var(--ui-accent-rgb), 0.3));
+}
+/* With the focused-pane border turned off (#471) there is no indicator left to
+   keep opaque, so the focused pane takes the gutter its neighbours have. */
+html.wmux-transparent.wmux-no-focus-ring .pane-wrapper--focused {
+  border-color: var(--wmux-pane-gutter, var(--ui-bg-2));
 }
 /* A window without OS focus (App.tsx sets the class) keeps its focused pane
    but stops showing it: the ring and the active-tab accent fall back to what an

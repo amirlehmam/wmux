@@ -41,6 +41,7 @@ import BrowserPane from './components/Browser/BrowserPane';
 import { rememberedPanelUrl, shouldRememberPanelUrl } from './utils/browser-start-page';
 import { activeHistoryUrl } from '../shared/browser-history';
 import { inactivePaneDimAlpha } from '../shared/inactive-pane-dim';
+import { focusedPaneBorderPct } from '../shared/focused-pane-border';
 import { ExplorerPanel } from './components/Explorer/ExplorerPanel';
 import Tutorial from './components/Tutorial/Tutorial';
 import SplitPreviewOverlay from './components/SplitPane/SplitPreviewOverlay';
@@ -660,6 +661,15 @@ export default function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--wmux-inactive-pane-dim', String(inactivePaneDimAlpha(inactivePaneDim)));
   }, [inactivePaneDim]);
+  // The focused pane's border strength (#471), published the same way. The
+  // class is for the transparent window, whose ring is an opaque mix: at 0 it
+  // must be the translucent gutter an unfocused pane has, not that mix.
+  const focusedPaneBorder = useStore((s) => s.appearancePrefs.focusedPaneBorder);
+  useEffect(() => {
+    const pct = focusedPaneBorderPct(focusedPaneBorder);
+    document.documentElement.style.setProperty('--wmux-focus-ring', `${pct}%`);
+    document.documentElement.classList.toggle('wmux-no-focus-ring', pct === 0);
+  }, [focusedPaneBorder]);
   // Screen detection for agents that report no state of their own. One loop for
   // the whole window; it skips every surface whose agent IS reporting.
   useAgentDetection(useStore((s) => s.workspacePrefs.detectAgentScreens));
@@ -908,6 +918,8 @@ export default function App() {
       // `!== undefined`, not truthiness: 0 is the value that turns dimming off.
       const inactivePaneDim = result?.appearance?.inactivePaneDim;
       if (inactivePaneDim !== undefined) state.setAppearancePrefs({ inactivePaneDim });
+      const focusedPaneBorder = result?.appearance?.focusedPaneBorder;
+      if (focusedPaneBorder !== undefined) state.setAppearancePrefs({ focusedPaneBorder });
       // `[sidebar] wrap-titles` (issue #342); false is a real value, so no truthiness test.
       const wrapTitles = result?.sidebar?.wrapTitles;
       if (typeof wrapTitles === 'boolean') state.setSidebarPrefs({ wrapTitles });

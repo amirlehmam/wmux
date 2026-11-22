@@ -72,6 +72,9 @@ export const fr: Translation = {
   'settings.general.inactivePaneDim': 'Atténuer les panes inactifs',
   'settings.general.inactivePaneDimHint':
     "Degré d'assombrissement des panes sans focus. 0 % désactive l'atténuation. Le mode focus atténue davantage.",
+  'settings.general.focusedPaneBorder': 'Bordure du pane actif',
+  'settings.general.focusedPaneBorderHint':
+    "Intensité de la couleur d'accent autour du pane qui a le focus. 0 % le dessine comme les autres panes.",
   'settings.general.shellSection': 'Explorateur Windows',
   'settings.general.contextMenu': 'Ajouter « Ouvrir dans wmux » au menu contextuel des dossiers',
   'settings.general.contextMenuLabel': 'Ouvrir dans wmux',

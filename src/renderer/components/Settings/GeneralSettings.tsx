@@ -7,6 +7,7 @@ import AgentIntegrationSettings from './AgentIntegrationSettings';
 import { formatBinding } from './KeyboardSettings';
 import { MIN_TERMINAL_OPACITY_PCT, opacityToAlpha } from '../../store/backdrop';
 import { MAX_INACTIVE_PANE_DIM_PCT, inactivePaneDimAlpha } from '../../../shared/inactive-pane-dim';
+import { MAX_FOCUSED_PANE_BORDER_PCT, focusedPaneBorderPct } from '../../../shared/focused-pane-border';
 import { backdropCaps, NO_BACKDROP, type BackdropCaps } from '../../utils/backdrop-caps';
 
 // Named background presets for issue #89 — the first is the gradient the
@@ -131,6 +132,7 @@ export default function GeneralSettings() {
   const opacityApplies = appearancePrefs.windowTransparency;
   const effectiveOpacity = Math.round(opacityToAlpha(appearancePrefs.terminalBgOpacity) * 100);
   const effectiveDim = Math.round(inactivePaneDimAlpha(appearancePrefs.inactivePaneDim) * 100);
+  const effectiveFocusBorder = Math.round(focusedPaneBorderPct(appearancePrefs.focusedPaneBorder));
 
   return (
     <div className="settings-section">
@@ -193,6 +195,22 @@ export default function GeneralSettings() {
       </div>
 
       <p className="settings-hint">{t('settings.general.inactivePaneDimHint')}</p>
+
+      <div className="settings-row">
+        <label className="settings-label">
+          {t('settings.general.focusedPaneBorder')} — {effectiveFocusBorder}%
+        </label>
+        <input
+          type="range"
+          min={0}
+          max={MAX_FOCUSED_PANE_BORDER_PCT}
+          step={1}
+          value={effectiveFocusBorder}
+          onChange={(e) => setAppearancePrefs({ focusedPaneBorder: Number(e.target.value) })}
+        />
+      </div>
+
+      <p className="settings-hint">{t('settings.general.focusedPaneBorderHint')}</p>
 
       <h3 className="settings-section-title">{t('settings.general.shellSection')}</h3>
 
