@@ -260,7 +260,7 @@ export const cs: Translation = {
   'settings.browser.searchSection': 'Vyhledávání',
   'settings.browser.defaultSearchEngine': 'Výchozí vyhledávač',
   'settings.browser.startupSection': 'Spuštění',
-  'settings.browser.openOnStartup': 'Otevřít panel prohlížeče při spuštění',
+  'settings.browser.openOnStartup': 'Otevírat panel prohlížeče v nových pracovních prostorech',
   'settings.browser.linksSection': 'Odkazy',
   'settings.browser.openLinksExternally': 'Otevírat odkazy v systémovém prohlížeči',
   'settings.browser.openLinksExternallyHint': 'Kliknuté odkazy v terminálech a markdownu se otevřou ve výchozím prohlížeči místo panelu wmux. Ctrl+kliknutí vždy udělá opak.',

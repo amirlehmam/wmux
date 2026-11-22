@@ -247,7 +247,7 @@ export const tr: Translation = {
   'settings.browser.searchSection': 'Arama',
   'settings.browser.defaultSearchEngine': 'Varsayılan arama motoru',
   'settings.browser.startupSection': 'Başlangıç',
-  'settings.browser.openOnStartup': 'Başlangıçta tarayıcı panelini aç',
+  'settings.browser.openOnStartup': 'Yeni çalışma alanlarında tarayıcı panelini aç',
   'settings.browser.linksSection': 'Bağlantılar',
   'settings.browser.openLinksExternally': 'Bağlantıları sistem tarayıcısında aç',
   'settings.browser.openLinksExternallyHint': 'Terminallerde ve markdown içinde tıklanan bağlantılar wmux paneli yerine varsayılan tarayıcınızda açılır. Ctrl+tıklama her zaman tersini yapar.',

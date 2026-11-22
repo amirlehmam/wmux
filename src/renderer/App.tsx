@@ -722,8 +722,6 @@ export default function App() {
   // this layer but --ui-bg-1, and fading toward the app's own chrome colour is
   // not a look anyone asked for.
   const customBgOpacity = customBgLayerAlpha(appearancePrefs, transparencyPending);
-  // Browser panel auto-opens on startup unless disabled in Settings (issue #22).
-  const [browserOpen, setBrowserOpen] = useState(() => useStore.getState().browserPrefs.openOnStartup);
   // Subscribed rather than read once: the start page (#212) can change under a
   // `wmux reload-config`, and a panel already mounted for a workspace that has
   // been nowhere should pick it up.
@@ -1289,6 +1287,7 @@ export default function App() {
             browserUrl: ws.browserUrl,
             browserHistory: ws.browserHistory,
             browserWidth: ws.browserWidth,
+            browserOpen: ws.browserOpen,
             browserPanelDocked: ws.browserPanelDocked,
             explorerOpen: ws.explorerOpen,
             explorerDismissed: ws.explorerDismissed,
@@ -1323,12 +1322,14 @@ export default function App() {
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   const dictationLeaf = activeWorkspace && focusedPaneId ? findLeaf(activeWorkspace.splitTree, focusedPaneId) : undefined;
   const dictationSurface = dictationLeaf?.surfaces[dictationLeaf.activeSurfaceIndex];
-  const sideBrowserVisible = browserOpen && !activeWorkspace?.browserPanelDocked;
+  const sideBrowserVisible = !!activeWorkspace?.browserOpen && !activeWorkspace.browserPanelDocked;
+  const openBrowserWorkspaces = workspaces.filter((ws) => ws.browserOpen && !ws.browserPanelDocked);
   const toggleSideBrowser = () => {
-    if (activeWorkspace?.browserPanelDocked) {
-      updateWorkspaceMetadata(activeWorkspace.id, { browserPanelDocked: false });
-      setBrowserOpen(true);
-    } else setBrowserOpen((open) => !open);
+    if (!activeWorkspace) return;
+    updateWorkspaceMetadata(activeWorkspace.id, {
+      browserOpen: !sideBrowserVisible,
+      browserPanelDocked: false,
+    });
   };
   // The titlebar Git button's lit state: derived from the tree, so a Git tab
   // closed with its own × turns the button off as well.
@@ -1502,6 +1503,7 @@ export default function App() {
         browserUrl: ws.browserUrl || '',
         browserHistory: ws.browserHistory,
         browserWidth: ws.browserWidth,
+        browserOpen: ws.browserOpen,
         browserPanelDocked: ws.browserPanelDocked,
         explorerOpen: ws.explorerOpen,
         explorerDismissed: ws.explorerDismissed,
@@ -1820,8 +1822,11 @@ export default function App() {
     const surface: SurfaceRef = { id: `surf-${uuid()}`, type: 'browser',
       url: rememberedPanelUrl(ws.browserUrl) || st.browserPrefs.defaultUrl || undefined,
       browserHistory: ws.browserHistory };
-    st.updateWorkspaceMetadata(ws.id, { splitTree: dockPanelInWorkspace(ws.splitTree, surface, paneId), browserPanelDocked: true });
-    setBrowserOpen(false);
+    st.updateWorkspaceMetadata(ws.id, {
+      splitTree: dockPanelInWorkspace(ws.splitTree, surface, paneId),
+      browserPanelDocked: true,
+      browserOpen: false,
+    });
     setZoomedPaneId(null);
     setFocusedPaneId(paneId);
   };
@@ -1860,7 +1865,7 @@ export default function App() {
         onToggleGit={handleToggleGit}
       />
 
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {sidebarVisible ? (
           <Sidebar
             dockedPanel={explorerOpen && explorerInSidebar ? explorerPanel : undefined}
@@ -2037,13 +2042,14 @@ export default function App() {
           </>
         )}
 
-        {/* Right: browser panel */}
-        {sideBrowserVisible && (
+        {/* Keep other workspaces' open browsers mounted when this one's is closed. */}
+        {openBrowserWorkspaces.length > 0 && (
           <>
             <div
               className="browser-resize-handle"
               style={{
-                width: PANEL_HANDLE_WIDTH,
+                width: sideBrowserVisible ? PANEL_HANDLE_WIDTH : 0,
+                visibility: sideBrowserVisible ? 'visible' : 'hidden',
                 cursor: 'col-resize',
                 flexShrink: 0,
                 position: 'relative',
@@ -2090,7 +2096,11 @@ export default function App() {
                 transform: 'translateX(-50%)',
               }} />
             </div>
-            <div style={{ width: displayBrowserWidth, flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+            <div style={{
+              width: displayBrowserWidth, flexShrink: 0, overflow: 'hidden',
+              position: sideBrowserVisible ? 'relative' : 'absolute', right: 0, top: 0, bottom: 0,
+              visibility: sideBrowserVisible ? 'visible' : 'hidden',
+            }}>
               {isResizingBrowser && (
                 <div style={{
                   position: 'absolute', inset: 0, zIndex: 10,
@@ -2099,7 +2109,9 @@ export default function App() {
               )}
               {/* Browser close button */}
               <button
-                onClick={() => setBrowserOpen(false)}
+                onClick={() => {
+                  if (activeWorkspaceId) updateWorkspaceMetadata(activeWorkspaceId, { browserOpen: false });
+                }}
                 style={{
                   position: 'absolute', top: 6, right: 8, zIndex: 20,
                   background: 'rgba(0,0,0,0.5)', border: 'none', color: '#999',
@@ -2110,12 +2122,12 @@ export default function App() {
                 onMouseLeave={(e) => { (e.target as HTMLElement).style.color = '#999'; (e.target as HTMLElement).style.background = 'rgba(0,0,0,0.5)'; }}
                 title={t('app.closeBrowserPanel', 'Close browser panel')}
               >×</button>
-              {/* Per-workspace browser — all stay mounted, only active visible.
+              {/* Keep open panels mounted across switches, with only the active one visible.
                   Hidden with `visibility`, not `display: none`, like a
                   workspace's own panes: a webview under `display: none` cannot
                   be kept painting, so an agent driving another workspace's
                   panel could not take a screenshot. */}
-              {workspaces.map((ws) => (
+              {openBrowserWorkspaces.map((ws) => (
                 <div
                   key={`browser-${ws.id}`}
                   style={{

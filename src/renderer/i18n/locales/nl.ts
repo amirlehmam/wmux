@@ -236,7 +236,7 @@ export const nl: Translation = {
   'settings.browser.searchSection': 'Zoeken',
   'settings.browser.defaultSearchEngine': 'Standaardzoekmachine',
   'settings.browser.startupSection': 'Opstarten',
-  'settings.browser.openOnStartup': 'Browserpaneel openen bij opstarten',
+  'settings.browser.openOnStartup': 'Browserpaneel openen in nieuwe werkruimtes',
   'settings.browser.linksSection': 'Links',
   'settings.browser.openLinksExternally': 'Links openen in de systeembrowser',
   'settings.browser.openLinksExternallyHint': 'Aangeklikte links in terminals en markdown openen in je standaardbrowser in plaats van het wmux-paneel. Ctrl+klik doet altijd het omgekeerde.',

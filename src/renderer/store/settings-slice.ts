@@ -814,7 +814,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
 export interface BrowserPrefs {
   searchEngine: 'google' | 'duckduckgo' | 'bing' | 'brave';
   devToolsIcon: 'default' | 'compact' | 'hidden';
-  /** Open the browser panel automatically on startup (issue #22). */
+  /** Initial visibility for a workspace without a saved browser-panel state. */
   openOnStartup: boolean;
   /**
    * Send clicked terminal/markdown links to the system default browser instead

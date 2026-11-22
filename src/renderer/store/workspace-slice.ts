@@ -22,6 +22,7 @@ type SettingsReach = {
     newWorkspacePanes?: number;
     newWorkspaceLayout?: WorkspaceLayout;
   };
+  browserPrefs?: { openOnStartup?: boolean };
   savedLayouts?: SavedLayout[];
   setSavedLayouts?: (layouts: SavedLayout[]) => void;
 };
@@ -213,6 +214,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       ports: options.ports,
       notificationText: options.notificationText,
       shellState: options.shellState,
+      browserOpen: options.browserOpen ?? (get() as SettingsReach).browserPrefs?.openOnStartup ?? true,
       worktree: options.worktree,
     };
 
@@ -367,6 +369,7 @@ export const createWorkspaceSlice: StateCreator<WorkspaceSlice> = (set, get) => 
       browserUrl: config.browserUrl,
       browserHistory: config.browserHistory,
       browserWidth: config.browserWidth,
+      browserOpen: config.browserOpen ?? (get() as SettingsReach).browserPrefs?.openOnStartup ?? true,
       browserPanelDocked: config.browserPanelDocked,
       explorerOpen: config.explorerOpen,
       explorerDismissed: config.explorerDismissed,

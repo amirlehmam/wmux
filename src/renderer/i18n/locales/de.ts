@@ -236,7 +236,7 @@ export const de: Translation = {
   'settings.browser.searchSection': 'Suche',
   'settings.browser.defaultSearchEngine': 'Standard-Suchmaschine',
   'settings.browser.startupSection': 'Start',
-  'settings.browser.openOnStartup': 'Browser-Panel beim Start öffnen',
+  'settings.browser.openOnStartup': 'Browser-Panel in neuen Arbeitsbereichen öffnen',
   'settings.browser.linksSection': 'Links',
   'settings.browser.openLinksExternally': 'Links im Systembrowser öffnen',
   'settings.browser.openLinksExternallyHint': 'Angeklickte Links in Terminals und Markdown werden im Standardbrowser statt im wmux-Panel geöffnet. Strg+Klick bewirkt immer das Gegenteil.',

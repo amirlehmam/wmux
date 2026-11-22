@@ -362,7 +362,7 @@ export const en = {
   'settings.browser.searchSection': 'Search',
   'settings.browser.defaultSearchEngine': 'Default search engine',
   'settings.browser.startupSection': 'Startup',
-  'settings.browser.openOnStartup': 'Open browser panel on startup',
+  'settings.browser.openOnStartup': 'Open browser panel in new workspaces',
   // Start page (issue #212)
   'settings.browser.defaultUrl': 'Start page',
   'settings.browser.defaultUrlHint':

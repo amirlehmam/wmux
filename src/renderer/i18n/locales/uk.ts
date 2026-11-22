@@ -247,7 +247,7 @@ export const uk: Translation = {
   'settings.browser.searchSection': 'Пошук',
   'settings.browser.defaultSearchEngine': 'Пошукова система за замовчуванням',
   'settings.browser.startupSection': 'Запуск',
-  'settings.browser.openOnStartup': 'Відкривати панель браузера під час запуску',
+  'settings.browser.openOnStartup': 'Відкривати панель браузера в нових робочих просторах',
   'settings.browser.linksSection': 'Посилання',
   'settings.browser.openLinksExternally': 'Відкривати посилання в системному браузері',
   'settings.browser.openLinksExternallyHint': 'Натиснуті посилання в терміналах і markdown відкриваються у браузері за умовчанням замість панелі wmux. Ctrl+клац завжди робить навпаки.',
