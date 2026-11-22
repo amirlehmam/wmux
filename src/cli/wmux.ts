@@ -504,17 +504,39 @@ const BROWSER_CMDS: Record<string, (args: string[]) => BrowserRequest> = {
  * verb. Pure, so the deadlines and the caller wiring are testable without a
  * running app.
  *
- * `caller` is the *terminal* surface the command is issued on behalf of, not a
- * browser surface: the main process maps it to that pane's own browser, which is
- * what keeps concurrent agents isolated (issue #62). Passing it explicitly does
- * not change that routing — it only supplies from a flag what a shell inside a
- * pane supplies from $WMUX_SURFACE_ID.
+ * `caller` normally comes from $WMUX_SURFACE_ID; --surface overrides it. Panel
+ * requests keep the ambient caller so main can locate its workspace.
  */
 export function browserRequest(args: string[], caller?: string): BrowserRequest | null {
-  const build = BROWSER_CMDS[args[1]];
-  if (!build) return null;
-  const req = build(args);
-  return caller ? { ...req, params: { ...req.params, caller } } : req;
+  // Once a prefixed text command reaches its payload, even `--surface` is data.
+  // Scan only the selector/verb/ref portion; leave legacy non-panel syntax alone.
+  const literalPanel = args[1] === '--panel' && ['type', 'fill', 'eval'].includes(args[2]);
+  const selectorArgs = literalPanel ? args.slice(0, args[2] === 'eval' ? 3 : 4) : args;
+  const surface = getFlag(selectorArgs, '--surface');
+  if (selectorArgs.includes('--surface') && (!surface?.trim() || surface.startsWith('-'))) {
+    throw new Error('--surface requires a surface ID');
+  }
+  if (selectorArgs.indexOf('--surface') !== selectorArgs.lastIndexOf('--surface')) throw new Error('Specify --surface only once');
+  const rest = surface ? stripFlag(args, '--surface') : args;
+  // Prefix form always selects the panel. Keep `--panel` literal in free-form
+  // text and JavaScript after the verb, as it was before this selector existed.
+  const prefix = rest[1] === '--panel';
+  const verb = rest[prefix ? 2 : 1];
+  if (!Object.hasOwn(BROWSER_CMDS, verb)) return null;
+  const build = BROWSER_CMDS[verb];
+  const payload = rest.slice(prefix ? 3 : 2);
+  const suffix = !['type', 'fill', 'eval'].includes(verb) && payload.includes('--panel');
+  const panel = prefix || suffix;
+  if (panel && surface) throw new Error('--panel cannot be combined with --surface');
+  const params = suffix ? payload.filter((arg) => arg !== '--panel') : payload;
+  if (suffix && (prefix || params.length !== payload.length - 1)) throw new Error('Specify --panel only once');
+  const req = build([rest[0], verb, ...params]);
+  if (panel && verb === 'open' && (params.length !== 1 || !URL.canParse(req.params.url)
+    || !['http:', 'https:'].includes(new URL(req.params.url).protocol))) {
+    throw new Error('browser open --panel requires an http(s) URL');
+  }
+  const target = surface || caller;
+  return { ...req, params: { ...req.params, ...(target ? { caller: target } : {}), ...(panel ? { panel: true } : {}) } };
 }
 
 /** How long `wmux open` waits for the renderer to accept the URL. */
@@ -603,13 +625,16 @@ async function cmdRemote(args: string[]): Promise<void> {
 }
 
 async function cmdBrowser(args: string[]): Promise<void> {
-  // --surface says which pane's browser to drive, mirroring send / read-screen /
-  // agent-activity. Strip it before the verb reads its positional args, or
-  // `browser type e5 --surface surf-x hi` would type the flag into the page.
-  const caller = getFlag(args, '--surface') || process.env.WMUX_SURFACE_ID;
-  const rest = stripFlag(args, '--surface');
-  const req = browserRequest(rest, caller);
-  if (!req) failSubcommand('browser', rest[1]);
+  let req: BrowserRequest | null;
+  try {
+    req = browserRequest(args, process.env.WMUX_SURFACE_ID);
+  } catch (err: any) {
+    return fail('browser', COMMAND_SPECS.browser, err.message);
+  }
+  if (!req) {
+    const rest = stripFlag(args, '--surface');
+    failSubcommand('browser', rest[1] === '--panel' ? rest[2] : rest[1]);
+  }
   print(await sendV2(req.method, req.params, req.timeoutMs));
 }
 
@@ -2331,6 +2356,11 @@ export const COMMAND_SPECS = {
       'wmux browser back | forward | reload',
       'wmux browser engine [web|agent]   # print, or switch, this surface\'s engine',
       `  [--surface <id>]   ${SURFACE_NOTE}`,
+      'wmux browser --panel <verb> …   # target the workspace side panel instead (Web engine only)',
+      '  Repeat --panel on each command. Outside a wmux pane, it targets the focused window\'s active workspace.',
+      '  Only open <http(s)-url> reveals a closed panel. A docked panel stays docked.',
+      '  With no caller or selector, existing shared routing may use the last attached browser, including a panel.',
+      '  For type, fill and eval put --panel before the verb to keep --panel and --surface literal in the payload.',
     ].join('\n'),
     passthrough: true,
   },
@@ -2748,6 +2778,7 @@ Terminal:   send <text>, send-key <key>, read-screen [--lines N] [--surface <id>
 Browser:    browser open|snapshot|click|type|fill|screenshot|get-text|eval|wait|back|forward|reload
             browser engine [web|agent]   (print, or switch, which engine drives this browser surface)
             browser <verb> [--surface <id>]   # which pane's browser to drive
+            browser --panel <verb> …   # drive the workspace's Web side panel
 Agent:      agent spawn [--cmd C] [--label L] [--cwd D] [--pane P] [--replace-tab] | spawn-batch|status|list|kill
 Markdown:   markdown <file>   (open a file in a new markdown view)
             markdown set <id> --content <text> | --file <path>

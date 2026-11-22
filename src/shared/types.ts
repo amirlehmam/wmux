@@ -562,6 +562,8 @@ export interface WorkspaceInfo {
   browserWidth?: number;
   /** Workspace-local visibility; absent in sessions saved before it was persisted. */
   browserOpen?: boolean;
+  /** Runtime only: a CLI reveal mounts on blank so the old URL cannot delay navigation. */
+  browserPanelStartBlank?: boolean;
   /** The side browser was promoted to a tile; startup must not duplicate it. */
   browserPanelDocked?: boolean;
   explorerOpen?: boolean;

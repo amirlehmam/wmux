@@ -298,6 +298,10 @@ function handleBrowserEngineV2(
   respond: (result: any) => void,
   respondError: (code: number, message: string) => void,
 ): void {
+  if (params?.panel !== undefined) {
+    handleBrowserV2(method, params, respond, respondError);
+    return;
+  }
   const task = method === 'browser.set_engine'
     ? handleSetEngine(params, respond, respondError)
     : handleGetEngine(params, respond, respondError);
