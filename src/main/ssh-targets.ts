@@ -86,6 +86,7 @@ export function setSshTarget(workspaceId: string, target: SshTarget): void {
 export function clearSshTarget(workspaceId: string): boolean {
   const previous = targets.get(workspaceId);
   const removed = targets.delete(workspaceId);
+  owners.delete(workspaceId);
   releaseWorkersOf(previous);
   return removed;
 }
@@ -106,6 +107,7 @@ export function listSshTargets(): SshTarget[] {
 /** Tests only: the registry is module state. */
 export function resetSshTargets(): void {
   targets.clear();
+  owners.clear();
 }
 
 /** True for an argv that asks to clear: absent, or an empty array. */
@@ -222,6 +224,26 @@ export function workspaceOfSurfaceJs(surfaceId: string): string {
 export interface SshTargetWindow {
   isDestroyed(): boolean;
   webContents: { executeJavaScript(code: string): Promise<unknown> };
+  /** A BrowserWindow has it; without it a target is only dropped when its workspace is closed. */
+  once?(event: 'closed', listener: () => void): unknown;
+}
+
+/** The window each workspace's target was set from, while that window can still be closed under it. */
+const owners = new Map<string, SshTargetWindow>();
+
+/**
+ * A window that is closed takes its workspaces with it without closing them one by one, so their
+ * targets would stay, and with them a host's worker and a stale `ssh://` identity. Drop the target when
+ * the window that set it closes, unless another window has set one for that workspace id since.
+ */
+function dropTargetWithWindow(win: SshTargetWindow, workspaceId: string): void {
+  const alreadyWatched = owners.get(workspaceId) === win;
+  owners.set(workspaceId, win);
+  if (alreadyWatched || !win.once) return;
+  win.once('closed', () => {
+    if (owners.get(workspaceId) !== win) return;
+    clearSshTarget(workspaceId);
+  });
 }
 
 /**
@@ -296,6 +318,7 @@ export async function handleSetSshTarget(
     // Validated above, so this cannot be an error.
     const target = parseSshTarget(p.argv, p.path, p.wslDistro) as SshTarget;
     setSshTarget(workspaceId, target);
+    dropTargetWithWindow(win, workspaceId);
     respond({
       workspaceId,
       target: {
