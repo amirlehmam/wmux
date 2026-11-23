@@ -29,7 +29,8 @@ import {
 import { verifyRestoredWorktrees } from './git-worktree';
 import { handleBridgeV2 } from './v2-bridge';
 import { handleSetIndicator } from './workspace-indicator-rpc';
-import { handleSetSshTarget } from './ssh-targets';
+import { handleSetSshTarget, listSshTargets } from './ssh-targets';
+import { closeSshMasters } from './ssh-master';
 import { anyWindowShowsWorkspace, warmWorkspace } from './exec-warm';
 import { pushWorkspaceGit, remoteBranchStatus } from './ssh-branch';
 import { noteAgentEdit } from './exec-snapshot';
@@ -2683,6 +2684,8 @@ app.on('will-quit', (event) => {
   sshDetector.stop();
   // The persistent ssh workers (wsl.exe -> ssh -> sh) must not outlive wmux: kill their trees now.
   try { shutdownExecWorkers(); } catch { /* quit must go on */ }
+  // And the ssh connection they shared in each distro (`ControlPersist` would keep it five more minutes).
+  try { closeSshMasters(listSshTargets()); } catch { /* quit must go on */ }
 
   // Sessions are ephemeral (agent-browser-session.ts): quit is the moment every
   // one of them stops being legitimate. Not closing them here leaks a Chrome
