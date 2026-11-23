@@ -38,7 +38,7 @@ import ConfirmWorktreeCloseDialog from './components/ConfirmWorktreeCloseDialog'
 import SaveLayoutDialog from './components/SaveLayoutDialog';
 import ConfirmCloseSurfaceDialog from './components/ConfirmCloseSurfaceDialog';
 import BrowserPane from './components/Browser/BrowserPane';
-import { rememberedPanelUrl, shouldRememberPanelUrl } from './utils/browser-start-page';
+import { BROWSER_BLANK_PAGE, rememberedPanelUrl, shouldRememberPanelUrl } from './utils/browser-start-page';
 import { activeHistoryUrl } from '../shared/browser-history';
 import { inactivePaneDimAlpha } from '../shared/inactive-pane-dim';
 import { focusedPaneBorderPct } from '../shared/focused-pane-border';
@@ -1340,6 +1340,7 @@ export default function App() {
     if (!activeWorkspace) return;
     updateWorkspaceMetadata(activeWorkspace.id, {
       browserOpen: !sideBrowserVisible,
+      browserPanelStartBlank: false,
       browserPanelDocked: false,
     });
   };
@@ -2166,12 +2167,12 @@ export default function App() {
                     // `onUrlChange` firing for the initial load, which is how
                     // the panel ended up reopening github.com/amirlehmam/wmux
                     // (and, one click later, its issue tracker) on every launch.
-                    initialUrl={rememberedPanelUrl(ws.browserUrl) || browserPrefs.defaultUrl || undefined}
+                    initialUrl={ws.browserPanelStartBlank ? BROWSER_BLANK_PAGE : rememberedPanelUrl(ws.browserUrl) || browserPrefs.defaultUrl || undefined}
                     // Guarded the way the split-tree pane already guards it: a
                     // blank surface and the vendor page are not places the user
                     // navigated to, so neither is remembered as one.
                     onUrlChange={(url) => {
-                      if (shouldRememberPanelUrl(url)) updateWorkspaceMetadata(ws.id, { browserUrl: url });
+                      if (shouldRememberPanelUrl(url)) updateWorkspaceMetadata(ws.id, { browserUrl: url, browserPanelStartBlank: false });
                     }}
                     // Back/Forward across a restart (#315). BrowserPane uses it
                     // only when its active page is the initialUrl above, so the

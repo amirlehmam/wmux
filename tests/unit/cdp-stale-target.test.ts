@@ -94,6 +94,19 @@ describe('a browser whose renderer dies (issue #155)', () => {
     await expect(bridge.snapshot(2)).resolves.toBeDefined();
   });
 
+  it('never substitutes the shared attachment for an unknown explicit target', async () => {
+    const bridge = new CDPBridge();
+    const shared = makeWc(2);
+    bridge.attach(2, 'surf-shared', 'ws-other');
+
+    await expect(bridge.snapshot(999)).rejects.toThrow('browser_not_open');
+    await expect(bridge.reload(999)).rejects.toThrow('browser_not_open');
+    await expect(bridge.evaluate('location.href', 999)).rejects.toThrow('browser_not_open');
+
+    expect(shared.debugger.isAttached()).toBe(false);
+    expect(bridge.attachedWebContentsId).toBe(2);
+  });
+
   it('registers a pane without acquiring the debugger on every toolbar click', () => {
     const bridge = new CDPBridge();
     const wc = makeWc(1);

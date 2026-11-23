@@ -219,10 +219,7 @@ describe('--surface targets a browser from outside a pane', () => {
   });
 
   it('keeps the flag out of the text it types into the page', () => {
-    // `browser type e5 --surface surf-x hello world` must type "hello world".
-    // cmdBrowser strips the flag before the verb reads its positional args;
-    // this pins the joined-text behaviour that strip protects.
-    const req = browserRequest(['browser', 'type', 'e5', 'hello', 'world'], 'surf-x');
+    const req = browserRequest(['browser', 'type', 'e5', '--surface', 'surf-x', 'hello', 'world']);
     expect(req?.params.text).toBe('hello world');
     expect(req?.params.caller).toBe('surf-x');
   });

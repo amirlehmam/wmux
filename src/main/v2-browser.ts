@@ -20,7 +20,7 @@
  * result shapes, and the error for a verb neither supports.
  */
 import * as fs from 'fs';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, webContents } from 'electron';
 import { cdpBridge } from './ipc-handlers';
 import { unwrapAgentData, type RunResult } from './agent-browser-cli';
 import { AGENT_BROWSER_COMMAND_TIMEOUT_MS } from './agent-browser-control';
@@ -28,6 +28,7 @@ import { acquireDashboardFor, ensureStartedSession, runAgentBrowserForSession, w
 import type { AgentSession } from './agent-browser-session';
 import { toAgentBrowserArgv } from './agent-browser-verbs';
 import { keepRenderingLeases } from './browser-keep-rendering';
+import { targetForCaller } from './v2-bridge';
 import type { BrowserEngine, SurfaceId } from '../shared/types';
 
 type Respond = (result: any) => void;
@@ -509,7 +510,99 @@ const defaultDeps: BrowserDeps = {
   keepRendering: async (wcId) => keepRenderingLeases.touch(wcId, cdpBridge.surfaceIdFor(wcId)),
 };
 
+const PAGE_METHODS = new Set([
+  'browser.navigate', 'browser.snapshot', 'browser.click', 'browser.type',
+  'browser.fill', 'browser.screenshot', 'browser.get_text', 'browser.eval',
+  'browser.wait', 'browser.back', 'browser.forward', 'browser.reload',
+]);
+
+function badPanelParams(message: string): never {
+  throw Object.assign(new Error(message), { rpcCode: -32602 });
+}
+
+/** Reject targeting mistakes before any renderer can reveal a panel. */
+function validatePanelTargeting(params: any): void {
+  if (params?.panel !== undefined && params.panel !== true) badPanelParams('panel must be true when specified');
+  if (params?.panel !== true) return;
+  if (params.surfaceId !== undefined) badPanelParams('panel and surfaceId cannot be combined');
+  if (params.caller !== undefined && (typeof params.caller !== 'string' || !params.caller)) {
+    badPanelParams('caller must be a non-empty surface id');
+  }
+}
+
+/** Only ordinary web navigation may change a closed panel's visibility. */
+function validatePanelCommand(method: string, params: any): void {
+  if (!PAGE_METHODS.has(method)) {
+    throw Object.assign(new Error(`Unknown: ${method}`), { rpcCode: -32601 });
+  }
+  if (method !== 'browser.navigate') return;
+  try {
+    const url = typeof params?.url === 'string' ? new URL(params.url) : null;
+    if (url?.protocol === 'http:' || url?.protocol === 'https:') return;
+  } catch { /* report the same bad-params error for malformed URLs and schemes */ }
+  badPanelParams('Panel navigation requires a valid http(s) URL');
+}
+
+/** Resolve only the requested workspace panel, never the shared attachment. */
+async function resolvePanelSurface(
+  caller: string | undefined,
+  reveal: boolean,
+  deadline = Date.now() + 5000,
+): Promise<{ surfaceId: string; win: BrowserWindow }> {
+  const focused = caller === undefined ? BrowserWindow.getFocusedWindow() : null;
+  const target = caller === undefined ? (focused ? { win: focused, workspaceId: undefined } : null)
+    : await targetForCaller(caller);
+  if (!target || target.win.isDestroyed()) throw new Error('No live window for browser panel');
+  // The ordinary bridge resolver intentionally falls back for stale callers;
+  // panel commands must not turn that fallback into somebody else's panel.
+  if (caller !== undefined && !target.workspaceId) throw new Error('No owning workspace for browser panel caller');
+  if (Date.now() >= deadline) throw new Error('Browser panel readiness timed out after 5s');
+  const result = await target.win.webContents.executeJavaScript(
+    `Date.now() < ${deadline} ? window.__wmux_browserPanelTarget?.(${JSON.stringify(target.workspaceId)}, ${reveal}, ${JSON.stringify(caller)}) : { error: 'Browser panel readiness timed out after 5s' }`,
+  );
+  if (typeof result?.error === 'string') throw new Error(result.error);
+  if (typeof result?.surfaceId !== 'string' || !result.surfaceId) throw new Error('Browser panel target unavailable');
+  return { surfaceId: result.surfaceId, win: target.win };
+}
+
+/** A panel's engine is always web; no split-tree engine mutation is needed. */
+async function handlePanelEngine(method: string, params: any): Promise<{ engine: 'web' }> {
+  if (method === 'browser.set_engine' && params?.engine !== 'web') {
+    badPanelParams('Browser panels support only the web engine');
+  }
+  const outcome = await withDeadline<{ resolved: unknown } | { error: unknown }>(
+    resolvePanelSurface(params?.caller, false).then((resolved) => ({ resolved }), (error: unknown) => ({ error })),
+    5000,
+    { error: new Error('Browser panel readiness timed out after 5s') },
+  );
+  if ('error' in outcome) throw outcome.error;
+  return { engine: 'web' };
+}
+
+async function resolvePanelTarget(caller: string | undefined, reveal: boolean): Promise<BrowserTarget> {
+  const deadline = Date.now() + 5000;
+  const outcome = await withDeadline<{ target: BrowserTarget } | { error: unknown }>(
+    (async (): Promise<BrowserTarget> => {
+      const { surfaceId, win } = await resolvePanelSurface(caller, reveal, deadline);
+      const wcId = await pollSurfaceWcId(surfaceId, Math.max(0, deadline - Date.now()));
+      if (wcId === null) throw new Error('Browser panel is not attached');
+      const guest = webContents.fromId(wcId);
+      if (win.isDestroyed() || !guest || guest.isDestroyed() || guest.hostWebContents !== win.webContents) {
+        throw new Error('Browser panel target does not belong to its window');
+      }
+      return { kind: 'web', wcId };
+    })().then((target) => ({ target }), (error: unknown) => ({ error })),
+    5000,
+    { error: new Error('Browser panel readiness timed out after 5s') },
+  );
+  if ('error' in outcome) throw outcome.error;
+  return outcome.target;
+}
+
 async function handleBrowserBatch(params: any, respond: Respond, respondError: RespondError): Promise<void> {
+  if (params?.panel !== undefined || (Array.isArray(params?.commands) && params.commands.some((cmd: any) => cmd?.params?.panel !== undefined))) {
+    badPanelParams('browser.batch does not support panel targeting; send individual panel commands');
+  }
   const target = await resolveBrowserTarget(params?.caller);
   if (target === null) { respondError(-32000, 'Could not open browser panel'); return; }
   const results: any[] = [];
@@ -532,11 +625,19 @@ export function handleBrowserV2(
   respondError: RespondError,
 ): void {
   (async () => {
+    validatePanelTargeting(params);
+    if (params?.panel === true && (method === 'browser.get_engine' || method === 'browser.set_engine')) {
+      respond(await handlePanelEngine(method, params));
+      return;
+    }
     if (method === 'browser.batch') {
       await handleBrowserBatch(params, respond, respondError);
       return;
     }
-    const target = await resolveBrowserTarget(params?.caller);
+    if (params?.panel === true) validatePanelCommand(method, params);
+    const target = params?.panel === true
+      ? await resolvePanelTarget(params?.caller, method === 'browser.navigate')
+      : await resolveBrowserTarget(params?.caller);
     if (target === null) { respondError(-32000, 'Could not open browser panel'); return; }
     respond(await runBrowserCommandForTarget(method, params, target, defaultDeps));
     // `err.rpcCode ?? -32000`, matching the batch loop. It used to be a flat
