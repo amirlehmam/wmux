@@ -1,5 +1,5 @@
 {
-    "version": "2.65.0",
+    "version": "2.66.0",
     "description": "Terminal multiplexer for AI coding agents on Windows, with a browser panel beside the terminals.",
     "homepage": "https://wmux.org",
     "license": "MIT",
@@ -9,8 +9,8 @@
     ],
     "architecture": {
         "64bit": {
-            "url": "https://github.com/amirlehmam/wmux/releases/download/v2.65.0/wmux-2.65.0-win-x64.zip",
-            "hash": "41e563ac84aa88e1aab8f54bbfe328b8d41a3e44e1614026d736e719dbfa4073"
+            "url": "https://github.com/amirlehmam/wmux/releases/download/v2.66.0/wmux-2.66.0-win-x64.zip",
+            "hash": "b26d6a008f55e76ebef47a497c7349966f91d220123fb00489e1dad5de22f157"
         }
     },
     "shortcuts": [
