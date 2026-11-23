@@ -8,6 +8,8 @@ import * as path from 'path';
  * `sh -c`), and appends `s` when it starts and `e` when it ends to a log file, so a
  * test can state how many remote spawns an action costs and whether they overlapped.
  * `delayMs` keeps each call alive long enough for concurrent calls to overlap.
+ * The direct route's command is base64 inside a fixed wrapper (`loginShellNeutralCommand`), so a
+ * refusing fake decodes it before it looks for the batch script.
  */
 export interface SpawnCounter {
   /** Path of the fake ssh executable. */
@@ -31,7 +33,7 @@ export function makeSpawnCounter(
   fs.writeFileSync(log, '');
   fs.writeFileSync(
     tool,
-    `#!/bin/sh\nprintf 's\\n' >> '${log}'\nfor last; do :; done\nsleep ${(delayMs / 1000).toFixed(3)}\n${refuseBatch ? "case $last in *nonce=\\$2*) printf 'e\\n' >> '" + log + "'; exit 125;; esac\n" : ''}sh -c "$last"\nrc=$?\nprintf 'e\\n' >> '${log}'\nexit $rc\n`,
+    `#!/bin/sh\nprintf 's\\n' >> '${log}'\nfor last; do :; done\nsleep ${(delayMs / 1000).toFixed(3)}\n${refuseBatch ? "dec=$(echo \"$last\" | sed -n 's/.*echo \\([A-Za-z0-9+\\/=]*\\)|base64 -d.*/\\1/p' | base64 -d 2>/dev/null)\ncase \"$last$dec\" in *nonce=\\$2*) printf 'e\\n' >> '" + log + "'; exit 125;; esac\n" : ''}sh -c "$last"\nrc=$?\nprintf 'e\\n' >> '${log}'\nexit $rc\n`,
     { mode: 0o755 },
   );
   const events = (): string[] => fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);

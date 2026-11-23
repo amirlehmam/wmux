@@ -1,3 +1,4 @@
+import { remoteCommandText } from '../helpers/remote-command-text';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -109,7 +110,7 @@ describe('pure helpers', () => {
     expect(cmd.file).toBe('ssh');
     expect(cmd.args).toContain('BatchMode=yes');
     expect(cmd.args[cmd.args.length - 2]).toBe('dev@box');
-    const command = cmd.args[cmd.args.length - 1];
+    const command = remoteCommandText(cmd.args);
     expect(command).toContain('GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 git -C');
     expect(command).toContain(`'x'"'"'; touch pwned; '"'"''`);
     expect(command.split(' sh ')[0]).not.toContain('pwned');
