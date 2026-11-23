@@ -32,9 +32,28 @@ export function posixRemoteCommand(script: string, args: string[]): string {
   return ['sh', '-c', posixShellQuote(script), 'sh', ...args.map(posixShellQuote)].join(' ');
 }
 
+/**
+ * `command` (POSIX `sh` text) as one string that any login shell of the remote account reads the same way.
+ *
+ * ssh hands its command string to the account's LOGIN shell, which parses it before `sh` ever sees it.
+ * `posixRemoteCommand` is quoted for `sh`: under fish a backslash inside single quotes is not literal
+ * (`\'` ends the quote), so an untracked file name holding one could break out of its quotes and run.
+ * Here the login shell only ever sees `sh -c 'eval "$(echo <base64>|base64 -d)"'`: the single quotes hold
+ * nothing but `[A-Za-z0-9+/=]` plus the fixed words, with no backslash, `!` or quote inside them, and that
+ * means the same in sh, bash, zsh, fish and csh. `sh` then decodes and evaluates the real command, which
+ * is quoted for it; stdin is untouched, so a save's content still arrives on it. Needs `base64` on the host.
+ */
+export function loginShellNeutralCommand(command: string): string {
+  const encoded = Buffer.from(command, 'utf8').toString('base64');
+  return `sh -c 'eval "$(echo ${encoded}|base64 -d)"'`;
+}
+
 /** The ssh argv: connection options from the target, then the destination, then one command string. */
 export function remoteCommandArgs(target: SshTarget, script: string, args: string[]): string[] {
-  return ['-T', ...sshArgs(target.session, '-p'), target.session.destination, posixRemoteCommand(script, args)];
+  return [
+    '-T', ...sshArgs(target.session, '-p'), target.session.destination,
+    loginShellNeutralCommand(posixRemoteCommand(script, args)),
+  ];
 }
 
 /** What to spawn for one remote command. */
