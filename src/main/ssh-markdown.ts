@@ -42,6 +42,12 @@ export interface RemoteMarkdownError { error: string; code: string }
 
 const fail = (message: string, code: string): RemoteMarkdownError => ({ error: message, code });
 
+/** What decides which host a target reaches, as one string: its whole connection, not the pane's socket or cwd. */
+function connectionKey(target: SshTarget): string {
+  const { controlPath: _socket, workingDirectory: _cwd, ...connection } = target.session;
+  return JSON.stringify([connection, target.wslDistro ?? null]);
+}
+
 /**
  * The registered target an identity belongs to, and the path below its
  * checkout. The most specific target wins when two share a host (one checkout
@@ -55,12 +61,20 @@ export function resolveRemoteIdentity(
   targets: readonly SshTarget[],
 ): { target: SshTarget; relPath: string } | RemoteMarkdownError {
   let best: { target: SshTarget; prefix: string } | undefined;
+  let reaching = new Set<string>();
   for (const target of targets) {
     const prefix = `${remoteFilePath(target, [])}/`;
     if (!filePath.startsWith(prefix)) continue;
-    if (!best || target.path.length > best.target.path.length) best = { target, prefix };
+    if (!best || target.path.length > best.target.path.length) { best = { target, prefix }; reaching = new Set(); }
+    if (target.path.length === best.target.path.length) reaching.add(connectionKey(target));
   }
   if (!best) return fail('Not a file of a remote workspace', 'outside_root');
+  // The identity names a destination, a port and a path, and nothing about HOW the host is reached: an
+  // alias with another `-F` or `-J` in another workspace can be a different machine. Writing to the first
+  // of them would be a save to the wrong host, so a name that two differently-reached targets share is refused.
+  if (reaching.size > 1) {
+    return fail('Two remote workspaces reach different hosts under this name; save from a single one', 'ambiguous_target');
+  }
   const segments = remoteRelSegments(filePath.slice(best.prefix.length));
   if (!Array.isArray(segments)) return segments;
   if (segments.length === 0 || remoteFilePath(best.target, segments) !== filePath) {

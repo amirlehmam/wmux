@@ -76,6 +76,26 @@ describe('resolveRemoteIdentity', () => {
     expect(resolved).toEqual({ target: a, relPath: 'a.md' });
   });
 
+  it('refuses a name that two targets reach differently, but not one reached the same way twice', () => {
+    const viaJump = targetAt('/work/repo', ['ssh', '-p', '2222', '-J', 'jump', 'dev@box']);
+    const viaConfig = targetAt('/work/repo', ['ssh', '-p', '2222', '-F', '/c/other', 'dev@box']);
+    const inWsl = parseSshTarget(['ssh', '-p', '2222', 'dev@box'], '/work/repo', 'Ubuntu') as SshTarget;
+    const identity = 'ssh://dev@box:2222/work/repo/a.md';
+    for (const other of [viaJump, viaConfig, inWsl]) {
+      expect(resolveRemoteIdentity(identity, [a, other])).toEqual({ error: expect.any(String), code: 'ambiguous_target' });
+      expect(resolveRemoteIdentity(identity, [other, a])).toEqual({ error: expect.any(String), code: 'ambiguous_target' });
+    }
+    // The same connection in two workspaces (a different pane socket and cwd do not matter) is one host.
+    const again = targetAt('/work/repo');
+    again.session = { ...again.session, controlPath: '/tmp/other-socket', workingDirectory: 'C:\\elsewhere' };
+    expect(resolveRemoteIdentity(identity, [a, again])).toMatchObject({ relPath: 'a.md' });
+    // A nested checkout is still the more specific one, however the outer is reached.
+    expect(resolveRemoteIdentity(identity, [targetAt('/work', ['ssh', '-J', 'x', '-p', '2222', 'dev@box']), a, viaJump]))
+      .toEqual({ error: expect.any(String), code: 'ambiguous_target' });
+    expect(resolveRemoteIdentity(identity, [targetAt('/work', ['ssh', '-J', 'x', '-p', '2222', 'dev@box']), a]))
+      .toMatchObject({ relPath: 'a.md' });
+  });
+
   it.each([
     ['another host', 'ssh://other@box:2222/work/repo/a.md'],
     ['another port', 'ssh://dev@box/work/repo/a.md'],
