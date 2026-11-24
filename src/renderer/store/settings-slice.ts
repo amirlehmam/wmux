@@ -203,6 +203,8 @@ export type ShortcutAction =
   // ─── file explorer panel ──────────────────────────────────────────────────
   | 'toggleExplorer'
   | 'toggleDictation'
+  // ─── issue #473: the password lock ────────────────────────────────────────
+  | 'lockApp'
   // ─── issue #207: the prompt log and its four consumers ────────────────────
   | 'togglePromptOutline'
   | 'togglePinnedPrompt'
@@ -297,6 +299,10 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, ShortcutBinding> = {
   // Unbound: dictation is opt-in (workspacePrefs.dictationEnabled), so a
   // default combo would be taken from terminal programs for a hidden feature.
   toggleDictation:   { key: '' },
+  // Unbound, for dictation's reason: the lock exists only once a password is
+  // set (#473), so a default combo would be taken from terminal programs for a
+  // feature most people have not turned on. The palette lists it either way.
+  lockApp:           { key: '' },
   // ─── Agent roster ───────────────────────────────────────────────────────────
   // Ctrl+Shift+B and Ctrl+Shift+A were both unbound. Shift-modified like every
   // batch above, so isSafeToIntercept keeps bare Ctrl+A (start-of-line in every

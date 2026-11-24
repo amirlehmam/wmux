@@ -34,6 +34,8 @@ export const GLOBAL_IN_EDITOR: ReadonlySet<ShortcutAction> = new Set<ShortcutAct
   'nextSurface',
   'prevSurface',
   'refreshSurface',
+  // Locking (#473) is wanted most when walking away, wherever the focus is.
+  'lockApp',
 ]);
 
 /** The subset of an event target this guard needs; keeps the tests DOM-free. */
@@ -71,6 +73,7 @@ export function isEditableTarget(target: EditableTargetLike | null | undefined):
 export const IGNORES_KEY_REPEAT: ReadonlySet<ShortcutAction> = new Set<ShortcutAction>([
   'resetTerminal',
   'toggleDictation',
+  'lockApp',
 ]);
 
 /**

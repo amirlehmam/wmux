@@ -4,6 +4,7 @@ import { LANGUAGES, Language, useT } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
 import type { AppearancePrefs } from '../../store/settings-slice';
 import AgentIntegrationSettings from './AgentIntegrationSettings';
+import AppLockSettings from './AppLockSettings';
 import { formatBinding } from './KeyboardSettings';
 import { MIN_TERMINAL_OPACITY_PCT, opacityToAlpha } from '../../store/backdrop';
 import { MAX_INACTIVE_PANE_DIM_PCT, inactivePaneDimAlpha } from '../../../shared/inactive-pane-dim';
@@ -411,6 +412,8 @@ export default function GeneralSettings() {
           : t('settings.general.hubEnableHint', 'Watch your agents as pixel characters in a tiny office. Adds a titlebar button and enables {binding}.')
             .replace('{binding}', formatBinding(openHubBinding))}
       </p>
+
+      <AppLockSettings />
     </div>
   );
 }

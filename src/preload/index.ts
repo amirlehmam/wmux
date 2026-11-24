@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import * as os from 'os';
 import { IPC_CHANNELS, type InsertionResult, type NotificationSoundPickResult, type UpdateTriggerResult,
-  type KeepAwakeMode, type KeepAwakeState, type SessionSaveRequest,
+  type KeepAwakeMode, type KeepAwakeState, type AppLockResult, type AppLockState, type SessionSaveRequest,
   type WorktreeCloseMode, type WorktreeInspectResult, type WorktreeRemoveResult,
   type AgentViewerBridge, type AgentViewerEvent,
 } from '../shared/types';
@@ -385,6 +385,22 @@ contextBridge.exposeInMainWorld('wmux', {
       const handler = (_event: any, state: KeepAwakeState) => callback(state);
       ipcRenderer.on(IPC_CHANNELS.AWAKE_STATE_CHANGED, handler);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.AWAKE_STATE_CHANGED, handler);
+    },
+  },
+  // The password that opens wmux (#473). Main owns the state (app-lock.ts);
+  // a password travels in the one call that needs it and is never echoed back.
+  appLock: {
+    getState: (): Promise<AppLockState> => ipcRenderer.invoke(IPC_CHANNELS.APP_LOCK_GET_STATE),
+    unlock: (password: string): Promise<AppLockResult> => ipcRenderer.invoke(IPC_CHANNELS.APP_LOCK_UNLOCK, password),
+    lock: (): Promise<AppLockResult> => ipcRenderer.invoke(IPC_CHANNELS.APP_LOCK_LOCK),
+    setPassword: (current: string | null, next: string): Promise<AppLockResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.APP_LOCK_SET_PASSWORD, current, next),
+    removePassword: (current: string): Promise<AppLockResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.APP_LOCK_REMOVE_PASSWORD, current),
+    onStateChange: (callback: (state: AppLockState) => void) => {
+      const handler = (_event: any, state: AppLockState) => callback(state);
+      ipcRenderer.on(IPC_CHANNELS.APP_LOCK_STATE_CHANGED, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.APP_LOCK_STATE_CHANGED, handler);
     },
   },
   // Which agent each surface runs. Carries the derived KIND only; the command

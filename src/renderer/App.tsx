@@ -26,6 +26,7 @@ import type { DictationResult } from '../shared/dictation';
 import { useKeyboardShortcuts, matchesBinding } from './hooks/useKeyboardShortcuts';
 import SettingsWindow, { type SettingsTab } from './components/Settings/SettingsWindow';
 import CommandPalette from './components/CommandPalette/CommandPalette';
+import { lockAppNow, OPEN_SETTINGS_EVENT } from './utils/app-lock';
 import AgentNavigator from './components/AgentNavigator/AgentNavigator';
 import HubView from './components/Hub/hub-view';
 import { focusAgentTarget } from './store/focus-agent';
@@ -623,6 +624,12 @@ export default function App() {
     setSettingsTab(tab);
     setSettingsOpen(true);
   }, []);
+  // "Lock now" with no password set opens the place where one is set (#473).
+  useEffect(() => {
+    const onOpen = (e: Event) => openSettings((e as CustomEvent<{ tab?: SettingsTab }>).detail?.tab);
+    document.addEventListener(OPEN_SETTINGS_EVENT, onOpen);
+    return () => document.removeEventListener(OPEN_SETTINGS_EVENT, onOpen);
+  }, [openSettings]);
   const setSettingsOpenFromShortcut = useCallback((open: boolean) => {
     if (open) openSettings();
     else setSettingsOpen(false);
@@ -1594,6 +1601,8 @@ export default function App() {
       handleToggleExplorer();
     } else if (action === 'toggleDictation') {
       document.dispatchEvent(new CustomEvent('wmux:dictation-toggle'));
+    } else if (action === 'lockApp') {
+      void lockAppNow();
     } else if (action === 'openGitPanel') {
       if (activeWorkspaceId) openGitView(useStore.getState(), activeWorkspaceId, focusedPaneId);
     } else {

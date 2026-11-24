@@ -1,0 +1,112 @@
+/*
+ * The password lock (issue #473).
+ *
+ * `.app-lock__app` wraps the whole app and must not exist for layout: the app
+ * sizes itself against #root, so the wrapper is `display: contents`.
+ *
+ * `.app-lock` is OPAQUE on purpose. It is the only thing between a locked
+ * wmux and its terminals, and the app under it keeps its own `visibility`
+ * rules (keep-alive tabs), so hiding the app is not something this file can
+ * rely on. It sits above every other layer the chrome uses.
+ */
+.app-lock__app {
+  display: contents;
+}
+
+.app-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 38%, rgba(var(--ui-accent-rgb), 0.10) 0%, transparent 70%),
+    var(--ui-bg-0);
+  color: var(--ui-text-primary);
+}
+
+.app-lock__drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  -webkit-app-region: drag;
+}
+
+.app-lock__card {
+  width: min(340px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.app-lock__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.app-lock__prompt {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--ui-text-secondary);
+  text-align: center;
+}
+
+.app-lock__input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-bg-2);
+  color: var(--ui-text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.app-lock__input:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px rgba(var(--ui-accent-rgb), 0.22);
+}
+
+.app-lock__button {
+  height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ui-accent);
+  color: var(--ui-accent-contrast);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.app-lock__button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.app-lock__button:focus-visible {
+  outline: 2px solid var(--ui-text-primary);
+  outline-offset: 2px;
+}
+
+/* Always in the layout, so a message appearing does not move the field. */
+.app-lock__error {
+  min-height: 18px;
+  margin: 0;
+  font-size: 12px;
+  color: #ff8a8a;
+  text-align: center;
+}
+
+.app-lock__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  text-align: center;
+}

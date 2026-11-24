@@ -27,6 +27,7 @@ exports.parseEventRows = parseEventRows;
 exports.describeWerConfig = describeWerConfig;
 exports.correlateShutdown = correlateShutdown;
 exports.formatCrashReport = formatCrashReport;
+exports.lockMethod = lockMethod;
 const net_1 = __importDefault(require("net"));
 const fs_1 = __importDefault(require("fs"));
 const os_1 = __importDefault(require("os"));
@@ -488,6 +489,27 @@ const BROWSER_CMDS = {
         return { method: 'browser.set_engine', params: { engine: value }, timeoutMs: browserDeadline(0) };
     },
 };
+/** The `--surface` value of a `wmux browser` argv, checked; undefined when the flag is not given. */
+function browserSurfaceFlag(args) {
+    // Once a prefixed text command reaches its payload, even `--surface` is data.
+    // Scan only the selector/verb/ref portion; leave legacy non-panel syntax alone.
+    const literalPanel = args[1] === '--panel' && ['type', 'fill', 'eval'].includes(args[2]);
+    const selectorEnd = args[2] === 'eval' ? 3 : 4;
+    const selectorArgs = literalPanel ? args.slice(0, selectorEnd) : args;
+    const surface = getFlag(selectorArgs, '--surface');
+    if (selectorArgs.includes('--surface') && (!surface?.trim() || surface.startsWith('-'))) {
+        throw new Error('--surface requires a surface ID');
+    }
+    if (selectorArgs.indexOf('--surface') !== selectorArgs.lastIndexOf('--surface'))
+        throw new Error('Specify --surface only once');
+    return surface;
+}
+/** `browser open --panel` takes exactly one http(s) URL. */
+function assertPanelOpenUrl(params, url) {
+    const ok = params.length === 1 && URL.canParse(url) && ['http:', 'https:'].includes(new URL(url).protocol);
+    if (!ok)
+        throw new Error('browser open --panel requires an http(s) URL');
+}
 /**
  * Resolve `wmux browser <verb> …` to the request it issues. Null for an unknown
  * verb. Pure, so the deadlines and the caller wiring are testable without a
@@ -497,16 +519,7 @@ const BROWSER_CMDS = {
  * requests keep the ambient caller so main can locate its workspace.
  */
 function browserRequest(args, caller) {
-    // Once a prefixed text command reaches its payload, even `--surface` is data.
-    // Scan only the selector/verb/ref portion; leave legacy non-panel syntax alone.
-    const literalPanel = args[1] === '--panel' && ['type', 'fill', 'eval'].includes(args[2]);
-    const selectorArgs = literalPanel ? args.slice(0, args[2] === 'eval' ? 3 : 4) : args;
-    const surface = getFlag(selectorArgs, '--surface');
-    if (selectorArgs.includes('--surface') && (!surface?.trim() || surface.startsWith('-'))) {
-        throw new Error('--surface requires a surface ID');
-    }
-    if (selectorArgs.indexOf('--surface') !== selectorArgs.lastIndexOf('--surface'))
-        throw new Error('Specify --surface only once');
+    const surface = browserSurfaceFlag(args);
     const rest = surface ? stripFlag(args, '--surface') : args;
     // Prefix form always selects the panel. Keep `--panel` literal in free-form
     // text and JavaScript after the verb, as it was before this selector existed.
@@ -524,10 +537,8 @@ function browserRequest(args, caller) {
     if (suffix && (prefix || params.length !== payload.length - 1))
         throw new Error('Specify --panel only once');
     const req = build([rest[0], verb, ...params]);
-    if (panel && verb === 'open' && (params.length !== 1 || !URL.canParse(req.params.url)
-        || !['http:', 'https:'].includes(new URL(req.params.url).protocol))) {
-        throw new Error('browser open --panel requires an http(s) URL');
-    }
+    if (panel && verb === 'open')
+        assertPanelOpenUrl(params, req.params.url);
     const target = surface || caller;
     return { ...req, params: { ...req.params, ...(target ? { caller: target } : {}), ...(panel ? { panel: true } : {}) } };
 }
@@ -2439,6 +2450,16 @@ exports.COMMAND_SPECS = {
         usage: 'wmux agent-state [--surface <id>]   (no --surface → every pane, the blocked list, and every identified agent)',
         value: ['--surface'],
     },
+    lock: {
+        usage: [
+            'wmux lock            (lock wmux now; needs a password set in Settings > General)',
+            'wmux lock --status   (print { configured, locked })',
+            '',
+            '  While wmux is locked the pipe refuses every other command.',
+            '  There is no unlock command: the password is typed in the wmux window.',
+        ].join('\n'),
+        bool: ['--status'],
+    },
     detect: {
         usage: [
             'wmux detect explain [--surface <id>]              (why this pane reads the way it does)',
@@ -2448,6 +2469,10 @@ exports.COMMAND_SPECS = {
         value: ['--surface', '--file', '--agent'],
     },
 };
+/** `wmux lock [--status]` as the pipe method it asks for (#473). */
+function lockMethod(args) {
+    return args.includes('--status') ? 'app.lock_state' : 'app.lock';
+}
 /**
  * Reject flags the command does not declare, instead of running with defaults.
  *
@@ -2509,6 +2534,7 @@ const COMMANDS = {
     // System
     ping: async () => console.log(await sendV1('ping')),
     identify: async () => print(await sendV2('system.identify')),
+    lock: async (args) => print(await sendV2(lockMethod(args))),
     capabilities: async () => print(await sendV2('system.capabilities')),
     'list-windows': async () => print(await sendV2('window.list')),
     'focus-window': async (args) => print(await sendV2('window.focus', { id: args[1] })),
@@ -2757,6 +2783,7 @@ OpenCode:   opencode-tui [--remove]   # the CLI-side half, for remote/shared Ope
 Crash:      crash-report [--events N] [--log-lines N]
             (Event Log fingerprint + wmux's own log. No memory, so no secrets —
              paste this instead of a crash dump. See docs/crash-reports.md.)
+Lock:       lock [--status]   # lock wmux now (password set in Settings > General)
 Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
             report-agent --run-start | --run-end
             answer-agent --surface <id> --choice <id>   # reply without leaving your pane

@@ -74,6 +74,7 @@ export const ACTION_LABELS: Record<ShortcutAction, string> = {
   clearTerminalBuffer: 'Clear terminal buffer',
   toggleExplorer: 'Toggle file explorer',
   toggleDictation: 'Start or stop dictation',
+  lockApp: 'Lock wmux',
   togglePromptOutline: 'Prompt outline',
   togglePinnedPrompt: 'Pin / unpin prompt',
   followOutput: 'Follow output',
@@ -127,7 +128,7 @@ export const CATEGORY: Partial<Record<ShortcutAction, string>> = {
   toggleSidebar: 'View', showNotifications: 'View', flashFocused: 'View', openBrowser: 'View',
   browserDevTools: 'View', browserConsole: 'View', openSettings: 'View', commandPalette: 'View',
   toggleShortcutCheatSheet: 'View',
-  refreshSurface: 'View',
+  refreshSurface: 'View', lockApp: 'View',
 };
 
 export const CATEGORY_ORDER = ['Workspaces', 'Tabs', 'Panes', 'Terminal', 'View', 'Other'];

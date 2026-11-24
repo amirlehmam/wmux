@@ -865,6 +865,13 @@ export const IPC_CHANNELS = {
   AWAKE_SET_MODE: 'awake:setMode',
   AWAKE_SET_PREVENT_DISPLAY_SLEEP: 'awake:setPreventDisplaySleep',
   AWAKE_STATE_CHANGED: 'awake:stateChanged',
+  // The password that opens wmux (#473). Main owns the state: app-lock.ts.
+  APP_LOCK_GET_STATE: 'appLock:getState',
+  APP_LOCK_UNLOCK: 'appLock:unlock',
+  APP_LOCK_LOCK: 'appLock:lock',
+  APP_LOCK_SET_PASSWORD: 'appLock:setPassword',
+  APP_LOCK_REMOVE_PASSWORD: 'appLock:removePassword',
+  APP_LOCK_STATE_CHANGED: 'appLock:stateChanged',
   // Window
   WINDOW_CREATE: 'window:create',
   WINDOW_CLOSE: 'window:close',
@@ -1186,6 +1193,34 @@ export interface OrchestrationState {
 export function engineOf(surface: { type: SurfaceType; browserEngine?: BrowserEngine }): BrowserEngine {
   if (surface.type !== 'browser') return 'web';
   return surface.browserEngine === 'agent' ? 'agent' : 'web';
+}
+
+/**
+ * The password that opens wmux (issue #473). Owned by main's app-lock.ts; a
+ * renderer only ever holds the last state it was told.
+ */
+export interface AppLockState {
+  /** A password is set, so wmux starts locked and can be locked. */
+  configured: boolean;
+  locked: boolean;
+}
+
+export type AppLockError =
+  | 'wrong_password'
+  /** Too many wrong passwords: `retryAfterMs` says how long to wait. */
+  | 'throttled'
+  | 'too_short'
+  | 'too_long'
+  | 'not_configured'
+  /** The password file could not be written or removed. */
+  | 'failed';
+
+export interface AppLockResult {
+  ok: boolean;
+  error?: AppLockError;
+  /** After a wrong password, or with `throttled`: the wait before the next attempt counts. */
+  retryAfterMs?: number;
+  state: AppLockState;
 }
 
 /** Keep Windows awake (issue #363). Owned and persisted by main's awake-manager.ts. */

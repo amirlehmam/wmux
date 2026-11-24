@@ -15,6 +15,7 @@ import { followOutputFor, togglePinnedPromptFor, togglePromptOutlineFor } from '
 import { openGitView } from '../components/Git/open-git';
 import { v4 as uuid } from 'uuid';
 import { useT } from '../i18n';
+import { lockAppNow } from '../utils/app-lock';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -471,6 +472,7 @@ export function useKeyboardShortcuts(
       },
       toggleExplorer: () => onToggleExplorer?.(),
       toggleDictation: () => fire('wmux:dictation-toggle'),
+      lockApp: () => { void lockAppNow(); },
       // commandPalette is opened by App.tsx's own listener; keep a no-op so we
       // still preventDefault on the combo. find/copyMode are short-circuited above.
       commandPalette: () => {},

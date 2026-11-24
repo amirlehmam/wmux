@@ -71,6 +71,7 @@ import { noteIconRevision } from './icon-cache';
 import { installGpuWatchdog } from './gpu-watchdog';
 import { getAgentState, currentPromptId, currentPromptView, reportAgentSession, isAnsweringInput, noteHumanInput, onAgentStateBroadcast, onAgentSessionChanged, releaseAgyAtPrompt, listAgentStates, WORKING_TRUST_MS } from './agent-state';
 import { getAwakeManager, bindAwakeToAgentStates } from './awake-manager';
+import { applyLockToWindow, getAppLock, LOCKED_PIPE_MESSAGE, refusedWhileLocked } from './app-lock';
 import {
   pruneDeadClaudeSessions,
   listKnownTranscriptIds,
@@ -1690,6 +1691,16 @@ app.whenReady().then(async () => {
   // (issue #229); the renderer probes for frames, this restarts the process.
   installGpuWatchdog();
 
+  // The password that opens wmux (#473): every window is told, and a locked
+  // window loses the menu accelerators that could get behind the lock screen.
+  getAppLock().onStateChange((state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      applyLockToWindow(win, state.locked, app.isPackaged);
+      win.webContents.send(IPC_CHANNELS.APP_LOCK_STATE_CHANGED, state);
+    }
+  });
+
   // Keep Windows awake dynamically when coding agents are working
   const awakeManager = getAwakeManager();
   awakeManager.onStateChange((state) => {
@@ -1998,6 +2009,14 @@ app.whenReady().then(async () => {
   });
 
   pipeServer.on('v2', (request, respond, respondError) => {
+    // A locked wmux (#473) answers only what app-lock.ts lists, decided here,
+    // before anything is routed: the CLI is the other way into a terminal.
+    if (refusedWhileLocked(request.method, getAppLock().isLocked())) {
+      respondError(-32000, LOCKED_PIPE_MESSAGE);
+      return;
+    }
+    if (handleAppLockV2(request.method, respond, respondError)) return;
+
     // Browser commands (per-caller isolated routing, #62) and uniform
     // renderer-bridge methods are handled in their own modules.
     if (routeSpecialV2(request, respond, respondError)) return;
@@ -2616,7 +2635,31 @@ windowManager.closeGuard = {
   ensureTray: () => appTray.ensure(),
 };
 
+/**
+ * `app.lock` and `app.lock_state` (#473). There is deliberately no `app.unlock`:
+ * a password must never travel in a command line. See app-lock.ts.
+ */
+function handleAppLockV2(
+  method: string,
+  respond: (result: any) => void,
+  respondError: (code: number, message: string) => void,
+): boolean {
+  if (method === 'app.lock_state') {
+    respond(getAppLock().getState());
+    return true;
+  }
+  if (method !== 'app.lock') return false;
+  const result = getAppLock().lock();
+  if (result.ok) respond(result.state);
+  else respondError(-32000, 'No password is set. Set one in Settings > General first.');
+  return true;
+}
+
 app.on('browser-window-created', (_event, win) => {
+  // A window opened while wmux is locked starts behind the lock screen (#473),
+  // and DevTools opened on a locked, packaged window are closed again.
+  applyLockToWindow(win, getAppLock().isLocked(), app.isPackaged);
+  win.webContents.on('devtools-opened', () => applyLockToWindow(win, getAppLock().isLocked(), app.isPackaged));
   win.on('session-end', () => {
     if (sessionEndHandled) return;
     sessionEndHandled = true;

@@ -96,6 +96,7 @@ import {
 import { grantFilePath, isFilePathGranted } from './file-grants';
 import { readMarkdownImage } from './markdown-image';
 import { getAwakeManager, isKeepAwakeMode } from './awake-manager';
+import { getAppLock } from './app-lock';
 import { agentBrowserPath, unwrapAgentData, observedBrowserReplacement, type RunResult } from './agent-browser-cli';
 // The process-wide singletons. Constructing a second SessionRegistry or
 // DashboardDaemon here would hand the same stream port to two surfaces and let
@@ -578,7 +579,8 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
   // Toggle DevTools for the renderer window
   ipcMain.on('toggle-devtools', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) {
+    // DevTools on the lock screen would be a way to delete it (#473).
+    if (win && !getAppLock().isLocked()) {
       if (win.webContents.isDevToolsOpened()) {
         win.webContents.closeDevTools();
       } else {
@@ -1345,6 +1347,15 @@ export function registerIpcHandlers(windowManager: WindowManager, cdpProxyInstan
     if (typeof prevent === 'boolean') getAwakeManager().setPreventDisplaySleep(prevent);
     return getAwakeManager().getState();
   });
+
+  // The password that opens wmux (#473). Thin wiring: app-lock.ts validates every
+  // argument itself, and no handler here logs or returns what it was given.
+  ipcMain.handle(IPC_CHANNELS.APP_LOCK_GET_STATE, () => getAppLock().getState());
+  ipcMain.handle(IPC_CHANNELS.APP_LOCK_UNLOCK, (_event, password: unknown) => getAppLock().unlock(password));
+  ipcMain.handle(IPC_CHANNELS.APP_LOCK_LOCK, () => getAppLock().lock());
+  ipcMain.handle(IPC_CHANNELS.APP_LOCK_SET_PASSWORD, (_event, current: unknown, next: unknown) =>
+    getAppLock().setPassword(current, next));
+  ipcMain.handle(IPC_CHANNELS.APP_LOCK_REMOVE_PASSWORD, (_event, current: unknown) => getAppLock().removePassword(current));
 
   // Same bootstrap problem, same shape: AGENT_IDENTITY is delta-only, and a
   // pane whose shell spec named an agent at create time never emits again.
