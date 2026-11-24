@@ -49,6 +49,7 @@ export interface SessionData {
       browserUrl?: string;
       browserHistory?: BrowserHistory;
       browserWidth?: number;
+      browserOpen?: boolean;
       browserPanelDocked?: boolean;
       // Same lifecycle as browserWidth: written by the renderer, and dropped
       // by backupAutoSession until the interface named it (#145).
@@ -176,6 +177,7 @@ export function backupAutoSession(previousVersion: string): AutoSessionBackup | 
         browserUrl: w.browserUrl || '',
         browserHistory: w.browserHistory,
         browserWidth: w.browserWidth,
+        browserOpen: w.browserOpen,
         browserPanelDocked: w.browserPanelDocked,
         explorerOpen: w.explorerOpen,
         explorerDismissed: w.explorerDismissed,
@@ -497,6 +499,7 @@ export function writeSessionSnapshot(data: SessionData, at: number = Date.now())
         browserUrl: w.browserUrl || '',
         browserHistory: w.browserHistory,
         browserWidth: w.browserWidth,
+        browserOpen: w.browserOpen,
         browserPanelDocked: w.browserPanelDocked,
         explorerOpen: w.explorerOpen,
         explorerDismissed: w.explorerDismissed,

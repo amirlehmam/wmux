@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import { QuickLaunchProfile, SavedLayout } from '../../shared/types';
 import { DEFAULT_INACTIVE_PANE_DIM_PCT } from '../../shared/inactive-pane-dim';
+import { DEFAULT_FOCUSED_PANE_BORDER_PCT } from '../../shared/focused-pane-border';
 import { INDEX_MODIFIER_CHOICES, IndexModifiers, reconcileIndexModifiers } from '../utils/index-shortcuts';
 import { bindingsEqual } from '../utils/shortcut-binding';
 import type { BellStyle } from '../utils/terminal-bell';
@@ -814,7 +815,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
 export interface BrowserPrefs {
   searchEngine: 'google' | 'duckduckgo' | 'bing' | 'brave';
   devToolsIcon: 'default' | 'compact' | 'hidden';
-  /** Open the browser panel automatically on startup (issue #22). */
+  /** Initial visibility for a workspace without a saved browser-panel state. */
   openOnStartup: boolean;
   /**
    * Send clicked terminal/markdown links to the system default browser instead
@@ -1211,6 +1212,11 @@ export interface AppearancePrefs {
    */
   inactivePaneDim: number;
   /**
+   * 0–100 (%): how much accent is mixed into the focused pane's border (#471).
+   * 0 draws it like an unfocused pane's; clamped on read by `focusedPaneBorderPct`.
+   */
+  focusedPaneBorder: number;
+  /**
    * Sidebar presentation mode. 'classic' is the stock list; 'trace' is the
    * opt-in live view that renders each Claude session as a tap on a copper bus,
    * with motion driven by real hook traffic.
@@ -1289,6 +1295,7 @@ export const DEFAULT_APPEARANCE_PREFS: AppearancePrefs = {
   windowTransparency: false,
   windowMaterial: 'clear',
   inactivePaneDim: DEFAULT_INACTIVE_PANE_DIM_PCT,
+  focusedPaneBorder: DEFAULT_FOCUSED_PANE_BORDER_PCT,
   uiMode: 'trace',
   uiModeDefaultRev: UI_MODE_DEFAULT_REV,
   hubEnabled: true,

@@ -273,7 +273,7 @@ export const pt: Translation = {
   'settings.browser.searchSection': 'Pesquisa',
   'settings.browser.defaultSearchEngine': 'Mecanismo de pesquisa padrão',
   'settings.browser.startupSection': 'Inicialização',
-  'settings.browser.openOnStartup': 'Abrir painel do navegador na inicialização',
+  'settings.browser.openOnStartup': 'Abrir o painel do navegador em novos espaços de trabalho',
   'settings.browser.linksSection': 'Ligações',
   'settings.browser.openLinksExternally': 'Abrir ligações no navegador do sistema',
   'settings.browser.openLinksExternallyHint': 'As ligações clicadas em terminais e markdown abrem no seu navegador predefinido em vez do painel do wmux. Ctrl+clique faz sempre o contrário.',

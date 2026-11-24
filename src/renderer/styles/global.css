@@ -235,17 +235,19 @@ html.wmux-transparent #root {
    added later is covered by default, which is the failure mode that matters
    (someone adds a spinner and never thinks about vestibular triggers).
 
-   `0.01ms` rather than `none` so animationend/transitionend listeners still
-   fire — killing them outright strands any state machine waiting on one.
-   Iteration count is capped at 1 so infinite loops settle on their end state
-   instead of freezing mid-cycle. */
+   Keep animations at a near-zero duration rather than `none`, so animationend
+   listeners still fire. Cap the iteration count at 1 so infinite loops settle
+   on their end state.
+   Transitions must be truly disabled: a non-zero duration on every element
+   also transitions inline visibility changes, leaving a newly selected
+   workspace hidden when its terminal tries to take keyboard focus. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
     scroll-behavior: auto !important;
   }
 }

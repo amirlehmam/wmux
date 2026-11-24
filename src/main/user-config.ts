@@ -69,6 +69,7 @@ import { parseToml, TomlTable, TomlValue } from './toml-parser';
 import { parseKeyRemaps, KeyRemap } from '../shared/key-sequence';
 import { WorkspaceLayout } from '../shared/types';
 import { MAX_INACTIVE_PANE_DIM_PCT } from '../shared/inactive-pane-dim';
+import { MAX_FOCUSED_PANE_BORDER_PCT } from '../shared/focused-pane-border';
 
 export interface UserColorScheme {
   background?: string;
@@ -103,6 +104,8 @@ export interface UserConfig {
     uiTheme?: UiTheme;
     /** 0–60 (%) black over unfocused panes; 0 = no dimming. */
     inactivePaneDim?: number;
+    /** 0–100 (%) accent in the focused pane's border; 0 = same as unfocused (#471). */
+    focusedPaneBorder?: number;
   };
   /** Sidebar display options that Settings → Sidebar also offers. */
   sidebar?: {
@@ -416,6 +419,16 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
       errors.push(`appearance.inactive-pane-dim: ${dim} is a percent (0-${MAX_INACTIVE_PANE_DIM_PCT})${hint}`);
     } else if (dim >= 0 && dim <= MAX_INACTIVE_PANE_DIM_PCT) a.inactivePaneDim = dim;
     else errors.push(`appearance.inactive-pane-dim: ${dim} not between 0 and ${MAX_INACTIVE_PANE_DIM_PCT}`);
+  }
+
+  const ring = asNumber(appearance['focused-pane-border'] ?? appearance.focusedPaneBorder);
+  if (ring !== undefined) {
+    // Same trap as inactive-pane-dim: 0.5 meant as "50%" would read as off.
+    if (ring > 0 && ring < 1) {
+      const pct = Math.round(ring * 100);
+      errors.push(`appearance.focused-pane-border: ${ring} is a percent (0-${MAX_FOCUSED_PANE_BORDER_PCT}); for ${pct}% write ${pct}`);
+    } else if (ring >= 0 && ring <= MAX_FOCUSED_PANE_BORDER_PCT) a.focusedPaneBorder = ring;
+    else errors.push(`appearance.focused-pane-border: ${ring} not between 0 and ${MAX_FOCUSED_PANE_BORDER_PCT}`);
   }
 
   return Object.keys(a).length ? a : undefined;

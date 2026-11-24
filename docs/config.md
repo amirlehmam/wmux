@@ -64,6 +64,10 @@ ui-theme = "dark"        # dark | light | system — the app chrome, not the ter
 # While Focus mode (titlebar button) is on, it uses its own fixed 62% dim and this
 # setting has no effect.
 inactive-pane-dim = 20
+# How strongly the focused pane's border is tinted with the accent colour, as a
+# PERCENT from 0 to 100 (default 55). 0 draws it like every other pane's border,
+# which hides the focus ring (Settings -> General -> "Focused pane border").
+focused-pane-border = 55
 
 [sidebar]
 # Let a long workspace title wrap to two lines before it is truncated

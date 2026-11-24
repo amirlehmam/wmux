@@ -200,6 +200,26 @@ export function initPipeBridge(): void {
     return { id: ws.id, title: ws.title, cwd: ws.cwd, shell: ws.shell, surfaceId: surfaceId || null };
   };
 
+  // Panel guests are not split-tree surfaces. Reveal only on an explicit open;
+  // revealing a background workspace's panel must not select that workspace.
+  w.__wmux_browserPanelTarget = (workspaceId: string | undefined, reveal: boolean, caller?: string) => {
+    // A terminal may have moved or closed since main located its window.
+    if (caller && (!workspaceId || w.__wmux_locateSurface(caller)?.workspaceId !== workspaceId)) {
+      return { error: 'The caller no longer belongs to this workspace.' };
+    }
+    const store = useStore.getState();
+    const ws = store.workspaces.find((item) => item.id === (workspaceId ?? store.activeWorkspaceId));
+    if (!ws) return { error: 'No workspace is available for the browser panel.' };
+    if (ws.browserPanelDocked) return { error: 'The browser panel is docked. Target its pane with --surface instead.' };
+    if (!ws.browserOpen) {
+      if (!reveal) return { error: 'The browser panel is closed. Use wmux browser --panel open <url> first.' };
+      // CDP attaches on dom-ready. Don't wait for an old page or its saved
+      // history to load before the requested navigation can even start.
+      store.updateWorkspaceMetadata(ws.id, { browserOpen: true, browserPanelStartBlank: true });
+    }
+    return { surfaceId: `browser-${ws.id}` };
+  };
+
   // All browser surface ids in a workspace. Main adopts an unbound one for a
   // caller (or creates a fresh pane) so each agent gets its own browser (#62).
   w.__wmux_listBrowserSurfaces = (workspaceId: string) => {

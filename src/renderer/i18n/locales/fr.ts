@@ -72,6 +72,9 @@ export const fr: Translation = {
   'settings.general.inactivePaneDim': 'Atténuer les panes inactifs',
   'settings.general.inactivePaneDimHint':
     "Degré d'assombrissement des panes sans focus. 0 % désactive l'atténuation. Le mode focus atténue davantage.",
+  'settings.general.focusedPaneBorder': 'Bordure du pane actif',
+  'settings.general.focusedPaneBorderHint':
+    "Intensité de la couleur d'accent autour du pane qui a le focus. 0 % le dessine comme les autres panes.",
   'settings.general.shellSection': 'Explorateur Windows',
   'settings.general.contextMenu': 'Ajouter « Ouvrir dans wmux » au menu contextuel des dossiers',
   'settings.general.contextMenuLabel': 'Ouvrir dans wmux',
@@ -297,7 +300,7 @@ export const fr: Translation = {
   'settings.browser.searchSection': 'Recherche',
   'settings.browser.defaultSearchEngine': 'Moteur de recherche par défaut',
   'settings.browser.startupSection': 'Démarrage',
-  'settings.browser.openOnStartup': 'Ouvrir le panneau navigateur au démarrage',
+  'settings.browser.openOnStartup': 'Ouvrir le panneau du navigateur dans les nouveaux espaces de travail',
   'settings.browser.linksSection': 'Liens',
   'settings.browser.openLinksExternally': 'Ouvrir les liens dans le navigateur système',
   'settings.browser.openLinksExternallyHint': 'Les liens cliqués dans les terminaux et le markdown s’ouvrent dans votre navigateur par défaut plutôt que dans le panneau wmux. Ctrl+clic fait toujours l’inverse.',

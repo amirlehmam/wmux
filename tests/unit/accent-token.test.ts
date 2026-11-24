@@ -116,12 +116,12 @@ describe('selection treatment', () => {
 });
 
 describe('reduced motion', () => {
-  it('has an app-wide guard covering animations and transitions', () => {
+  it('makes visibility switches immediate while preserving animation completion events', () => {
     const css = fs.readFileSync(path.join(STYLES, 'global.css'), 'utf-8');
     const block = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*)\}/.exec(css);
     expect(block).not.toBeNull();
     expect(block![1]).toMatch(/animation-duration:\s*0\.01ms\s*!important/);
-    expect(block![1]).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
+    expect(block![1]).toMatch(/transition-duration:\s*0s\s*!important/);
     expect(block![1]).toMatch(/animation-iteration-count:\s*1\s*!important/);
   });
 });

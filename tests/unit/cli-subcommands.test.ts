@@ -116,10 +116,7 @@ describe('browser engine', () => {
   });
 
   it('carries --surface through as the caller, same as every other browser verb', () => {
-    // cmdBrowser extracts --surface (or $WMUX_SURFACE_ID) and passes it into
-    // browserRequest as `caller` — the same mechanism every other browser
-    // subcommand already uses, so no extra CLI code was needed for this.
-    const req = browserRequest(['browser', 'engine', 'web'], 'surf-1');
+    const req = browserRequest(['browser', 'engine', 'web', '--surface', 'surf-1'], 'ambient');
     expect(req?.method).toBe('browser.set_engine');
     expect(req?.params.engine).toBe('web');
     expect(req?.params.caller).toBe('surf-1');

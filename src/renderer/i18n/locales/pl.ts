@@ -247,7 +247,7 @@ export const pl: Translation = {
   'settings.browser.searchSection': 'Wyszukiwanie',
   'settings.browser.defaultSearchEngine': 'Domyślna wyszukiwarka',
   'settings.browser.startupSection': 'Uruchamianie',
-  'settings.browser.openOnStartup': 'Otwieraj panel przeglądarki przy starcie',
+  'settings.browser.openOnStartup': 'Otwieraj panel przeglądarki w nowych obszarach roboczych',
   'settings.browser.linksSection': 'Odnośniki',
   'settings.browser.openLinksExternally': 'Otwieraj odnośniki w przeglądarce systemowej',
   'settings.browser.openLinksExternallyHint': 'Kliknięte odnośniki w terminalach i markdownie otwierają się w domyślnej przeglądarce zamiast w panelu wmux. Ctrl+kliknięcie zawsze robi odwrotnie.',

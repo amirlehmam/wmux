@@ -80,6 +80,9 @@ export const en = {
   'settings.general.inactivePaneDim': 'Dim unfocused panes',
   'settings.general.inactivePaneDimHint':
     'How much darker panes without focus are drawn. 0% turns dimming off. Focus mode still dims more.',
+  'settings.general.focusedPaneBorder': 'Focused pane border',
+  'settings.general.focusedPaneBorderHint':
+    'How strongly the accent color outlines the pane with focus. 0% draws it like every other pane.',
   // Settings — General panel — Explorer context menu
   'settings.general.shellSection': 'Windows Explorer',
   'settings.general.contextMenu': 'Add "Open in wmux" to the folder context menu',
@@ -362,7 +365,7 @@ export const en = {
   'settings.browser.searchSection': 'Search',
   'settings.browser.defaultSearchEngine': 'Default search engine',
   'settings.browser.startupSection': 'Startup',
-  'settings.browser.openOnStartup': 'Open browser panel on startup',
+  'settings.browser.openOnStartup': 'Open browser panel in new workspaces',
   // Start page (issue #212)
   'settings.browser.defaultUrl': 'Start page',
   'settings.browser.defaultUrlHint':

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { fetchTheme, parseHexColor, withBgAlpha } from './useTerminal';
 import { terminalBgAlpha } from '../store/backdrop';
+import { scaledRingAccent } from '../../shared/focused-pane-border';
 
 /** The `r, g, b` triple behind --ui-accent-rgb, which follows the UI theme. */
 function accentRgb(): [number, number, number] | null {
@@ -78,6 +79,8 @@ export function usePaneFill(): void {
   // closing the gaps just moves the seam.
   const alpha = terminalBgAlpha(appearance, pending);
   const uiThemeTick = useUiThemeTick();
+  // The focused-pane border setting (#471) scales the ring like the opaque rule.
+  const ringAccent = scaledRingAccent(RING_ACCENT, appearance.focusedPaneBorder);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +115,7 @@ export function usePaneFill(): void {
         const accent = accentRgb();
         if (rgb && accent) {
           const mix = rgb.map((c, i) =>
-            Math.round(accent[i] * RING_ACCENT + c * (1 - RING_ACCENT)));
+            Math.round(accent[i] * ringAccent + c * (1 - ringAccent)));
           root.style.setProperty('--wmux-pane-ring', `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`);
         } else {
           root.style.removeProperty('--wmux-pane-ring');
@@ -120,5 +123,5 @@ export function usePaneFill(): void {
       })
       .catch(() => { /* theme unavailable — the gaps stay as they were */ });
     return () => { cancelled = true; };
-  }, [themeName, schemeBg, alpha, uiThemeTick]);
+  }, [themeName, schemeBg, alpha, uiThemeTick, ringAccent]);
 }

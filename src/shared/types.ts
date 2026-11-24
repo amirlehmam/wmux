@@ -569,6 +569,10 @@ export interface WorkspaceInfo {
   /** The side panel's back/forward stack (#315), kept beside browserUrl. */
   browserHistory?: BrowserHistory;
   browserWidth?: number;
+  /** Workspace-local visibility; absent in sessions saved before it was persisted. */
+  browserOpen?: boolean;
+  /** Runtime only: a CLI reveal mounts on blank so the old URL cannot delay navigation. */
+  browserPanelStartBlank?: boolean;
   /** The side browser was promoted to a tile; startup must not duplicate it. */
   browserPanelDocked?: boolean;
   explorerOpen?: boolean;
@@ -724,6 +728,7 @@ export interface SavedSession {
     // Both written since 0.4x; declared here as of #145, which was caused by a
     // save path quietly dropping fields the type never mentioned.
     browserWidth?: number;
+    browserOpen?: boolean;
     browserPanelDocked?: boolean;
     // Declared here for the same reason browserWidth is: #145 was a save path
     // quietly dropping fields the type never mentioned.

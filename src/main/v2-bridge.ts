@@ -182,7 +182,7 @@ export function validateLayoutAgentsParams(params: unknown): string | null {
 // this is a hint that reorders the probe, not a binding.
 const callerWindows = new Map<string, number>();
 
-function targetForCaller(caller: unknown): Promise<CallerTarget<BrowserWindow> | null> {
+export function targetForCaller(caller: unknown): Promise<CallerTarget<BrowserWindow> | null> {
   return resolveCallerTarget(caller, {
     live: BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()),
     focused: () => BrowserWindow.getFocusedWindow(),

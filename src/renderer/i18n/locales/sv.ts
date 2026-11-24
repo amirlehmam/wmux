@@ -236,7 +236,7 @@ export const sv: Translation = {
   'settings.browser.searchSection': 'Sök',
   'settings.browser.defaultSearchEngine': 'Standardsökmotor',
   'settings.browser.startupSection': 'Uppstart',
-  'settings.browser.openOnStartup': 'Öppna webbläsarpanelen vid uppstart',
+  'settings.browser.openOnStartup': 'Öppna webbläsarpanelen i nya arbetsytor',
   'settings.browser.linksSection': 'Länkar',
   'settings.browser.openLinksExternally': 'Öppna länkar i systemwebbläsaren',
   'settings.browser.openLinksExternallyHint': 'Klickade länkar i terminaler och markdown öppnas i din standardwebbläsare i stället för wmux-panelen. Ctrl+klick gör alltid tvärtom.',

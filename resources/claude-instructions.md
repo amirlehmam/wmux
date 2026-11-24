@@ -59,6 +59,8 @@ wmux browser <verb> --surface <id>   # drive a specific pane's browser
 
 Workflow: `browser open <url>` → `browser snapshot` → read tree → `browser click/type eN` → `browser snapshot` again.
 
+To use the workspace side panel instead of a pane, put `--panel` before the verb on **each** command: `wmux browser --panel open <https-url>`, `wmux browser --panel snapshot`, then `wmux browser --panel click e1`. Only `open` reveals a closed panel. The side panel uses the Web engine; for a docked browser use `--surface` instead.
+
 Refs (`e1`, `e2`...) expire after page changes — always re-snapshot.
 
 ## Markdown
