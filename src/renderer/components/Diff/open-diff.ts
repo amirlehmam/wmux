@@ -50,9 +50,12 @@ export function findDiffSurface(
   workspace: WorkspaceInfo,
   root: string,
   preferPane?: PaneId | null,
+  remote = false,
 ): DiffSurfaceLocation | null {
   const want = diffRootKey(root);
-  if (!want) return null;
+  // A remote workspace has ONE checkout (its ssh target), and its Diff tabs
+  // ignore their cwd, so any Diff tab in it is "the" one.
+  if (!want && !remote) return null;
   const panes = getAllPaneIds(workspace.splitTree);
   const ordered = preferPane && panes.includes(preferPane)
     ? [preferPane, ...panes.filter((p) => p !== preferPane)]
@@ -61,7 +64,7 @@ export function findDiffSurface(
     const leaf = findLeaf(workspace.splitTree, paneId);
     if (!leaf) continue;
     const index = leaf.surfaces.findIndex(
-      (s) => s.type === 'diff' && diffRootKey(s.cwd ?? workspace.cwd) === want,
+      (s) => s.type === 'diff' && (remote || diffRootKey(s.cwd ?? workspace.cwd) === want),
     );
     if (index >= 0) return { paneId, index, surfaceId: leaf.surfaces[index].id };
   }
@@ -111,12 +114,14 @@ export function openDiffView(
   paneId: PaneId | null,
   root: string,
   file?: string | null,
+  options: { remote?: boolean } = {},
 ): SurfaceId | null {
   const workspace = ops.workspaces.find((w) => w.id === workspaceId);
-  if (!workspace || !root) return null;
+  const remote = options.remote === true;
+  if (!workspace || (!root && !remote)) return null;
 
   let surfaceId: SurfaceId | null;
-  const existing = findDiffSurface(workspace, root, paneId);
+  const existing = findDiffSurface(workspace, root, paneId, remote);
   if (existing) {
     ops.selectSurface(workspaceId, existing.paneId, existing.index);
     surfaceId = existing.surfaceId;
@@ -124,7 +129,13 @@ export function openDiffView(
     const panes = getAllPaneIds(workspace.splitTree);
     const target = paneId && panes.includes(paneId) ? paneId : panes[0];
     if (!target) return null;
-    surfaceId = ops.addSurface(workspaceId, target, 'diff', { cwd: root });
+    // A remote root is a path THERE: pinning it as `cwd` would persist a
+    // folder that does not exist locally. Main resolves the checkout from the
+    // workspace's ssh target (diff:get-files with this surface), so the tab
+    // needs no cwd at all.
+    surfaceId = remote
+      ? ops.addSurface(workspaceId, target, 'diff')
+      : ops.addSurface(workspaceId, target, 'diff', { cwd: root });
   }
   if (surfaceId && file) requestDiffSelection(surfaceId, file);
   return surfaceId;

@@ -103,7 +103,8 @@ export function looksBinary(head: Buffer): boolean {
   return control / len > 0.1;
 }
 
-function decode(buf: Buffer): string {
+/** The text of a file's bytes, BOM and UTF-16LE handled. Shared with the remote reader. */
+export function decode(buf: Buffer): string {
   if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
     return buf.subarray(2).toString('utf16le');
   }
@@ -122,7 +123,8 @@ export function detectEncoding(head: Buffer): CodeEncoding {
   return 'utf8';
 }
 
-function encode(text: string, encoding: CodeEncoding): Buffer {
+/** Text back to bytes in the encoding the file already had. Shared with the remote writer. */
+export function encode(text: string, encoding: CodeEncoding): Buffer {
   if (encoding === 'utf16le') {
     return Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(text, 'utf16le')]);
   }

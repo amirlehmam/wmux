@@ -339,6 +339,7 @@ export const nl: Translation = {
   'explorer.openInApp': 'Openen in standaardapp',
   'explorer.error.no_root': 'Dit paneel heeft nog geen werkmap gemeld',
   'explorer.error.remote': 'Dit paneel zit in een SSH-sessie',
+  'explorer.error.ssh-unreachable': 'De externe host is niet bereikbaar via SSH',
   'explorer.error.invalid_path': 'Dat pad is niet toegestaan',
   'explorer.error.outside_root': 'Dat pad ligt buiten de map van het paneel',
   'explorer.error.not_found': 'Map niet gevonden',

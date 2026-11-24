@@ -622,6 +622,28 @@ export function initPipeBridge(): void {
     return { workspaceId: id, indicator: indicator ?? null };
   };
 
+  // `wmux set-ssh-target` / `clear-ssh-target`: which workspace is
+  // meant, by id or else by the caller's surface. Null when this window holds
+  // neither, so main asks the next window and reports a miss. The target itself
+  // lives in main (src/main/ssh-targets.ts), never in the store, so it cannot
+  // reach session.json.
+  w.__wmux_resolveWorkspace = (workspaceId: string, caller: string) => {
+    const id = workspaceId || w.__wmux_locateSurface(caller)?.workspaceId;
+    if (!id || !useStore.getState().workspaces.some(x => x.id === id)) return null;
+    return { workspaceId: id };
+  };
+
+  // The sidebar's branch and dirty marker for a workspace whose session is on a
+  // remote host, read by main over ssh. The same two fields the shell-integration
+  // hook reports through `report_git_branch`; whichever wrote last is shown.
+  // Null when this window does not hold the workspace.
+  w.__wmux_setWorkspaceGit = (workspaceId: string, branch: string | null, dirty: boolean) => {
+    const store = useStore.getState();
+    if (!store.workspaces.some(x => x.id === workspaceId)) return null;
+    store.updateWorkspaceMetadata(workspaceId as WorkspaceId, { gitBranch: branch ?? undefined, gitDirty: dirty });
+    return { workspaceId };
+  };
+
   /**
    * A URL an agent or CLI asked wmux to open (`link.open` -> `wmux open`).
    *

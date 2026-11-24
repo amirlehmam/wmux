@@ -7,11 +7,10 @@
  * `TerminalSSHSessionDetector.swift` (manaflow-ai/cmux).
  */
 
-import { execFile } from 'child_process';
-import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { optionKey, type DetectedSsh } from './ssh-argv';
+import type { DetectedSsh } from './ssh-argv';
+import { runSsh, sshArgs, toolForSession } from './ssh-exec';
 import { posixShellQuote } from './shell-quote';
 import { opensshPath } from './system32';
 
@@ -28,57 +27,10 @@ const CLEANUP_TIMEOUT_MS = 8_000;
  */
 const UPLOAD_CONCURRENCY = 4;
 
-/**
- * `-o` keys deliberately dropped when composing an scp/ssh invocation.
- *
- * These are session-shaping options that are meaningless for a one-shot copy,
- * and `RemoteCommand` / `RequestTTY` actively break the transfer. The filter
- * lives here rather than in the parser because "what scp tolerates" is this
- * module's concern; the parser's job is to report the command line as written.
- * cmux's `filteredSSHOptionKeys`.
- */
-const UNSAFE_FOR_TRANSFER = new Set([
-  'batchmode',
-  'controlmaster',
-  'controlpersist',
-  'forkafterauthentication',
-  'localcommand',
-  'permitlocalcommand',
-  'remotecommand',
-  'requesttty',
-  'sendenv',
-  'sessiontype',
-  'setenv',
-  'stdioforward',
-]);
-
 // Re-exported so the scp/rollback tests can reach it from the module whose
 // argv they are pinning. The rule itself lives in system32.ts, because the
 // pane wmux spawns has to reach the same host as the scp it uploads with.
-export { opensshPath };
-
-/**
- * The ssh/scp binary to reach this session's host with.
- *
- * Prefers the sibling of the ssh the pane actually connected with, because the
- * two builds on a typical Windows box do not share an agent (see opensshPath).
- * Falls back to Windows OpenSSH when the session did not name a path (a bare
- * `ssh`, so PATH decided and we cannot know what it chose) or when the sibling
- * is missing.
- */
-export function toolForSession(
-  session: DetectedSsh,
-  tool: 'ssh' | 'scp',
-  exists: (p: string) => boolean = fs.existsSync
-): string {
-  const configured = session.sshExecutable?.trim();
-  if (configured) {
-    const sibling = path.join(path.dirname(configured), `${tool}${path.extname(configured) || '.exe'}`);
-    if (exists(sibling)) return sibling;
-    throw new Error(`matching ${tool} executable not found beside ${configured}`);
-  }
-  return opensshPath(tool);
-}
+export { opensshPath, toolForSession };
 
 export function remoteBatchDirectory(uuid: string = crypto.randomUUID()): string {
   return `/tmp/wmux-drop-${uuid.toLowerCase()}`;
@@ -103,12 +55,6 @@ export function remotePathInBatch(directory: string, localPath: string, uuid: st
   return `${directory}/${path.posix.basename(remoteDropPath(localPath, uuid)).replace('wmux-drop-', '')}`;
 }
 
-/** True when `options` already sets `key`, so we must not add our own default. */
-function hasOptionKey(options: string[], key: string): boolean {
-  const lowered = key.toLowerCase();
-  return options.some((option) => optionKey(option) === lowered);
-}
-
 /**
  * Bracket a bare IPv6 literal so scp's `host:path` split lands on the right
  * colon. Without this, `scp file ::1:/tmp/x` is read as host `` / path `:1:…`.
@@ -125,57 +71,10 @@ export function scpDestination(destination: string): string {
   return user === null ? `[${host}]` : `${user}@[${host}]`;
 }
 
-/**
- * Connection flags shared by the upload and its rollback.
- *
- * `BatchMode=yes` is the important one: these run with no TTY attached, so an
- * interactive password or passphrase prompt has nowhere to go and would simply
- * hang until the timeout. Key/agent auth only — the same trade cmux makes.
- */
-function commonArgs(session: DetectedSsh, portFlag: '-P' | '-p'): string[] {
-  const replayable = session.sshOptions.filter((option) => {
-    const key = optionKey(option);
-    return !key || !UNSAFE_FOR_TRANSFER.has(key);
-  });
-
-  const args: string[] = [
-    '-q',
-    '-o', 'ConnectTimeout=6',
-    '-o', 'ServerAliveInterval=20',
-    '-o', 'ServerAliveCountMax=2',
-    '-o', 'BatchMode=yes',
-    '-o', 'ControlMaster=no',
-    // A file copy has no business replaying the user's port forwards. Measured
-    // at ~150ms of every upload on a config with a RemoteForward in it, since
-    // ssh sets the forwards up during the handshake — and when the port is
-    // already bound (a live `wmux bridge` tunnel) it also prints a warning onto
-    // stderr that has nothing to do with the transfer.
-    '-o', 'ClearAllForwardings=yes',
-  ];
-
-  if (session.addressFamily) args.push(`-${session.addressFamily}`);
-  if (session.forwardAgent) args.push('-A');
-  if (session.compression) args.push('-C');
-  if (session.configFile?.trim()) args.push('-F', session.configFile.trim());
-  if (session.jumpHost?.trim()) args.push('-J', session.jumpHost.trim());
-  if (session.port !== undefined) args.push(portFlag, String(session.port));
-  for (const identityFile of session.identityFiles ?? []) {
-    if (identityFile.trim()) args.push('-i', identityFile.trim());
-  }
-  // Reuse the pane's existing multiplexed connection when it has one: no second
-  // authentication, so an agent that prompts on use stays quiet.
-  if (session.controlPath?.trim() && !hasOptionKey(replayable, 'ControlPath')) {
-    args.push('-o', `ControlPath=${session.controlPath.trim()}`);
-  }
-  for (const option of replayable) args.push('-o', option);
-
-  return args;
-}
-
 /** Full scp argv for one file. Exported so tests can pin it, as cmux does. */
 export function scpArgs(session: DetectedSsh, localPath: string, remotePath: string): string[] {
   return [
-    ...commonArgs(session, '-P'),
+    ...sshArgs(session, '-P'),
     localPath,
     `${scpDestination(session.destination)}:${remotePath}`,
   ];
@@ -186,7 +85,7 @@ export function cleanupArgs(session: DetectedSsh, remotePaths: string[]): string
   const script = `rm -f -- ${remotePaths.map(posixShellQuote).join(' ')}`;
   return [
     '-T',
-    ...commonArgs(session, '-p'),
+    ...sshArgs(session, '-p'),
     session.destination,
     `sh -c ${posixShellQuote(script)}`,
   ];
@@ -194,48 +93,12 @@ export function cleanupArgs(session: DetectedSsh, remotePaths: string[]): string
 
 export function prepareDirectoryArgs(session: DetectedSsh, directory: string): string[] {
   const script = `umask 077 && mkdir -m 700 -- ${posixShellQuote(directory)}`;
-  return ['-T', ...commonArgs(session, '-p'), session.destination, `sh -c ${posixShellQuote(script)}`];
+  return ['-T', ...sshArgs(session, '-p'), session.destination, `sh -c ${posixShellQuote(script)}`];
 }
 
 export function cleanupDirectoryArgs(session: DetectedSsh, directory: string): string[] {
   const script = `rm -rf -- ${posixShellQuote(directory)}`;
-  return ['-T', ...commonArgs(session, '-p'), session.destination, `sh -c ${posixShellQuote(script)}`];
-}
-
-interface RunResult {
-  status: number;
-  stdout: string;
-  stderr: string;
-}
-
-function run(
-  executable: string,
-  args: string[],
-  timeout: number,
-  cwd?: string,
-  signal?: AbortSignal,
-): Promise<RunResult> {
-  return new Promise((resolve) => {
-    try {
-      execFile(
-        executable,
-        args,
-        { windowsHide: true, timeout, maxBuffer: 1024 * 1024, cwd, signal },
-        (err, stdout, stderr) => {
-          if (err) {
-            const code = typeof (err as NodeJS.ErrnoException).code === 'number'
-              ? ((err as NodeJS.ErrnoException).code as unknown as number)
-              : 1;
-            resolve({ status: code || 1, stdout: String(stdout), stderr: String(stderr || err.message) });
-            return;
-          }
-          resolve({ status: 0, stdout: String(stdout), stderr: String(stderr) });
-        }
-      );
-    } catch (err) {
-      resolve({ status: 1, stdout: '', stderr: err instanceof Error ? err.message : String(err) });
-    }
-  });
+  return ['-T', ...sshArgs(session, '-p'), session.destination, `sh -c ${posixShellQuote(script)}`];
 }
 
 /**
@@ -315,13 +178,10 @@ export async function uploadFiles(
     return { ok: false, remotePaths: [], error: err instanceof Error ? err.message : String(err) };
   }
   const directory = remoteBatchDirectory();
-  const prepared = await run(
-    ssh,
-    prepareDirectoryArgs(session, directory),
-    CLEANUP_TIMEOUT_MS,
-    session.workingDirectory,
+  const prepared = await runSsh(ssh, prepareDirectoryArgs(session, directory), CLEANUP_TIMEOUT_MS, {
+    cwd: session.workingDirectory,
     signal,
-  );
+  });
   if (prepared.status !== 0) {
     return {
       ok: false,
@@ -332,13 +192,10 @@ export async function uploadFiles(
   const outcomes = await mapWithLimit(localPaths, UPLOAD_CONCURRENCY, async (localPath) => {
     if (signal?.aborted) return { remotePath: '', ok: false, error: 'upload cancelled' };
     const remotePath = remotePathInBatch(directory, localPath);
-    const result = await run(
-      scp,
-      scpArgs(session, localPath, remotePath),
-      UPLOAD_TIMEOUT_MS,
-      session.workingDirectory,
+    const result = await runSsh(scp, scpArgs(session, localPath, remotePath), UPLOAD_TIMEOUT_MS, {
+      cwd: session.workingDirectory,
       signal,
-    );
+    });
     return {
       remotePath,
       ok: result.status === 0,
@@ -361,12 +218,9 @@ export async function uploadFiles(
 export async function cleanupRemotePaths(session: DetectedSsh, remotePaths: string[]): Promise<void> {
   if (remotePaths.length === 0) return;
   try {
-    await run(
-      toolForSession(session, 'ssh'),
-      cleanupArgs(session, remotePaths),
-      CLEANUP_TIMEOUT_MS,
-      session.workingDirectory,
-    );
+    await runSsh(toolForSession(session, 'ssh'), cleanupArgs(session, remotePaths), CLEANUP_TIMEOUT_MS, {
+      cwd: session.workingDirectory,
+    });
   } catch {
     // Rollback is a courtesy. Leaving a stray file in the remote's /tmp is a far
     // smaller problem than masking the upload error the caller is about to show.
@@ -377,12 +231,9 @@ export async function cleanupRemotePaths(session: DetectedSsh, remotePaths: stri
 /** Best-effort recursive removal of one private upload batch. */
 export async function cleanupRemoteDirectory(session: DetectedSsh, directory: string): Promise<void> {
   try {
-    await run(
-      toolForSession(session, 'ssh'),
-      cleanupDirectoryArgs(session, directory),
-      CLEANUP_TIMEOUT_MS,
-      session.workingDirectory,
-    );
+    await runSsh(toolForSession(session, 'ssh'), cleanupDirectoryArgs(session, directory), CLEANUP_TIMEOUT_MS, {
+      cwd: session.workingDirectory,
+    });
   } catch {
     // Cleanup must never mask the transfer error.
   }

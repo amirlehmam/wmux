@@ -112,6 +112,43 @@ describe('openDiffView', () => {
   });
 });
 
+describe('a remote (ssh) workspace', () => {
+  const remoteWs = (surfaces: SurfaceRef[]) => workspace(leaf(P1, surfaces), 'C:\\Users\\me\\somewhere');
+
+  it('opens a Diff tab WITHOUT pinning the remote root as if it were a local folder', () => {
+    const o = ops(remoteWs([surf('t', 'terminal')]));
+    expect(openDiffView(o, WS, P1, '/home/dev/proj', 'src/a.ts', { remote: true })).toBe('surf-new');
+    expect(o.added).toEqual([[WS, P1, 'diff', undefined]]);
+  });
+
+  it('needs no root at all, since main takes the checkout from the ssh target', () => {
+    const o = ops(remoteWs([surf('t', 'terminal')]));
+    expect(openDiffView(o, WS, P1, '', null, { remote: true })).toBe('surf-new');
+  });
+
+  it('reuses any Diff tab of the workspace, whatever cwd it carries (they all show the one checkout)', () => {
+    const o = ops(remoteWs([surf('t', 'terminal'), surf('d', 'diff', 'C:\\stale\\pin')]));
+    expect(openDiffView(o, WS, P1, '/home/dev/proj', null, { remote: true })).toBe('d');
+    expect(o.added).toEqual([]);
+    expect(o.selected).toEqual([[WS, P1, 1]]);
+    expect(findDiffSurface(remoteWs([surf('d', 'diff')]), '', null, true)?.surfaceId).toBe('d');
+  });
+
+  it('still hands the chosen file to the tab', () => {
+    const o = ops(remoteWs([surf('d', 'diff')]));
+    openDiffView(o, WS, P1, '/home/dev/proj', 'docs/x.md', { remote: true });
+    expect(takeDiffSelection('d')).toBe('docs/x.md');
+  });
+
+  it('a local request is pinned to its root and matched by it', () => {
+    const o = ops(workspace(leaf(P1, [surf('t', 'terminal')])));
+    openDiffView(o, WS, P1, 'C:\\repo');
+    expect(o.added).toEqual([[WS, P1, 'diff', { cwd: 'C:\\repo' }]]);
+    expect(findDiffSurface(workspace(leaf(P1, [surf('d', 'diff', 'C:\\a')])), 'C:\\b')).toBeNull();
+    expect(openDiffView(o, WS, P1, '')).toBeNull();
+  });
+});
+
 describe('diff tab label', () => {
   it('names the folder a pinned tab looks at', () => {
     expect(getSurfaceLabel(surf('d', 'diff', 'C:\\work\\repo'))).toBe('Diff · repo');

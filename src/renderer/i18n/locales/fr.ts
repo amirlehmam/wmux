@@ -417,6 +417,7 @@ export const fr: Translation = {
   'explorer.openInApp': "Ouvrir dans l'application par défaut",
   'explorer.error.no_root': "Ce volet n'a pas encore signalé de répertoire de travail",
   'explorer.error.remote': 'Ce volet est dans une session SSH',
+  'explorer.error.ssh-unreachable': 'Impossible de joindre l’hôte distant via SSH',
   'explorer.error.invalid_path': "Ce chemin n'est pas autorisé",
   'explorer.error.outside_root': 'Ce chemin est en dehors du dossier du volet',
   'explorer.error.not_found': 'Dossier introuvable',

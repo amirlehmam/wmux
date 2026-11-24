@@ -339,6 +339,7 @@ export const sv: Translation = {
   'explorer.openInApp': 'Öppna i standardappen',
   'explorer.error.no_root': 'Den här panelen har inte rapporterat någon arbetskatalog än',
   'explorer.error.remote': 'Den här panelen är i en SSH-session',
+  'explorer.error.ssh-unreachable': 'Det gick inte att nå fjärrvärden via SSH',
   'explorer.error.invalid_path': 'Sökvägen är inte tillåten',
   'explorer.error.outside_root': 'Sökvägen ligger utanför panelens mapp',
   'explorer.error.not_found': 'Mappen hittades inte',

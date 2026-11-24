@@ -350,6 +350,7 @@ export const uk: Translation = {
   'explorer.openInApp': 'Відкрити у типовій програмі',
   'explorer.error.no_root': 'Ця панель ще не повідомила робочий каталог',
   'explorer.error.remote': 'Ця панель у сеансі SSH',
+  'explorer.error.ssh-unreachable': 'Не вдалося підключитися до віддаленого хоста через SSH',
   'explorer.error.invalid_path': 'Цей шлях не дозволено',
   'explorer.error.outside_root': 'Цей шлях поза текою панелі',
   'explorer.error.not_found': 'Теку не знайдено',

@@ -864,6 +864,48 @@ const LAYOUT_AGENTS_STRING_PARAMS = [
   ['--workspace', 'workspaceId'],
 ] as const;
 
+/**
+ * `wmux set-ssh-target` flags -> `workspace.set_ssh_target` params, or the
+ * message to print. The argv travels as a JSON array so no ssh option has to be
+ * re-split anywhere; main validates it again (`parseSshTarget`), as other
+ * clients reach the pipe without this parser.
+ */
+export function sshTargetParams(args: string[]): { params: Record<string, any> } | { error: string } {
+  let values: Record<string, string>;
+  try {
+    ({ values } = parseFlagArgs(args, { value: ['--workspace', '--argv-json', '--path', '--wsl-distro'] }));
+  } catch (err: any) {
+    return { error: err.message };
+  }
+  const raw = values['--argv-json'];
+  if (raw === undefined) return { error: 'set-ssh-target requires --argv-json <json-array> (use clear-ssh-target to remove it)' };
+  let argv: unknown;
+  try {
+    argv = JSON.parse(raw);
+  } catch {
+    return { error: '--argv-json must be a JSON array of strings' };
+  }
+  if (!Array.isArray(argv) || argv.length === 0 || !argv.every((a) => typeof a === 'string')) {
+    return { error: '--argv-json must be a non-empty JSON array of strings' };
+  }
+  const path = values['--path'];
+  if (!path?.trim()) return { error: 'set-ssh-target requires --path <absolute path on the remote host>' };
+  const workspaceId = values['--workspace'];
+  // An explicit empty value is a mistake, not "absent": say so rather than run on the host.
+  const wslDistro = values['--wsl-distro'];
+  if (wslDistro !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(wslDistro)) {
+    return { error: '--wsl-distro must be 1-64 characters: letters, digits, "." "_" "-", not starting with "-"' };
+  }
+  return {
+    params: {
+      argv,
+      path,
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(wslDistro !== undefined ? { wslDistro } : {}),
+    },
+  };
+}
+
 export function layoutAgentsParams(
   args: string[],
   callerSurfaceId?: string,
@@ -2258,6 +2300,19 @@ export const COMMAND_SPECS = {
     usage: 'wmux clear-indicator [--workspace <id>]',
     value: ['--workspace'],
   },
+  'set-ssh-target': {
+    usage: 'wmux set-ssh-target [--workspace <id>] --argv-json <json-array> --path <abs-path> [--wsl-distro <name>]\n'
+      + '  Tells wmux the workspace\'s session runs on a remote host: the ssh command (a JSON array of\n'
+      + '  arguments, never a shell string) and the absolute checkout path there. For scripts and integrations;\n'
+      + '  not stored on disk. Defaults to this pane\'s workspace.\n'
+      + '  --wsl-distro <name>: run that ssh inside the named WSL distro (wsl.exe -d <name> --exec ssh), for\n'
+      + '  when the key and known_hosts the argv names live in WSL. Without it, the host\'s own ssh is used.',
+    value: ['--workspace', '--argv-json', '--path', '--wsl-distro'],
+  },
+  'clear-ssh-target': {
+    usage: 'wmux clear-ssh-target [--workspace <id>]',
+    value: ['--workspace'],
+  },
   'list-workspaces': { usage: 'wmux list-workspaces' },
   'current-workspace': { usage: 'wmux current-workspace [--surface <id>]', value: ['--surface'] },
   whoami: { usage: 'wmux whoami [--surface <id>]   (alias of current-workspace)', value: ['--surface'] },
@@ -2578,6 +2633,15 @@ const COMMANDS: Record<CommandName, (args: string[]) => Promise<void> | void> = 
     const workspaceId = flagsOrFail('clear-indicator', args.slice(1), { value: ['--workspace'] }).values['--workspace'];
     print(await sendV2('workspace.set_indicator', { text: '', ...(workspaceId ? { workspaceId } : {}) }));
   },
+  'set-ssh-target': async (args) => {
+    const built = sshTargetParams(args.slice(1));
+    if ('error' in built) fail('set-ssh-target', COMMAND_SPECS['set-ssh-target'], built.error);
+    print(await sendV2('workspace.set_ssh_target', built.params));
+  },
+  'clear-ssh-target': async (args) => {
+    const workspaceId = flagsOrFail('clear-ssh-target', args.slice(1), { value: ['--workspace'] }).values['--workspace'];
+    print(await sendV2('workspace.set_ssh_target', { argv: [], ...(workspaceId ? { workspaceId } : {}) }));
+  },
   'list-workspaces': async () => print(await sendV2('workspace.list')),
   'current-workspace': cmdCurrentWorkspace,
   whoami: cmdCurrentWorkspace,
@@ -2757,6 +2821,7 @@ System:     ping, identify, capabilities, list-windows, focus-window <id>, new-w
 Links:      open <url>   (open it in the wmux browser panel, per Settings → Browser → Links)
 Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, list-workspaces
             set-indicator --text T [--color C] [--workspace id] | clear-indicator [--workspace id]
+            set-ssh-target --argv-json J --path P [--wsl-distro name] [--workspace id] | clear-ssh-target [--workspace id]
             current-workspace | whoami [--surface <id>]   (the workspace THIS pane is in)
 Remote:     ssh [ssh options] <user@host> [--title T]   (remote terminal in a new workspace)
             bridge [--port P] [--host H] [--wsl]   (expose this wmux's pipe over TCP, default 127.0.0.1:9787)

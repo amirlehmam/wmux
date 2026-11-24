@@ -2,9 +2,28 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
-import { gitCommand, isSafeRev } from './git-view';
+import { isSafeRev, spawnGit, wslGitContextFor } from './git-view';
+import { canonicalRemoteRelPath } from './ssh-path';
+import { type GitContext, isWslContext } from './exec-location';
+import { currentSpawnPriority } from './exec-gate';
+import { endStdin } from './exec-worker-routed';
+import { cachedForPoll } from './exec-snapshot';
+import { BatchSetupError, runGitBatch as runBatchRaw, type BatchGroup, type BatchOutcome } from './exec-git-batch';
+import {
+  currentSshGit,
+  isSshUnreachable,
+  markSshUnreachable,
+  SSH_UNREACHABLE_MESSAGE,
+  sshLocationKey,
+} from './ssh-git';
 
-const execFileAsync = promisify(execFile);
+const execFilePromise = promisify(execFile);
+/** `promisify(execFile)` with the child's stdin closed: see `endStdin` (a direct-route ssh hangs on an open one). */
+const execFileAsync: typeof execFilePromise = ((...callArgs: Parameters<typeof execFilePromise>) => {
+  const running = execFilePromise(...callArgs);
+  endStdin((running as { child?: Parameters<typeof endStdin>[0] }).child);
+  return running;
+}) as typeof execFilePromise;
 
 export interface ChangedFile {
   path: string;
@@ -19,20 +38,43 @@ export interface ChangedFile {
 // PATH, and cwd here is whatever repo the pane is in — a committed git.exe
 // there would run on every diff poll. Same resolver as git-view.ts.
 async function git(cwd: string, args: string[]): Promise<string> {
+  let ran: Awaited<ReturnType<typeof spawnGit>>;
   try {
-    const cmd = gitCommand(cwd, args);
-    const { stdout } = await execFileAsync(cmd.file, cmd.args, {
-      cwd: cmd.cwd,
-      env: cmd.env,
-      windowsHide: true,
-      timeout: 10_000,
-      maxBuffer: 5 * 1024 * 1024,
-    });
-    return stdout;
-  } catch (err: any) {
-    if (err.stdout) return err.stdout;
+    ran = await spawnGit(cwd, args, { timeout: 10_000, maxBuffer: 5 * 1024 * 1024, plain: execFileAsync });
+  } catch (err) {
+    // No ssh executable to run: the remote host cannot be reached, and the
+    // inner `.catch(() => '')` below would read that as "no changes".
+    if (currentSshGit()) {
+      markSshUnreachable();
+      throw new Error(SSH_UNREACHABLE_MESSAGE, { cause: err });
+    }
     throw err;
   }
+  const { err, stdout } = ran;
+  if (!err) return stdout;
+  // Over ssh, exit 255 is the connection, not git. Many callers below
+  // turn a failed git into '' with `.catch(() => '')`, which would read as "no
+  // changes", so the context is marked and the public entry points throw.
+  const remote = currentSshGit();
+  if (remote && isSshUnreachable(err, remote.target.wslDistro !== undefined)) {
+    markSshUnreachable();
+    throw new Error(SSH_UNREACHABLE_MESSAGE, { cause: err });
+  }
+  if (err.stdout) return String(err.stdout);
+  throw err;
+}
+
+/**
+ * Run a public entry point's work. On a remote host, an unreachable host is an
+ * error however many inner `.catch(() => '')` swallowed it on the way.
+ */
+async function checkedForSsh<T>(work: () => Promise<T>): Promise<T> {
+  const context = currentSshGit();
+  if (!context) return work();
+  context.unreachable = false;
+  const result = await work();
+  if (context.unreachable) throw new Error(SSH_UNREACHABLE_MESSAGE);
+  return result;
 }
 
 // Whether a directory is a repo changes about as often as someone runs
@@ -43,14 +85,20 @@ const REPO_PROBE_TTL_MS = 30_000;
 const repoProbes = new Map<string, { isRepo: boolean; at: number }>();
 
 async function isGitRepo(cwd: string): Promise<boolean> {
-  const cached = repoProbes.get(cwd);
+  // The remote host is part of the key: a remote path and a local one can be spelled alike.
+  const probeKey = `${sshLocationKey()}${cwd}`;
+  const cached = repoProbes.get(probeKey);
   if (cached && Date.now() - cached.at < REPO_PROBE_TTL_MS) return cached.isRepo;
   let isRepo: boolean;
   try {
     await git(cwd, ['rev-parse', '--is-inside-work-tree']);
     isRepo = true;
-  } catch { isRepo = false; }
-  repoProbes.set(cwd, { isRepo, at: Date.now() });
+  } catch {
+    // An unreachable host says nothing about the repository: not cached.
+    if (currentSshGit()?.unreachable) return false;
+    isRepo = false;
+  }
+  repoProbes.set(probeKey, { isRepo, at: Date.now() });
   return isRepo;
 }
 
@@ -463,6 +511,12 @@ function parsePorcelainStatus(statusOut: string): Array<{ path: string; status: 
  * the EISDIR that a collapsed `vendor/` entry produces.
  */
 async function countUntrackedAdditions(cwd: string, rel: string): Promise<number> {
+  if (currentSshGit()) {
+    // `--no-index` against /dev/null counts lines the way numstat does, on the
+    // remote host. It exits 1 when the files differ, which `git()` here accepts when
+    // it has output; a binary file counts `-` and so 0, as the local read does.
+    return additionsFromNumstat(await git(cwd, untrackedNumstatArgs(rel)).catch(() => ''));
+  }
   const content = await readCurrentFile(cwd, rel);
   if (content === null) return 0;
   const lines = content.split('\n');
@@ -549,6 +603,23 @@ async function getGitChangedFiles(cwd: string, baseRef?: string): Promise<Change
   return out;
 }
 
+/**
+ * `untrackedFileDiff` for a request that may be running on a remote host,
+ * where the file is read by git there (`diff --no-index`, which prints the same
+ * new-file diff) instead of from the local disk. `run` is git-view's own runner,
+ * passed in because that module owns the git spawn and imports this one.
+ */
+export async function untrackedFileDiffAny(
+  cwd: string,
+  file: string,
+  run: (cwd: string, args: string[]) => Promise<string>,
+): Promise<string> {
+  if (!currentSshGit()) return untrackedFileDiff(cwd, file);
+  // `diff --no-index` reads any file the remote account can: only a path below the checkout goes to it.
+  if (canonicalRemoteRelPath(file) === null) return '';
+  return run(cwd, untrackedDiffArgs(file)).catch(() => '');
+}
+
 /** Render an untracked file as an all-additions diff. Shared with git-view.ts (#362). */
 export function untrackedFileDiff(cwd: string, file: string): string {
   try {
@@ -580,7 +651,7 @@ async function getGitFileDiff(cwd: string, file: string, baseRef?: string): Prom
     const out = await git(cwd, ['diff', validBase, '--', file]).catch(() => '');
     if (out.trim()) return out;
     const status = await git(cwd, ['status', '--porcelain', '--', file]).catch(() => '');
-    return status.includes('??') ? untrackedFileDiff(cwd, file) : '';
+    return status.includes('??') ? untrackedDiffHere(cwd, file) : '';
   }
 
   for (const args of [['diff', 'HEAD'], ['diff'], ['diff', '--cached']]) {
@@ -588,7 +659,12 @@ async function getGitFileDiff(cwd: string, file: string, baseRef?: string): Prom
     if (out.trim()) return out;
   }
   const status = await git(cwd, ['status', '--porcelain', '--', file]).catch(() => '');
-  return status.includes('??') ? untrackedFileDiff(cwd, file) : '';
+  return status.includes('??') ? untrackedDiffHere(cwd, file) : '';
+}
+
+/** An untracked file's diff, from wherever this request's repository is. */
+function untrackedDiffHere(cwd: string, file: string): Promise<string> {
+  return untrackedFileDiffAny(cwd, file, git);
 }
 
 /**
@@ -609,19 +685,208 @@ function coalesce<T>(inFlight: Map<string, Promise<T>>, key: string, work: () =>
   return started;
 }
 
+// ─── One spawn per refresh on a remote host ──────────────────────────────────
+// The explorer's +N/-N column polls every few seconds and the Diff tab every two,
+// and each pass is a probe, a status, a numstat and one spawn per untracked file.
+// On a remote host (or a WSL folder) those commands run in one batched script
+// (exec-git-batch.ts), the untracked files' line counts in a second one. A batch that
+// is not answered in the expected format returns null and the one-spawn-per-command
+// code below it runs.
+
+const git0 = (args: string[]): BatchGroup => ({ dir: 'c', args });
+
+/**
+ * Where a batch for `cwd` can run: the remote host of the request or, for a folder on a
+ * WSL share, its distro; undefined for a Windows folder, which runs Windows git.
+ */
+function batchContext(cwd: string): GitContext | undefined {
+  return currentSshGit() ?? wslGitContextFor(cwd) ?? undefined;
+}
+
+/**
+ * `runGitBatch`, with what `git()` above does for the same failure: no ssh
+ * executable to run is "could not reach the host" (marked, so an inner swallow
+ * cannot turn it into "no changes"), never an empty answer.
+ */
+async function runGitBatch(context: GitContext, cwd: string, groups: readonly BatchGroup[]): Promise<BatchOutcome[] | null> {
+  try {
+    return await runBatchRaw(context, isWslContext(context) ? context.wsl.posix : cwd, groups);
+  } catch (err) {
+    // A WSL folder has no "unreachable": it is run command by command.
+    if (err instanceof BatchSetupError && isWslContext(context)) return null;
+    if (err instanceof BatchSetupError) {
+      markSshUnreachable();
+      throw new Error(SSH_UNREACHABLE_MESSAGE, { cause: err });
+    }
+    throw err;
+  }
+}
+
+const untrackedNumstatArgs = (rel: string): string[] => ['diff', '--no-index', '--numstat', '--', '/dev/null', rel];
+
+/** The line count `countUntrackedAdditions` reads off a `--no-index --numstat` answer. */
+function additionsFromNumstat(out: string): number {
+  const added = Number.parseInt(out.split('\t')[0], 10);
+  return Number.isFinite(added) ? added : 0;
+}
+
+interface RemoteChanged {
+  files: ChangedFile[];
+  /** False for a folder that is not a git repository: no files, and the "snapshot" label. */
+  isRepo: boolean;
+}
+
+/** Added files whose line count `git diff HEAD --numstat` does not carry, counted in one more spawn. */
+async function countUntracked(cwd: string, rels: string[]): Promise<number[] | null> {
+  if (rels.length === 0) return [];
+  const remote = currentSshGit();
+  if (!remote) return null;
+  const counted = await runGitBatch(remote, cwd, rels.map((rel) => git0(untrackedNumstatArgs(rel))));
+  // `diff --no-index` exits 1 when the files differ; the text is the answer whatever the status.
+  return counted ? counted.map((c) => additionsFromNumstat(c.stdout)) : null;
+}
+
+async function batchedChangedFiles(cwd: string, baseRef?: string): Promise<RemoteChanged | null> {
+  const remote = batchContext(cwd);
+  if (!remote) return null;
+  const base = baseRef && isValidBaseRef(baseRef) ? baseRef : undefined;
+  const probe = git0(['rev-parse', '--is-inside-work-tree']);
+  const status = git0(['status', '--porcelain', '-unormal']);
+  const answers = await runGitBatch(remote, cwd, base
+    ? [probe, git0(['diff', base, '--name-status']), git0(['diff', base, '--numstat']), status]
+    : [probe, status, git0(['diff', 'HEAD', '--numstat'])]);
+  if (!answers) return null;
+  // Not a repository: a remote host says so; for a WSL folder the long way decides (it may be the non-git snapshot).
+  if (answers[0].status !== 0) return isWslContext(remote) ? null : { files: [], isRepo: false };
+
+  const statusOut = base ? answers[3].stdout : answers[1].stdout;
+  if (!base && !statusOut.trim()) return { files: [], isRepo: true };
+  const entries = parsePorcelainStatus(statusOut);
+  const listed = base
+    ? changedAgainstBase(entries, answers[1].stdout, answers[2].stdout)
+    : changedAgainstHead(entries, answers[2].stdout);
+  await fillUntrackedCounts(cwd, listed);
+  return { files: listed.out, isRepo: true };
+}
+
+type StatusEntries = ReturnType<typeof parsePorcelainStatus>;
+
+/** The files of a pass, and which of them are added files still waiting for a line count. */
+interface ListedChanges {
+  out: ChangedFile[];
+  pending: Array<{ index: number; rel: string }>;
+}
+
+/** Against a base ref: the diff's own files, plus the added files the status names and the diff does not. */
+function changedAgainstBase(entries: StatusEntries, nameStatusOut: string, numstatOut: string): ListedChanges {
+  const out: ChangedFile[] = [...parseNameStatus(nameStatusOut, parseNumstat(numstatOut))];
+  const pending: ListedChanges['pending'] = [];
+  const seen = new Set(out.map((f) => f.path));
+  for (const e of entries) {
+    if (seen.has(e.path) || e.status !== 'added') continue;
+    pending.push({ index: out.length, rel: e.path });
+    out.push({ ...e, additions: 0, deletions: 0 });
+    seen.add(e.path);
+  }
+  return { out, pending };
+}
+
+/** Against HEAD: every status entry, with the numstat line it has; an added file without one is counted later. */
+function changedAgainstHead(entries: StatusEntries, numstatOut: string): ListedChanges {
+  const stats = parseNumstat(numstatOut);
+  const out: ChangedFile[] = [];
+  const pending: ListedChanges['pending'] = [];
+  for (const e of entries) {
+    const stat = stats.get(e.path);
+    if (stat) { out.push({ ...e, ...stat }); continue; }
+    if (e.status === 'added') pending.push({ index: out.length, rel: e.path });
+    out.push({ ...e, additions: 0, deletions: 0 });
+  }
+  return { out, pending };
+}
+
+/** Line counts for the pending added files: one batch when there is one, else one spawn each. */
+async function fillUntrackedCounts(cwd: string, { out, pending }: ListedChanges): Promise<void> {
+  const counts = await countUntracked(cwd, pending.map((p) => p.rel));
+  for (const [i, p] of pending.entries()) {
+    const additions = counts ? counts[i] : await countUntrackedAdditions(cwd, p.rel);
+    out[p.index] = { ...out[p.index], additions };
+  }
+}
+
+const remoteChangedInFlight = new Map<string, Promise<RemoteChanged | null>>();
+
+/**
+ * `batchedChangedFiles`, shared by the callers that arrive while one pass runs (the
+ * column and the Diff tab both poll), and, for a poll, by every caller until the
+ * host's fingerprint changes (exec-snapshot.ts): the column and the Diff tab are
+ * one consumer of one answer. A null (the batch was not understood) is never kept.
+ * The caller's priority is part of the key, so a click is not answered by a
+ * poll's run.
+ */
+function remoteChangedCoalesced(cwd: string, baseRef?: string): Promise<RemoteChanged | null> {
+  const remote = batchContext(cwd);
+  const key = `${sshLocationKey()}\0${currentSpawnPriority()}\0${cwd}\0${baseRef || ''}`;
+  const compute = () => checkedForSsh(() => batchedChangedFiles(cwd, baseRef));
+  return coalesce(remoteChangedInFlight, key, () => (remote
+    ? cachedForPoll({
+      context: remote,
+      key: `changed\0${cwd}\0${baseRef || ''}`,
+      token: (fp) => fp.all,
+      compute,
+      cacheable: (value) => value !== null,
+    })
+    : compute()));
+}
+
+/** One file's diff on a remote host: the probe, the candidate diffs and the status in one spawn, the untracked file's diff in a second. */
+async function remoteFileDiffBatched(cwd: string, file: string, baseRef?: string): Promise<string | null> {
+  const remote = batchContext(cwd);
+  if (!remote) return null;
+  const base = baseRef && isValidBaseRef(baseRef) ? baseRef : undefined;
+  const candidates = base
+    ? [git0(['diff', base, '--', file])]
+    : [git0(['diff', 'HEAD', '--', file]), git0(['diff', '--', file]), git0(['diff', '--cached', '--', file])];
+  const answers = await runGitBatch(remote, cwd, [
+    git0(['rev-parse', '--is-inside-work-tree']),
+    ...candidates,
+    git0(['status', '--porcelain', '--', file]),
+  ]);
+  if (!answers) return null;
+  if (answers[0].status !== 0) return isWslContext(remote) ? null : '';
+  for (const answer of answers.slice(1, 1 + candidates.length)) {
+    if (answer.stdout.trim()) return answer.stdout;
+  }
+  if (!answers[answers.length - 1].stdout.includes('??')) return '';
+  // A WSL folder's untracked file is read through its share, as `untrackedFileDiffAny` does there.
+  if (isWslContext(remote)) return untrackedFileDiff(cwd, file);
+  if (canonicalRemoteRelPath(file) === null) return '';
+  const untracked = await runGitBatch(remote, cwd, [git0(untrackedDiffArgs(file))]);
+  return untracked ? untracked[0].stdout : null;
+}
+
+/** The command that prints an untracked file's diff against nothing, run by git where the file is (git-view.ts runs it too). */
+export const untrackedDiffArgs = (file: string): string[] =>
+  ['diff', '--no-index', '--no-ext-diff', '--no-textconv', '--no-color', '--', '/dev/null', file];
+
 const changedFilesInFlight = new Map<string, Promise<ChangedFile[]>>();
 const fileDiffsInFlight = new Map<string, Promise<string>>();
 
 export async function getChangedFiles(cwd: string, baseRef?: string): Promise<ChangedFile[]> {
   if (!cwd) cwd = process.cwd();
-  const key = `${cwd} ${baseRef || ''}`;
-  return coalesce(changedFilesInFlight, key, async () => (
-    await isGitRepo(cwd)
-      ? getGitChangedFiles(cwd, baseRef)
-      // No git — use snapshot system, which coalesces on its own key too so a
-      // scan shared with a direct caller is still only walked once.
-      : getSnapshotChangedFilesCoalesced(cwd)
-  ));
+  if (batchContext(cwd)) {
+    const batched = await remoteChangedCoalesced(cwd, baseRef);
+    if (batched) return batched.files;
+  }
+  const key = `${sshLocationKey()}\0${cwd}\0${baseRef || ''}`;
+  return coalesce(changedFilesInFlight, key, () => checkedForSsh(async () => {
+    if (await isGitRepo(cwd)) return getGitChangedFiles(cwd, baseRef);
+    // The snapshot system walks the LOCAL disk: never for a remote host path.
+    if (currentSshGit()) return [];
+    // No git — use snapshot system, which coalesces on its own key too so a
+    // scan shared with a direct caller is still only walked once.
+    return getSnapshotChangedFilesCoalesced(cwd);
+  }));
 }
 
 /**
@@ -644,17 +909,43 @@ export async function getChangedFilesWithBaseline(
   cwd: string,
 ): Promise<{ files: ChangedFile[]; baseline: 'git' | 'snapshot' }> {
   if (!cwd) cwd = process.cwd();
+  if (batchContext(cwd)) {
+    const batched = await remoteChangedCoalesced(cwd);
+    if (batched) return { files: batched.files, baseline: batched.isRepo ? 'git' : 'snapshot' };
+  }
   const baseline = await isGitRepo(cwd) ? 'git' as const : 'snapshot' as const;
-  return { files: await getChangedFiles(cwd), baseline };
+  // After the probe, so an unreachable remote host is thrown rather than labelled.
+  const files = await getChangedFiles(cwd);
+  return { files, baseline };
 }
 
 export async function getFileDiff(cwd: string, file: string, baseRef?: string): Promise<string> {
   if (!file) return '';
   if (!cwd) cwd = process.cwd();
-  const key = `${cwd} ${file} ${baseRef || ''}`;
-  return coalesce(fileDiffsInFlight, key, async () => (
-    await isGitRepo(cwd) ? getGitFileDiff(cwd, file, baseRef) : getSnapshotFileDiff(cwd, file)
-  ));
+  const remote = batchContext(cwd);
+  const key = `${sshLocationKey()}\0${remote ? currentSpawnPriority() : ''}\0${cwd}\0${file}\0${baseRef || ''}`;
+  const compute = () => checkedForSsh(async () => {
+    if (batchContext(cwd)) {
+      const batched = await remoteFileDiffBatched(cwd, file, baseRef);
+      if (batched !== null) return batched;
+    }
+    if (await isGitRepo(cwd)) return getGitFileDiff(cwd, file, baseRef);
+    return currentSshGit() ? '' : getSnapshotFileDiff(cwd, file);
+  });
+  // On a remote host a poll re-fetches a file's diff only when that file's own
+  // fingerprint changed (exec-snapshot.ts); a named base adds where the refs point.
+  return coalesce(fileDiffsInFlight, key, () => (remote
+    ? cachedForPoll({
+      context: remote,
+      key: `diff\0${cwd}\0${file}\0${baseRef || ''}`,
+      token: (fp) => {
+        const fileKey = fp.fileKey(fp.toplevel, file);
+        if (fileKey === null) return null;
+        return baseRef ? `${fileKey}\0${fp.refs}` : fileKey;
+      },
+      compute,
+    })
+    : compute()));
 }
 
 /** Reset the snapshot for a directory so next poll re-baselines. */

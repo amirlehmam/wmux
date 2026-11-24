@@ -54,6 +54,7 @@ import { setKeyRemaps } from './key-remaps';
 import { useUiTheme } from './hooks/useUiTheme';
 import { useUiMode } from './hooks/useUiMode';
 import { useWindowTransparency } from './hooks/useWindowTransparency';
+import { useWorkspaceWarm } from './hooks/useWorkspaceWarm';
 import { usePaneFill } from './hooks/usePaneFill';
 import { customBgLayerAlpha, hasCustomBackground } from './store/backdrop';
 import type {
@@ -599,6 +600,7 @@ export default function App() {
   useUiMode();
   useWindowTransparency();
   usePaneFill();
+  useWorkspaceWarm(activeWorkspaceId);
   const t = useT();
 
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);

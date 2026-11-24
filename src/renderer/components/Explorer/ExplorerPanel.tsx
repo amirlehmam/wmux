@@ -8,7 +8,7 @@ import {
 } from '../../../shared/types';
 import {
   flattenVisible, forgetTree, nextRefillPaths, pathRoot, pickRootSurface, pruneExpanded, recallTree,
-  rememberTree, responseKey, toAbsolutePath, toggleExpanded, treeCacheKey, usableSticky,
+  rememberTree, responseKey, toAbsolutePath, toRemotePath, toggleExpanded, treeCacheKey, usableSticky,
   type CachedTree, type ExplorerRow, type ExplorerTreeCache, type ExplorerTreeState, type StickyRoot,
 } from './explorer-state';
 import { explorerErrorKey } from './explorer-errors';
@@ -118,6 +118,12 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
   // produced `/c/Users/x/repo\README.md` — a string no Windows API accepts, so
   // opening, revealing and copying a path all failed silently.
   const [resolvedRoot, setResolvedRoot] = useState<string | null>(null);
+  // The root listing came from a remote host over ssh. Taken from the same
+  // reply as `resolvedRoot`, so no second mechanism has to know which
+  // workspaces have a target: it decides which actions make sense (the shell
+  // ones act on LOCAL paths), how a path is spelled, and whether the Diff tab
+  // pins this root as if it were a local folder.
+  const [rootRemote, setRootRemote] = useState(false);
 
   const absRoot = pathRoot(resolvedRoot, root);
 
@@ -161,6 +167,7 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
   // longer the one on screen.
   const resetRootState = useCallback(() => {
     setResolvedRoot(null);
+    setRootRemote(false);
     setTruncated(false);
     setOpenError(null);
   }, []);
@@ -202,6 +209,7 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
     liveRef.current = {
       tree: { ...liveRef.current.tree, [result.relPath]: result.entries },
       resolvedRoot: relPath === '' ? result.root : liveRef.current.resolvedRoot,
+      remote: relPath === '' ? result.remote === true : liveRef.current.remote,
     };
     // Written under the key THIS call was made for — `treeCacheKey(root,
     // showHidden)` off the caller's own closure, never off a later render.
@@ -209,6 +217,7 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
     if (relPath === '') {
       setTruncated(result.truncated);
       setResolvedRoot(result.root);
+      setRootRemote(result.remote === true);
     }
     setTree(liveRef.current.tree);
   }, []);
@@ -301,6 +310,7 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
     requestedRef.current = { key: '', paths: new Set() };
     setTree(liveRef.current.tree);
     setResolvedRoot(liveRef.current.resolvedRoot);
+    setRootRemote(liveRef.current.remote === true);
     setError(null);
     setOpenError(null);
     setTruncated(false);
@@ -374,8 +384,8 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
   // and reveals with must be a real Windows path — built from `absRoot`, never
   // from the reported cwd.
   const absolutePathOf = useCallback(
-    (relPath: string) => toAbsolutePath(absRoot, relPath),
-    [absRoot],
+    (relPath: string) => (rootRemote ? toRemotePath(absRoot, relPath) : toAbsolutePath(absRoot, relPath)),
+    [absRoot, rootRemote],
   );
 
   const handleActivate = useCallback((row: ExplorerRow, opts: { keep: boolean }) => {
@@ -455,8 +465,10 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
   const viewChanges = useCallback((row: ExplorerRow | null) => {
     if (!activeWorkspaceId || !absRoot) return;
     const file = row && row.entry.kind === 'file' ? row.relPath : null;
-    openDiffView(useStore.getState(), activeWorkspaceId, focusedPaneId, absRoot, file);
-  }, [activeWorkspaceId, focusedPaneId, absRoot]);
+    // A remote root is not a local folder: the tab is opened without pinning it,
+    // and main answers it from the workspace's ssh target.
+    openDiffView(useStore.getState(), activeWorkspaceId, focusedPaneId, absRoot, file, { remote: rootRemote });
+  }, [activeWorkspaceId, focusedPaneId, absRoot, rootRemote]);
 
   const rootLabel = absRoot ? (absRoot.split(/[\\/]/).filter(Boolean).pop() ?? absRoot) : '';
 
@@ -607,21 +619,28 @@ export function ExplorerPanel({ onClose, focusedPaneId, workspaceId, rootSurface
               only selects the item in Explorer, and "open in the default app"
               is the one action that is MORE useful on a file wmux cannot
               render itself. `viewable` means "wmux can show this as text",
-              which was never the right question for either. */}
-          <div
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => { runShellAction('reveal', contextMenu.row.relPath); closeContextMenu(); }}
-          >
-            {t('explorer.reveal', 'Reveal in File Explorer')}
-          </div>
-          <div
-            className="ctx-menu__item"
-            role="menuitem"
-            onClick={() => { runShellAction('openInApp', contextMenu.row.relPath); closeContextMenu(); }}
-          >
-            {t('explorer.openInApp', 'Open in default app')}
-          </div>
+              which was never the right question for either.
+              Neither is offered for a remote host: both act on LOCAL paths.
+              Main refuses them with `remote` regardless; this only stops the
+              UI from offering what cannot work. */}
+          {!rootRemote && (
+            <div
+              className="ctx-menu__item"
+              role="menuitem"
+              onClick={() => { runShellAction('reveal', contextMenu.row.relPath); closeContextMenu(); }}
+            >
+              {t('explorer.reveal', 'Reveal in File Explorer')}
+            </div>
+          )}
+          {!rootRemote && (
+            <div
+              className="ctx-menu__item"
+              role="menuitem"
+              onClick={() => { runShellAction('openInApp', contextMenu.row.relPath); closeContextMenu(); }}
+            >
+              {t('explorer.openInApp', 'Open in default app')}
+            </div>
+          )}
           {!contextMenu.row.entry.viewable && contextMenu.row.entry.kind === 'file' && (
             <div className="explorer-panel__ctx-hint">
               {t('explorer.notViewable', 'wmux can only open text files')}

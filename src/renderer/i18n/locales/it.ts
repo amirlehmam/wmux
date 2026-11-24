@@ -339,6 +339,7 @@ export const it: Translation = {
   'explorer.openInApp': "Apri nell'app predefinita",
   'explorer.error.no_root': 'Questo riquadro non ha ancora segnalato una directory di lavoro',
   'explorer.error.remote': 'Questo riquadro è in una sessione SSH',
+  'explorer.error.ssh-unreachable': 'Impossibile raggiungere l’host remoto tramite SSH',
   'explorer.error.invalid_path': 'Questo percorso non è consentito',
   'explorer.error.outside_root': 'Questo percorso è fuori dalla cartella del riquadro',
   'explorer.error.not_found': 'Cartella non trovata',

@@ -408,6 +408,7 @@ export const zhTW: Translation = {
   'explorer.openInApp': '以預設應用程式開啟',
   'explorer.error.no_root': '此窗格尚未回報工作目錄',
   'explorer.error.remote': '此窗格位於 SSH 工作階段中',
+  'explorer.error.ssh-unreachable': '無法透過 SSH 連線到遠端主機',
   'explorer.error.invalid_path': '不允許此路徑',
   'explorer.error.outside_root': '此路徑不在窗格資料夾內',
   'explorer.error.not_found': '找不到資料夾',

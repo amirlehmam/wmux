@@ -65,6 +65,19 @@ function announceSurfaceClosed(surfaceId: string): void {
   }
 }
 
+/**
+ * A workspace was closed: main drops what it keeps by workspace id (its ssh target, and with it the
+ * host's worker when no other workspace uses the host). One-way and a no-op without the preload.
+ */
+export function notifyWorkspaceClosed(workspaceId: string): void {
+  try {
+    (globalThis as { window?: { wmux?: { ssh?: { workspaceClosed?: (id: string) => void } } } }).window
+      ?.wmux?.ssh?.workspaceClosed?.(workspaceId);
+  } catch {
+    /* preload/window unavailable (tests) — nothing held in main */
+  }
+}
+
 /** Walk a split (sub)tree and kill every terminal surface's PTY. Used when a whole
  *  pane or workspace is torn down and all its shells must die at once. */
 export function killTreeTerminalPtys(tree: SplitNode): void {

@@ -350,6 +350,7 @@ export const ja: Translation = {
   'explorer.openInApp': '既定のアプリで開く',
   'explorer.error.no_root': 'このペインはまだ作業ディレクトリを報告していません',
   'explorer.error.remote': 'このペインは SSH セッション内です',
+  'explorer.error.ssh-unreachable': 'SSH でリモートホストに接続できませんでした',
   'explorer.error.invalid_path': 'そのパスは許可されていません',
   'explorer.error.outside_root': 'そのパスはペインのフォルダーの外です',
   'explorer.error.not_found': 'フォルダーが見つかりません',

@@ -356,6 +356,7 @@ export const ko: Translation = {
   'explorer.openInApp': '기본 앱으로 열기',
   'explorer.error.no_root': '이 창은 아직 작업 디렉터리를 보고하지 않았습니다',
   'explorer.error.remote': '이 창은 SSH 세션 안에 있습니다',
+  'explorer.error.ssh-unreachable': 'SSH로 원격 호스트에 연결할 수 없습니다',
   'explorer.error.invalid_path': '허용되지 않는 경로입니다',
   'explorer.error.outside_root': '창 폴더 밖의 경로입니다',
   'explorer.error.not_found': '폴더를 찾을 수 없습니다',

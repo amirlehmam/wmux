@@ -350,6 +350,7 @@ export const ru: Translation = {
   'explorer.openInApp': 'Открыть в приложении по умолчанию',
   'explorer.error.no_root': 'Эта панель ещё не сообщила рабочий каталог',
   'explorer.error.remote': 'Эта панель находится в сеансе SSH',
+  'explorer.error.ssh-unreachable': 'Не удалось подключиться к удалённому хосту по SSH',
   'explorer.error.invalid_path': 'Этот путь не разрешён',
   'explorer.error.outside_root': 'Этот путь вне папки панели',
   'explorer.error.not_found': 'Папка не найдена',

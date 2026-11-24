@@ -52,6 +52,8 @@ export interface GitRepoInfo {
   refs: GitRefs;
   /** The base a branch review starts on when nobody picked one. */
   defaultBase: string | null;
+  /** The repository is on a remote host: `root` is not a local folder and must not be pinned as one. */
+  remote?: true;
 }
 
 export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'typechange' | 'conflicted';
@@ -106,7 +108,23 @@ export interface GitBranchChanges {
 
 export type GitGraphScope = 'all' | 'local' | 'worktree';
 
-export type GitViewRequest =
+/**
+ * `surfaceId` names the surface the view belongs to. When that surface's
+ * workspace has an ssh target, main runs the request on the remote host and
+ * IGNORES `cwd`: the checkout comes from the target, not from the renderer.
+ * Without a target it changes nothing.
+ */
+export type GitViewRequest = GitViewRequestBody & {
+  surfaceId?: string;
+  /**
+   * Set by a pane's own timer. On an ssh workspace main then runs the request as
+   * background work, behind a person's clicks, and takes the flag off before it
+   * keys or runs anything. It never changes the answer.
+   */
+  poll?: true;
+};
+
+type GitViewRequestBody =
   | { op: 'repo'; cwd: string }
   | { op: 'working'; cwd: string; worktree: string }
   | { op: 'workingDiff'; cwd: string; worktree: string; file: string; section: GitWorkingSection }

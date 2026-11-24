@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { openInWmuxBrowser } from '../../utils/open-in-browser';
 import { useT, type TranslationKey } from '../../i18n';
+import { isRemoteIdentity } from '../../../shared/remote-identity';
 import {
   SOURCE_VIRTUALIZE_THRESHOLD,
   continueList,
@@ -288,13 +289,16 @@ type Translate = (key: TranslationKey, fallback?: string) => string;
 function menuItems(props: ToolbarProps, t: Translate): MenuItem[] {
   const { filePath, relativePath, dirty, onCopyText, onReload, onReveal, onOpenInApp, onRevert } = props;
   const hasPath = !!filePath;
+  // A remote file's path is an `ssh://` identity, not a local path: the
+  // two shell actions have nothing to act on, so they stay listed but disabled.
+  const isLocalFile = hasPath && !isRemoteIdentity(filePath);
   return [
     { key: 'copyPath', label: t('markdown.copyPath', 'Copy file path'), enabled: hasPath, run: () => onCopyText(filePath!) },
     { key: 'copyRel', label: t('markdown.copyRelativePath', 'Copy relative path'), enabled: !!relativePath, run: () => onCopyText(relativePath!) },
     { key: 'reload', label: t('markdown.reload', 'Reload from disk'), enabled: hasPath, run: () => onReload(filePath!) },
     { key: 'revert', label: t('markdown.revert', 'Discard changes'), enabled: hasPath && dirty, run: onRevert },
-    { key: 'reveal', label: t('markdown.reveal', 'Reveal in File Explorer'), enabled: hasPath, run: () => onReveal(filePath!) },
-    { key: 'openInApp', label: t('markdown.openInApp', 'Open in default app'), enabled: hasPath, run: () => onOpenInApp(filePath!) },
+    { key: 'reveal', label: t('markdown.reveal', 'Reveal in File Explorer'), enabled: isLocalFile, run: () => onReveal(filePath!) },
+    { key: 'openInApp', label: t('markdown.openInApp', 'Open in default app'), enabled: isLocalFile, run: () => onOpenInApp(filePath!) },
   ];
 }
 

@@ -376,6 +376,7 @@ export const pt: Translation = {
   'explorer.openInApp': 'Abrir no aplicativo padrão',
   'explorer.error.no_root': 'Este painel ainda não informou um diretório de trabalho',
   'explorer.error.remote': 'Este painel está em uma sessão SSH',
+  'explorer.error.ssh-unreachable': 'Não foi possível alcançar o host remoto via SSH',
   'explorer.error.invalid_path': 'Esse caminho não é permitido',
   'explorer.error.outside_root': 'Esse caminho está fora da pasta do painel',
   'explorer.error.not_found': 'Pasta não encontrada',

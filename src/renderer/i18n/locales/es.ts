@@ -340,6 +340,7 @@ export const es: Translation = {
   'explorer.openInApp': 'Abrir en la aplicación predeterminada',
   'explorer.error.no_root': 'Este panel aún no ha informado de un directorio de trabajo',
   'explorer.error.remote': 'Este panel está dentro de una sesión SSH',
+  'explorer.error.ssh-unreachable': 'No se pudo conectar con el host remoto por SSH',
   'explorer.error.invalid_path': 'Esa ruta no está permitida',
   'explorer.error.outside_root': 'Esa ruta está fuera de la carpeta del panel',
   'explorer.error.not_found': 'Carpeta no encontrada',

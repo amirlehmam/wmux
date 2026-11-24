@@ -350,6 +350,7 @@ export const tr: Translation = {
   'explorer.openInApp': 'Varsayılan uygulamada aç',
   'explorer.error.no_root': 'Bu bölme henüz bir çalışma dizini bildirmedi',
   'explorer.error.remote': 'Bu bölme bir SSH oturumunda',
+  'explorer.error.ssh-unreachable': 'Uzak ana bilgisayara SSH ile ulaşılamadı',
   'explorer.error.invalid_path': 'Bu yola izin verilmiyor',
   'explorer.error.outside_root': 'Bu yol bölmenin klasörünün dışında',
   'explorer.error.not_found': 'Klasör bulunamadı',

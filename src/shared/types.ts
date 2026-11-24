@@ -366,6 +366,13 @@ export interface ExplorerListOk {
   entries: ExplorerEntry[];
   /** Directory exceeded MAX_ENTRIES; `entries` is a prefix. */
   truncated: boolean;
+  /**
+   * Served from a remote host over ssh: `root` is a path THERE, not a local
+   * folder. The renderer uses it to hide the actions that act on local paths
+   * (reveal, open in the default app) and to point the Diff tab at the target
+   * instead of pinning `root` as if it were local. Absent for a local listing.
+   */
+  remote?: true;
 }
 
 export type ExplorerErrorCode =
@@ -383,7 +390,9 @@ export type ExplorerErrorCode =
   // ─── Write-side codes ──────────────────────────────────────────────────────
   | 'not_granted'     // never opened into a live pane in this window — see file-grants.ts
   | 'conflict'        // changed on disk since it was read; the save was REFUSED, not merged
-  | 'write_failed';
+  | 'write_failed'
+  // ─── Remote (ssh) explorer ───────────────────────────────────────────
+  | 'ssh-unreachable'; // the workspace's remote host could not be reached over ssh; nothing local is shown instead
 
 /** `error` stays English for main-process callers; `code` is what the renderer
  *  maps to a translation key. Same split as MarkdownReadError (commit 82a779f). */
@@ -1045,6 +1054,12 @@ export const IPC_CHANNELS = {
   // payload: main parses and gates it, so the allow-list sits on the trusted
   // side. Answers the accepted Windows path, or null.
   EXPLORER_REPORT_OSC7: 'explorer:report-osc7',
+  // The window shows this workspace now (a switch to it, or the window coming
+  // back): main starts the persistent worker of its ssh target, or of its WSL distro when its
+  // folder is on a WSL share, so the first click does not pay the start (exec-warm.ts).
+  // One-way: a workspace id, and the folder when it is on a WSL share.
+  WORKSPACE_WARM: 'workspace:warm',
+  SSH_WORKSPACE_CLOSED: 'ssh:workspace-closed',
   // Orchestration (wmux-orchestrator plugin state broadcast)
   ORCHESTRATION_UPDATE: 'orchestration:update',
   ORCHESTRATION_CLEAR: 'orchestration:clear',

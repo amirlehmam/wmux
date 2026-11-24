@@ -8,12 +8,12 @@
  * not move it, which is the whole point of reviewing one agent's work while
  * others keep running.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SurfaceRef } from '../../../shared/types';
 import type { GitGraphScope, GitRepoInfo, GitWorktreeEntry } from '../../../shared/git-view';
 import { useT } from '../../i18n';
 import { useStore } from '../../store';
-import { baseName, shortHash, useGitQuery } from './git-api';
+import { baseName, GitQueryContext, shortHash, useGitQuery } from './git-api';
 import GitWorkingView from './GitWorkingView';
 import GitBranchView from './GitBranchView';
 import GitGraphView from './GitGraphView';
@@ -37,12 +37,27 @@ function isSurfaceVisible(surfaceId: string): boolean {
   return typeof check === 'function' ? check.call(el, { visibilityProperty: true, contentVisibilityAuto: true }) : true;
 }
 
-/** A tick that advances every POLL_MS while visible, and on agent edits. */
-function usePollTick(surfaceId: string): [number, () => void] {
+/**
+ * A tick that advances every POLL_MS while visible, and on agent edits. The
+ * third value says whether the last tick was the timer's (a poll) or someone's
+ * (an agent's edit, the Refresh button): see `GitQueryScope`.
+ */
+function usePollTick(surfaceId: string): [number, () => void, { current: boolean }] {
   const [tick, setTick] = useState(0);
-  const bump = useCallback(() => setTick((n) => n + 1), []);
+  const polled = useRef(false);
+  const bump = useCallback(() => { polled.current = false; setTick((n) => n + 1); }, []);
   useEffect(() => {
-    const timer = setInterval(() => { if (isSurfaceVisible(surfaceId)) bump(); }, POLL_MS);
+    // A pane that was hidden and is shown again asks as a person would: its
+    // first look must not be answered from a long-quiet background cycle.
+    let wasVisible = true;
+    const timer = setInterval(() => {
+      const visible = isSurfaceVisible(surfaceId);
+      if (visible) {
+        polled.current = wasVisible;
+        setTick((n) => n + 1);
+      }
+      wasVisible = visible;
+    }, POLL_MS);
     let debounce: ReturnType<typeof setTimeout> | undefined;
     const unsub = window.wmux?.diff?.onUpdate?.(() => {
       clearTimeout(debounce);
@@ -54,7 +69,7 @@ function usePollTick(surfaceId: string): [number, () => void] {
       unsub?.();
     };
   }, [surfaceId, bump]);
-  return [tick, bump];
+  return [tick, bump, polled];
 }
 
 function WorktreeItem({ wt, selected, terminals, onSelect }: Readonly<{
@@ -105,7 +120,7 @@ interface Props {
 
 export default function GitPane({ surfaceId, cwd, surface, onPatch }: Readonly<Props>) {
   const t = useT();
-  const [tick, bump] = usePollTick(surfaceId);
+  const [tick, bump, polled] = usePollTick(surfaceId);
   // Branch and graph refetch on a new HEAD (from the poll) or on this button;
   // a plain poll tick must not re-run `git log` over the whole history.
   const [manual, setManual] = useState(0);
@@ -118,7 +133,11 @@ export default function GitPane({ surfaceId, cwd, surface, onPatch }: Readonly<P
     document.addEventListener('wmux:refresh-surface', onRefresh);
     return () => document.removeEventListener('wmux:refresh-surface', onRefresh);
   }, [refresh, surfaceId]);
-  const repoQuery = useGitQuery<GitRepoInfo>(cwd ? { op: 'repo', cwd } : null, tick);
+  // Always asked, even with no local folder: a workspace on a remote host has
+  // none, and main answers from its ssh target. Without a target, no folder is
+  // still "No folder to inspect yet" below, whatever the answer.
+  const scope = useMemo(() => ({ surfaceId, polled }), [surfaceId, polled]);
+  const repoQuery = useGitQuery<GitRepoInfo>({ op: 'repo', cwd: cwd ?? '' }, tick, scope);
   const repo = repoQuery.data;
   const mode: GitMode = surface.gitMode ?? 'working';
 
@@ -126,7 +145,8 @@ export default function GitPane({ surfaceId, cwd, surface, onPatch }: Readonly<P
   // (`wmux new-surface --type git`): the workspace cwd it fell back to is
   // last-reporter-wins and would otherwise move the view on its own.
   useEffect(() => {
-    if (repo && !surface.cwd) onPatch({ cwd: repo.root });
+    // Never a remote host path: it is not a local folder, and would outlive the ssh target.
+    if (repo && !repo.remote && !surface.cwd) onPatch({ cwd: repo.root });
   }, [repo, surface.cwd, onPatch]);
 
   const usable = useMemo(() => (repo?.worktrees ?? []).filter((w) => !w.bare && !w.prunable), [repo]);
@@ -152,7 +172,7 @@ export default function GitPane({ surfaceId, cwd, surface, onPatch }: Readonly<P
     if (target) requestFocusSurface(target.workspaceId, target.surfaceId);
   };
 
-  if (!cwd) return <div className="git-pane git-empty" data-surface-id={surfaceId}>{t('git.noFolder', 'No folder to inspect yet — open this tab from a terminal inside a repository')}</div>;
+  if (!cwd && !repo) return <div className="git-pane git-empty" data-surface-id={surfaceId}>{t('git.noFolder', 'No folder to inspect yet — open this tab from a terminal inside a repository')}</div>;
   if (repoQuery.error && !repo) {
     const msg = repoQuery.error.code === 'not_repo' ? t('git.notRepo', 'This folder is not inside a Git repository') : repoQuery.error.message;
     return <div className="git-pane" data-surface-id={surfaceId}><div className="git-empty git-empty--error">{msg}<div className="git-muted">{cwd}</div></div></div>;
@@ -167,6 +187,7 @@ export default function GitPane({ surfaceId, cwd, surface, onPatch }: Readonly<P
   ];
 
   return (
+    <GitQueryContext.Provider value={scope}>
     <div className="git-pane" data-surface-id={surfaceId}>
       <div className="git-pane__body">
       <aside className="git-sidebar">
@@ -249,5 +270,6 @@ export default function GitPane({ surfaceId, cwd, surface, onPatch }: Readonly<P
       </section>
       </div>
     </div>
+    </GitQueryContext.Provider>
   );
 }
