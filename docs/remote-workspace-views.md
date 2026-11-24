@@ -121,7 +121,16 @@ be pasted into an issue.
 
 ## WSL folders
 
-A folder on `\\wsl.localhost\<distro>\...` goes through the same modules, keyed by the distro instead of
+**Off by default.** Nobody sets a target for a WSL folder, so this route would change what a person sees
+without their having asked for anything. It is on only when wmux starts with `WMUX_WSL_FAST=1`
+(`wslFastRouteEnabled` in `git-view.ts`, the one switch: batch, gate, poll cache, worker and warm-up
+together). Without it a WSL folder is what it was before ssh workspaces: one `wsl.exe -d <distro> --cd
+<dir> --exec git` per command, re-run on every poll. With it, know the cost: a poll is answered from the
+cache while the checkout's fingerprint is unchanged, backing off to 30 s, so a commit or a save made from
+the workspace's own pane can show up to about 30 s late, and one `wsl.exe` per distro is started when the
+workspace comes on screen.
+
+With the switch on, a folder on `\\wsl.localhost\<distro>\...` goes through the same modules, keyed by the distro instead of
 a host: one script batches its git commands (`wsl-local.ts` runs it as `wsl.exe -d <distro> --exec sh -c
 <base64>`), the gate caps spawns per distro, the snapshot is keyed by distro and checkout, and one
 persistent `wsl.exe` per distro serves the reads. It differs in a few places:
@@ -134,6 +143,22 @@ persistent `wsl.exe` per distro serves the reads. It differs in a few places:
 - a save through wmux into the distro invalidates its snapshot (`noteWslWrite`).
 
 The explorer's own listing and reading of a WSL folder is not on this layer; see `wsl-explorer.md`.
+
+## What the argv validation is not
+
+`set-ssh-target` needs the pipe token, so setting a target is the same trust as typing in a pane, and the
+validation in `ssh-argv.ts` is there to parse the command, not to confine it. It refuses `LocalCommand`
+and `PermitLocalCommand`; it does **not** refuse `-o ProxyCommand=...` or `-F <file>`, and an `argv[0]`
+with a path runs the `ssh` at that path. Unlike a command typed in a pane, the target's ssh then runs
+unseen and again on every view poll. Do not read the validation as a sandbox.
+
+## The one git command that reads a file by name
+
+Every git command of these views reads through the index or the object store, except an untracked
+file's diff: `git diff --no-index -- /dev/null <file>` opens `<file>` on the host and follows a symlinked
+directory wherever it points. `canonicalRemoteRelPath` checks the spelling only, so both scripts that run
+a caller's git arguments (`GIT_SCRIPT`, `BATCH_SCRIPT`) walk that last argument first and refuse a symlink
+in any segment with status 126 (`NO_INDEX_GUARD_SH`, `ssh-path.ts`): the explorer jail's rule.
 
 ## Known limits, and what is not verified
 

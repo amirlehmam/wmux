@@ -13,7 +13,34 @@ permissions:
   contents: write
 
 jobs:
+  # The ssh-workspace suites (the explorer jail, the git batch script, the worker,
+  # the `diff --no-index` symlink check) run a real `sh` and `git` in place of ssh
+  # and wsl.exe, so on the Windows runner below they are SKIPPED and `npm test`
+  # there gates none of them. They run here instead, and the release waits for it
+  # (`needs`). WMUX_REQUIRE_POSIX=1 (set by the script) makes a missing tool fail
+  # the run rather than skip the suite. Nothing is built or published by this job.
+  posix-suites:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # No install scripts: these suites load no native module (node-pty) and
+      # start no Electron, so neither is compiled or downloaded here.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Test the suites that need a POSIX shell
+        run: npm run test:posix
+
   build-sign-release:
+    needs: posix-suites
     runs-on: windows-latest
 
     # SignPath Authenticode signing (issue #71). The signing steps run only when

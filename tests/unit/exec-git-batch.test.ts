@@ -10,7 +10,7 @@ import {
   runGitBatch,
   type BatchGroup,
 } from '../../src/main/exec-git-batch';
-import { sshScriptCommand, SSH_UNREACHABLE_MESSAGE, type SshGitContext } from '../../src/main/ssh-git';
+import { GIT_SCRIPT, sshScriptCommand, SSH_UNREACHABLE_MESSAGE, type SshGitContext } from '../../src/main/ssh-git';
 import { makeSpawnCounter, type SpawnCounter } from '../helpers/ssh-spawn-counter';
 import { parseSshTarget, type SshTarget } from '../../src/main/ssh-targets';
 import { BATCH_SCRIPT } from '../../src/main/exec-git-batch';
@@ -200,6 +200,55 @@ describe.skipIf(!hasPosixTools(['git', 'base64', 'mktemp', 'head']))('a batch ru
     for (const refused of out!.slice(3)) expect(refused).toEqual({ status: 125, stdout: '', stderr: '' });
   });
 
+  it('`diff --no-index` never reads through a symlink: the batch and the single-call script both refuse', async () => {
+    // What the Git view's untracked diff runs. With `out-link -> <outside>` in the checkout,
+    // `out-link/secret` is a canonical relative path, and git would follow the link.
+    const outside = path.join(tmp, 'outside');
+    const made = [path.join(repo, 'out-link'), path.join(repo, 'file-link'), path.join(repo, 'real dir'),
+      path.join(linked, 'out-link')];
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'secret'), 'TOP-SECRET\n');
+    fs.symlinkSync(outside, made[0]);
+    fs.symlinkSync(path.join(outside, 'secret'), made[1]);
+    fs.mkdirSync(made[2]);
+    fs.writeFileSync(path.join(made[2], 'new.txt'), 'fresh\n');
+    fs.symlinkSync(outside, made[3]);
+    const noIndex = (file: string): string[] => ['diff', '--no-index', '--no-color', '--', '/dev/null', file];
+    try {
+      const out = await runGitBatch(ctx(), repo, [
+        { dir: 'c', args: noIndex('real dir/new.txt') },
+        { dir: 'c', args: noIndex('out-link/secret') },
+        { dir: 'c', args: noIndex('file-link') },
+        { dir: 'c', args: noIndex('real dir/../out-link/secret') },
+        { dir: 'c', args: noIndex(path.join(outside, 'secret')) },
+        { dir: 'c', args: ['diff', '--no-index', '--numstat', '--', '/dev/null', 'out-link/secret'] },
+        { dir: 'w', worktree: linked, args: noIndex('out-link/secret') },
+        // Any other command is untouched by the check, whatever its last argument is.
+        { dir: 'c', args: ['status', '--porcelain', '--', 'out-link'] },
+      ]);
+      expect(out?.[0].status).toBe(1);
+      expect(out?.[0].stdout).toContain('+fresh');
+      for (const refused of out!.slice(1, 7)) {
+        expect(refused.status).toBe(126);
+        expect(refused.stdout).toBe('');
+      }
+      expect(out?.[7]).toMatchObject({ status: 0, stdout: '?? out-link\n' });
+
+      const single = (file: string) => spawnSync('/bin/sh', ['-c', GIT_SCRIPT, 'sh', repo, ...noIndex(file)], { encoding: 'utf8' });
+      expect(single('real dir/new.txt')).toMatchObject({ status: 1 });
+      expect(single('real dir/new.txt').stdout).toContain('+fresh');
+      for (const file of ['out-link/secret', 'file-link', path.join(outside, 'secret')]) {
+        const refused = single(file);
+        expect(refused.status).toBe(126);
+        expect(refused.stdout).toBe('');
+        expect(refused.stderr).not.toContain('TOP-SECRET');
+      }
+    } finally {
+      for (const entry of made) fs.rmSync(entry, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a worktree that is not a remote absolute path, without spawning', async () => {
     counter.reset();
     expect(await runGitBatch(ctx(), repo, [{ dir: 'w', worktree: 'relative', args: ['status'] }])).toBeNull();
@@ -225,7 +274,7 @@ describe.skipIf(!hasPosixTools(['git', 'base64', 'mktemp', 'head']))('a batch ru
     expect(cmd.wsl).toBe(true);
     const remoteCommand = cmd.args[cmd.args.length - 1];
     expect(remoteCommand).toMatch(/^set -f;IFS=;eval \$\(echo [A-Za-z0-9+/=]+\|base64 -d\)$/);
-    const ran = spawnSync('sh', ['-c', remoteCommand], { encoding: 'utf8' });
+    const ran = spawnSync('/bin/sh', ['-c', remoteCommand], { encoding: 'utf8' });
     const out = parseBatchOutput(ran.stdout, 'n0nce', 2);
     expect(out?.[0].stdout.trim()).toBe(repo);
     // The worktree gate (a here-document in the script) works through eval too.

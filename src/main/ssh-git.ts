@@ -31,6 +31,7 @@
 
 import { AsyncLocalStorage } from 'async_hooks';
 import { remoteFilePath, remoteInvocation } from './ssh-command';
+import { NO_INDEX_GUARD_SH, NO_INDEX_REFUSED_STATUS } from './ssh-path';
 import { isSpawnErrorCode, isWslRouteUnreachable, toolForSession } from './ssh-exec';
 import type { SshTarget } from './ssh-targets';
 
@@ -38,7 +39,10 @@ import type { SshTarget } from './ssh-targets';
 export const SSH_UNREACHABLE_MESSAGE = 'Could not reach the remote host over ssh';
 
 /** `git status` takes `.git/index.lock` unless told not to, and an agent may be committing; no prompts either. */
-export const GIT_SCRIPT = 'cwd=$1; shift\nexec env GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 git -C "$cwd" "$@"\n';
+export const GIT_SCRIPT = `cwd=$1; shift
+${NO_INDEX_GUARD_SH}no_index_ok "$cwd" "$@" || { echo 'wmux: refused, a symlink in the path' >&2; exit ${NO_INDEX_REFUSED_STATUS}; }
+exec env GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 git -C "$cwd" "$@"
+`;
 
 export interface SshGitContext {
   target: SshTarget;

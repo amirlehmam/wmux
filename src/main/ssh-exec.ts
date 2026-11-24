@@ -309,12 +309,13 @@ export function runSsh(
           resolve({ status: 0, stdout: out.toString(), stderr: errText, stdoutBuffer: out });
         },
       );
-      if (options.input !== undefined) {
-        // A child that exits before reading all of its input raises EPIPE here;
-        // the exit status is the answer, not this.
-        child.stdin?.on('error', () => undefined);
-        child.stdin?.end(options.input);
-      }
+      // stdin is ALWAYS ended, input or not. Windows OpenSSH (9.5) waits on an open
+      // stdin pipe before it lets the session finish: left open, about one read in
+      // four hung until the timeout, holding one of the host's three spawn slots.
+      // A child that exits before reading all of its input raises EPIPE here; the
+      // exit status is the answer, not this.
+      child.stdin?.on('error', () => undefined);
+      child.stdin?.end(options.input);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       resolve({ status: 1, stdout: '', stderr: message, stdoutBuffer: Buffer.alloc(0), spawnFailed: true });

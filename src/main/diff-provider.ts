@@ -6,6 +6,7 @@ import { isSafeRev, spawnGit, wslGitContextFor } from './git-view';
 import { canonicalRemoteRelPath } from './ssh-path';
 import { type GitContext, isWslContext } from './exec-location';
 import { currentSpawnPriority } from './exec-gate';
+import { endStdin } from './exec-worker-routed';
 import { cachedForPoll } from './exec-snapshot';
 import { BatchSetupError, runGitBatch as runBatchRaw, type BatchGroup, type BatchOutcome } from './exec-git-batch';
 import {
@@ -16,7 +17,13 @@ import {
   sshLocationKey,
 } from './ssh-git';
 
-const execFileAsync = promisify(execFile);
+const execFilePromise = promisify(execFile);
+/** `promisify(execFile)` with the child's stdin closed: see `endStdin` (a direct-route ssh hangs on an open one). */
+const execFileAsync: typeof execFilePromise = ((...callArgs: Parameters<typeof execFilePromise>) => {
+  const running = execFilePromise(...callArgs);
+  endStdin((running as { child?: Parameters<typeof endStdin>[0] }).child);
+  return running;
+}) as typeof execFilePromise;
 
 export interface ChangedFile {
   path: string;
@@ -755,33 +762,56 @@ async function batchedChangedFiles(cwd: string, baseRef?: string): Promise<Remot
   const statusOut = base ? answers[3].stdout : answers[1].stdout;
   if (!base && !statusOut.trim()) return { files: [], isRepo: true };
   const entries = parsePorcelainStatus(statusOut);
+  const listed = base
+    ? changedAgainstBase(entries, answers[1].stdout, answers[2].stdout)
+    : changedAgainstHead(entries, answers[2].stdout);
+  await fillUntrackedCounts(cwd, listed);
+  return { files: listed.out, isRepo: true };
+}
+
+type StatusEntries = ReturnType<typeof parsePorcelainStatus>;
+
+/** The files of a pass, and which of them are added files still waiting for a line count. */
+interface ListedChanges {
+  out: ChangedFile[];
+  pending: Array<{ index: number; rel: string }>;
+}
+
+/** Against a base ref: the diff's own files, plus the added files the status names and the diff does not. */
+function changedAgainstBase(entries: StatusEntries, nameStatusOut: string, numstatOut: string): ListedChanges {
+  const out: ChangedFile[] = [...parseNameStatus(nameStatusOut, parseNumstat(numstatOut))];
+  const pending: ListedChanges['pending'] = [];
+  const seen = new Set(out.map((f) => f.path));
+  for (const e of entries) {
+    if (seen.has(e.path) || e.status !== 'added') continue;
+    pending.push({ index: out.length, rel: e.path });
+    out.push({ ...e, additions: 0, deletions: 0 });
+    seen.add(e.path);
+  }
+  return { out, pending };
+}
+
+/** Against HEAD: every status entry, with the numstat line it has; an added file without one is counted later. */
+function changedAgainstHead(entries: StatusEntries, numstatOut: string): ListedChanges {
+  const stats = parseNumstat(numstatOut);
   const out: ChangedFile[] = [];
-  const pending: Array<{ index: number; rel: string }> = [];
-  if (base) {
-    out.push(...parseNameStatus(answers[1].stdout, parseNumstat(answers[2].stdout)));
-    const seen = new Set(out.map((f) => f.path));
-    for (const e of entries) {
-      if (seen.has(e.path) || e.status !== 'added') continue;
-      pending.push({ index: out.length, rel: e.path });
-      out.push({ ...e, additions: 0, deletions: 0 });
-      seen.add(e.path);
-    }
-  } else {
-    const stats = parseNumstat(answers[2].stdout);
-    for (const e of entries) {
-      const stat = stats.get(e.path);
-      if (stat) { out.push({ ...e, ...stat }); continue; }
-      if (e.status === 'added') pending.push({ index: out.length, rel: e.path });
-      out.push({ ...e, additions: 0, deletions: 0 });
-    }
+  const pending: ListedChanges['pending'] = [];
+  for (const e of entries) {
+    const stat = stats.get(e.path);
+    if (stat) { out.push({ ...e, ...stat }); continue; }
+    if (e.status === 'added') pending.push({ index: out.length, rel: e.path });
+    out.push({ ...e, additions: 0, deletions: 0 });
   }
+  return { out, pending };
+}
+
+/** Line counts for the pending added files: one batch when there is one, else one spawn each. */
+async function fillUntrackedCounts(cwd: string, { out, pending }: ListedChanges): Promise<void> {
   const counts = await countUntracked(cwd, pending.map((p) => p.rel));
-  if (counts) {
-    for (const [i, p] of pending.entries()) out[p.index] = { ...out[p.index], additions: counts[i] };
-  } else {
-    for (const p of pending) out[p.index] = { ...out[p.index], additions: await countUntrackedAdditions(cwd, p.rel) };
+  for (const [i, p] of pending.entries()) {
+    const additions = counts ? counts[i] : await countUntrackedAdditions(cwd, p.rel);
+    out[p.index] = { ...out[p.index], additions };
   }
-  return { files: out, isRepo: true };
 }
 
 const remoteChangedInFlight = new Map<string, Promise<RemoteChanged | null>>();
@@ -910,7 +940,8 @@ export async function getFileDiff(cwd: string, file: string, baseRef?: string): 
       key: `diff\0${cwd}\0${file}\0${baseRef || ''}`,
       token: (fp) => {
         const fileKey = fp.fileKey(fp.toplevel, file);
-        return fileKey === null ? null : `${fileKey}${baseRef ? `\0${fp.refs}` : ''}`;
+        if (fileKey === null) return null;
+        return baseRef ? `${fileKey}\0${fp.refs}` : fileKey;
       },
       compute,
     })

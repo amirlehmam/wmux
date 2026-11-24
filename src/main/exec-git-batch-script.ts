@@ -3,19 +3,22 @@
  * design: the framing, why the answer cannot be forged, what a command can be).
  */
 
+import { NO_INDEX_GUARD_SH, NO_INDEX_REFUSED_STATUS } from './ssh-path';
+
 /**
  * `$1` checkout, `$2` nonce, then groups of `<dir> <n> <n arguments>`. For
  * dir `c` the arguments are git's, run in the checkout. For `w` the first is a
  * worktree path and the rest are git's: they run in that worktree only if
  * `git worktree list` (run here, once) names exactly that path. Each command's
  * stderr is kept to 2 KiB: its first line is what a Git view shows for a failure.
+ * A `diff --no-index` whose file crosses a symlink is not run and answers 126 (ssh-path.ts).
  */
 export const BATCH_SCRIPT = `cwd=$1; nonce=$2; shift 2
 GIT_OPTIONAL_LOCKS=0; GIT_TERMINAL_PROMPT=0; export GIT_OPTIONAL_LOCKS GIT_TERMINAL_PROMPT
 errf=$(mktemp) || exit 125
 fpd=
 trap 'rm -f -- "$errf"; if [ -n "$fpd" ]; then rm -rf -- "$fpd"; fi' EXIT HUP INT TERM
-listed=0
+${NO_INDEX_GUARD_SH}listed=0
 is_listed() {
   if [ "$listed" = 0 ]; then
     wl=$(git -C "$cwd" worktree list --porcelain 2>/dev/null)
@@ -145,8 +148,10 @@ run_one() {
   elif [ "$dir" = w ]; then
     wt=$1; shift
     is_listed "$wt" || return 125
+    no_index_ok "$wt" "$@" || return ${NO_INDEX_REFUSED_STATUS}
     git -C "$wt" "$@" 2>"$errf" </dev/null
   else
+    no_index_ok "$cwd" "$@" || return ${NO_INDEX_REFUSED_STATUS}
     git -C "$cwd" "$@" 2>"$errf" </dev/null
   fi
 }

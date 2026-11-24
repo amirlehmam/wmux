@@ -156,11 +156,25 @@ export type PlainExecAsync = (
 
 /** `execFile` as a promise, for a caller that has no promisified one of its own; a failure carries `stdout` and `stderr`. */
 export const execFilePlain: PlainExecAsync = (file, args, options) => new Promise((resolve, reject) => {
-  execFile(file, args, options, (err, stdout, stderr) => {
+  const child = execFile(file, args, options, (err, stdout, stderr) => {
     if (err) reject(Object.assign(err, { stdout: stdout as string, stderr: stderr as string }));
     else resolve({ stdout: stdout as string, stderr: stderr as string });
   });
+  endStdin(child);
 });
+
+/**
+ * Close a spawned child's stdin when nothing will be written to it. None of the
+ * calls made here sends input, and Windows OpenSSH waits on an open stdin pipe
+ * before it lets a session finish (the same hang `runSsh` in ssh-exec.ts
+ * documents). A test's fake `execFile` may return nothing, hence the checks.
+ */
+export function endStdin(child: { stdin?: { on?: unknown; end?: unknown } | null } | undefined | null): void {
+  const stdin = child?.stdin as { on?: (event: string, cb: () => void) => void; end?: () => void } | null | undefined;
+  if (!stdin || typeof stdin.end !== 'function') return;
+  if (typeof stdin.on === 'function') stdin.on('error', () => undefined);
+  stdin.end();
+}
 
 /**
  * The promise form for a caller that already has its own `promisify(execFile)`

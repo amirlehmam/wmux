@@ -103,10 +103,17 @@ export function isSafeRepoPath(file: unknown): file is string {
  * `realpathSync` expands neither; the native one asks Windows for the final
  * path. A path that cannot be resolved (gone, no access) keeps its spelling.
  */
+/** `p` without the `/` characters at its end. A loop, not a regex: the path comes from a remote host. */
+function stripTrailingSlashes(p: string): string {
+  let end = p.length;
+  while (end > 0 && p[end - 1] === '/') end--;
+  return p.slice(0, end);
+}
+
 export function worktreeKey(p: string): string {
   // A remote host path is compared as the text git printed: resolving it here would
   // ask the LOCAL disk about a path that is not on it.
-  if (currentSshGit()) return p.replace(/\/+$/, '') || '/';
+  if (currentSshGit()) return stripTrailingSlashes(p) || '/';
   let resolved = path.resolve(p);
   try { resolved = fs.realpathSync.native(resolved); } catch { /* keep the spelling we were given */ }
   let key = resolved.replace(/\//g, '\\');
@@ -393,12 +400,32 @@ export function parseWslUnc(p: string): { distro: string; posix: string } | null
 }
 
 /**
+ * The ONE switch for the fast route of a folder on a WSL share: `WMUX_WSL_FAST=1`. Off by
+ * default, and then such a folder behaves exactly as it did before ssh workspaces existed:
+ * every git call is its own `wsl.exe -d <distro> --cd <dir> --exec git`, re-run on every
+ * poll, with no batch, no spawn gate, no poll cache, no persistent worker and no warm-up.
+ *
+ * It is opt-in because the fast route changes what a person sees without their having asked
+ * for anything (no `set-ssh-target` is involved): a poll is answered from the cache while the
+ * checkout's fingerprint is unchanged, with a back-off of up to 30 s, so a commit made from
+ * the workspace's own pane can show late; and a `wsl.exe` worker per distro is started when
+ * the workspace comes on screen. Every one of those hangs off `wslGitContextFor` answering
+ * null, plus the `wslEnv` of `spawnGit`, so there is nothing else to switch.
+ *
+ * Read on every call rather than once, so a test can flip it.
+ */
+export function wslFastRouteEnabled(): boolean {
+  return process.env.WMUX_WSL_FAST === '1';
+}
+
+/**
  * The context a git call on `folder` runs in when the folder is on a WSL share, or
  * null for anything else. Only a UNC path with a distro and a directory in it
  * qualifies: a `C:\\` path, or the Windows spelling of a worktree under `/mnt/c`, runs on
  * Windows git.
  */
 export function wslGitContextFor(folder: unknown): WslGitContext | null {
+  if (!wslFastRouteEnabled()) return null;
   if (typeof folder !== 'string' || folder.includes('\0')) return null;
   const wsl = parseWslUnc(folder);
   return wsl ? { wsl } : null;
@@ -518,7 +545,8 @@ export function spawnGit(
         maxBuffer,
         env: cmd.env,
         idempotent: true, // every git call here reads: repeating one after a worker failure is safe
-        wslEnv: cmd.route?.kind === 'wsl' ? cmd.route.env : undefined,
+        // Without `wslEnv` a WSL call is never served by a worker: that is how the switch reaches it.
+        wslEnv: wslFolder && cmd.route?.kind === 'wsl' ? cmd.route.env : undefined,
       }, plain);
       done?.(0, stdout.length, via, cold);
       return { cmd, err: null, stdout, stderr };
@@ -791,12 +819,12 @@ async function repoInfoBatched(cwd: string): Promise<GitRepoInfo | null> {
     if (elsewhere) summaries.set(w.path, elsewhere[i].ok ? summarizeStatus(parseStatusV2(elsewhere[i].stdout)) : null);
     else summaries.set(w.path, await worktreeSummary(w));
   }
-  const entries: GitWorktreeEntry[] = worktrees.map((w) => ({
-    ...w,
-    summary: !usable(w) ? null
-      : worktreeKey(w.path) === rootKey ? (own.ok ? summarizeStatus(parseStatusV2(own.stdout)) : null)
-      : summaries.get(w.path) ?? null,
-  }));
+  const summaryOf = (w: (typeof worktrees)[number]): GitWorktreeEntry['summary'] => {
+    if (!usable(w)) return null;
+    if (worktreeKey(w.path) !== rootKey) return summaries.get(w.path) ?? null;
+    return own.ok ? summarizeStatus(parseStatusV2(own.stdout)) : null;
+  };
+  const entries: GitWorktreeEntry[] = worktrees.map((w) => ({ ...w, summary: summaryOf(w) }));
   const refs = parseRefs(must(refsOut));
   const originHead = (origin.ok ? origin.stdout.trim() : '') || null;
   return {
@@ -976,7 +1004,8 @@ async function commitDetails(cwd: string, hash: unknown): Promise<GitCommitDetai
   const out = shown ? must(shown[0]) : await git(cwd, ['show', '-s', `--format=${fmt}`, hash]);
   const [h, parents, author, email, date, refs, subject, committer, committerDate, ...body] = out.split(FIELD);
   const parentList = parents ? parents.split(' ').filter(Boolean) : [];
-  const from = parentList[0] ?? (shown ? emptyTreeFor((shown[1].ok ? shown[1].stdout : '') || 'sha1') : await emptyTree(cwd));
+  const shownFormat = shown?.[1].ok ? shown[1].stdout : '';
+  const from = parentList[0] ?? (shown ? emptyTreeFor(shownFormat || 'sha1') : await emptyTree(cwd));
   return {
     hash: h.trim(),
     parents: parentList,
@@ -1025,12 +1054,17 @@ export function handleGitView(req: GitViewRequest, remote?: SshGitContext): Prom
   // may come from the snapshot cache (exec-snapshot.ts).
   // The same goes for a folder on a WSL share (its own key, and who asked, for the same reason).
   const wslFolder = remote ? null : wslGitContextFor((req as { cwd?: unknown } | null)?.cwd);
-  const place = remote ? sshLocationKey(remote) : wslFolder ? contextLocationKey(wslFolder) : '';
+  let place = '';
+  if (remote) place = sshLocationKey(remote);
+  else if (wslFolder) place = contextLocationKey(wslFolder);
   const key = `${place}\n${remote || wslFolder ? currentSpawnPriority() : ''}\n${JSON.stringify(req)}`;
   const running = inFlight.get(key);
   if (running) return running;
-  const started = (remote ? runWithSshGit(remote, () => dispatchOn(req, remote, remote.target.path))
-    : wslFolder ? dispatchOn(req, wslFolder) : dispatch(req))
+  const dispatched = (): Promise<unknown> => {
+    if (remote) return runWithSshGit(remote, () => dispatchOn(req, remote, remote.target.path));
+    return wslFolder ? dispatchOn(req, wslFolder) : dispatch(req);
+  };
+  const started = dispatched()
     .then((data): GitViewResult<unknown> => ({ ok: true, data }))
     .catch((err: unknown): GitViewResult<unknown> => ({
       ok: false,
