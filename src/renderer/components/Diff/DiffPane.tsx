@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useT } from '../../i18n';
 import { DIFF_SELECT_EVENT, takeDiffSelection } from './open-diff';
+import { pickHookFile } from './diff-hook-file';
 import { DiffHunks, DiffWrapToggle, parseDiff, type DiffHunk } from './diff-render';
 import '../../styles/diff.css';
 
@@ -53,6 +54,8 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
   const selectedFileRef = useRef(selectedFile);
   const lastFilesKeyRef = useRef('');
   const lastDiffRawRef = useRef('');
+  // The file an agent's edit hook named, until the next pass has the change list to match it against.
+  const hookFileRef = useRef<string | null>(null);
   selectedFileRef.current = selectedFile;
 
   // Every setState below is guarded on an actual change. A poll that finds
@@ -142,6 +145,15 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
 
   const runPass = useCallback(async (poll = false) => {
     const loaded = await loadFilesRef.current(poll);
+    // The hook's path is the agent's own (absolute, maybe in another root): select the changed file it names,
+    // as the list spells it, instead of asking for the hook's spelling. A file the list lacks leaves the selection alone.
+    const hooked = hookFileRef.current;
+    hookFileRef.current = null;
+    const picked = hooked === null ? null : pickHookFile(loaded, hooked);
+    if (picked !== null) {
+      selectedFileRef.current = picked;
+      setSelectedFile(picked);
+    }
     if (loaded.length > 0 && !selectedFileRef.current) {
       setSelectedFile(loaded[0].path);
     }
@@ -223,7 +235,7 @@ export default function DiffPane({ surfaceId, cwd, baseRef }: DiffPaneProps) {
     const unsub = window.wmux.diff.onUpdate((data: { file?: string }) => {
       clearTimeout(debounce);
       debounce = setTimeout(() => {
-        if (data?.file) setSelectedFile(data.file);
+        hookFileRef.current = data?.file || null;
         refresh();
       }, 300);
     });
