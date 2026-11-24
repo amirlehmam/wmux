@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { diffTargetFor, remoteChangedFiles, remoteFileDiff } from '../../src/main/ssh-diff';
+import { diffTargetFor, relativeToCheckout, remoteChangedFiles, remoteFileDiff } from '../../src/main/ssh-diff';
 import { resetDiffCaches } from '../../src/main/diff-provider';
 import { handleGitView } from '../../src/main/git-view';
 import { SSH_UNREACHABLE_MESSAGE, type SshGitContext } from '../../src/main/ssh-git';
@@ -27,6 +27,19 @@ function fakeWindow(answer: unknown, destroyed = false) {
     webContents: { executeJavaScript: vi.fn(async () => answer) },
   };
 }
+
+describe('relativeToCheckout', () => {
+  it('cuts the checkout prefix off an absolute path below it, and nothing else', () => {
+    expect(relativeToCheckout('/w/repo/a.txt', '/w/repo')).toBe('a.txt');
+    expect(relativeToCheckout('/w/repo/docs/n.md', '/w/repo')).toBe('docs/n.md');
+    expect(relativeToCheckout('/w/repo/a.txt', '/w/repo/')).toBe('a.txt');
+    for (const same of ['a.txt', '/w/repo', '/w/repo-evil/a.txt', '/w/other/a.txt', '/etc/passwd', '', 'docs/a.txt']) {
+      expect(relativeToCheckout(same, '/w/repo')).toBe(same);
+    }
+    expect(relativeToCheckout(5, '/w/repo')).toBe(5);
+    expect(relativeToCheckout(undefined, '/w/repo')).toBeUndefined();
+  });
+});
 
 describe('diffTargetFor', () => {
   beforeEach(() => resetSshTargets());
@@ -131,6 +144,23 @@ describe.skipIf(!hasPosixTools(['git']))('diff of a remote checkout, git run thr
     const added = await remoteFileDiff(t, 'new file.txt', undefined, tool(fakeSsh));
     expect(added).toEqual({ diff: expect.stringContaining('+++ b/new file.txt') });
     expect(await remoteFileDiff(t, 'docs/n.md', undefined, tool(fakeSsh))).toEqual({ diff: expect.stringContaining('+# n') });
+  });
+
+  it('takes the absolute path an agent hook reports for a file of the checkout, as the relative one', async () => {
+    const t = target(repo);
+    // `tool_input.file_path` is absolute on the host the agent runs on, here the target's.
+    expect(await remoteFileDiff(t, `${repo}/a.txt`, undefined, tool(fakeSsh))).toEqual({ diff: expect.stringContaining('+three') });
+    expect(await remoteFileDiff(t, `${repo}/docs/n.md`, undefined, tool(fakeSsh))).toEqual({ diff: expect.stringContaining('+# n') });
+    expect(await remoteFileDiff(t, `${repo}/new file.txt`, undefined, tool(fakeSsh))).toEqual({ diff: expect.stringContaining('+++ b/new file.txt') });
+  });
+
+  it('still refuses an absolute path that only starts like the checkout, leaves it, or is the checkout itself', async () => {
+    const t = target(repo);
+    for (const bad of [`${repo}`, `${repo}/`, `${repo}-evil/a.txt`, `${repo}/../outside-secret.txt`, `${repo}/docs/../../outside-secret.txt`, `${repo}//a.txt`, `${repo}/./a.txt`]) {
+      const res = await remoteFileDiff(t, bad, undefined, tool(fakeSsh));
+      expect(res, bad).toMatchObject({ error: 'Invalid path', code: 'invalid_path' });
+      expect(JSON.stringify(res)).not.toContain('TOP SECRET');
+    }
   });
 
   it('refuses a file that is not a relative path below the checkout, so no remote file can be read through it', async () => {

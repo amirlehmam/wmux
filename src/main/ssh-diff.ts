@@ -62,6 +62,22 @@ export async function remoteChangedFiles(
 }
 
 /**
+ * `file` as a path below the checkout when it is an absolute path of that checkout, else untouched.
+ *
+ * An agent's edit hook reports the file it wrote as an ABSOLUTE path on the host it runs on
+ * (`tool_input.file_path`), and the Diff tab selects exactly that on the next refresh. On a remote
+ * workspace the host is the target's, so a path under `target.path` is the same file as the relative one
+ * git prints; refusing it showed "Invalid path" in the tab after every edit. Only the prefix is cut: the
+ * result still has to pass `canonicalRemoteRelPath`, so `<root>/../x`, an empty rest and a path outside the
+ * checkout stay refused.
+ */
+export function relativeToCheckout(file: unknown, root: string): unknown {
+  if (typeof file !== 'string') return file;
+  const prefix = root.endsWith('/') ? root : `${root}/`;
+  return file.startsWith(prefix) ? file.slice(prefix.length) : file;
+}
+
+/**
  * One file's diff. `file` comes from the renderer and ends up in a git
  * pathspec, and for an untracked file in `git diff --no-index -- /dev/null
  * <file>`, which would read ANY file on the remote host: it must be a relative path
@@ -73,7 +89,7 @@ export async function remoteFileDiff(
   baseRef?: string,
   tool?: SshGitContext['tool'],
 ): Promise<{ diff: string } | RemoteDiffError> {
-  const relPath = canonicalRemoteRelPath(file);
+  const relPath = canonicalRemoteRelPath(relativeToCheckout(file, target.path));
   if (relPath === null) return { error: 'Invalid path', code: 'invalid_path' };
   try {
     const diff = await runWithSshGit({ target, tool }, () => getFileDiff(target.path, relPath, baseRef));
