@@ -160,6 +160,19 @@ directory wherever it points. `canonicalRemoteRelPath` checks the spelling only,
 a caller's git arguments (`GIT_SCRIPT`, `BATCH_SCRIPT`) walk that last argument first and refuse a symlink
 in any segment with status 126 (`NO_INDEX_GUARD_SH`, `ssh-path.ts`): the explorer jail's rule.
 
+## Follow-ups from the #468 review
+
+How the review's non-blocking points were settled.
+
+| Point | Settled as |
+| --- | --- |
+| A fish login shell on the direct route | **Fixed.** The direct route's command is `sh -c 'eval "$(echo <base64>|base64 -d)"'` (`loginShellNeutralCommand`, `ssh-command.ts`), so the account's login shell only sees base64 inside fixed single quotes, which sh, bash, zsh, fish and csh read the same way: a file name cannot be re-parsed by it. Needs `base64` on the host. The WSL route's `set -f;IFS=;eval ...` still needs a POSIX login shell: under fish it fails, it does not misparse, since only base64 reaches that shell. Tested with fish's reading of single quotes; not run with a real fish. |
+| Two targets with the same alias reaching different hosts | **Fixed.** Same destination, port and checkout with a different connection (`-F`, `-J`, `-i`, options, WSL distro) is refused as `ambiguous_target` by `resolveRemoteIdentity`, never resolved to the first target. |
+| Targets not cleared on a window close | **Fixed.** Only a closed workspace cleared its target. A target is now also dropped when the window that set it closes (`ssh-targets.ts`), unless another window has set one since. |
+| `ControlPersist=300` leaves a master after wmux quits | **Fixed on quit:** `ssh -O exit` for each distinct WSL-route connection (`ssh-master.ts`; at most 8, 1.5 s each). **Not for a kill:** the master then lives up to 300 s; a shorter persist would end the worker's connection sooner too (they are tied by `SSH_CONNECTION_PERSIST_S`) and cost a new login after each short pause. Only the argument order was checked against OpenSSH 8.9, not a real sshd. |
+| Create, rename and delete have no IPC handler | **Not wired.** The local Explorer has no such action either (no channel, no UI), so wiring them is a feature of its own, with a destructive IPC surface. `remoteCreateEntry`, `remoteRenameEntry` and `remoteDeleteEntry` stay in `ssh-explorer.ts` as the tested remote layer for it; no view calls them. |
+| The direct route opens a new ssh login per poll | **Not changed.** The direct route uses `ControlMaster=no`; sharing a master there is a design change. The WSL route shares one master per host. |
+
 ## Known limits, and what is not verified
 
 Everything here was exercised against a local `sh` and a counting stand-in for `wsl.exe`. Not verified
@@ -172,5 +185,5 @@ any of them fails the handshake and stays on spawns. A request that hangs is det
 own timeout. The worker keeps a temp directory under `$TMPDIR` or `/tmp` while it lives.
 
 Behaviour is pinned by `tests/unit/exec-gate.test.ts`, `exec-snapshot.test.ts`, `exec-worker.test.ts`,
-`exec-git-batch.test.ts`, `exec-trace.test.ts`, `ssh-poll-session.test.ts`, `wsl-worker.test.ts` and the two
+`exec-git-batch.test.ts`, `exec-trace.test.ts`, `ssh-poll-session.test.ts`, `wsl-worker.test.ts`, `ssh-master.test.ts` and the two
 spawn-count files above.
