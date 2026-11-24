@@ -43,6 +43,23 @@
   -webkit-app-region: no-drag;
 }
 
+/*
+ * The mark's plate (#15151a) is near the dark themes' ground, so a hairline
+ * ring and a soft shadow keep its edge visible there. The radius matches the
+ * plate's own (247/1024 of the side), so the ring follows the art.
+ */
+.app-lock__logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 8px;
+  border-radius: 24.1%;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+  user-select: none;
+}
+
 .app-lock__title {
   margin: 0;
   font-size: 20px;

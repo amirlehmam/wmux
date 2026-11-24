@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useT } from '../../i18n';
 import { retrySeconds, unlockErrorKey } from '../../utils/app-lock';
+// The one source of the mark, as the titlebar uses it: a second copy of the
+// art under src/renderer went stale for three releases once (#137).
+import logoSrc from '../../../../resources/icons/icon.svg';
 
 interface LockScreenProps {
   /** The app is mounted behind this screen, so its terminals and agents are still running. */
@@ -67,6 +70,7 @@ export default function LockScreen({ running }: LockScreenProps) {
       {/* The app's titlebar is not mounted at startup: this strip is what moves the window. */}
       <div className="app-lock__drag" />
       <form className="app-lock__card" onSubmit={submit}>
+        <img src={logoSrc} alt="" className="app-lock__logo" draggable={false} />
         <h1 id="app-lock-title" className="app-lock__title">{t('appLock.title')}</h1>
         <p className="app-lock__prompt">{t('appLock.prompt')}</p>
         <input
