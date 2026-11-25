@@ -593,3 +593,19 @@ describe('[sidebar] wrap-titles', () => {
     expect(out.errors).toEqual(['sidebar.wrap-titles: expected boolean']);
   });
 });
+
+describe('[appearance.colors]', () => {
+  let tmp: string | null = null;
+  afterEach(() => { if (tmp) fs.rmSync(path.dirname(tmp), { recursive: true, force: true }); tmp = null; });
+  const load = (toml: string) => { resetConfigWarnings(); tmp = writeTmp(toml); return loadUserConfig(tmp); };
+
+  it('keeps valid hex values, lower-cased', () => {
+    const out = load('[appearance.colors]\nbg-0 = "#000000"\naccent = "#58A6FF"\n');
+    expect(out.appearance?.colors).toEqual({ 'bg-0': '#000000', accent: '#58a6ff' });
+  });
+
+  it('rejects unknown keys and non-#rrggbb values, keeping the good ones', () => {
+    const out = load('[appearance.colors]\nbg-0 = "black"\nbg-9 = "#000000"\nborder = "#21262d"\n');
+    expect(out.appearance?.colors).toEqual({ border: '#21262d' });
+  });
+});

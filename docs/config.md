@@ -69,6 +69,15 @@ inactive-pane-dim = 20
 # which hides the focus ring (Settings -> General -> "Focused pane border").
 focused-pane-border = 55
 
+# Custom colours for the app chrome (sidebar, tabs, pane frames, docks). Each value is
+# "#rrggbb"; every key is optional and overrides the stock colour of the active
+# light/dark theme. Keys: accent, bg-0 .. bg-5 (darkest .. lightest surface), border,
+# border-strong, text-primary, text-secondary, text-muted. Delete a key and run
+# `wmux reload-config` to restore it. The terminal itself is coloured separately.
+[appearance.colors]
+bg-0 = "#000000"
+accent = "#58a6ff"
+
 [sidebar]
 # Let a long workspace title wrap to two lines before it is truncated
 # (Settings -> Sidebar -> "Wrap long workspace titles"). Default false.
