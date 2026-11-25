@@ -8,6 +8,7 @@ import { fireNotification } from './utils/notifications';
 import { getStoredWorkspaceLabel, useWorkspaceLabels } from './components/SplitPane/use-osc-title';
 import { PaneId, SurfaceId, SurfaceRef, WorkspaceId, WorkspaceInfo, SplitNode, type SessionSaveRequest } from '../shared/types';
 import { cwdReportPatch } from '../shared/paths';
+import { uiColorVars } from '../shared/ui-colors';
 import { classifyClaudeNotification } from '../shared/claude-notification';
 import SplitContainer from './components/SplitPane/SplitContainer';
 import { TerminalHost } from './components/Terminal/KeptAliveTerminal';
@@ -536,6 +537,9 @@ export function tryReplaceTabSpawn(event: any, ws: WorkspaceInfo, setAgentMeta: 
   return true;
 }
 
+// CSS vars the last `[appearance.colors]` load set on <html>, so a reload can clear dropped keys.
+let appliedUiColorVars: string[] = [];
+
 export default function App() {
   const [paneZooms, setPaneZooms] = useState<Record<string, number>>({});
   // Per-pane zoom, like Windows Terminal's per-pane font size (#420): Ctrl+wheel
@@ -929,6 +933,13 @@ export default function App() {
       if (inactivePaneDim !== undefined) state.setAppearancePrefs({ inactivePaneDim });
       const focusedPaneBorder = result?.appearance?.focusedPaneBorder;
       if (focusedPaneBorder !== undefined) state.setAppearancePrefs({ focusedPaneBorder });
+      // `[appearance.colors]`: inline vars on <html> beat the theme blocks. Clear what an
+      // earlier load set first so deleting a key + `wmux reload-config` restores the stock color.
+      const rootStyle = document.documentElement.style;
+      for (const k of appliedUiColorVars) rootStyle.removeProperty(k);
+      const uiVars = uiColorVars(result?.appearance?.colors ?? {});
+      appliedUiColorVars = Object.keys(uiVars);
+      for (const [k, v] of Object.entries(uiVars)) rootStyle.setProperty(k, v);
       // `[sidebar] wrap-titles` (issue #342); false is a real value, so no truthiness test.
       const wrapTitles = result?.sidebar?.wrapTitles;
       if (typeof wrapTitles === 'boolean') state.setSidebarPrefs({ wrapTitles });

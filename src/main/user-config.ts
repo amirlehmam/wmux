@@ -70,6 +70,7 @@ import { parseKeyRemaps, KeyRemap } from '../shared/key-sequence';
 import { WorkspaceLayout } from '../shared/types';
 import { MAX_INACTIVE_PANE_DIM_PCT } from '../shared/inactive-pane-dim';
 import { MAX_FOCUSED_PANE_BORDER_PCT } from '../shared/focused-pane-border';
+import { UiColors, UI_COLOR_KEYS, isUiColorKey, normalizeUiColor } from '../shared/ui-colors';
 
 export interface UserColorScheme {
   background?: string;
@@ -106,6 +107,8 @@ export interface UserConfig {
     inactivePaneDim?: number;
     /** 0–100 (%) accent in the focused pane's border; 0 = same as unfocused (#471). */
     focusedPaneBorder?: number;
+    /** `[appearance.colors]`: `--ui-*` overrides for the app chrome (dark and light alike). */
+    colors?: UiColors;
   };
   /** Sidebar display options that Settings → Sidebar also offers. */
   sidebar?: {
@@ -429,6 +432,18 @@ function mapAppearanceSection(root: TomlTable, errors: string[]): NonNullable<Us
       errors.push(`appearance.focused-pane-border: ${ring} is a percent (0-${MAX_FOCUSED_PANE_BORDER_PCT}); for ${pct}% write ${pct}`);
     } else if (ring >= 0 && ring <= MAX_FOCUSED_PANE_BORDER_PCT) a.focusedPaneBorder = ring;
     else errors.push(`appearance.focused-pane-border: ${ring} not between 0 and ${MAX_FOCUSED_PANE_BORDER_PCT}`);
+  }
+
+  const colorsTable = asTable(appearance.colors);
+  if (colorsTable) {
+    const colors: UiColors = {};
+    for (const [key, raw] of Object.entries(colorsTable)) {
+      const hex = typeof raw === 'string' ? normalizeUiColor(raw) : undefined;
+      if (!isUiColorKey(key)) errors.push(`appearance.colors.${key}: unknown key (one of ${UI_COLOR_KEYS.join(', ')})`);
+      else if (!hex) errors.push(`appearance.colors.${key}: expected "#rrggbb"`);
+      else colors[key] = hex;
+    }
+    if (Object.keys(colors).length) a.colors = colors;
   }
 
   return Object.keys(a).length ? a : undefined;
