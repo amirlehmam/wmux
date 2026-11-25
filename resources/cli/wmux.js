@@ -27,6 +27,7 @@ exports.parseEventRows = parseEventRows;
 exports.describeWerConfig = describeWerConfig;
 exports.correlateShutdown = correlateShutdown;
 exports.formatCrashReport = formatCrashReport;
+exports.perfOptions = perfOptions;
 exports.lockMethod = lockMethod;
 const net_1 = __importDefault(require("net"));
 const fs_1 = __importDefault(require("fs"));
@@ -38,6 +39,7 @@ const wsl_network_1 = require("./wsl-network");
 const transport_deadline_1 = require("./transport-deadline");
 const opencode_tui_install_1 = require("./opencode-tui-install");
 const transport_retry_1 = require("./transport-retry");
+const hook_audit_1 = require("./hook-audit");
 /** The two signals wsl-network.ts uses to decide we are inside a WSL distro. */
 function readWslEnvironment() {
     let osRelease = null;
@@ -1980,6 +1982,23 @@ async function cmdCrashReport(args) {
         osVersion: os_1.default.release(),
     }));
 }
+/** Pure: argv to the options `wmux perf` runs with, or the reason it is refused. */
+function perfOptions(flags, cwd, configDir) {
+    const rawRuns = flags.values['--runs'];
+    const runs = rawRuns === undefined ? 3 : Number(rawRuns);
+    if (!Number.isInteger(runs) || runs < 1 || runs > 20) {
+        return { error: `--runs must be a whole number from 1 to 20, got '${rawRuns}'.` };
+    }
+    return { runs, skip: flags.values['--skip'], cwd, configDir, run: !flags.bools.has('--no-run') };
+}
+function cmdPerf(args) {
+    const flags = flagsOrFail('perf', args.slice(1), { value: ['--runs', '--skip'], bool: ['--no-run', '--json'] });
+    const options = perfOptions(flags, process.cwd(), (0, hook_audit_1.claudeConfigDir)());
+    if ('error' in options)
+        fail('perf', exports.COMMAND_SPECS.perf, options.error);
+    const report = (0, hook_audit_1.buildReport)(options);
+    console.log(flags.bools.has('--json') ? JSON.stringify(report, null, 2) : (0, hook_audit_1.formatReport)(report));
+}
 // ─── Declared agent state (issue #128) ───────────────────────────────────────
 // The reporting side of the protocol. An agent running inside a wmux pane can
 // call these with no arguments beyond the state itself — WMUX_SURFACE_ID is
@@ -2395,6 +2414,19 @@ exports.COMMAND_SPECS = {
             + '  Needs no running wmux, which is the point: you run it after wmux died.',
         value: ['--events', '--log-lines'],
     },
+    perf: {
+        usage: 'wmux perf [--runs N] [--skip <text>] [--no-run] [--json]\n'
+            + '  Time every Claude Code hook that blocks a tool call, and say which ones are slow.\n'
+            + '  Each PreToolUse/PostToolUse hook is RUN with a probe event (session id\n'
+            + '  wmux-perf-probe, a file that does not exist). Hooks on other events are\n'
+            + '  counted and never run. Nothing is changed: the report says what to edit.\n'
+            + '  --runs N       runs per hook, median reported (1-20, default 3)\n'
+            + '  --skip <text>  do not run hooks whose command contains <text>\n'
+            + '  --no-run       list the hooks without running any\n'
+            + '  Needs no running wmux.',
+        value: ['--runs', '--skip'],
+        bool: ['--no-run', '--json'],
+    },
     diff: { usage: 'wmux diff [--file <path>]', value: ['--file'] },
     hook: {
         usage: 'wmux hook --event <type> --tool <name> [--agent <id>] [--prompt <text>]',
@@ -2687,6 +2719,7 @@ const COMMANDS = {
     log: async (args) => print(await sendV2('sidebar.log', { level: args[1], message: args.slice(2).join(' ') })),
     'sidebar-state': async () => print(await sendV2('sidebar.get_state')),
     'crash-report': cmdCrashReport,
+    perf: cmdPerf,
     diff: async (args) => {
         const file = args.find((a, i) => args[i - 1] === '--file') || '';
         print(await sendV2('diff.refresh', { file }));
@@ -2784,6 +2817,9 @@ Crash:      crash-report [--events N] [--log-lines N]
             (Event Log fingerprint + wmux's own log. No memory, so no secrets —
              paste this instead of a crash dump. See docs/crash-reports.md.)
 Lock:       lock [--status]   # lock wmux now (password set in Settings > General)
+Perf:       perf [--runs N] [--skip <text>] [--no-run] [--json]
+            (times the Claude Code hooks that block every tool call, and names
+             the slow ones. Runs them with a probe event; changes nothing.)
 Agent state: report-agent --blocked [reason] [--choices <json>] | --unblocked
             report-agent --run-start | --run-end
             answer-agent --surface <id> --choice <id>   # reply without leaving your pane
