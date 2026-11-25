@@ -69,7 +69,10 @@ function roundTrip(port: number, payload: string): Promise<string> {
 
 describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
   const cleanups: Array<() => void> = [];
-  const isWslRuntime = Boolean(process.env.WSL_DISTRO_NAME || process.env.WSLENV);
+  // Only a Linux process can be inside a WSL2 distro. `WSLENV` alone is not proof: Windows Terminal sets it
+  // (`WT_SESSION:WT_PROFILE_ID:`) for every Windows profile, and a Windows process that reads it as "WSL2" runs
+  // the tests below with a `#!/usr/bin/env node` fake it cannot execute, then talks to the user's real wmux pipe.
+  const isWslRuntime = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSLENV);
 
   afterEach(() => {
     while (cleanups.length) cleanups.pop()!();
