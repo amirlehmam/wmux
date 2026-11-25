@@ -9,7 +9,7 @@ import {
   remoteWriteCodeFile,
   type RemoteDeps,
 } from '../../src/main/ssh-explorer';
-import { remoteCommandArgs, remoteInvocation } from '../../src/main/ssh-command';
+import { loginShellNeutralCommand, posixRemoteCommand, remoteCommandArgs, remoteInvocation } from '../../src/main/ssh-command';
 import { GIT_SCRIPT, isSshUnreachable, sshGitCommand, type SshGitContext } from '../../src/main/ssh-git';
 import { handleGitView } from '../../src/main/git-view';
 import {
@@ -23,6 +23,7 @@ import {
 } from '../../src/main/ssh-exec';
 import { parseSshTarget, resetSshTargets, type SshTarget } from '../../src/main/ssh-targets';
 import { wslExecutable } from '../../src/main/system32';
+import { remoteCommandText } from '../helpers/remote-command-text';
 import { hasPosixTools } from '../helpers/posix-tools';
 
 /**
@@ -105,7 +106,7 @@ describe('the WSL route argv', () => {
     const command = inv.args[inv.args.length - 1];
     const encoded = /echo ([A-Za-z0-9+/=]+)\|/.exec(command)?.[1] ?? '';
     const direct = remoteCommandArgs(target, script, [hostile, 'a b']);
-    expect(Buffer.from(encoded, 'base64').toString('utf8')).toBe(direct[direct.length - 1]);
+    expect(Buffer.from(encoded, 'base64').toString('utf8')).toBe(remoteCommandText(direct));
   });
 
   it('is built from the pushed words: -F -J -i -p and the WSL known_hosts, nothing translated or added', () => {
@@ -163,8 +164,62 @@ describe('the WSL route argv', () => {
       '-o', 'BatchMode=yes', '-o', 'ControlMaster=no', '-o', 'ClearAllForwardings=yes',
       '-o', 'UserKnownHostsFile=/home/u/.ssh/known_hosts', '-o', 'StrictHostKeyChecking=yes',
       'dev@h',
-      `sh -c 'echo "$1"\n' sh 'a b'`,
+      loginShellNeutralCommand(`sh -c 'echo "$1"\n' sh 'a b'`),
     ]);
+    expect(remoteCommandText(inv.args)).toBe(`sh -c 'echo "$1"\n' sh 'a b'`);
+  });
+});
+
+describe('the direct route\'s command string, read by a login shell that is not sh', () => {
+  /**
+   * Splits `command` into words, reading single quotes the way `quoteBackslash` says: sh and bash keep
+   * a backslash inside single quotes literal; fish (and some others) take `\\` as `\` and `\'` as `'`.
+   */
+  function words(command: string, quoteBackslash: boolean): string[] {
+    const out: string[] = [];
+    let word: string | null = null;
+    let i = 0;
+    while (i < command.length) {
+      const ch = command[i];
+      if (ch === ' ') { if (word !== null) out.push(word); word = null; i++; continue; }
+      word ??= '';
+      if (ch === "'") {
+        i++;
+        while (i < command.length && command[i] !== "'") {
+          if (quoteBackslash && command[i] === '\\' && (command[i + 1] === '\\' || command[i + 1] === "'")) i++;
+          word += command[i++];
+        }
+        i++;
+      } else {
+        word += ch;
+        i++;
+      }
+    }
+    if (word !== null) out.push(word);
+    return out;
+  }
+
+  const hostile = [`a\\'; touch pwned; '`, `\\`, `it's`, `x\\\\'y`, 'new\nline', '"$(id)"', '!!'];
+  const target = wslTarget(WSL_ARGV, '/w/repo', null);
+
+  it('is split into the same words by sh and by a shell where a backslash escapes inside single quotes', () => {
+    const command = remoteCommandArgs(target, 'echo "$1"\n', hostile).slice(-1)[0];
+    const posix = words(command, false);
+    expect(posix).toHaveLength(3);
+    expect(posix.slice(0, 2)).toEqual(['sh', '-c']);
+    expect(words(command, true)).toEqual(posix);
+  });
+
+  it('shows the login shell nothing but base64 inside its quotes: no backslash, no quote, no !', () => {
+    const command = remoteCommandArgs(target, 'echo "$1"\n', hostile).slice(-1)[0];
+    expect(command).toMatch(/^sh -c 'eval "\$\(echo [A-Za-z0-9+/=]+\|base64 -d\)"'$/);
+    expect(command).not.toMatch(/[\\!\n]/);
+    expect(command.split("'")).toHaveLength(3);
+  });
+
+  it('would not have held for the plain quoted command (the reason for the wrapper)', () => {
+    const plain = posixRemoteCommand('echo "$1"\n', hostile);
+    expect(words(plain, true)).not.toEqual(words(plain, false));
   });
 });
 

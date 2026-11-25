@@ -461,6 +461,10 @@ export async function remoteWriteCodeFile(
 
 export type RemoteEntryOk = { ok: true };
 
+// Create, rename and delete: the remote layer is here and tested, but NO IPC handler calls it and the
+// local Explorer has no such action either, so nothing a user can click reaches these. Wiring them is a
+// feature of its own (an IPC channel, a grant, a UI), not part of the views; see docs/remote-workspace-views.md.
+
 export async function remoteCreateEntry(
   target: SshTarget,
   parentRelPath: unknown,

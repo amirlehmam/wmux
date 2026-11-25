@@ -166,6 +166,11 @@ const WSL_CONTROL_OPTIONS = ['ControlMaster=auto', 'ControlPath=/tmp/wmux-%C', `
  * would cost far more than riding one ControlMaster.
  */
 export function wslSshArgs(session: DetectedSsh, distro: string, remoteCommand: string): string[] {
+  return [...wslSshOptionArgs(session, distro), session.destination, remoteCommand];
+}
+
+/** `wslSshArgs` up to, and not including, the destination: `wsl.exe` and ssh's own options. */
+export function wslSshOptionArgs(session: DetectedSsh, distro: string): string[] {
   const replayable = session.sshOptions.filter((option) => {
     const key = optionKey(option);
     return !key || !REPLACED_FOR_WSL.has(key);
@@ -189,7 +194,6 @@ export function wslSshArgs(session: DetectedSsh, distro: string, remoteCommand: 
     if (identityFile.trim()) args.push('-i', identityFile.trim());
   }
   for (const replayed of replayable) option(replayed);
-  args.push(session.destination, remoteCommand);
   return args;
 }
 

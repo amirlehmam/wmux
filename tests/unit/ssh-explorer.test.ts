@@ -21,6 +21,7 @@ import { parseSshTarget, type SshTarget } from '../../src/main/ssh-targets';
 import type { RunResult, SshRunner } from '../../src/main/ssh-exec';
 import { MAX_ENTRIES } from '../../src/main/explorer-fs';
 import { hasPosixTools } from '../helpers/posix-tools';
+import { remoteCommandText } from '../helpers/remote-command-text';
 
 /**
  * The remote scripts are run FOR REAL here: the fake ssh takes the one command
@@ -97,7 +98,9 @@ describe('pure helpers', () => {
     expect(args).toContain('ConnectTimeout=6');
     expect(args[args.length - 2]).toBe('dev@box');
     expect(args[args.indexOf('-p') + 1]).toBe('2222');
-    const command = args[args.length - 1];
+    // The login shell sees only base64 inside single quotes; the command `sh` runs is the quoted one.
+    expect(args[args.length - 1]).toMatch(/^sh -c 'eval "\$\(echo [A-Za-z0-9+/=]+\|base64 -d\)"'$/);
+    const command = remoteCommandText(args);
     expect(command.startsWith(`sh -c 'echo "$1"' sh `)).toBe(true);
     // The hostile value only ever appears inside quotes, never in the script.
     expect(command).toContain(`'x'"'"'; touch pwned; '"'"''`);
@@ -153,7 +156,7 @@ describe('no local fallback when ssh fails', () => {
 
   it('a write whose answer is not an mtime is write_failed', async () => {
     const odd: SshRunner = async (_e, args) => {
-      if (args[args.length - 1].includes('meta=$(find')) {
+      if (remoteCommandText(args).includes('meta=$(find')) {
         return { status: 0, stdout: '', stderr: '', stdoutBuffer: Buffer.from('3 1700000000.0\nabc') };
       }
       return { status: 0, stdout: 'garbage', stderr: '', stdoutBuffer: Buffer.from('garbage') };
@@ -376,7 +379,7 @@ describe.skipIf(!hasPosixTools(['gnu-find', 'stat-c', 'mktemp']))('remote script
       // Another writer touches the file between the read and the write call.
       const racing: SshRunner = async (exe, args, timeout, options) => {
         const result = await inner(exe, args, timeout, options);
-        if (!sawRead && args[args.length - 1].includes('meta=$(find')) {
+        if (!sawRead && remoteCommandText(args).includes('meta=$(find')) {
           sawRead = true;
           const later = new Date(Date.now() + 9000);
           fs.utimesSync(path.join(root, 'a.txt'), later, later);

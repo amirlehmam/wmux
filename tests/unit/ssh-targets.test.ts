@@ -279,6 +279,58 @@ describe('handleSetSshTarget: the follow-up after a target is set', () => {
   });
 });
 
+describe('handleSetSshTarget: a window that closes', () => {
+  /** A window that can be closed: `once('closed')` listeners run on `close()`. */
+  const closableWindow = (workspaceId: string) => {
+    const listeners: Array<() => void> = [];
+    const win = { ...fakeWindow({ workspaceId }), once: vi.fn((_event: 'closed', listener: () => void) => { listeners.push(listener); }) };
+    return { win, close: () => listeners.splice(0).forEach((l) => l()) };
+  };
+  const set = (win: ReturnType<typeof closableWindow>['win'], workspaceId = 'ws-1') =>
+    handleSetSshTarget({ workspaceId, argv: ARGV, path: '/w' }, [win], vi.fn(), vi.fn());
+
+  it('takes the targets it set with it, without the workspaces being closed one by one', async () => {
+    const a = closableWindow('ws-1');
+    const b = closableWindow('ws-2');
+    await set(a.win);
+    await set(b.win, 'ws-2');
+    a.close();
+    expect(getSshTarget('ws-1')).toBeUndefined();
+    expect(getSshTarget('ws-2')).toBeDefined();
+  });
+
+  it('watches a window once, however often a workspace connects again', async () => {
+    const a = closableWindow('ws-1');
+    await set(a.win);
+    await set(a.win);
+    await set(a.win);
+    expect(a.win.once).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a target another window has set since, and one that was cleared and set again', async () => {
+    const first = closableWindow('ws-1');
+    const second = closableWindow('ws-1');
+    await set(first.win);
+    await set(second.win);
+    first.close();
+    expect(getSshTarget('ws-1')).toBeDefined();
+    second.close();
+    expect(getSshTarget('ws-1')).toBeUndefined();
+    // A window that watched, was cleared, and is closed later does not clear what is there by then.
+    const third = closableWindow('ws-1');
+    await set(third.win);
+    clearSshTarget('ws-1');
+    await set(second.win);
+    third.close();
+    expect(getSshTarget('ws-1')).toBeDefined();
+  });
+
+  it('works with a window that cannot be watched (no `once`)', async () => {
+    await call({ workspaceId: 'ws-1', argv: ARGV, path: '/w' }, [fakeWindow({ workspaceId: 'ws-1' })]);
+    expect(getSshTarget('ws-1')).toBeDefined();
+  });
+});
+
 describe('wslDistro in a target', () => {
   const base = { workspaceId: 'ws-1', argv: ['ssh', 'dev@h'], path: '/w' };
   const set = (params: Record<string, unknown>) => call(params, [fakeWindow({ workspaceId: 'ws-1' })]);
