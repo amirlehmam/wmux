@@ -1,566 +1,584 @@
 <!DOCTYPE html>
-<html lang="fr" dir="ltr" class="dark">
+<html lang="en" dir="ltr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>wmux — Le terminal concu pour Claude Code</title>
-  <meta name="description" content="Application Windows basee sur Electron. Onglets verticaux, notifications quand les agents ont besoin d'attention, panneaux divises, navigateur integre et une API pipe pour l'automatisation." />
-  <!-- ?v= is a one-time cache break, not decoration. These files were served
-       with `immutable, max-age=31536000` until 1.5.1, and an immutable response
-       is never revalidated — every returning visitor would have kept the old
-       mark for a year whatever we deployed. A query string is part of the
-       browser's cache key, so a new one is the only way out. netlify.toml now
-       serves them must-revalidate, so this should not need bumping again. -->
-  <link rel="icon" type="image/png" href="assets/favicon.png?v=1.5.1" />
-  <link rel="apple-touch-icon" href="assets/favicon.png?v=1.5.1" />
-
-  <style>
-    @font-face {
-      font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
-      font-weight: 400; font-style: normal; font-display: swap;
-    }
-    @font-face {
-      font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
-      font-weight: 500; font-style: normal; font-display: swap;
-    }
-    @font-face {
-      font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
-      font-weight: 600; font-style: normal; font-display: swap;
-    }
-    @font-face {
-      font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
-      font-weight: 700; font-style: normal; font-display: swap;
-    }
-    @font-face {
-      font-family: 'Geist Mono';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/GeistMono-Regular.woff2') format('woff2');
-      font-weight: 400; font-style: normal; font-display: swap;
-    }
-  </style>
-
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "wmux",
-    "operatingSystem": "Windows",
-    "applicationCategory": "DeveloperApplication",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-    "downloadUrl": "https://github.com/amirlehmam/wmux/releases/latest"
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>wmux — the Windows terminal for coding agents</title>
+<meta name="description" content="A Windows terminal for running several coding agents at once, and seeing which one needs you. Split panes, a browser panel, Git view. Free and open source (MIT).">
+<link rel="canonical" href="https://wmux.org/">
+<meta name="theme-color" content="#071324">
+<meta name="author" content="Amir Lehmam">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="wmux">
+<meta property="og:url" content="https://wmux.org/">
+<meta property="og:title" content="wmux — the Windows terminal for coding agents">
+<meta property="og:description" content="Run several coding agents side by side on Windows, and see which one needs you.">
+<meta property="og:image" content="https://wmux.org/assets/film/wmux-film-poster.jpg">
+<meta property="og:image:width" content="1920">
+<meta property="og:image:height" content="1080">
+<meta property="og:video" content="https://wmux.org/assets/film/wmux-film.mp4">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="1920">
+<meta property="og:video:height" content="1080">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="wmux — the Windows terminal for coding agents">
+<meta name="twitter:description" content="Run several coding agents side by side on Windows, and see which one needs you.">
+<meta name="twitter:image" content="https://wmux.org/assets/film/wmux-film-poster.jpg">
+<link rel="icon" type="image/png" href="assets/favicon.png?v=1.5.1">
+<link rel="apple-touch-icon" href="assets/wmux_logo.png?v=1.5.1">
+<link rel="preload" href="assets/fonts/zilla-slab-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css?v=3.0.6">
+<script>document.documentElement.classList.add('js');</script>
+<script>/* Language and direction before first paint, by the same rule as detectLang() in i18n.js. */(function(d){var L="en fr es de pt it nl pl tr ru uk ar zh zh-tw ja ko hi vi th id sv cs".split(" "),n=function(c){if(!c)return null;c=c.toLowerCase();if(c=="zh-hant"||c=="zh-hk")c="zh-tw";return L.indexOf(c)>=0?c:null},s=null;try{s=localStorage.getItem("wmux-lang")}catch(e){}var v=(navigator.language||"en").toLowerCase(),b=v.split("-")[0],l=n(location.hash.slice(1))||n(s)||n(v)||(b=="zh"?(/hant|tw|hk/.test(v)?"zh-tw":"zh"):n(b))||"en";if(l=="zh-tw")l="zh-TW";d.lang=l;d.dir=l=="ar"?"rtl":"ltr";if(l!="en"){d.classList.add("i18n-wait");setTimeout(function(){d.classList.remove("i18n-wait")},1500)}})(document.documentElement);</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "wmux",
+  "url": "https://wmux.org/",
+  "operatingSystem": "Windows",
+  "applicationCategory": "DeveloperApplication",
+  "softwareVersion": "2.60.0",
+  "license": "https://github.com/amirlehmam/wmux/blob/master/LICENSE",
+  "description": "A Windows terminal for running several coding agents at once, with a browser panel beside the terminals.",
+  "author": { "@type": "Person", "name": "Amir Lehmam", "url": "https://github.com/amirlehmam" },
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "downloadUrl": "https://github.com/amirlehmam/wmux/releases/latest",
+  "codeRepository": "https://github.com/amirlehmam/wmux",
+  "video": {
+    "@type": "VideoObject",
+    "name": "wmux in motion",
+    "description": "A short film showing wmux running several coding agents side by side on Windows.",
+    "thumbnailUrl": "https://wmux.org/assets/film/wmux-film-poster.jpg",
+    "contentUrl": "https://wmux.org/assets/film/wmux-film.mp4",
+    "uploadDate": "2026-11-12"
   }
-  </script>
-
-  <style>
-    :root {
-      --bg: #0a0a0a;
-      --bg-elevated: #141414;
-      --bg-hover: #1a1a1a;
-      --border: #222;
-      --border-hover: #333;
-      --text: #ededed;
-      --text-secondary: #888;
-      --text-muted: #555;
-      --accent: #3b82f6;
-      --accent-hover: #60a5fa;
-      --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      --font-mono: 'Geist Mono', 'Cascadia Code', 'Consolas', monospace;
-      --max-w: 720px;
-      --max-w-wide: 960px;
-    }
-
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    html {
-      scroll-behavior: smooth;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-
-    body {
-      font-family: var(--font-sans);
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.7;
-      font-size: 15px;
-      min-height: 100vh;
-    }
-
-    code {
-      font-family: var(--font-mono);
-      background: var(--bg-elevated);
-      padding: 1px 5px;
-      border-radius: 4px;
-      font-size: 0.9em;
-    }
-
-    a {
-      color: var(--text);
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      text-decoration-color: var(--text-muted);
-      transition: color 0.15s, text-decoration-color 0.15s;
-    }
-    a:hover {
-      color: var(--accent-hover);
-      text-decoration-color: var(--accent-hover);
-    }
-
-    /* ═══════════════════════════ HEADER ═══════════════════════════ */
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(10,10,10,0.85);
-      backdrop-filter: blur(12px) saturate(1.8);
-      -webkit-backdrop-filter: blur(12px) saturate(1.8);
-      border-bottom: 1px solid var(--border);
-    }
-    .header-inner {
-      max-width: var(--max-w-wide);
-      margin: 0 auto;
-      padding: 0 24px;
-      height: 56px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-    }
-    .logo-link {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 16px;
-      letter-spacing: -0.02em;
-    }
-    .logo-icon { width: 28px; height: 28px; border-radius: 6px; }
-    nav { display: flex; gap: 20px; }
-    nav a {
-      text-decoration: none;
-      color: var(--text-secondary);
-      font-size: 14px;
-      transition: color 0.15s;
-    }
-    nav a:hover { color: var(--text); }
-
-    .header-right { display: flex; align-items: center; gap: 16px; }
-    .gh-stars {
-      display: flex; align-items: center; gap: 6px;
-      color: var(--text-secondary); font-size: 13px; text-decoration: none;
-    }
-    .gh-stars svg { opacity: 0.7; }
-    .gh-stars:hover { color: var(--text); }
-    .gh-stars:hover svg { opacity: 1; }
-
-    .btn-download-header {
-      display: inline-flex; align-items: center; gap: 8px;
-      background: var(--text); color: var(--bg); border: none; border-radius: 8px;
-      padding: 7px 16px; font-size: 13px; font-weight: 500;
-      font-family: var(--font-sans); cursor: pointer; text-decoration: none;
-      transition: opacity 0.15s;
-    }
-    .btn-download-header:hover { opacity: 0.85; color: var(--bg); }
-
-    /* ═══════════════════════════ MAIN ═══════════════════════════ */
-    main { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; }
-
-    /* ═══════════════════════════ HERO ═══════════════════════════ */
-    .hero { padding-top: 80px; padding-bottom: 48px; }
-    .hero-logo { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
-    .hero-logo img { width: 48px; height: 48px; border-radius: 10px; }
-    .hero-logo span { font-size: 32px; font-weight: 700; letter-spacing: -0.03em; }
-    .hero h1 {
-      font-size: 24px; font-weight: 400; line-height: 1.4;
-      letter-spacing: -0.01em; margin-bottom: 16px;
-    }
-    .hero h1 .rotating-word { color: var(--accent); font-weight: 500; }
-    .hero p {
-      color: var(--text-secondary); font-size: 15px; line-height: 1.7;
-      margin-bottom: 32px; max-width: 560px;
-    }
-    .hero-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
-    .btn-primary {
-      display: inline-flex; align-items: center; gap: 8px;
-      background: var(--text); color: var(--bg); border: 1px solid var(--text);
-      border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 500;
-      font-family: var(--font-sans); cursor: pointer; text-decoration: none;
-      transition: opacity 0.15s;
-    }
-    .btn-primary:hover { opacity: 0.85; color: var(--bg); }
-    .btn-secondary {
-      display: inline-flex; align-items: center; gap: 8px;
-      background: transparent; color: var(--text); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 500;
-      font-family: var(--font-sans); cursor: pointer; text-decoration: none;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .btn-secondary:hover { border-color: var(--border-hover); background: var(--bg-hover); }
-
-    /* ═══════════════════════════ FEATURES ═══════════════════════════ */
-    .features { padding: 24px 0 48px; }
-    .features h2 {
-      font-size: 14px; font-weight: 500; color: var(--text-secondary);
-      margin-bottom: 20px; letter-spacing: 0.02em;
-    }
-    .features ul { list-style: none; padding: 0; }
-    .features li {
-      position: relative; padding-inline-start: 18px; margin-bottom: 14px;
-      color: var(--text-secondary); font-size: 15px; line-height: 1.6;
-    }
-    .features li::before {
-      content: '-'; position: absolute; inset-inline-start: 0; color: var(--text-muted);
-    }
-    .features li strong { color: var(--text); font-weight: 600; }
-
-    /* ═══════════════════════════ SCREENSHOT ═══════════════════════════ */
-    .screenshot-section { padding: 32px 0 64px; }
-    .screenshot-section img {
-      width: 100%; border-radius: 12px; border: 1px solid var(--border);
-      box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
-    }
-
-    /* ═══════════════════════════ FAQ ═══════════════════════════ */
-    .faq { padding: 48px 0; border-top: 1px solid var(--border); }
-    .faq h2 {
-      font-size: 14px; font-weight: 500; color: var(--text-secondary);
-      margin-bottom: 24px; letter-spacing: 0.02em;
-    }
-    .faq-item { border-bottom: 1px solid var(--border); }
-    .faq-question {
-      width: 100%; background: none; border: none; color: var(--text);
-      font-family: var(--font-sans); font-size: 15px; font-weight: 500;
-      text-align: start; padding: 16px 0; cursor: pointer;
-      display: flex; justify-content: space-between; align-items: center;
-      transition: color 0.15s;
-    }
-    .faq-question:hover { color: var(--accent-hover); }
-    .faq-question .chevron {
-      transition: transform 0.2s; color: var(--text-muted);
-      flex-shrink: 0; margin-inline-start: 16px;
-    }
-    .faq-item.open .chevron { transform: rotate(180deg); }
-    .faq-answer { max-height: 0; overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease; }
-    .faq-item.open .faq-answer { max-height: 300px; padding-bottom: 16px; }
-    .faq-answer p { color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
-    .faq-answer a { color: var(--accent); }
-
-    /* ═══════════════════════════ BOTTOM CTA ═══════════════════════════ */
-    .bottom-cta {
-      padding: 48px 0; border-top: 1px solid var(--border);
-      display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
-    }
-
-    /* ═══════════════════════════ FOOTER ═══════════════════════════ */
-    footer { border-top: 1px solid var(--border); margin-top: 48px; }
-    .footer-inner {
-      max-width: var(--max-w-wide); margin: 0 auto; padding: 48px 24px 32px;
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px;
-    }
-    .footer-col h3 {
-      font-size: 13px; font-weight: 500; color: var(--text-secondary);
-      margin-bottom: 14px; letter-spacing: 0.02em;
-    }
-    .footer-col ul { list-style: none; padding: 0; }
-    .footer-col li { margin-bottom: 8px; }
-    .footer-col a {
-      color: var(--text-muted); font-size: 13px; text-decoration: none;
-      transition: color 0.15s;
-    }
-    .footer-col a:hover { color: var(--text); }
-    .footer-bottom {
-      max-width: var(--max-w-wide); margin: 0 auto; padding: 16px 24px 32px;
-      display: flex; justify-content: space-between; align-items: center;
-      border-top: 1px solid var(--border);
-    }
-    .footer-bottom span { color: var(--text-muted); font-size: 12px; }
-
-    /* ═══════════════════════════ ROTATING TEXT ═══════════════════════════ */
-    .rotating-container {
-      display: inline-block; position: relative; overflow: hidden;
-      vertical-align: bottom; height: 1.4em; min-width: 120px;
-    }
-    .rotating-text {
-      display: block; animation: rotateWords 8s ease-in-out infinite;
-      color: var(--accent); font-weight: 500;
-    }
-    @keyframes rotateWords {
-      0%, 20% { transform: translateY(0); opacity: 1; }
-      25%, 45% { transform: translateY(-1.4em); opacity: 1; }
-      50%, 70% { transform: translateY(-2.8em); opacity: 1; }
-      75%, 95% { transform: translateY(-4.2em); opacity: 1; }
-      100% { transform: translateY(-5.6em); opacity: 1; }
-    }
-
-    /* ═══════════════════════════ LANGUAGE SELECTOR ═══════════════════════════ */
-    #lang-selector {
-      position: relative;
-      display: inline-block;
-    }
-    .lang-trigger {
-      background: none; border: 1px solid var(--border); border-radius: 6px;
-      color: var(--text-secondary); font-family: var(--font-sans); font-size: 12px;
-      padding: 4px 10px; cursor: pointer; display: flex; align-items: center; gap: 6px;
-      transition: border-color 0.15s, color 0.15s;
-    }
-    .lang-trigger:hover { border-color: var(--border-hover); color: var(--text); }
-    .lang-dropdown {
-      display: none; position: absolute; bottom: 100%; margin-bottom: 8px;
-      inset-inline-end: 0;
-      background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
-      padding: 6px; min-width: 180px; max-height: 320px; overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 200;
-    }
-    .lang-dropdown.open { display: block; }
-    .lang-option {
-      display: block; width: 100%; background: none; border: none;
-      color: var(--text-secondary); font-family: var(--font-sans); font-size: 13px;
-      padding: 8px 12px; cursor: pointer; text-align: start; border-radius: 4px;
-      transition: background 0.1s, color 0.1s;
-    }
-    .lang-option:hover { background: var(--bg-hover); color: var(--text); }
-
-    /* scrollbar for dropdown */
-    .lang-dropdown::-webkit-scrollbar { width: 4px; }
-    .lang-dropdown::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-    /* ═══════════════════════════ RESPONSIVE ═══════════════════════════ */
-    @media (max-width: 768px) {
-      nav { display: none; }
-      .header-inner { padding: 0 16px; }
-      main { padding: 0 16px; }
-      .hero { padding-top: 48px; }
-      .hero-logo span { font-size: 26px; }
-      .hero h1 { font-size: 20px; }
-      .footer-inner { grid-template-columns: repeat(2, 1fr); gap: 24px; padding: 32px 16px 24px; }
-      .footer-bottom { flex-direction: column; gap: 8px; align-items: flex-start; padding: 16px; }
-    }
-    @media (max-width: 480px) {
-      .hero-buttons { flex-direction: column; }
-      .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
-      .gh-stars span { display: none; }
-    }
-
-    /* ═══════════════════════════ FADE IN ═══════════════════════════ */
-    .fade-in { opacity: 0; transform: translateY(12px); animation: fadeUp 0.6s ease forwards; }
-    .fade-in-d1 { animation-delay: 0.1s; }
-    .fade-in-d2 { animation-delay: 0.2s; }
-    .fade-in-d3 { animation-delay: 0.3s; }
-    .fade-in-d4 { animation-delay: 0.4s; }
-    @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
-  </style>
+}
+</script>
 </head>
 <body>
 
-  <!-- ═══════════════════ HEADER ═══════════════════ -->
-  <header>
-    <div class="header-inner">
-      <div class="header-left">
-        <a href="/" class="logo-link">
-          <img src="assets/wmux_logo.png?v=1.5.1" alt="wmux" class="logo-icon" />
-          <span>wmux</span>
-        </a>
-        <nav>
-          <a href="/docs" data-i18n="nav.docs">Docs</a>
-          <a href="https://github.com/amirlehmam/wmux/releases" data-i18n="nav.changelog">Changelog</a>
-          <a href="https://github.com/amirlehmam/wmux/discussions" data-i18n="nav.community">Communaut&eacute;</a>
-          <a href="https://github.com/amirlehmam/wmux" data-i18n="nav.github">GitHub</a>
-        </nav>
-      </div>
-      <div class="header-right">
-        <a href="https://github.com/amirlehmam/wmux" class="gh-stars" target="_blank" rel="noopener">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-          <span>GitHub</span>
-        </a>
-        <a href="https://github.com/amirlehmam/wmux/releases/latest" class="btn-download-header">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>
-          <span data-i18n="header.download">T&eacute;l&eacute;charger pour Windows</span>
-        </a>
-      </div>
-    </div>
-  </header>
+<a class="skip" href="#main" data-i18n="nav.skip">Skip to content</a>
 
-  <!-- ═══════════════════ MAIN ═══════════════════ -->
-  <main>
-
-    <!-- HERO -->
-    <section class="hero">
-      <div class="hero-logo fade-in">
-        <img src="assets/wmux_logo.png?v=1.5.1" alt="wmux logo" />
-        <span>wmux</span>
-      </div>
-
-      <h1 class="fade-in fade-in-d1">
-        <span data-i18n="hero.tagline">Le terminal con&ccedil;u pour</span>
-        <span class="rotating-container">
-          <span class="rotating-text" data-i18n="hero.word1">Claude Code</span>
-          <span class="rotating-text" data-i18n="hero.word2">les agents IA</span>
-          <span class="rotating-text" data-i18n="hero.word3">le multitasking</span>
-          <span class="rotating-text" data-i18n="hero.word4">Windows</span>
-        </span>
-      </h1>
-
-      <p class="fade-in fade-in-d2" data-i18n="hero.desc">
-        Application Windows bas&eacute;e sur Electron. Onglets verticaux,
-        notifications quand les agents ont besoin d'attention, panneaux
-        divis&eacute;s, navigateur int&eacute;gr&eacute; et une API pipe pour l'automatisation.
-      </p>
-
-      <div class="hero-buttons fade-in fade-in-d3">
-        <a href="https://github.com/amirlehmam/wmux/releases/latest" class="btn-primary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>
-          <span data-i18n="hero.download">T&eacute;l&eacute;charger pour Windows</span>
-        </a>
-        <a href="https://github.com/amirlehmam/wmux" class="btn-secondary" target="_blank" rel="noopener">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-          <span data-i18n="hero.github">Voir sur GitHub</span>
-        </a>
-      </div>
-    </section>
-
-    <!-- FEATURES -->
-    <section class="features fade-in fade-in-d4">
-      <h2 data-i18n="features.title">Fonctionnalit&eacute;s</h2>
-      <ul>
-        <li><strong data-i18n="f1.name">Int&eacute;gration passive Claude Code</strong> : <span data-i18n-html="f1.desc">wmux observe Claude Code sans modifier son comportement. Un proxy CDP sur <code>localhost:9222</code> permet au navigateur int&eacute;gr&eacute; de montrer chaque action en temps r&eacute;el. Les hooks auto-configur&eacute;s rapportent l'activit&eacute; des agents et outils dans la barre lat&eacute;rale. Z&eacute;ro configuration.</span></li>
-        <li><strong data-i18n="f2.name">Navigateur int&eacute;gr&eacute;</strong> : <span data-i18n-html="f2.desc">ouvrez un navigateur &agrave; c&ocirc;t&eacute; de votre terminal avec une API scriptable. Quand Claude Code navigue via <code>chrome-devtools-mcp</code>, chaque page, clic et formulaire est visible dans le panneau navigateur.</span></li>
-        <li><strong data-i18n="f3.name">Anneaux de notification</strong> : <span data-i18n-html="f3.desc">les panneaux s'illuminent en bleu quand les agents ont besoin d'attention. Notification Windows toast, flash barre des t&acirc;ches, et centre de notifications int&eacute;gr&eacute;.</span></li>
-        <li><strong data-i18n="f13.name">Console distante</strong> : <span data-i18n-html="f13.desc">tous vos agents sur votre t&eacute;l&eacute;phone, ceux qui vous attendent en premier. R&eacute;pondez &agrave; un agent bloqu&eacute; en deux touches, suivez son terminal en direct, envoyez-lui un message. D&eacute;sactiv&eacute;e par d&eacute;faut, appairage par QR code, un acc&egrave;s r&eacute;vocable par appareil.</span></li>
-        <li><strong data-i18n="f4.name">Onglets verticaux</strong> : <span data-i18n-html="f4.desc">la barre lat&eacute;rale affiche la branche git, le r&eacute;pertoire de travail, les ports, le nombre d'agents, le statut PR et le texte de notification. Double-clic pour renommer.</span></li>
-        <li><strong data-i18n="f5.name">Panneaux divis&eacute;s</strong> : <span data-i18n-html="f5.desc">divisions horizontales et verticales dans chaque onglet. Ctrl+D pour diviser &agrave; droite, Ctrl+Shift+D pour diviser en bas.</span></li>
-        <li><strong data-i18n="f6.name">Indicateurs d'activit&eacute;</strong> : <span data-i18n-html="f6.desc">orange pulsant = en cours, vert = termin&eacute;, rouge = interrompu. Visible d'un coup d'&oelig;il dans la barre lat&eacute;rale.</span></li>
-        <li><strong data-i18n="f7.name">Sessions sauvegard&eacute;es</strong> : <span data-i18n-html="f7.desc">sauvegardez vos splits, r&eacute;pertoires et URL navigateur. Restauration automatique au d&eacute;marrage.</span></li>
-        <li><strong data-i18n="f8.name">Scriptable</strong> : <span data-i18n-html="f8.desc">CLI et API named pipe (<code>\\.\pipe\wmux</code>) pour l'automatisation et le scripting. Protocole JSON-RPC v2 compatible avec cmux.</span></li>
-        <li><strong data-i18n="f9.name">Natif Windows</strong> : <span data-i18n-html="f9.desc">ConPTY pour l'&eacute;mulation de terminal, notifications toast Windows, flash barre des t&acirc;ches, title bar overlay native.</span></li>
-        <li><strong data-i18n="f10.name">Acc&eacute;l&eacute;ration GPU</strong> : <span data-i18n-html="f10.desc">propuls&eacute; par xterm.js avec rendu WebGL pour un affichage fluide.</span></li>
-        <li><strong data-i18n="f11.name">Th&egrave;mes compatibles</strong> : <span data-i18n-html="f11.desc">importez vos th&egrave;mes depuis Windows Terminal ou Ghostty. 450+ th&egrave;mes Ghostty inclus.</span></li>
-        <li><strong data-i18n="f12.name">Raccourcis clavier</strong> : <span data-i18n-html="f12.desc">raccourcis complets pour les espaces de travail, les divisions, le navigateur et plus.</span></li>
-      </ul>
-    </section>
-
-    <!-- SCREENSHOT -->
-    <section class="screenshot-section">
-      <img src="assets/wmux-screen.png" alt="wmux" loading="lazy" />
-    </section>
-
-    <!-- FAQ -->
-    <section class="faq">
-      <h2 data-i18n="faq.title">Questions fr&eacute;quentes</h2>
-
-      <div class="faq-item">
-        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
-          <span data-i18n="faq1.q">Quelle est la relation entre wmux et cmux ?</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="faq-answer"><p data-i18n-html="faq1.a">wmux est un fork Windows de <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener">cmux</a>. cmux est une application macOS native (Swift + AppKit + Ghostty). wmux reproduit la m&ecirc;me exp&eacute;rience sur Windows en utilisant Electron + xterm.js + ConPTY. Le protocole CLI/pipe est compatible entre les deux.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
-          <span data-i18n="faq2.q">Quelles plateformes sont support&eacute;es ?</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="faq-answer"><p data-i18n-html="faq2.a">Windows 10 et 11 uniquement (x64). Pour macOS, utilisez <a href="https://cmux.com" target="_blank" rel="noopener">cmux</a>.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
-          <span data-i18n="faq3.q">Quels agents sont compatibles ?</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="faq-answer"><p data-i18n-html="faq3.a">wmux est optimis&eacute; pour Claude Code avec int&eacute;gration passive automatique (hooks, CDP proxy, CLAUDE.md). Tout agent ou programme en ligne de commande peut &ecirc;tre utilis&eacute; dans les terminaux wmux.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
-          <span data-i18n="faq4.q">Comment fonctionnent les notifications ?</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="faq-answer"><p data-i18n-html="faq4.a">Les scripts d'int&eacute;gration shell d&eacute;tectent quand une commande se termine ou est interrompue. Le panneau re&ccedil;oit un anneau bleu, le badge sidebar s'incr&eacute;mente, et une notification Windows toast appara&icirc;t. Supporte OSC 9/99/777, la CLI <code>wmux notify</code>, et la d&eacute;tection d'inactivit&eacute;.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
-          <span data-i18n="faq5.q">En quoi c'est diff&eacute;rent de Windows Terminal ?</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="faq-answer"><p data-i18n-html="faq5.a">Windows Terminal est un excellent &eacute;mulateur de terminal, mais il n'a pas de syst&egrave;me de notification, pas de visibilit&eacute; sur l'activit&eacute; des agents, pas de navigateur int&eacute;gr&eacute;, et pas de m&eacute;tadonn&eacute;es live dans les onglets. wmux est con&ccedil;u sp&eacute;cifiquement pour superviser des agents IA.</p></div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-question" onclick="this.parentElement.classList.toggle('open')">
-          <span data-i18n="faq6.q">C'est gratuit ?</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="faq-answer"><p data-i18n-html="faq6.a">Oui. wmux est open-source sous licence AGPL-3.0. T&eacute;l&eacute;chargement gratuit sur <a href="https://github.com/amirlehmam/wmux/releases" target="_blank" rel="noopener">GitHub Releases</a>.</p></div>
-      </div>
-    </section>
-
-    <!-- BOTTOM CTA -->
-    <div class="bottom-cta">
-      <a href="https://github.com/amirlehmam/wmux/releases/latest" class="btn-primary">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 3v18"/></svg>
-        <span data-i18n="cta.download">T&eacute;l&eacute;charger pour Windows</span>
+<header class="site-header">
+  <div class="wrap site-header__bar">
+    <a class="brand" href="/" aria-label="wmux home">
+      <img src="assets/wmux_logo.png?v=1.5.1" alt="" width="30" height="30">
+      <span>wmux</span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="#features" data-i18n="nav.features">Features</a>
+      <a href="#agents" data-i18n="nav.agents">Agents</a>
+      <a href="#compare" data-i18n="nav.compare">Compare</a>
+      <a href="#install" data-i18n="nav.install">Install</a>
+      <a class="opt" href="/docs/en/" data-i18n="nav.docs">Docs</a>
+    </nav>
+    <div class="site-header__actions">
+      <a class="icon-btn gh" href="https://github.com/amirlehmam/wmux" aria-label="wmux on GitHub"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg></a>
+      <a class="btn btn--primary header-dl" href="https://github.com/amirlehmam/wmux/releases/latest">
+        <svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-download"/></svg>
+        <span data-i18n="nav.download">Download</span>
       </a>
-      <a href="https://github.com/amirlehmam/wmux" class="btn-secondary" target="_blank" rel="noopener">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        <span data-i18n="cta.github">Voir sur GitHub</span>
-      </a>
+      <button class="icon-btn menu-btn" type="button" aria-expanded="false" aria-controls="sheet" data-i18n-aria="nav.menu" aria-label="Menu">
+        <svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-menu"/></svg>
+      </button>
     </div>
+  </div>
+</header>
 
-  </main>
-
-  <!-- ═══════════════════ FOOTER ═══════════════════ -->
-  <footer>
-    <div class="footer-inner">
-      <div class="footer-col">
-        <h3 data-i18n="footer.product">Produit</h3>
-        <ul>
-          <li><a href="https://github.com/amirlehmam/wmux/releases" data-i18n="footer.changelog">Changelog</a></li>
-          <li><a href="https://github.com/amirlehmam/wmux/discussions" data-i18n="footer.community">Communaut&eacute;</a></li>
-          <li><a href="https://github.com/amirlehmam/wmux/releases" data-i18n="footer.releases">Releases</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h3 data-i18n="footer.resources">Ressources</h3>
-        <ul>
-          <li><a href="/docs" data-i18n="footer.docs">Documentation</a></li>
-          <li><a href="/docs#installation" data-i18n="footer.install">Installation</a></li>
-          <li><a href="/docs#raccourcis" data-i18n="footer.shortcuts">Raccourcis</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h3 data-i18n="footer.legal">L&eacute;gal</h3>
-        <ul>
-          <li><a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE" data-i18n="footer.license">Licence AGPL-3.0</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h3 data-i18n="footer.social">Social</h3>
-        <ul>
-          <li><a href="https://github.com/amirlehmam/wmux" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="https://github.com/amirlehmam" target="_blank" rel="noopener">@amirlehmam</a></li>
-        </ul>
-      </div>
+<div class="sheet" id="sheet" data-open="false">
+  <div class="sheet__scrim" data-close></div>
+  <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet__head">
+      <span id="sheet-title" class="brand"><img src="assets/wmux_logo.png?v=1.5.1" alt="" width="30" height="30"><span>wmux</span></span>
+      <button class="icon-btn" type="button" data-close data-i18n-aria="nav.close" aria-label="Close menu"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-close"/></svg></button>
     </div>
-    <div class="footer-bottom">
-      <span data-i18n="footer.copyright">&copy; 2026 wmux</span>
-      <div style="display:flex;align-items:center;gap:16px;">
-        <span><span data-i18n="footer.fork">Fork Windows de</span> <a href="https://cmux.com" target="_blank" rel="noopener" style="color:var(--text-muted)">cmux</a></span>
-        <!-- Language selector -->
-        <div id="lang-selector">
-          <button class="lang-trigger">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            <span id="lang-current">Fran&ccedil;ais</span>
+    <nav aria-label="Mobile">
+      <a href="#film" data-i18n="nav.film">Film</a>
+      <a href="#features" data-i18n="nav.features">Features</a>
+      <a href="#agents" data-i18n="nav.agents">Agents</a>
+      <a href="#compare" data-i18n="nav.compare">Compare</a>
+      <a href="#install" data-i18n="nav.install">Install</a>
+      <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      <a href="/docs/en/" data-i18n="nav.docs">Docs</a>
+      <a href="https://github.com/amirlehmam/wmux">GitHub</a>
+    </nav>
+    <a class="btn btn--primary" href="https://github.com/amirlehmam/wmux/releases/latest"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-download"/></svg><span data-i18n="hero.download">Download for Windows</span></a>
+  </div>
+</div>
+
+<main id="main">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div class="hero__copy">
+        <h1 id="hero-title"><span data-i18n="hero.title1">Run every agent.</span> <span class="hero__soft" data-i18n="hero.title2">See who needs you.</span></h1>
+        <p class="hero__lead" data-i18n="hero.lead">A Windows terminal for several coding agents at once, with a browser beside them.</p>
+        <div class="hero__cta">
+          <a class="btn btn--primary" href="https://github.com/amirlehmam/wmux/releases/latest">
+            <svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#windows"/></svg>
+            <span data-i18n="hero.download">Download for Windows</span>
+          </a>
+          <a class="btn btn--ghost" href="https://github.com/amirlehmam/wmux">
+            <svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg>
+            <span data-i18n="hero.github">View on GitHub</span>
+          </a>
+        </div>
+        <ul class="hero__meta" role="list">
+          <li><span data-i18n="hero.meta.free">Free, MIT</span></li>
+          <li><span data-i18n="hero.meta.platform">Windows x64</span></li>
+          <li><span class="mono">v2.60.0</span>
+            <span class="tip"><button class="tip__btn" type="button" data-tip="tip-hero" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-hero" popover role="tooltip" data-i18n="hero.tip">Releases are unsigned, so SmartScreen may warn on first launch. Updates install from inside the app.</span></span>
+          </li>
+        </ul>
+      </div>
+
+      <figure class="hero__figure" id="film">
+        <div class="film">
+        <video id="film-video" controls preload="none" playsinline poster="assets/film/wmux-film-poster.jpg" width="1920" height="1080">
+          <source src="assets/film/wmux-film.mp4" type="video/mp4">
+          <a href="assets/film/wmux-film.mp4" data-i18n="film.fallback">Download the film (MP4)</a>
+        </video>
+        <div class="film__preview" id="film-preview" hidden>
+          <video id="film-loop" muted loop playsinline preload="none" poster="assets/film/wmux-loop-poster.jpg" aria-hidden="true" tabindex="-1">
+            <source src="assets/film/wmux-loop.mp4" type="video/mp4">
+          </video>
+          <button class="film__play" type="button" id="film-play">
+            <span class="disc"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-play"/></svg></span>
+            <span data-i18n="film.play">Play the film</span>
           </button>
+        </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ AGENTS ============ -->
+  <section class="section" id="agents" aria-labelledby="agents-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <h2 id="agents-title" data-i18n="agents.title">Agents</h2>
+        <div class="dim" aria-hidden="true"></div>
+        <p data-i18n="agents.lead">Bring the agents and accounts you already use. wmux sells none.</p>
+      </div>
+      <div class="agents">
+        <div class="agents__group reveal">
+          <div class="agents__label">
+            <h3 data-i18n="agents.integrated">Integrated</h3>
+            <span class="tip"><button class="tip__btn" type="button" data-tip="tip-int" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-int" popover role="tooltip" data-i18n="agents.integrated.tip">wmux installs hooks, plugins or instructions so the sidebar knows each agent's state. It asks first.</span></span>
+          </div>
+          <ul class="logo-grid" role="list">
+            <li class="logo-cell"><img class="logo" src="assets/img/logos/claude-color.svg" alt="" width="28" height="28" loading="lazy"><span class="name">Claude Code</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a1" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a1" popover role="tooltip" data-i18n="agents.claude.tip">Hooks for state and notifications, session resume, hooks inside running WSL distros.</span></span></li>
+            <li class="logo-cell"><img class="logo" src="assets/img/logos/codex-color.svg" alt="" width="28" height="28" loading="lazy"><span class="name">Codex</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a2" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a2" popover role="tooltip" data-i18n="agents.codex.tip">Opt-in conversation restore through a launcher, without hooks.</span></span></li>
+            <li class="logo-cell"><svg class="logo" aria-hidden="true"><use href="assets/img/icons.svg#opencode"/></svg><span class="name">OpenCode</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a3" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a3" popover role="tooltip" data-i18n="agents.opencode.tip">A plugin and an AGENTS.md block, plus session resume.</span></span></li>
+            <li class="logo-cell"><img class="logo" src="assets/img/logos/qwen-color.svg" alt="" width="28" height="28" loading="lazy"><span class="name">Qwen Code</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a4" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a4" popover role="tooltip" data-i18n="agents.qwen.tip">Hooks, instructions and session resume.</span></span></li>
+            <li class="logo-cell"><img class="logo" src="assets/img/logos/kiro-color.svg" alt="" width="28" height="28" loading="lazy"><span class="name">Kiro</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a5" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a5" popover role="tooltip" data-i18n="agents.kiro.tip">A wmux steering file in your Kiro folder.</span></span></li>
+            <li class="logo-cell"><svg class="logo logo--mono" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="none" stroke="currentColor" stroke-width="1.6"/><text x="12" y="17" text-anchor="middle" font-family="Zilla Slab, Rockwell, Georgia, serif" font-weight="700" font-size="14" fill="currentColor">pi</text></svg><span class="name">pi</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a6" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a6" popover role="tooltip" data-i18n="agents.pi.tip">An extension, scoped instructions and session resume.</span></span></li>
+            <li class="logo-cell"><svg class="logo logo--mono" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="none" stroke="currentColor" stroke-width="1.6"/><text x="12" y="15.5" text-anchor="middle" font-family="Zilla Slab, Rockwell, Georgia, serif" font-weight="700" font-size="9.5" fill="currentColor">omp</text></svg><span class="name">omp</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a7" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a7" popover role="tooltip" data-i18n="agents.omp.tip">Oh My Pi: an extension, an AGENTS.md block and session resume.</span></span></li>
+            <li class="logo-cell"><svg class="logo" aria-hidden="true"><use href="assets/img/icons.svg#grok"/></svg><span class="name">Grok Build</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a8" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a8" popover role="tooltip" data-i18n="agents.grok.tip">Hooks and a rules file, only when the grok CLI is installed.</span></span></li>
+            <li class="logo-cell"><img class="logo" src="assets/img/logos/antigravity-color.svg" alt="" width="28" height="28" loading="lazy"><span class="name">Antigravity CLI</span>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-a9" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-a9" popover role="tooltip" data-i18n="agents.agy.tip">A plugin and conversation resume for agy.</span></span></li>
+          </ul>
+        </div>
+
+        <div class="agents__group reveal">
+          <div class="agents__label">
+            <h3 data-i18n="agents.recognized">Recognized</h3>
+            <span class="tip"><button class="tip__btn" type="button" data-tip="tip-rec" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-rec" popover role="tooltip" data-i18n="agents.recognized.tip">wmux labels the pane as an agent from its command line. No hooks are installed.</span></span>
+          </div>
+          <ul class="logo-grid logo-grid--quiet" role="list">
+            <li class="logo-cell"><img class="logo" src="assets/img/logos/gemini-color.svg" alt="" width="28" height="28" loading="lazy"><span class="name">Gemini CLI</span></li>
+            <li class="logo-cell"><svg class="logo" aria-hidden="true"><use href="assets/img/icons.svg#cursor"/></svg><span class="name">Cursor Agent</span></li>
+            <li class="logo-cell"><svg class="logo" aria-hidden="true"><use href="assets/img/icons.svg#githubcopilot"/></svg><span class="name">Copilot CLI</span></li>
+            <li class="logo-cell"><svg class="logo" aria-hidden="true"><use href="assets/img/icons.svg#cline"/></svg><span class="name">Cline</span></li>
+            <li class="logo-cell"><svg class="logo logo--mono" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="none" stroke="currentColor" stroke-width="1.6"/><text x="12" y="17" text-anchor="middle" font-family="Zilla Slab, Rockwell, Georgia, serif" font-weight="700" font-size="14" fill="currentColor">A</text></svg><span class="name">Aider</span></li>
+            <li class="logo-cell"><svg class="logo" aria-hidden="true"><use href="assets/img/icons.svg#amp"/></svg><span class="name">Amp</span></li>
+            <li class="logo-cell"><svg class="logo logo--mono" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="none" stroke="currentColor" stroke-width="1.6"/><text x="12" y="17" text-anchor="middle" font-family="Zilla Slab, Rockwell, Georgia, serif" font-weight="700" font-size="14" fill="currentColor">D</text></svg><span class="name">Droid</span></li>
+            <li class="logo-cell"><svg class="logo" aria-hidden="true"><use href="assets/img/icons.svg#goose"/></svg><span class="name">Goose</span></li>
+            <li class="logo-cell"><svg class="logo logo--mono" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="none" stroke="currentColor" stroke-width="1.6"/><text x="12" y="17" text-anchor="middle" font-family="Zilla Slab, Rockwell, Georgia, serif" font-weight="700" font-size="14" fill="currentColor">C</text></svg><span class="name">Crush</span></li>
+          </ul>
+          <p class="agents__note" data-i18n="agents.note">Any other command-line tool runs in a pane as usual.</p>
         </div>
       </div>
     </div>
-  </footer>
+  </section>
 
-  <script src="i18n.js"></script>
+  <!-- ============ FEATURES ============ -->
+  <section class="section" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <h2 id="features-title" data-i18n="feat.title">Features</h2>
+        <div class="dim" aria-hidden="true"></div>
+      </div>
+
+      <div class="bento">
+        <article class="cell cell--wide cell--split reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.attn.title">Attention</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f1" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f1" popover role="tooltip" data-i18n="feat.attn.tip">Ctrl+Shift+A opens the agent navigator, blocked agents first. Desktop notifications fire when work finishes or needs input.</span></span></div>
+            <p data-i18n="feat.attn.body">The sidebar shows who works and who waits. One shortcut jumps to the agent waiting for you.</p>
+            <div class="kbds"><kbd class="k">Ctrl</kbd><kbd class="k">Shift</kbd><kbd class="k">B</kbd></div>
+          </div>
+          <div class="viz rows" aria-hidden="true">
+            <div class="vrow vrow--blocked"><span class="d"></span><span class="who"><span class="pre">shop · </span>Codex</span><span class="s" data-i18n="stage.s.blocked">Needs you</span></div>
+            <div class="vrow vrow--working"><span class="d"></span><span class="who"><span class="pre">docs · </span>Claude Code</span><span class="s" data-i18n="stage.s.working">Working</span></div>
+            <div class="vrow vrow--done"><span class="d"></span><span class="who"><span class="pre">sandbox · </span>OpenCode</span><span class="s" data-i18n="stage.s.done">Done</span></div>
+          </div>
+        </article>
+
+        <article class="cell cell--tall reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.browser.title">Browser panel</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f2" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f2" popover role="tooltip" data-i18n="feat.browser.tip">Navigate, snapshot, click and screenshot from the CLI. It also exposes a CDP endpoint for DevTools-protocol clients. It starts blank.</span></span></div>
+            <p data-i18n="feat.browser.body">Your dev server beside the code. Agents can drive it too.</p>
+          </div>
+          <div class="viz" aria-hidden="true">
+            <div class="mini-browser">
+              <div class="mini-browser__bar"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-globe"/></svg><span>localhost:5173</span></div>
+              <div class="mini-browser__page"><i class="hero"></i><i style="inline-size:72%"></i><i style="inline-size:54%"></i><i style="inline-size:63%"></i><i style="inline-size:40%"></i><i style="inline-size:58%"></i><i style="inline-size:46%"></i></div>
+            </div>
+            <div class="code-card">
+              <div><span class="c">wmux browser</span> <span class="nw">snapshot</span></div>
+              <div><span class="c">wmux browser</span> <span class="nw">click e12</span></div>
+              <div class="o">ok</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.split.title">Splits and tabs</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f3" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f3" popover role="tooltip" data-i18n="feat.split.tip">Ctrl+D splits right, Ctrl+Shift+D splits down, Ctrl+Shift+Enter zooms a pane. Workspaces group them.</span></span></div>
+            <p data-i18n="feat.split.body">Split, drag tabs between panes, zoom one, save the layout.</p>
+          </div>
+          <div class="viz split-viz" aria-hidden="true"><span></span><span></span><span></span></div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.git.title">Git view</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f4" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f4" popover role="tooltip" data-i18n="feat.git.tip">Ctrl+Alt+G opens it. The file explorer (Ctrl+Shift+X) adds a diff view and quick edits. Git stays read-only.</span></span></div>
+            <p data-i18n="feat.git.body">Working changes, branch diff and commit graph, in the same window.</p>
+          </div>
+          <div class="viz" aria-hidden="true">
+            <div class="commits">
+              <div><i></i><b>a41c9e2</b><span>Add order status</span></div>
+              <div><i></i><b>9bc90e1</b><span>Test the orders API</span></div>
+              <div><i></i><b>4a529c7</b><span>Cart totals</span></div>
+            </div>
+            <div class="diff">
+              <div class="ctx">  status: text,</div>
+              <div class="add">+ shipped_at: date,</div>
+              <div class="add">+ carrier: text,</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.wt.title">Worktrees</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f5" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f5" popover role="tooltip" data-i18n="feat.wt.tip">wmux new-workspace --worktree &lt;branch&gt;. When you close the workspace, you choose to keep or discard the checkout.</span></span></div>
+            <p data-i18n="feat.wt.body">Each parallel task gets its own checkout of the repo.</p>
+          </div>
+          <div class="viz tree" aria-hidden="true">
+            <div><svg class="icon"><use href="assets/img/icons.svg#i-branch"/></svg>shop<em>main</em></div>
+            <div><svg class="icon"><use href="assets/img/icons.svg#i-branch"/></svg>shop-status<em>wt</em></div>
+            <div><svg class="icon"><use href="assets/img/icons.svg#i-branch"/></svg>shop-tests<em>wt</em></div>
+          </div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.restore.title">Restore</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f6" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f6" popover role="tooltip" data-i18n="feat.restore.tip">Agent conversation resume is opt-in per agent. Running processes do not survive a restart: shells start again.</span></span></div>
+            <p data-i18n="feat.restore.body">Layouts, tabs and folders come back. A closed tab reopens with its agent.</p>
+          </div>
+          <div class="viz" aria-hidden="true">
+            <div class="restore"><span class="rtab">docs</span><span class="rtab back"><i class="d"></i>shop · Codex</span><span class="rtab">sandbox</span></div>
+            <div class="restore-line kbds"><kbd class="k">Ctrl</kbd><kbd class="k">Shift</kbd><kbd class="k">T</kbd></div>
+          </div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.cli.title">CLI</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f7" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f7" popover role="tooltip" data-i18n="feat.cli.tip">It talks to the app over a named pipe. No MCP server needed.</span></span></div>
+            <p data-i18n="feat.cli.body">The wmux command in every pane lets agents and scripts drive the app.</p>
+          </div>
+          <div class="viz code-card" style="margin:0" aria-hidden="true">
+            <div><span class="c">wmux</span> tree</div>
+            <div><span class="c">wmux</span> read-screen</div>
+            <div><span class="c">wmux</span> notify "done"</div>
+          </div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.phone.title">Remote Console</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f8" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f8" popover role="tooltip" data-i18n="feat.phone.tip">Off by default, loopback-only by default. Reach it through Tailscale or an SSH tunnel, with device pairing and revocation.</span></span></div>
+            <p data-i18n="feat.phone.body">Check agents and answer them from a phone browser.</p>
+          </div>
+          <div class="viz phone-viz" aria-hidden="true"><span class="phone-viz__notch"></span><i></i><i class="need"></i><i></i><div class="keyrow"><b></b><b></b><b></b><b></b></div></div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.consent.title">Consent first</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f9" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f9" popover role="tooltip" data-i18n="feat.consent.tip">Declining removes what an earlier version wrote. No telemetry, no account.</span></span></div>
+            <p data-i18n="feat.consent.body">wmux asks before it writes any config outside its own folder.</p>
+          </div>
+          <div class="viz consent" aria-hidden="true">
+            <span class="path" dir="ltr">~\<wbr>.claude\<wbr>settings.json</span>
+            <span class="acts"><span class="yes" data-i18n="feat.consent.allow">Allow</span><span data-i18n="feat.consent.decline">Decline</span></span>
+          </div>
+        </article>
+
+        <article class="cell reveal">
+          <div class="cell__text">
+            <div class="cell__title"><h3 data-i18n="feat.shells.title">Shells</h3>
+              <span class="tip"><button class="tip__btn" type="button" data-tip="tip-f10" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-f10" popover role="tooltip" data-i18n="feat.shells.tip">Also SSH workspaces, 29 bundled themes and a Windows Terminal or Ghostty theme importer.</span></span></div>
+            <p data-i18n="feat.shells.body">Native Windows shells and WSL, side by side.</p>
+          </div>
+          <div class="viz shells" aria-hidden="true">
+            <div><svg><use href="assets/img/icons.svg#powershell"/></svg>PowerShell</div>
+            <div><svg><use href="assets/img/icons.svg#windows"/></svg>cmd</div>
+            <div><svg><use href="assets/img/icons.svg#gitforwindows"/></svg>Git Bash</div>
+            <div><svg><use href="assets/img/icons.svg#linux"/></svg>WSL</div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COMPARISON ============ -->
+  <section class="section" id="compare" aria-labelledby="compare-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <h2 id="compare-title" data-i18n="cmp.title">Comparison</h2>
+        <div class="dim" aria-hidden="true"></div>
+      </div>
+      <div class="cmp-wrap reveal">
+        <table class="cmp">
+          <thead>
+            <tr>
+              <th scope="col"><span class="sr-only" data-i18n="cmp.feature">Feature</span></th>
+              <th scope="col" class="us">wmux</th>
+              <th scope="col">Windows Terminal</th>
+              <th scope="col" data-i18n="cmp.tmux">tmux in WSL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row" data-i18n="cmp.r1">Windows shells and WSL</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="part"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-partial"/></svg><span class="v q" data-i18n="cmp.linuxonly">Linux shells only</span><span class="tip tip--m"><button class="tip__btn" type="button" data-tip="tip-c2" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-c2" popover role="tooltip" data-i18n="cmp.linuxonly">Linux shells only</span></span></span></td></tr>
+            <tr><th scope="row" data-i18n="cmp.r2">Split panes and tabs</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td></tr>
+            <tr class="cmp-same"><th scope="row" data-i18n="cmp.r3">Shows which agent waits for you</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td></tr>
+            <tr class="cmp-same"><th scope="row" data-i18n="cmp.r4">Notifies when an agent needs input</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td></tr>
+            <tr class="cmp-same"><th scope="row" data-i18n="cmp.r5">Scriptable browser panel</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td></tr>
+            <tr class="cmp-same"><th scope="row" data-i18n="cmp.r6">Git view, diff and file explorer</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td></tr>
+            <tr><th scope="row" data-i18n="cmp.r7">Git worktree workspaces</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td></tr>
+            <tr><th scope="row" data-i18n="cmp.r8">Reopen agent conversations</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v q" data-i18n="cmp.optin">Yes, opt-in</span><span class="tip tip--m"><button class="tip__btn" type="button" data-tip="tip-c3" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-c3" popover role="tooltip" data-i18n="cmp.optin">Yes, opt-in</span></span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td></tr>
+            <tr><th scope="row" data-i18n="cmp.r9">Processes survive closing the app</th>
+              <td class="us"><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v q" data-i18n="cmp.restart">No, shells restart</span><span class="tip tip--m"><button class="tip__btn" type="button" data-tip="tip-c4" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-c4" popover role="tooltip" data-i18n="cmp.restart">No, shells restart</span></span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v q" data-i18n="cmp.detach">Yes, detach</span><span class="tip tip--m"><button class="tip__btn" type="button" data-tip="tip-c5" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-c5" popover role="tooltip" data-i18n="cmp.detach">Yes, detach</span></span></span></td></tr>
+            <tr><th scope="row" data-i18n="cmp.r10">CLI to control the layout</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td>
+              <td><span class="part"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-partial"/></svg><span class="v" data-i18n="cmp.partial">Partial</span><span class="tip"><button class="tip__btn" type="button" data-tip="tip-c1" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-c1" popover role="tooltip" data-i18n="cmp.partial.tip">Through wt command-line arguments.</span></span></span></td>
+              <td><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v" data-i18n="cmp.yes">Yes</span></span></td></tr>
+            <tr><th scope="row" data-i18n="cmp.r11">Phone access to panes</th>
+              <td class="us"><span class="yes"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg><span class="v q" data-i18n="cmp.optin">Yes, opt-in</span><span class="tip tip--m"><button class="tip__btn" type="button" data-tip="tip-c6" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-c6" popover role="tooltip" data-i18n="cmp.optin">Yes, opt-in</span></span></span></td>
+              <td><span class="no"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-minus"/></svg><span class="v" data-i18n="cmp.no">No</span></span></td>
+              <td><span class="part"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-partial"/></svg><span class="v q" data-i18n="cmp.ssh">Through an SSH client</span><span class="tip tip--m"><button class="tip__btn" type="button" data-tip="tip-c7" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-c7" popover role="tooltip" data-i18n="cmp.ssh">Through an SSH client</span></span></span></td></tr>
+            <tr><th scope="row" data-i18n="cmp.r12">License</th>
+              <td class="us"><span class="txt">MIT</span></td>
+              <td><span class="txt">MIT</span></td>
+              <td><span class="txt">ISC</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ INSTALL ============ -->
+  <section class="section" id="install" aria-labelledby="install-title">
+    <div class="wrap install">
+      <div class="section__head reveal">
+        <h2 id="install-title" data-i18n="install.title">Install</h2>
+        <div class="dim" aria-hidden="true"></div>
+        <p data-i18n="install.lead">Windows x64. Free, no account, no sign-in.</p>
+      </div>
+      <div class="reveal">
+        <div class="dl-list">
+          <div class="dl">
+            <span class="dl__ic"><svg aria-hidden="true"><use href="assets/img/icons.svg#windows"/></svg></span>
+            <span class="dl__name" data-i18n="install.exe">Installer</span>
+            <span class="dl__sub" data-i18n="install.exe.sub">Setup .exe, updates from inside the app</span>
+            <a class="btn btn--primary" href="https://github.com/amirlehmam/wmux/releases/latest"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-download"/></svg><span data-i18n="install.get">Download</span></a>
+          </div>
+          <div class="dl">
+            <span class="dl__ic"><svg aria-hidden="true"><use href="assets/img/icons.svg#i-folder"/></svg></span>
+            <span class="dl__name" data-i18n="install.zip">Portable ZIP</span>
+            <span class="dl__sub" data-i18n="install.zip.sub">Extract, then run wmux.exe</span>
+            <a class="btn" href="https://github.com/amirlehmam/wmux/releases/latest"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-download"/></svg><span data-i18n="install.get">Download</span></a>
+          </div>
+          <div class="dl dl--cmd">
+            <span class="dl__ic"><svg aria-hidden="true"><use href="assets/img/icons.svg#i-terminal"/></svg></span>
+            <span class="dl__name">Scoop</span>
+            <span class="dl__sub" data-i18n="install.scoop.sub">Update later with scoop update wmux</span>
+            <div class="cmds">
+              <div class="cmd"><code><span class="pr">&gt; </span>scoop bucket add wmux <span class="nb">https://github.com/amirlehmam/wmux</span></code>
+                <button class="copy" type="button" data-copy="scoop bucket add wmux https://github.com/amirlehmam/wmux" data-i18n-aria="install.copy" aria-label="Copy command"><svg class="icon ic-copy" aria-hidden="true"><use href="assets/img/icons.svg#i-copy"/></svg><svg class="icon ic-done" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg></button></div>
+              <div class="cmd"><code><span class="pr">&gt; </span>scoop install wmux/wmux</code>
+                <button class="copy" type="button" data-copy="scoop install wmux/wmux" data-i18n-aria="install.copy" aria-label="Copy command"><svg class="icon ic-copy" aria-hidden="true"><use href="assets/img/icons.svg#i-copy"/></svg><svg class="icon ic-done" aria-hidden="true"><use href="assets/img/icons.svg#i-check"/></svg></button></div>
+            </div>
+          </div>
+        </div>
+        <p class="install__foot"><span data-i18n="install.smartscreen">SmartScreen may warn on first launch.</span>
+          <span class="tip"><button class="tip__btn" type="button" data-tip="tip-i1" data-i18n-aria="tip.more" aria-label="More information"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-info"/></svg></button><span class="tip__body" id="tip-i1" popover role="tooltip" data-i18n="install.smartscreen.tip">Releases are not signed with a trusted certificate yet. Settings and sessions live in %APPDATA%\wmux.</span></span></p>
+        <p class="sr-only" aria-live="polite" id="copy-status"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section class="section" id="faq" aria-labelledby="faq-title">
+    <div class="wrap faq">
+      <div class="section__head reveal">
+        <h2 id="faq-title" data-i18n="faq.title">FAQ</h2>
+        <div class="dim" aria-hidden="true"></div>
+      </div>
+      <div class="qa reveal">
+        <details open>
+          <summary><span data-i18n="faq.q1">Is wmux free?</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-plus"/></svg></summary>
+          <div data-i18n="faq.a1">Yes. It is open source under the MIT license, with no account and no paid tier.</div>
+        </details>
+        <details>
+          <summary><span data-i18n="faq.q2">Does wmux include an AI model?</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-plus"/></svg></summary>
+          <div data-i18n="faq.a2">No. It runs the command-line agents you already use, with your own accounts.</div>
+        </details>
+        <details>
+          <summary><span data-i18n="faq.q3">Does it send any data?</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-plus"/></svg></summary>
+          <div data-i18n="faq.a3">No telemetry or analytics. It checks GitHub for updates, and you can turn that off. Opening the release notes also fetches them from GitHub.</div>
+        </details>
+        <details>
+          <summary><span data-i18n="faq.q4">Do my agents keep running after a restart?</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-plus"/></svg></summary>
+          <div data-i18n="faq.a4">No, processes stop. Layouts come back, and agent conversations can resume if you turn it on.</div>
+        </details>
+        <details>
+          <summary><span data-i18n="faq.q5">Which Windows versions?</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-plus"/></svg></summary>
+          <div data-i18n="faq.a5">Windows on x64. There is no macOS or Linux build.</div>
+        </details>
+        <details>
+          <summary><span data-i18n="faq.q6">Is wmux a fork of cmux?</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-plus"/></svg></summary>
+          <div data-i18n="faq.a6">No. It is an independent Windows implementation inspired by cmux, and reuses none of its code.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="thumb-cta" id="thumb-cta" data-hidden="true">
+  <a class="btn btn--primary" href="https://github.com/amirlehmam/wmux/releases/latest"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-download"/></svg><span class="lbl-long" data-i18n="hero.download">Download for Windows</span><span class="lbl-short" data-i18n="nav.download">Download</span></a>
+  <a class="icon-btn" href="https://github.com/amirlehmam/wmux" aria-label="wmux on GitHub"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#github"/></svg></a>
+</div>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="titleblock">
+      <div><img src="assets/wmux_logo.png?v=1.5.1" alt="" width="40" height="40"><span class="tb-name">wmux</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.version">Version</span><span class="tb-v">2.60.0</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.license">License</span><span class="tb-v">MIT</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.platform">Platform</span><span class="tb-v">Windows x64</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.releases">Releases</span><span class="tb-v">214</span></div>
+    </div>
+
+    <div class="footer-cols">
+      <div class="footer-about">
+        <p data-i18n="footer.about">A Windows terminal for running several coding agents at once. Built by Amir Lehmam.</p>
+      </div>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.product">Product</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/#features" data-i18n="nav.features">Features</a></li>
+          <li><a href="/#film" data-i18n="nav.film">Film</a></li>
+          <li><a href="/#install" data-i18n="nav.install">Install</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/releases" data-i18n="footer.changelog">Changelog</a></li>
+        </ul>
+      </details>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.support">Support</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/docs/en/" data-i18n="nav.docs">Docs</a></li>
+          <li><a href="/#faq" data-i18n="nav.faq">FAQ</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/discussions" data-i18n="footer.discussions">Discussions</a></li>
+          <li><a href="/about.html#contact" data-i18n="footer.contact">Contact</a></li>
+        </ul>
+      </details>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.trust">Trust</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/security.html" data-i18n="footer.security">Security</a></li>
+          <li><a href="/about.html" data-i18n="footer.aboutlink">About</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux" data-i18n="footer.source">Source code</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/issues" data-i18n="footer.issues">Report an issue</a></li>
+        </ul>
+      </details>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.legal">Legal</span><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/legal/notice.html" data-i18n="footer.notice">Legal notice</a></li>
+          <li><a href="/legal/privacy.html" data-i18n="footer.privacy">Privacy policy</a></li>
+          <li><a href="/legal/cookies.html" data-i18n="footer.cookies">Cookies</a></li>
+          <li><a href="/legal/terms.html" data-i18n="footer.terms">Terms of use</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE" data-i18n="footer.license">MIT License</a></li>
+        </ul>
+      </details>
+    </div>
+
+    <div class="footer-bottom">
+      <span data-i18n="footer.copyright">© 2025–2026 Amir Lehmam. MIT licensed.</span>
+      <div id="lang-selector">
+        <button class="lang-trigger" type="button" aria-haspopup="true"><svg class="icon" aria-hidden="true"><use href="assets/img/icons.svg#i-lang"/></svg><span id="lang-current">English</span></button>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="i18n.js?v=3.0.3"></script>
+<script src="assets/js/site.js?v=3.0.3"></script>
 </body>
 </html>

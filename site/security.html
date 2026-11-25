@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Security · wmux</title>
+<meta name="description" content="How to report a vulnerability in wmux, and how wmux protects your machine.">
+<link rel="canonical" href="https://wmux.org/security.html">
+<meta name="theme-color" content="#071324">
+<meta name="robots" content="index, follow">
+<link rel="icon" type="image/png" href="/assets/favicon.png?v=1.5.1">
+<link rel="apple-touch-icon" href="/assets/wmux_logo.png?v=1.5.1">
+<link rel="stylesheet" href="/assets/css/site.css?v=3.0.6">
+<script>document.documentElement.classList.add('js');</script>
+<script>/* Language and direction before first paint, by the same rule as detectLang() in i18n.js. */(function(d){var L="en fr es de pt it nl pl tr ru uk ar zh zh-tw ja ko hi vi th id sv cs".split(" "),n=function(c){if(!c)return null;c=c.toLowerCase();if(c=="zh-hant"||c=="zh-hk")c="zh-tw";return L.indexOf(c)>=0?c:null},s=null;try{s=localStorage.getItem("wmux-lang")}catch(e){}var v=(navigator.language||"en").toLowerCase(),b=v.split("-")[0],l=n(location.hash.slice(1))||n(s)||n(v)||(b=="zh"?(/hant|tw|hk/.test(v)?"zh-tw":"zh"):n(b))||"en";if(l=="zh-tw")l="zh-TW";d.lang=l;d.dir=l=="ar"?"rtl":"ltr";if(l!="en"){d.classList.add("i18n-wait");setTimeout(function(){d.classList.remove("i18n-wait")},1500)}})(document.documentElement);</script>
+</head>
+<body>
+
+<a class="skip" href="#main" data-i18n="nav.skip">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap site-header__bar">
+    <a class="brand" href="/" aria-label="wmux home">
+      <img src="/assets/wmux_logo.png?v=1.5.1" alt="" width="30" height="30">
+      <span>wmux</span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="/#features" data-i18n="nav.features">Features</a>
+      <a href="/#agents" data-i18n="nav.agents">Agents</a>
+      <a href="/#compare" data-i18n="nav.compare">Compare</a>
+      <a href="/#install" data-i18n="nav.install">Install</a>
+      <a class="opt" href="/docs/en/" data-i18n="nav.docs">Docs</a>
+    </nav>
+    <div class="site-header__actions">
+      <a class="icon-btn gh" href="https://github.com/amirlehmam/wmux" aria-label="wmux on GitHub"><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#github"/></svg></a>
+      <a class="btn btn--primary" href="https://github.com/amirlehmam/wmux/releases/latest">
+        <svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-download"/></svg>
+        <span data-i18n="nav.download">Download</span>
+      </a>
+      <button class="icon-btn menu-btn" type="button" aria-expanded="false" aria-controls="sheet" data-i18n-aria="nav.menu" aria-label="Menu">
+        <svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-menu"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="sheet" id="sheet" data-open="false">
+  <div class="sheet__scrim" data-close></div>
+  <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet__head">
+      <span id="sheet-title" class="brand"><img src="/assets/wmux_logo.png?v=1.5.1" alt="" width="30" height="30"><span>wmux</span></span>
+      <button class="icon-btn" type="button" data-close data-i18n-aria="nav.close" aria-label="Close menu"><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-close"/></svg></button>
+    </div>
+    <nav aria-label="Mobile">
+      <a href="/#film" data-i18n="nav.film">Film</a>
+      <a href="/#features" data-i18n="nav.features">Features</a>
+      <a href="/#agents" data-i18n="nav.agents">Agents</a>
+      <a href="/#compare" data-i18n="nav.compare">Compare</a>
+      <a href="/#install" data-i18n="nav.install">Install</a>
+      <a href="/#faq" data-i18n="nav.faq">FAQ</a>
+      <a href="/docs/en/" data-i18n="nav.docs">Docs</a>
+      <a href="https://github.com/amirlehmam/wmux">GitHub</a>
+    </nav>
+    <a class="btn btn--primary" href="https://github.com/amirlehmam/wmux/releases/latest"><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-download"/></svg><span data-i18n="hero.download">Download for Windows</span></a>
+  </div>
+</div>
+
+<main id="main" class="doc" lang="en" dir="ltr">
+  <div class="wrap">
+    <a class="doc__back" href="/" data-i18n="doc.back">Back to wmux.org</a>
+    <h1>Security</h1>
+    <p class="doc__updated">Last updated 12 November 2026</p>
+    <div class="doc__body">
+      <section><h2>Report a vulnerability</h2>
+        <p>Report privately from <a href="https://github.com/amirlehmam/wmux/security">the repository's Security tab</a> on GitHub. If private reporting is unavailable, open an issue asking for a private contact, without any details.</p>
+      </section>
+      <section><h2>By design</h2>
+        <ul>
+          <li>wmux asks before writing any config outside <code>%APPDATA%\wmux</code>. Declining removes what an earlier version wrote.</li>
+          <li>The Remote Console is off by default and listens on loopback only by default, with device pairing and revocation.</li>
+          <li>A workspace manifest shows a trust dialog before any of its commands run.</li>
+          <li>Installing an update always asks for confirmation. Unattended downloads wait 3 days after a release by default.</li>
+        </ul>
+      </section>
+      <section><h2>Known limits</h2>
+        <ul>
+          <li>Releases are not yet signed with a trusted certificate, so Windows SmartScreen may warn on first launch.</li>
+          <li>Saved terminal output is opt-in and stored unencrypted on your disk.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="titleblock">
+      <div><img src="/assets/wmux_logo.png?v=1.5.1" alt="" width="40" height="40"><span class="tb-name">wmux</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.version">Version</span><span class="tb-v">2.60.0</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.license">License</span><span class="tb-v">MIT</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.platform">Platform</span><span class="tb-v">Windows x64</span></div>
+      <div><span class="tb-k" data-i18n="footer.tb.releases">Releases</span><span class="tb-v">214</span></div>
+    </div>
+
+    <div class="footer-cols">
+      <div class="footer-about">
+        <p data-i18n="footer.about">A Windows terminal for running several coding agents at once. Built by Amir Lehmam.</p>
+      </div>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.product">Product</span><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/#features" data-i18n="nav.features">Features</a></li>
+          <li><a href="/#film" data-i18n="nav.film">Film</a></li>
+          <li><a href="/#install" data-i18n="nav.install">Install</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/releases" data-i18n="footer.changelog">Changelog</a></li>
+        </ul>
+      </details>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.support">Support</span><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/docs/en/" data-i18n="nav.docs">Docs</a></li>
+          <li><a href="/#faq" data-i18n="nav.faq">FAQ</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/discussions" data-i18n="footer.discussions">Discussions</a></li>
+          <li><a href="/about.html#contact" data-i18n="footer.contact">Contact</a></li>
+        </ul>
+      </details>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.trust">Trust</span><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/security.html" data-i18n="footer.security">Security</a></li>
+          <li><a href="/about.html" data-i18n="footer.aboutlink">About</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux" data-i18n="footer.source">Source code</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/issues" data-i18n="footer.issues">Report an issue</a></li>
+        </ul>
+      </details>
+      <details class="footer-col" open>
+        <summary><span data-i18n="footer.legal">Legal</span><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-chevron"/></svg></summary>
+        <ul>
+          <li><a href="/legal/notice.html" data-i18n="footer.notice">Legal notice</a></li>
+          <li><a href="/legal/privacy.html" data-i18n="footer.privacy">Privacy policy</a></li>
+          <li><a href="/legal/cookies.html" data-i18n="footer.cookies">Cookies</a></li>
+          <li><a href="/legal/terms.html" data-i18n="footer.terms">Terms of use</a></li>
+          <li><a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE" data-i18n="footer.license">MIT License</a></li>
+        </ul>
+      </details>
+    </div>
+
+    <div class="footer-bottom">
+      <span data-i18n="footer.copyright">© 2025–2026 Amir Lehmam. MIT licensed.</span>
+      <div id="lang-selector">
+        <button class="lang-trigger" type="button" aria-haspopup="true"><svg class="icon" aria-hidden="true"><use href="/assets/img/icons.svg#i-lang"/></svg><span id="lang-current">English</span></button>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/i18n.js?v=3.0.3"></script>
+<script src="/assets/js/site.js?v=3.0.3"></script>
+</body>
+</html>

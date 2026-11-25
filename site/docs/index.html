@@ -23,27 +23,27 @@
   <style>
     @font-face {
       font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
+      src: url('/assets/fonts/geist/Geist-Regular.woff2') format('woff2');
       font-weight: 400; font-style: normal; font-display: swap;
     }
     @font-face {
       font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
+      src: url('/assets/fonts/geist/Geist-Medium.woff2') format('woff2');
       font-weight: 500; font-style: normal; font-display: swap;
     }
     @font-face {
       font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
+      src: url('/assets/fonts/geist/Geist-SemiBold.woff2') format('woff2');
       font-weight: 600; font-style: normal; font-display: swap;
     }
     @font-face {
       font-family: 'Geist';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
+      src: url('/assets/fonts/geist/Geist-Bold.woff2') format('woff2');
       font-weight: 700; font-style: normal; font-display: swap;
     }
     @font-face {
       font-family: 'Geist Mono';
-      src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/GeistMono-Regular.woff2') format('woff2');
+      src: url('/assets/fonts/geist/GeistMono-Regular.woff2') format('woff2');
       font-weight: 400; font-style: normal; font-display: swap;
     }
 
@@ -856,7 +856,7 @@ wmux tree</code></pre>
 
       <h3>Puis-je utiliser wmux sur macOS ou Linux ?</h3>
       <p>
-        Non. wmux est spécifiquement conçu pour Windows (il utilise ConPTY, des APIs Win32 natives, et des optimisations Electron pour Windows). Pour macOS, utilise <a href="https://cmux.com" target="_blank" rel="noopener">cmux</a>, qui est le projet parent écrit en Swift/AppKit. Pour Linux, il y a tmux, Ghostty, ou Warp — mais tu n'auras pas le plugin wmux-orchestrator.
+        Non. wmux est spécifiquement conçu pour Windows (il utilise ConPTY, des APIs Win32 natives, et des optimisations Electron pour Windows). Pour macOS, utilise <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener">cmux</a>, le terminal macOS qui a inspiré wmux. Pour Linux, il y a tmux, Ghostty, ou Warp.
       </p>
 
       <!-- ─────────────────────────────────────────────────────── -->
@@ -870,7 +870,7 @@ wmux tree</code></pre>
         <li><strong>Discussions</strong> — <a href="https://github.com/amirlehmam/wmux/discussions" target="_blank" rel="noopener">GitHub Discussions</a> pour poser des questions</li>
         <li><strong>Issues</strong> — <a href="https://github.com/amirlehmam/wmux/issues" target="_blank" rel="noopener">Rapporter un bug</a></li>
         <li><strong>Plugin orchestrator</strong> — <a href="https://plugin.wmux.org" target="_blank" rel="noopener">plugin.wmux.org</a> : documentation complète du plugin avec simulateur interactif</li>
-        <li><strong>cmux (macOS)</strong> — <a href="https://cmux.com" target="_blank" rel="noopener">cmux.com</a> : la version macOS dont wmux est le fork Windows</li>
+        <li><strong>cmux (macOS)</strong> — <a href="https://github.com/manaflow-ai/cmux" target="_blank" rel="noopener">github.com/manaflow-ai/cmux</a> : le terminal macOS qui a inspiré wmux. wmux en est une implémentation Windows indépendante, qui ne reprend rien de son code source.</li>
       </ul>
 
       <p style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;">
@@ -888,7 +888,7 @@ wmux tree</code></pre>
 
   <footer class="doc-footer">
     <p>
-      © 2026 wmux · <a href="https://github.com/amirlehmam/wmux">GitHub</a> · <a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE">Licence AGPL-3.0</a> · Fork Windows de <a href="https://cmux.com">cmux</a>
+      © 2026 wmux · <a href="https://github.com/amirlehmam/wmux">GitHub</a> · <a href="https://github.com/amirlehmam/wmux/blob/master/LICENSE">Licence MIT</a> · inspiré de <a href="https://github.com/manaflow-ai/cmux">cmux</a>
     </p>
   </footer>
 
