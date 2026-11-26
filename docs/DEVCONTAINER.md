@@ -74,7 +74,8 @@ wmux bridge --wsl --port 9787
 
 `--wsl` binds `0.0.0.0` instead of `127.0.0.1`, after checking that this really
 is a WSL distro and that it runs NAT networking. If it refuses, read
-[Mirrored networking](#mirrored-networking). If `wmux` is not on your `PATH`
+[Mirrored networking](#mirrored-networking), or skip the port altogether with a
+[Unix socket](#unix-socket-instead-of-a-port). If `wmux` is not on your `PATH`
 inside WSL2, invoke the shipped CLI directly — any wmux pane exports `WMUX_CLI`
 for exactly this:
 
@@ -190,6 +191,77 @@ wmux list-workspaces
 `pong` means all three hops are up. A hang or `ECONNREFUSED` means the bridge
 is not listening or `host.docker.internal` does not resolve; `unauthorized`
 means the token is stale — wmux was restarted, so re-read `wmux token`.
+
+## Unix socket instead of a port
+
+`wmux bridge --unix <path>` is the same bridge listening on a Unix domain socket
+instead of a TCP port. No address is bound, so nothing on a network can reach it
+and the WSL networking mode stops mattering: not `nat`, not `mirrored`, and not
+`consomme` (the mode the [WSL docs](https://learn.microsoft.com/windows/wsl/wsl-config)
+list for `networkingMode` and say used to be called `virtioproxy`), which
+`--wsl` cannot classify and so refuses. It also avoids binding an explicit port
+on a distro-only address such as the Docker bridge's, which fails in WSL 3.0.5
+under `consomme` ([microsoft/WSL#42223](https://github.com/microsoft/WSL/issues/42223),
+fixed by [#42230](https://github.com/microsoft/WSL/pull/42230)).
+
+```bash
+mkdir -p -m 700 "$HOME/.cache/wmux/sock"
+wmux bridge --unix "$HOME/.cache/wmux/sock/wmux.sock"
+```
+
+The container gets the socket by bind-mounting its **directory** (not the file,
+which would go stale whenever the bridge restarts) and two variables. The
+clients need no change: the CLI and `wmux-hook.js` already dial a Unix socket
+when `WMUX_PIPE` starts with `/`, and take the token from `WMUX_PIPE_TOKEN`.
+
+```jsonc
+{
+  "mounts": ["source=${localEnv:HOME}/.cache/wmux/sock,target=/run/wmux,type=bind"],
+  "containerEnv": {
+    "WMUX_PIPE": "/run/wmux/wmux.sock",
+    "WMUX_PIPE_TOKEN": "${localEnv:WMUX_PIPE_TOKEN}"
+  }
+}
+```
+
+Leave `WMUX_REMOTE` and `WMUX_REMOTE_TOKEN` out. `WMUX_REMOTE_TOKEN`, when it is
+set, takes precedence over `WMUX_PIPE_TOKEN` even without `WMUX_REMOTE`, so a
+leftover from the TCP setup would send the wrong token.
+
+What the bridge enforces, so a misconfiguration fails at start instead of
+leaving a socket someone else can use:
+
+- `--unix` cannot be combined with `--host`, `--wsl` or `--port`: each describes
+  a TCP listener, and silently opening a socket instead would leave a client
+  pointing at a port nobody listens on.
+- The path is absolute and at most 107 bytes (the `sockaddr_un` limit), and is
+  not the pipe the bridge itself relays to.
+- The directory exists and is not writable by group or others, sticky bit or not
+  (so `/tmp` itself is refused). Another user who can write there could swap the
+  socket for their own.
+- The socket is created with mode `0600` (umask `077` around the bind, then an
+  explicit chmod), so only your user can connect, on top of the token.
+- A path under a Windows drive (`/mnt/c/...`) is refused: see below.
+- A file already at the path is never replaced unless it is a socket nobody
+  listens on (a connect gets `ECONNREFUSED`), which is what a killed bridge or a
+  WSL shutdown leaves behind. A live listener, a regular file, or a probe that
+  proves nothing makes the bridge exit instead.
+- The socket file is removed on `SIGINT`/`SIGTERM`/exit, but only while it is
+  still the bridge's own, so a newer bridge on the same path is not cut off.
+
+### Why this is not the cross-boundary Unix socket from above
+
+[How it fits together](#how-it-fits-together) says cross-boundary Unix sockets
+were tried first and dropped because 9P does not forward `AF_UNIX`. That was a
+socket on the Windows side reached from WSL2. Here the socket is created by a
+process inside the distro, on the distro's own filesystem, and the container is
+a process on the same Linux kernel: nothing crosses 9P. The Windows hop is still
+npiperelay, unchanged, and a `--unix` path on a 9P mount is refused for the same
+reason.
+
+This assumes the container engine shares the distro's kernel and filesystem, as
+Docker running inside the distro does. An engine that reaches the distro's files
+through 9P instead is not covered, and this has not been tried on one.
 
 ## What now works
 
@@ -324,6 +396,10 @@ workspace path instead.
   the mode and refuses to choose `0.0.0.0` unless it is NAT; see
   [Mirrored networking](#mirrored-networking). `--host` overrides the choice
   either way, and the CLI warns when the address is beyond loopback.
+- `--unix` opens no network address at all: the socket is mode `0600` in a
+  directory the bridge insists no one else can write, and the token is still
+  required. Use it where the networking mode makes a TCP bind hard to reason
+  about; see [Unix socket instead of a port](#unix-socket-instead-of-a-port).
 - The bridge authenticates nothing and parses nothing — it copies bytes. wmux's
   own pipe server verifies the per-instance token on every request, V1
   (`auth <token> …`) and V2 (`token` field) alike, so the bridge grants no
