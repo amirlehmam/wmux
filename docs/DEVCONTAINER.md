@@ -110,7 +110,7 @@ wmux bridge --host <addr-the-container-reaches> --port 9787
 is on the host's real interfaces. Check which mode you are in with:
 
 ```bash
-wslinfo --networking-mode      # nat | mirrored; needs WSL 2.0.5+
+wslinfo --networking-mode      # nat | mirrored | consomme; needs WSL 2.0.5+
 ```
 
 On WSL too old to answer, `--wsl` also refuses rather than assuming NAT, and
@@ -199,7 +199,8 @@ instead of a TCP port. No address is bound, so nothing on a network can reach it
 and the WSL networking mode stops mattering: not `nat`, not `mirrored`, and not
 `consomme` (the mode the [WSL docs](https://learn.microsoft.com/windows/wsl/wsl-config)
 list for `networkingMode` and say used to be called `virtioproxy`), which
-`--wsl` cannot classify and so refuses. It also avoids binding an explicit port
+`--wsl` refuses by name: what a `0.0.0.0` listener exposes there is not
+documented, so it is not assumed to be contained the way NAT is. It also avoids binding an explicit port
 on a distro-only address such as the Docker bridge's, which fails in WSL 3.0.5
 under `consomme` ([microsoft/WSL#42223](https://github.com/microsoft/WSL/issues/42223),
 fixed by [#42230](https://github.com/microsoft/WSL/pull/42230)).
