@@ -38,7 +38,7 @@
  * `readWslEnvironment()` in wmux.ts does the I/O.
  */
 
-export type WslNetworkingMode = 'nat' | 'mirrored' | 'unknown';
+export type WslNetworkingMode = 'nat' | 'mirrored' | 'consomme' | 'unknown';
 
 export interface WslEnvironment {
   /** `/proc/sys/kernel/osrelease`, or null when it could not be read. */
@@ -73,11 +73,18 @@ export function isWsl2(env: WslEnvironment): boolean {
  * `unknown`, which is treated as "not proven safe" rather than folded into the
  * NAT default. Silently assuming the safe case is how an assumption stops being
  * load-bearing and starts being a bug.
+ *
+ * `consomme` (called `virtioproxy` in earlier WSL versions, and still what some
+ * `.wslconfig` files say) is recognised so the refusal can name it, but it is
+ * not treated as NAT: what a `0.0.0.0` listener there exposes to the Windows
+ * host and its networks is not documented, so it is no safer a guess than an
+ * unknown mode.
  */
 export function parseNetworkingMode(output: string | null): WslNetworkingMode {
   const word = (output || '').trim().toLowerCase();
   if (word === 'nat') return 'nat';
   if (word === 'mirrored') return 'mirrored';
+  if (word === 'consomme' || word === 'virtioproxy') return 'consomme';
   return 'unknown';
 }
 
@@ -115,6 +122,13 @@ function exposureNotice(host: string, req: BindRequest): string[] {
       "What stands between this bind and the LAN is the Hyper-V firewall's inbound policy, not the ordinary",
       'Windows Firewall profile. The pipe token still authenticates every request, so this is exposure',
       'rather than an open door — but bind the specific address the container needs, not 0.0.0.0, if you can.',
+    ];
+  }
+  if (req.inWsl2 && req.mode === 'consomme') {
+    return [
+      `WARNING: consomme networking — what ${host} exposes to the Windows host and its networks is not documented`,
+      "for this mode, so nothing here can say it stays inside the distro. The pipe token still authenticates",
+      'every request, but prefer `wmux bridge --unix <path>`, which opens no address at all.',
     ];
   }
   if (req.inWsl2 && req.mode === 'nat') {
@@ -176,6 +190,20 @@ export function chooseBridgeHost(req: BindRequest): BindDecision {
         'VPN adapter, gated only by the Hyper-V firewall\'s inbound policy — not the private 172.x ' +
         'that --wsl assumes under NAT. Pass --host <addr> with the address the container actually ' +
         'reaches, or --host 0.0.0.0 if you have weighed that and want it anyway.',
+    };
+  }
+
+  if (req.mode === 'consomme') {
+    return {
+      host: null,
+      notices: [],
+      error:
+        'refusing to pick 0.0.0.0 for you: this distro runs consomme networking ' +
+        '(wslinfo --networking-mode reports "consomme"; earlier WSL versions and some .wslconfig files call it ' +
+        '"virtioproxy"). What a 0.0.0.0 listener exposes to the Windows host and its networks is not ' +
+        'documented for this mode, so --wsl does not assume it is contained the way it is under NAT. ' +
+        'Use --unix <path> to listen on a socket instead of an address, or pass --host <addr> with the ' +
+        'address the container actually reaches.',
     };
   }
 

@@ -315,3 +315,267 @@ describe('wmux bridge transport selection (WSL2 devcontainer path)', () => {
     }, 20000);
   });
 });
+
+// `wmux bridge --unix <path>`: the same bridge, listening on a Unix socket instead
+// of a TCP port. A container that has the socket's directory bind-mounted dials it
+// with the clients it already has (WMUX_PIPE=<path> is the Unix-socket branch of
+// connectTransport), so nothing about the networking mode matters. The rules for
+// where it may listen are table-tested in bridge-unix.test.ts; these are the
+// behaviours that need a real process and a real socket file.
+describe.skipIf(process.platform === 'win32')('wmux bridge --unix', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    while (cleanups.length) cleanups.pop()!();
+  });
+
+  const makeDir = (mode = 0o700): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wmux-unix-'));
+    fs.chmodSync(dir, mode);
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    return dir;
+  };
+
+  // Stand-in for the local pipe. It records every line it receives, answers a
+  // V1 `ping` the way wmux does, and echoes anything else.
+  async function startUpstream(dir: string): Promise<{ sockPath: string; lines: string[] }> {
+    const sockPath = path.join(dir, 'upstream.sock');
+    const lines: string[] = [];
+    const server = net.createServer((c) => {
+      let buf = '';
+      c.on('data', (d) => {
+        buf += d.toString();
+        let nl: number;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          lines.push(line);
+          c.write(line.endsWith('ping') ? 'pong\n' : line + '\n');
+        }
+      });
+    });
+    await new Promise<void>((r) => server.listen(sockPath, r));
+    cleanups.push(() => server.close());
+    return { sockPath, lines };
+  }
+
+  const bridgeEnv = (upstream: string): Record<string, string> => ({
+    ...process.env,
+    WMUX_PIPE: upstream,
+    WMUX_REMOTE: '',
+    WMUX_REMOTE_TOKEN: '',
+  } as Record<string, string>);
+
+  function startUnixBridge(args: string[], env: Record<string, string>): Promise<ChildProcess> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('node', [BRIDGE_SCRIPT, 'bridge', ...args], { env });
+      const timer = setTimeout(() => reject(new Error('bridge did not start listening in time')), 5000);
+      child.stdout.on('data', (chunk: Buffer) => {
+        if (chunk.toString().includes('listening')) {
+          clearTimeout(timer);
+          resolve(child);
+        }
+      });
+      child.on('error', (err) => { clearTimeout(timer); reject(err); });
+      child.on('exit', (code) => { clearTimeout(timer); reject(new Error(`bridge exited early (code ${code})`)); });
+    });
+  }
+
+  function runToExit(args: string[], env: Record<string, string>): Promise<{ code: number | null; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('node', [BRIDGE_SCRIPT, 'bridge', ...args], { env });
+      let err = '';
+      child.stderr.on('data', (c: Buffer) => { err += c.toString(); });
+      child.on('error', reject);
+      child.on('exit', (code) => resolve({ code, stderr: err }));
+    });
+  }
+
+  const exited = (child: ChildProcess): Promise<number | null> =>
+    new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+
+  function socketRoundTrip(sockPath: string, payload: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const sock = net.connect({ path: sockPath }, () => sock.write(payload));
+      let received = '';
+      sock.on('data', (chunk) => { received += chunk.toString(); });
+      sock.on('end', () => resolve(received));
+      sock.on('close', () => resolve(received));
+      sock.on('error', reject);
+      setTimeout(() => { sock.destroy(); resolve(received); }, 2000);
+    });
+  }
+
+  it('relays a Unix-socket client to the upstream, with no port opened', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const child = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+    cleanups.push(() => child.kill());
+
+    expect(await socketRoundTrip(sock, 'hello-unix\n')).toContain('hello-unix');
+  });
+
+  it('creates the socket mode 0600, whatever the umask of the parent shell', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const child = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+    cleanups.push(() => child.kill());
+
+    expect(fs.statSync(sock).mode & 0o777).toBe(0o600);
+  });
+
+  // The container-side claim: an unmodified client, given only WMUX_PIPE and
+  // WMUX_PIPE_TOKEN, reaches wmux through the bridge's socket. `wmux ping` is the
+  // plain CLI, so no change on the client side is involved.
+  it('serves the stock CLI with WMUX_PIPE=<socket> and WMUX_PIPE_TOKEN, token intact', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream, lines } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const child = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+    cleanups.push(() => child.kill());
+
+    const out = await new Promise<string>((resolve, reject) => {
+      const cli = spawn('node', [BRIDGE_SCRIPT, 'ping'], {
+        env: { ...process.env, WMUX_PIPE: sock, WMUX_PIPE_TOKEN: 'sekret-token', WMUX_REMOTE: '', WMUX_REMOTE_TOKEN: '' } as Record<string, string>,
+      });
+      let stdout = '';
+      cli.stdout.on('data', (c: Buffer) => { stdout += c.toString(); });
+      cli.on('error', reject);
+      cli.on('exit', () => resolve(stdout));
+    });
+
+    expect(out.trim()).toBe('pong');
+    // The bridge is a byte relay: the token the client sent is what the upstream saw.
+    expect(lines).toContain('auth sekret-token ping');
+  });
+
+  it('prints the container-side environment on start', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const lines: string[] = [];
+    const child = spawn('node', [BRIDGE_SCRIPT, 'bridge', '--unix', sock], { env: bridgeEnv(upstream) });
+    cleanups.push(() => child.kill());
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no ready line')), 5000);
+      child.stdout.on('data', (c: Buffer) => {
+        lines.push(c.toString());
+        if (lines.join('').includes('Ctrl+C')) { clearTimeout(timer); resolve(); }
+      });
+    });
+    const out = lines.join('');
+    expect(out).toContain(`listening on unix:${sock}`);
+    expect(out).toContain('WMUX_PIPE=');
+    expect(out).toContain('WMUX_PIPE_TOKEN=');
+    expect(out).not.toContain('WMUX_REMOTE');
+  });
+
+  it('removes its socket file on SIGTERM', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const child = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+    expect(fs.existsSync(sock)).toBe(true);
+
+    const done = exited(child);
+    child.kill('SIGTERM');
+    expect(await done).toBe(0);
+    expect(fs.existsSync(sock)).toBe(false);
+  });
+
+  // What SIGKILL, a crash, or a WSL shutdown leaves behind: a socket file with no
+  // process behind it. The next start must take it over, not fail on EADDRINUSE.
+  it('takes over a stale socket whose bridge was killed', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const first = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+    const killed = exited(first);
+    first.kill('SIGKILL');
+    await killed;
+    expect(fs.existsSync(sock)).toBe(true); // proof the file really is stale
+
+    const second = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+    cleanups.push(() => second.kill());
+    expect(await socketRoundTrip(sock, 'after-restart\n')).toContain('after-restart');
+  });
+
+  it('refuses a path that already has a live listener, and leaves that listener serving', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const first = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+    cleanups.push(() => first.kill());
+
+    const { code, stderr } = await runToExit(['--unix', sock], bridgeEnv(upstream));
+    expect(code).toBe(1);
+    expect(stderr).toContain('already has a listener');
+    expect(await socketRoundTrip(sock, 'still-up\n')).toContain('still-up');
+  });
+
+  it('never deletes a regular file at the path', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const file = path.join(dir, 'wmux.sock');
+    fs.writeFileSync(file, 'precious');
+
+    const { code, stderr } = await runToExit(['--unix', file], bridgeEnv(upstream));
+    expect(code).toBe(1);
+    expect(stderr).toContain('not a socket');
+    expect(fs.readFileSync(file, 'utf-8')).toBe('precious');
+  });
+
+  // The socket is removed on exit only while it is still the bridge's own. A
+  // bridge started later on the same path has replaced it, and deleting that one
+  // would cut off its clients.
+  it('does not delete a socket that replaced its own', async () => {
+    const dir = makeDir();
+    const { sockPath: upstream } = await startUpstream(dir);
+    const sock = path.join(dir, 'wmux.sock');
+    const child = await startUnixBridge(['--unix', sock], bridgeEnv(upstream));
+
+    fs.unlinkSync(sock);
+    const replacement = net.createServer();
+    await new Promise<void>((r) => replacement.listen(sock, r));
+    cleanups.push(() => replacement.close());
+
+    const done = exited(child);
+    child.kill('SIGTERM');
+    await done;
+    expect(fs.existsSync(sock)).toBe(true);
+  });
+
+  it.each([
+    ['--host', ['--host', '127.0.0.1']],
+    ['--wsl', ['--wsl']],
+    ['--port', ['--port', '9999']],
+  ])('refuses --unix together with %s without opening anything', async (flag, extra) => {
+    const dir = makeDir();
+    const sock = path.join(dir, 'wmux.sock');
+    const { code, stderr } = await runToExit(['--unix', sock, ...extra], bridgeEnv('/nonexistent'));
+    expect(code).toBe(1);
+    expect(stderr).toContain(flag);
+    expect(fs.existsSync(sock)).toBe(false);
+  });
+
+  it('refuses a socket on a Windows drive mount, naming 9P', async () => {
+    const { code, stderr } = await runToExit(['--unix', '/mnt/c/Users/me/wmux.sock'], bridgeEnv('/nonexistent'));
+    expect(code).toBe(1);
+    expect(stderr).toContain('9P');
+  });
+
+  it('refuses a directory that group or others can write to', async () => {
+    const dir = makeDir(0o775);
+    const { code, stderr } = await runToExit(['--unix', path.join(dir, 'wmux.sock')], bridgeEnv('/nonexistent'));
+    expect(code).toBe(1);
+    expect(stderr).toContain('writable by group or others');
+  });
+
+  it('refuses a missing directory and says how to make it', async () => {
+    const dir = makeDir();
+    const { code, stderr } = await runToExit(['--unix', path.join(dir, 'missing', 'wmux.sock')], bridgeEnv('/nonexistent'));
+    expect(code).toBe(1);
+    expect(stderr).toContain('mkdir -p -m 700');
+  });
+});

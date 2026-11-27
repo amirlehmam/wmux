@@ -7,6 +7,12 @@ import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { Duplex } from 'stream';
 import {
+  checkSocketDir,
+  checkUnixBridgeRequest,
+  decideSocketPath,
+  type SocketPathState,
+} from './bridge-unix';
+import {
   chooseBridgeHost,
   isWsl2,
   parseNetworkingMode,
@@ -1206,22 +1212,31 @@ async function cmdBridge(args: string[]): Promise<void> {
   // interfaces instead and 0.0.0.0 is the LAN, so the mode is read at runtime
   // rather than assumed; see wsl-network.ts for the full reasoning. The pipe
   // token authenticates every request end to end either way.
+  //
+  // --unix <path> is the same bridge without an address: it listens on a Unix
+  // socket, so none of the above applies and the networking mode is not read at
+  // all (see bridge-unix.ts for the rules and why this is not the cross-boundary
+  // socket docs/DEVCONTAINER.md rules out).
+  const unixSocket = args.includes('--unix') ? await prepareUnixSocket(args) : null;
   const wslMode = args.includes('--wsl');
-  const wslEnv = readWslEnvironment();
-  const inWsl2 = isWsl2(wslEnv);
-  const decision = chooseBridgeHost({
-    explicitHost: getFlag(args, '--host'),
-    wslMode,
-    inWsl2,
-    mode: inWsl2 ? parseNetworkingMode(readWslNetworkingMode()) : 'unknown',
-    port,
-  });
-  if (decision.host === null) {
-    console.error(`wmux bridge: ${decision.error}`);
-    process.exit(1);
+  let host = '';
+  if (unixSocket === null) {
+    const wslEnv = readWslEnvironment();
+    const inWsl2 = isWsl2(wslEnv);
+    const decision = chooseBridgeHost({
+      explicitHost: getFlag(args, '--host'),
+      wslMode,
+      inWsl2,
+      mode: inWsl2 ? parseNetworkingMode(readWslNetworkingMode()) : 'unknown',
+      port,
+    });
+    if (decision.host === null) {
+      console.error(`wmux bridge: ${decision.error}`);
+      process.exit(1);
+    }
+    host = decision.host;
+    for (const line of decision.notices) console.warn(line);
   }
-  const host = decision.host;
-  for (const line of decision.notices) console.warn(line);
 
   // ── Warm relay pool ─────────────────────────────────────────────────────────
   // Spawn-per-connection made every request pay the relay's whole startup: a fresh
@@ -1346,21 +1361,42 @@ async function cmdBridge(args: string[]): Promise<void> {
 
   // Warm relays hold a live pipe connection (and an npiperelay.exe) for as long as
   // the bridge runs, so retire them on the way out rather than orphaning them.
+  // The socket file is removed on the way out, but only while it is still ours:
+  // a bridge started later on the same path has replaced it, and deleting that
+  // one would cut off its clients.
+  let socketInode: number | null = null;
+  const removeOwnSocket = (): void => {
+    if (unixSocket === null || socketInode === null) return;
+    try {
+      if (fs.lstatSync(unixSocket).ino === socketInode) fs.unlinkSync(unixSocket);
+    } catch { /* already gone */ }
+    socketInode = null;
+  };
   const shutdown = (): void => {
     if (refillTimer) clearTimeout(refillTimer);
     warm.splice(0).forEach((e) => { e.claim(); e.stream.destroy(); });
+    removeOwnSocket();
     process.exit(0);
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
+  process.once('exit', removeOwnSocket);
 
-  server.listen(port, host, () => {
-    console.log(`wmux bridge listening on ${host}:${port} ↔ ${PIPE_PATH}`);
+  const onListening = (): void => {
+    if (unixSocket !== null) {
+      console.log(`wmux bridge listening on unix:${unixSocket} ↔ ${PIPE_PATH}`);
+    } else {
+      console.log(`wmux bridge listening on ${host}:${port} ↔ ${PIPE_PATH}`);
+    }
     if (warmSize > 0) {
       fillWarm();
       console.log(`Keeping ${warmSize} npiperelay relay(s) warm (WMUX_BRIDGE_WARM=0 to disable).`);
     }
-    if (wslMode) {
+    if (unixSocket !== null) {
+      console.log('From a container on this host: bind-mount the socket\'s directory into it, then set');
+      console.log(`  WMUX_PIPE=<path of ${path.basename(unixSocket)} inside the container>`);
+      console.log("  WMUX_PIPE_TOKEN=<run 'wmux token' here>");
+    } else if (wslMode) {
       console.log('WSL2 mode. From a container on this host:');
       console.log(`  WMUX_REMOTE=host.docker.internal:${port}`);
       console.log("  WMUX_REMOTE_TOKEN=<run 'wmux token' here>");
@@ -1370,6 +1406,98 @@ async function cmdBridge(args: string[]): Promise<void> {
       console.log(`  wmux --remote 127.0.0.1:${port} --token <run 'wmux token' here> list-workspaces`);
     }
     console.log('Ctrl+C to stop.');
+  };
+
+  if (unixSocket === null) {
+    server.listen(port, host, onListening);
+  } else {
+    // umask 077 for the bind, so the socket is 0600 from the moment it exists
+    // rather than after a chmod that another user could race. Restored as soon as
+    // the bind is done; the explicit chmod below is the belt to this brace.
+    const previousUmask = process.umask(0o177);
+    server.once('error', () => { process.umask(previousUmask); });
+    server.listen(unixSocket, () => {
+      process.umask(previousUmask);
+      try {
+        fs.chmodSync(unixSocket, 0o600);
+        socketInode = fs.lstatSync(unixSocket).ino;
+      } catch (err) {
+        console.error(`bridge error: could not secure ${unixSocket}: ${(err as Error).message}`);
+        process.exit(1);
+      }
+      onListening();
+    });
+  }
+}
+
+/**
+ * Everything `--unix` needs settled before the bridge listens: the flag rules,
+ * the directory rules, and what to do about a file already at the path. Returns
+ * the socket path, or exits 1 with the reason. The rules themselves are pure and
+ * live in bridge-unix.ts; this is only the I/O that feeds them.
+ */
+async function prepareUnixSocket(args: string[]): Promise<string> {
+  const fail = (reason: string): never => {
+    console.error(`wmux bridge: ${reason}`);
+    process.exit(1);
+  };
+  const unixPath = getFlag(args, '--unix');
+  const refusal = checkUnixBridgeRequest({
+    unixPath,
+    host: getFlag(args, '--host'),
+    wsl: args.includes('--wsl'),
+    portGiven: args.includes('--port'),
+    platform: process.platform,
+    upstreamPath: PIPE_PATH,
+  });
+  if (refusal !== null) return fail(refusal);
+  const socketPath = unixPath as string;
+
+  const dir = path.dirname(socketPath);
+  let dirFacts = { exists: false, isDirectory: false, mode: 0 };
+  try {
+    const st = fs.statSync(dir);
+    dirFacts = { exists: true, isDirectory: st.isDirectory(), mode: st.mode };
+  } catch { /* reported by checkSocketDir */ }
+  const dirRefusal = checkSocketDir(dir, dirFacts);
+  if (dirRefusal !== null) return fail(dirRefusal);
+
+  let state: SocketPathState = { kind: 'absent' };
+  try {
+    const st = fs.lstatSync(socketPath);
+    state = st.isSocket()
+      ? { kind: 'socket', ...(await probeSocket(socketPath)) }
+      : { kind: 'not-a-socket' };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return fail(`cannot inspect ${socketPath}: ${(err as Error).message}`);
+  }
+  const decision = decideSocketPath(socketPath, state);
+  if (decision.action === 'refuse') return fail(decision.error as string);
+  if (decision.action === 'unlink-then-listen') {
+    // A socket nobody listens on is what a bridge killed with SIGKILL, or a WSL
+    // shutdown, leaves behind. ECONNREFUSED is the only proof it is dead.
+    fs.unlinkSync(socketPath);
+  }
+  return socketPath;
+}
+
+/** Connect once to see whether anything is listening on a socket file. */
+function probeSocket(socketPath: string): Promise<{ probe: 'listening' | 'refused' | 'unknown'; probeError?: string }> {
+  return new Promise((resolve) => {
+    const client = net.connect({ path: socketPath });
+    const timer = setTimeout(() => {
+      client.destroy();
+      resolve({ probe: 'unknown', probeError: 'no answer within 2s' });
+    }, 2000);
+    client.once('connect', () => {
+      clearTimeout(timer);
+      client.destroy();
+      resolve({ probe: 'listening' });
+    });
+    client.once('error', (err: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
+      resolve(err.code === 'ECONNREFUSED' ? { probe: 'refused' } : { probe: 'unknown', probeError: err.code || err.message });
+    });
   });
 }
 
@@ -2286,9 +2414,12 @@ export const COMMAND_SPECS = {
   bridge: {
     usage: [
       'wmux bridge [--port P] [--host H] [--wsl]   (expose this wmux\'s pipe over TCP, default 127.0.0.1:9787)',
+      'wmux bridge --unix <path>                   (expose it on a Unix socket instead; not combinable with the above)',
       '  --wsl   bind 0.0.0.0 so a container on this host can reach a bridge running in WSL2',
+      '  --unix  listen on a socket on the distro\'s own filesystem (mode 0600, absolute path, parent not group/world',
+      '          writable, not under /mnt/<drive>); bind-mount its directory into the container and set WMUX_PIPE',
     ].join('\n'),
-    value: ['--port', '--host'],
+    value: ['--port', '--host', '--unix'],
     bool: ['--wsl'],
   },
   token: { usage: 'wmux token   (print this instance\'s pipe auth token)' },
@@ -2888,6 +3019,7 @@ Workspace:  new-workspace, close-workspace, select-workspace, rename-workspace, 
             current-workspace | whoami [--surface <id>]   (the workspace THIS pane is in)
 Remote:     ssh [ssh options] <user@host> [--title T]   (remote terminal in a new workspace)
             bridge [--port P] [--host H] [--wsl]   (expose this wmux's pipe over TCP, default 127.0.0.1:9787)
+            bridge --unix <path>           (expose it on a Unix socket instead of a port)
             token                          (print this instance's auth token, for --token)
             remote status [--json]         (the phone Remote Console: on/off, where, devices)
 Global:     --remote host[:port] --token <T>   (drive a REMOTE wmux through an SSH tunnel;

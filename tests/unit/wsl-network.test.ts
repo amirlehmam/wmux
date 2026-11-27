@@ -55,6 +55,14 @@ describe('parseNetworkingMode', () => {
     expect(parseNetworkingMode('  Mirrored  ')).toBe('mirrored');
   });
 
+  // The WSL docs list `consomme` for networkingMode and say it used to be called
+  // `virtioproxy`. Recognising it only lets the refusal name it: it is not a
+  // synonym for nat, so nothing here may fold it into one.
+  it('names consomme, and virtioproxy as its older spelling, without treating it as nat', () => {
+    expect(parseNetworkingMode('consomme\n')).toBe('consomme');
+    expect(parseNetworkingMode('VirtioProxy')).toBe('consomme');
+  });
+
   it('calls anything it cannot read "unknown" rather than falling back to nat', () => {
     // wslinfo predates WSL 2.0.5, so null is the ordinary answer on older WSL.
     // Folding it into `nat` is exactly the assumption this module exists to stop
@@ -92,6 +100,18 @@ describe('chooseBridgeHost', () => {
     expect(d.error).toMatch(/--host/);
   });
 
+  it('refuses to pick 0.0.0.0 under consomme, naming the mode and the way out', () => {
+    const d = chooseBridgeHost(req({ mode: 'consomme' }));
+    expect(d.host).toBeNull();
+    expect(d.error).toMatch(/consomme/);
+    expect(d.error).toMatch(/virtioproxy/);
+    expect(d.error).toMatch(/not\s+documented/);
+    expect(d.error).toMatch(/--unix/);
+    expect(d.error).toMatch(/--host/);
+    // It is a refusal about this mode, not the generic one for a failed probe.
+    expect(d.error).not.toMatch(/could not determine/);
+  });
+
   it('refuses when the mode could not be determined', () => {
     const d = chooseBridgeHost(req({ mode: 'unknown' }));
     expect(d.host).toBeNull();
@@ -100,7 +120,7 @@ describe('chooseBridgeHost', () => {
   });
 
   it('refuses --wsl outside a WSL distro, naming what it looked for', () => {
-    for (const mode of ['nat', 'mirrored', 'unknown'] as WslNetworkingMode[]) {
+    for (const mode of ['nat', 'mirrored', 'consomme', 'unknown'] as WslNetworkingMode[]) {
       const d = chooseBridgeHost(req({ inWsl2: false, mode }));
       expect(d.host).toBeNull();
       expect(d.error).toMatch(/osrelease/);
@@ -111,7 +131,7 @@ describe('chooseBridgeHost', () => {
   it('honours an explicit --host in every mode, including 0.0.0.0 under mirrored', () => {
     // A stated choice, not an inherited default. Overruling it would just push
     // people to a shell wrapper, and they would lose the warning with it.
-    for (const mode of ['nat', 'mirrored', 'unknown'] as WslNetworkingMode[]) {
+    for (const mode of ['nat', 'mirrored', 'consomme', 'unknown'] as WslNetworkingMode[]) {
       for (const wslMode of [true, false]) {
         const d = chooseBridgeHost(req({ explicitHost: '0.0.0.0', mode, wslMode }));
         expect(d.host).toBe('0.0.0.0');
@@ -131,9 +151,18 @@ describe('chooseBridgeHost', () => {
     expect(mirrored.notices.join(' ')).toMatch(/VPN/);
   });
 
+  it('says an explicit bind under consomme has an undocumented reach, and points at --unix', () => {
+    const d = chooseBridgeHost(req({ explicitHost: '0.0.0.0', mode: 'consomme' }));
+    expect(d.host).toBe('0.0.0.0');
+    expect(d.notices.join(' ')).toMatch(/consomme networking/);
+    expect(d.notices.join(' ')).toMatch(/not documented/);
+    expect(d.notices.join(' ')).toMatch(/--unix/);
+    expect(d.notices.join(' ')).not.toMatch(/not the LAN/);
+  });
+
   it('stays quiet for an explicit loopback bind, however spelled', () => {
     for (const host of ['127.0.0.1', 'localhost', '::1']) {
-      for (const mode of ['nat', 'mirrored', 'unknown'] as WslNetworkingMode[]) {
+      for (const mode of ['nat', 'mirrored', 'consomme', 'unknown'] as WslNetworkingMode[]) {
         const d = chooseBridgeHost(req({ explicitHost: host, mode }));
         expect(d).toEqual({ host, notices: [], error: null });
       }
