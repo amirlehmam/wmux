@@ -63,6 +63,7 @@ import {
   removePiExtension,
 } from './pi-context';
 import { ensureAgyPlugin, removeAgyPlugin } from './agy-context';
+import { ensureHermesPlugin, removeHermesPlugin } from './hermes-context';
 import {
   ensureQwenContext,
   ensureQwenHooks,
@@ -133,6 +134,9 @@ export const INTEGRATION_CONSENT_DETAIL =
   '      an omp extension that reports foreground and background job state\n' +
   '  • ~/.gemini/config/plugins/wmux/ (only if the Antigravity CLI is installed)\n' +
   '      an agy plugin of wmux\'s own that reports each pane\'s conversation\n' +
+  '  • %LOCALAPPDATA%\\hermes\\plugins\\wmux\\ (~/.hermes/plugins/wmux/ elsewhere; only if\n' +
+  '      Hermes Agent is installed) — a plugin of wmux\'s own that reports status,\n' +
+  '      enabled with Hermes\'s own `hermes plugins enable wmux`\n' +
   '  • ~/.config/opencode/plugin/wmux.js\n' +
   '      the wmux orchestrator plugin for OpenCode\n' +
   '  • ~/.claude/settings.json\n' +
@@ -199,8 +203,9 @@ function applyFeature(feature: IntegrationFeature, enabled: boolean): void {
       // toggle off, which is the #132 complaint in reverse.
       // The agy plugin likewise: it reports which conversation a pane holds,
       // the same job Claude's SessionStart hook does from this toggle.
-      if (enabled) { ensureClaudeHooks(); ensureOmpExtension(); ensureGrokHooks(); ensureAgyPlugin(); ensureQwenHooks(); }
-      else { removeClaudeHooks(); removeOmpExtension(); removeGrokHooks(); removeAgyPlugin(); removeQwenHooks(); }
+      // Hermes's plugin may run `hermes plugins enable wmux`, so it is not awaited.
+      if (enabled) { ensureClaudeHooks(); ensureOmpExtension(); ensureGrokHooks(); ensureAgyPlugin(); ensureQwenHooks(); void ensureHermesPlugin(); }
+      else { removeClaudeHooks(); removeOmpExtension(); removeGrokHooks(); removeAgyPlugin(); removeQwenHooks(); removeHermesPlugin(); }
       // Claude Code inside WSL distros (#428): the same hooks in each RUNNING
       // distro's ~/.claude/settings.json, in both directions. Asynchronous, and
       // it never wakes a stopped distro, so a stopped one is reconciled when it

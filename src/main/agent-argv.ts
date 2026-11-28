@@ -50,6 +50,8 @@ export const AGENT_ALIASES: Record<string, string[]> = {
   goose: ['goose'],
   crush: ['crush'],
   cline: ['cline'],
+  // Hermes Agent (NousResearch); status comes from its wmux plugin (hermes-context.ts).
+  hermes: ['hermes'],
 };
 
 /** Reverse index, built once. */
