@@ -17,3 +17,5 @@ build-icons.log
 .impeccable/review/
 .impeccable/questions/
 .impeccable/workspace-direction.md
+__pycache__/
+*.pyc

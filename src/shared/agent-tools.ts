@@ -25,6 +25,8 @@ const FILE_EDIT_TOOLS: ReadonlySet<string> = new Set([
   'update',
   'patch',
   'apply_patch',
+  // Hermes Agent's whole-file write (its `patch` is already above).
+  'write_file',
 ]);
 
 /** True when `tool` names an agent tool whose completion changed a file. */

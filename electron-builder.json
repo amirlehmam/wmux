@@ -68,6 +68,7 @@
     { "from": "resources/opencode-plugin", "to": "opencode-plugin" },
     { "from": "resources/agy-plugin", "to": "agy-plugin" },
     { "from": "resources/pi-extension", "to": "pi-extension" },
+    { "from": "resources/hermes-plugin", "to": "hermes-plugin", "filter": ["**/*", "!__pycache__/**"] },
     { "from": "resources/omp-extension", "to": "omp-extension" }
   ]
 }

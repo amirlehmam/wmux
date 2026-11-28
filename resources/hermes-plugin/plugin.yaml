@@ -1,0 +1,14 @@
+# wmux-plugin-version: 2
+name: wmux
+version: 1.0.0
+description: "Reports Hermes run state to wmux (notifications, approvals, questions, working/idle). Installed and removed by wmux; does nothing outside a wmux pane."
+author: wmux
+provides_hooks:
+  - subagent_start
+  - on_session_start
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - on_human_input_request
+  - on_session_end
+  - on_session_finalize
